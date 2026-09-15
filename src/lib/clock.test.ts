@@ -24,3 +24,18 @@ describe('systemClock', () => {
     expect(systemClock.nowIso()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
+
+describe('msUntilNextDay', () => {
+  it('is bounded by one day on the system clock', () => {
+    const ms = systemClock.msUntilNextDay();
+    expect(ms).toBeGreaterThan(0);
+    expect(ms).toBeLessThanOrEqual(86_400_000);
+  });
+
+  it('is deterministic on a fixed clock', () => {
+    const clock = fixedClock(new Date('2026-09-15T18:00:00.000Z'));
+    expect(clock.msUntilNextDay()).toBe(21_600_000);
+    // Same answer every call: a frozen clock that drifts is not frozen.
+    expect(clock.msUntilNextDay()).toBe(21_600_000);
+  });
+});

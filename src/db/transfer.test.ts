@@ -256,9 +256,14 @@ describe('import: merge', () => {
     // With generated ids, every merge between two installs would add a second
     // full set of built-in categories with identical names.
     await seed();
+    const before = await handle.db.categories.count();
+
     const doc = await buildExport(handle.db, NOW);
     await importDocument(handle.db, doc, { mode: 'merge', now: NOW });
-    expect(await handle.db.categories.count()).toBe(1);
+
+    // Covers the whole seeded built-in set, not one fixture row.
+    expect(before).toBeGreaterThan(1);
+    expect(await handle.db.categories.count()).toBe(before);
   });
 });
 

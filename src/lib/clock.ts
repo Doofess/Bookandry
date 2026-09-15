@@ -1,6 +1,6 @@
 import type { IsoInstant, LocalDate } from '@/types/money';
 
-import { nowIso, todayLocal } from './dates';
+import { msUntilNextLocalMidnight, nowIso, todayLocal } from './dates';
 
 /**
  * The injectable clock.
@@ -17,11 +17,20 @@ import { nowIso, todayLocal } from './dates';
 export type Clock = {
   today(): LocalDate;
   nowIso(): IsoInstant;
+  /**
+   * How long until `today()` would return a different date.
+   *
+   * On the Clock rather than computed at the call site so that the one place
+   * allowed to read the host clock stays the one place that reads it - a
+   * `new Date()` in a React effect is exactly the drift this type prevents.
+   */
+  msUntilNextDay(): number;
 };
 
 export const systemClock: Clock = {
   today: () => todayLocal(new Date()),
   nowIso: () => nowIso(new Date()),
+  msUntilNextDay: () => msUntilNextLocalMidnight(new Date()),
 };
 
 /** A clock frozen at a given instant. */
@@ -29,5 +38,6 @@ export function fixedClock(instant: Date): Clock {
   return {
     today: () => todayLocal(instant),
     nowIso: () => nowIso(instant),
+    msUntilNextDay: () => msUntilNextLocalMidnight(instant),
   };
 }

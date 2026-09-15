@@ -30,6 +30,7 @@ import {
   startOfYear,
   todayLocal,
   toUtcInstant,
+  msUntilNextLocalMidnight,
 } from './dates';
 
 const d = (s: string): LocalDate => assertLocalDate(s);
@@ -287,5 +288,30 @@ describe('minDate and maxDate cover both orderings', () => {
     expect(maxDate(d('2026-09-01'), d('2026-09-30'))).toBe('2026-09-30');
     expect(minDate(d('2026-09-01'), d('2026-09-01'))).toBe('2026-09-01');
     expect(maxDate(d('2026-09-01'), d('2026-09-01'))).toBe('2026-09-01');
+  });
+});
+
+describe('msUntilNextLocalMidnight', () => {
+  it('counts to the next local midnight', () => {
+    // The suite runs at Etc/UTC (cross-env + a guard test), so local is UTC.
+    const now = new Date('2026-09-15T23:59:59.000Z');
+    expect(msUntilNextLocalMidnight(now)).toBe(1000);
+  });
+
+  it('returns a full day at midnight exactly', () => {
+    expect(msUntilNextLocalMidnight(new Date('2026-09-15T00:00:00.000Z'))).toBe(86_400_000);
+  });
+
+  it('never returns zero, so a timer cannot spin', () => {
+    for (const iso of ['2026-09-15T23:59:59.999Z', '2026-12-31T23:59:59.999Z']) {
+      expect(msUntilNextLocalMidnight(new Date(iso))).toBeGreaterThan(0);
+    }
+  });
+
+  it('crosses a month and a year boundary', () => {
+    expect(msUntilNextLocalMidnight(new Date('2026-09-30T12:00:00.000Z'))).toBe(43_200_000);
+    expect(msUntilNextLocalMidnight(new Date('2026-12-31T12:00:00.000Z'))).toBe(43_200_000);
+    // 29 February exists in 2028.
+    expect(msUntilNextLocalMidnight(new Date('2028-02-28T12:00:00.000Z'))).toBe(43_200_000);
   });
 });

@@ -211,3 +211,22 @@ export function externalTimestampToLocalDate(value: string): LocalDate | undefin
 export function instantFromMs(ms: number): IsoInstant {
   return new Date(ms).toISOString() as IsoInstant;
 }
+
+/**
+ * Milliseconds until the LOCAL calendar date changes.
+ *
+ * `todayLocal()` goes stale: a PWA left open overnight keeps computing
+ * `isProjected` and the "Today" header against yesterday, so tomorrow's salary
+ * silently counts toward the balance. A timer needs to know when to re-read.
+ *
+ * Built from local Y/M/D rather than by adding 86_400_000, because a DST day is
+ * 23 or 25 hours long. In the handful of zones where local midnight does not
+ * exist at all (Asia/Tehran, America/Sao_Paulo historically), the engine yields
+ * 01:00 instead, which fires an hour late rather than never - and the
+ * visibilitychange listener covers the gap.
+ */
+export function msUntilNextLocalMidnight(now: Date): number {
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  // Never zero or negative: a 0ms timeout would spin.
+  return Math.max(1, next.getTime() - now.getTime());
+}

@@ -64,21 +64,26 @@ describe('listPaymentMethods', () => {
     );
   });
 
-  it('returns a profile’s own methods plus the shared ones', async () => {
+  it('returns a profile’s own methods plus the shared ones, never another profile’s', async () => {
     const ids = (await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id);
-    // The SHARED_OWNER sentinel exists precisely so this row is reachable: a
+    // The SHARED_OWNER sentinel exists precisely so these rows are reachable: a
     // null owner would be invisible to the [profileId+isArchived] index.
-    expect(ids.sort()).toEqual(['joint', 'mine']);
+    // pm.cash is seeded by populate() and shared by every profile.
+    expect(ids.sort()).toEqual(['joint', 'mine', 'pm.cash']);
+    expect(ids).not.toContain('theirs');
   });
 
   it('hides archived methods unless asked', async () => {
     await setPaymentMethodArchived(handle.db, 'mine', true, NOW);
-    expect((await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id)).toEqual(['joint']);
+    expect((await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id).sort()).toEqual([
+      'joint',
+      'pm.cash',
+    ]);
     expect(
       (await listPaymentMethods(handle.db, { profileId: 'p1', includeArchived: true }))
         .map((m) => m.id)
         .sort(),
-    ).toEqual(['joint', 'mine']);
+    ).toEqual(['joint', 'mine', 'pm.cash']);
   });
 
   it('supports הוראת קבע as its own type', async () => {
