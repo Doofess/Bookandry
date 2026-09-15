@@ -12,6 +12,7 @@ import {
   daysInMonth,
   endOfMonth,
   formatLocalDate,
+  fromPickerDate,
   fromUtcInstant,
   isLastDayOfMonth,
   isLeapYear,
@@ -30,6 +31,7 @@ import {
   startOfYear,
   todayLocal,
   toUtcInstant,
+  toPickerDate,
   msUntilNextLocalMidnight,
 } from './dates';
 
@@ -313,5 +315,35 @@ describe('msUntilNextLocalMidnight', () => {
     expect(msUntilNextLocalMidnight(new Date('2026-12-31T12:00:00.000Z'))).toBe(43_200_000);
     // 29 February exists in 2028.
     expect(msUntilNextLocalMidnight(new Date('2028-02-28T12:00:00.000Z'))).toBe(43_200_000);
+  });
+});
+
+describe('the date-picker bridge', () => {
+  it('round-trips every day of a leap February', () => {
+    for (let day = 1; day <= 29; day += 1) {
+      const date = makeLocalDate(2028, 2, day);
+      expect(fromPickerDate(toPickerDate(date))).toBe(date);
+    }
+  });
+
+  it('round-trips the day a month ends', () => {
+    // 2026-01-31 parsed as UTC midnight reads as January 30 in every
+    // negative-offset zone, before any arithmetic happens.
+    const date = assertLocalDate('2026-01-31');
+    expect(fromPickerDate(toPickerDate(date))).toBe('2026-01-31');
+  });
+
+  it('produces a LOCAL date, which is what the picker reads', () => {
+    const picker = toPickerDate(assertLocalDate('2026-01-31'));
+
+    expect(picker.getFullYear()).toBe(2026);
+    expect(picker.getMonth()).toBe(0);
+    expect(picker.getDate()).toBe(31);
+  });
+
+  it('sits at noon, away from both DST edges', () => {
+    // Local midnight does not exist at all on some transition days; noon leaves
+    // twelve hours of headroom instead of one.
+    expect(toPickerDate(assertLocalDate('2026-01-31')).getHours()).toBe(12);
   });
 });

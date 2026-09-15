@@ -139,9 +139,15 @@ describe('the charged-amount entry', () => {
   });
 
   it('cannot derive a rate before the amount is entered', () => {
+    /*
+     * A distinct code from `rate_required`, and the field renders nothing for
+     * it. The amount box is already asking for the amount; repeating the demand
+     * under the rate box says the same thing twice while pointing at the wrong
+     * one - and "no rate has ever been stored for this pair" is, here, false.
+     */
     expect(resolveRate(field({ entry: 'charged', charged: '178.40', amount: '' }), TODAY)).toEqual({
       status: 'invalid',
-      problem: { code: 'rate_required' },
+      problem: { code: 'awaiting_amount' },
     });
   });
 

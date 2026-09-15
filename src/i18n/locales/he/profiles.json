@@ -34,5 +34,14 @@
     "robot": "רובוט"
   },
   "household": "משק בית",
-  "limit": "Greenback תומך בעד {{count}} פרופילים, אחד לכל צבע."
+  "limit": "Greenback תומך בעד {{count}} פרופילים, אחד לכל צבע.",
+  "method": {
+    "cash": "מזומן",
+    "credit_card": "כרטיס אשראי",
+    "debit_card": "כרטיס חיוב מיידי",
+    "bank_transfer": "העברה בנקאית",
+    "standing_order": "הוראת קבע",
+    "digital_wallet": "ארנק דיגיטלי",
+    "other": "אחר"
+  }
 }

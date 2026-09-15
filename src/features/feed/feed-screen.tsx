@@ -7,6 +7,7 @@ import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculato
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
+import { startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES } from '@/types/domain';
 
 import { EmptyState } from './empty-state';
@@ -20,6 +21,8 @@ import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdo
 import { MonthCursor } from '../summary/month-cursor';
 import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
+import { TransactionSheet } from '../transaction/transaction-sheet';
+import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 
 type Breakdown = 'balance' | 'expense' | undefined;
 
@@ -27,7 +30,8 @@ export function FeedScreen() {
   const { t } = useTranslation(['common', 'categories']);
   const today = useToday();
   const settings = useSettings();
-  const { filters, stepMonth, set, setProfile, clear } = useFeedFilters();
+  const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
+  const sheet = useTransactionSheet();
   const [breakdown, setBreakdown] = useState<Breakdown>(undefined);
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
@@ -139,13 +143,34 @@ export function FeedScreen() {
         )}
       </div>
 
-      {/* Wired to the add sheet in Phase 4; until then it is deliberately inert
-          rather than fake. */}
-      <Fab
-        onClick={() => {
-          /* Phase 4 */
-        }}
-      />
+      {/*
+        Disabled until there is a profile to own the row.
+        A transaction belongs to exactly one profile, so with none the form has
+        nothing to submit - and a button that opens a sheet you cannot complete
+        is worse than one that is visibly unavailable. In practice the first-run
+        wizard guarantees at least one, so this is a guard rather than a state.
+      */}
+      <Fab onClick={sheet.open} disabled={(lookups?.profiles.length ?? 0) === 0} />
+
+      {lookups === undefined ? null : (
+        <TransactionSheet
+          open={sheet.isOpen}
+          onOpenChange={sheet.setOpen}
+          profiles={lookups.profiles}
+          categories={[...lookups.categories.values()]}
+          paymentMethods={[...lookups.paymentMethods.values()]}
+          activeProfileId={filters.profileId}
+          baseCurrency={settings.defaultCurrency}
+          today={today}
+          onSaved={(transaction) => {
+            sheet.close();
+            // Jump to the month the transaction landed in, so a bill dated next
+            // month does not save into apparent nothingness. liveQuery brings
+            // the row itself; this is only about which window is on screen.
+            setMonth(startOfMonth(transaction.date));
+          }}
+        />
+      )}
 
       {balance.status === 'ready' ? (
         <BalanceBreakdownSheet

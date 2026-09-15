@@ -11,6 +11,7 @@ import {
   lastInstallmentDate,
   MAX_INSTALLMENTS,
   NOTE_MAX_LENGTH,
+  recurrenceDefaults,
   txFormSchema,
   type TxFormValues,
 } from './tx-form';
@@ -311,5 +312,64 @@ describe('defaultFormValues', () => {
     );
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('recurrenceDefaults', () => {
+  const base = values({ date: d('2026-09-15'), dayOfMonth: '15' });
+
+  it('defaults a monthly bill to the last day of the month', () => {
+    // Rent, arnona, the va'ad and most הוראות קבע land there. Defaulting to
+    // whatever day the form happened to be opened gives a series that is right
+    // once and wrong every month after.
+    expect(recurrenceDefaults('monthly', base)).toMatchObject({ dayOfMonth: '31' });
+  });
+
+  it('does not overwrite a day the user chose', () => {
+    expect(recurrenceDefaults('monthly', { ...base, dayOfMonth: '10' })).toMatchObject({
+      dayOfMonth: '10',
+    });
+  });
+
+  it('restores the date own day when switching back to one-time', () => {
+    // Toggling monthly and back must not quietly move the transaction.
+    expect(recurrenceDefaults('one_time', { ...base, dayOfMonth: '31' })).toMatchObject({
+      dayOfMonth: '15',
+    });
+  });
+
+  it('anchors instalments on the purchase date and seeds a plausible count', () => {
+    expect(recurrenceDefaults('installments', base)).toMatchObject({
+      dayOfMonth: '15',
+      installmentCount: '12',
+    });
+  });
+
+  it('keeps a count the user already typed', () => {
+    expect(recurrenceDefaults('installments', { ...base, installmentCount: '3' })).toMatchObject({
+      installmentCount: '3',
+    });
+  });
+
+  it('clears the instalment count outside that mode', () => {
+    // A leftover count on a monthly rule would turn an open-ended bill into a
+    // plan that silently stops after N payments.
+    for (const mode of ['one_time', 'monthly', 'yearly'] as const) {
+      expect(recurrenceDefaults(mode, { ...base, installmentCount: '12' })).toMatchObject({
+        installmentCount: '',
+      });
+    }
+  });
+
+  it('clears an end date where the mode cannot express one', () => {
+    expect(recurrenceDefaults('installments', { ...base, endDate: '2027-01-01' })).toMatchObject({
+      endDate: '',
+    });
+  });
+
+  it('survives a date field that is not a date', () => {
+    // The field is a raw string until the schema validates it, and a change
+    // handler must not throw inside `parseLocalDate`.
+    expect(() => recurrenceDefaults('monthly', { ...base, date: 'nonsense' })).not.toThrow();
   });
 });

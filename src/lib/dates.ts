@@ -254,3 +254,27 @@ export function msUntilNextLocalMidnight(now: Date): number {
   // Never zero or negative: a 0ms timeout would spin.
   return Math.max(1, next.getTime() - now.getTime());
 }
+
+/**
+ * A LocalDate as a Date at LOCAL midnight, for date-picker components.
+ *
+ * react-day-picker compares days with `getFullYear/getMonth/getDate`, which are
+ * local getters. Handing it `new Date('2026-01-31')` - parsed as UTC midnight
+ * per ECMA-262 - makes every viewer west of Greenwich see January 30 selected,
+ * and clicking the 31st then "does nothing" because it is already the value.
+ *
+ * So the bridge is local in both directions, and it lives here because this is
+ * one of the two modules permitted to construct a Date at all.
+ */
+export function toPickerDate(date: LocalDate): Date {
+  const { year, month, day } = parseLocalDate(date);
+  // Noon, not midnight. A few zones (Asia/Tehran, historically
+  // America/Sao_Paulo) skip local midnight entirely on a DST transition day, and
+  // the engine then yields 01:00 of the SAME day - harmless here, but noon
+  // leaves twelve hours of headroom on either side instead of one.
+  return new Date(year, month - 1, day, 12);
+}
+
+export function fromPickerDate(value: Date): LocalDate {
+  return makeLocalDate(value.getFullYear(), value.getMonth() + 1, value.getDate());
+}

@@ -25,12 +25,22 @@ export type Clock = {
    * `new Date()` in a React effect is exactly the drift this type prevents.
    */
   msUntilNextDay(): number;
+  /**
+   * Epoch milliseconds.
+   *
+   * Needed by the rates cache, whose freshness window is a duration rather than
+   * a calendar fact. On the Clock for the same reason everything else here is:
+   * a `Date.now()` inside the gateway would make its 12-hour TTL untestable
+   * without waiting twelve hours.
+   */
+  nowMs(): number;
 };
 
 export const systemClock: Clock = {
   today: () => todayLocal(new Date()),
   nowIso: () => nowIso(new Date()),
   msUntilNextDay: () => msUntilNextLocalMidnight(new Date()),
+  nowMs: () => Date.now(),
 };
 
 /** A clock frozen at a given instant. */
@@ -39,5 +49,6 @@ export function fixedClock(instant: Date): Clock {
     today: () => todayLocal(instant),
     nowIso: () => nowIso(instant),
     msUntilNextDay: () => msUntilNextLocalMidnight(instant),
+    nowMs: () => instant.getTime(),
   };
 }

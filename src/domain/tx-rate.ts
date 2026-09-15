@@ -67,7 +67,16 @@ export type RateProblem =
   | { readonly code: 'rate_required' }
   | { readonly code: 'rate_not_a_number' }
   | { readonly code: 'rate_not_positive' }
-  | { readonly code: 'charged_not_positive' };
+  | { readonly code: 'charged_not_positive' }
+  /**
+   * A rate cannot be derived from a charge until there is an amount to divide.
+   *
+   * Distinct from `rate_required` because it is NOT the user's problem to fix
+   * here: the amount field is already asking for the amount, and repeating the
+   * demand under the rate field tells them the same thing twice while pointing
+   * at the wrong box. The UI renders nothing for it.
+   */
+  | { readonly code: 'awaiting_amount' };
 
 export type RateWarning =
   /** The typed value is close to 1/known - almost certainly entered backwards. */
@@ -106,9 +115,8 @@ export function resolveRate(input: RateFieldInput, today: LocalDate): RateResolu
     }
     if (amountMinor === undefined || amountMinor <= 0) {
       // The rate is a ratio of the two, so there is nothing to divide by yet.
-      // Not a message the user should see - the amount field is already
-      // complaining - but not a resolution either.
-      return { status: 'invalid', problem: { code: 'rate_required' } };
+      // Not a resolution, but not the rate field's complaint to make either.
+      return { status: 'invalid', problem: { code: 'awaiting_amount' } };
     }
     const derived = rateFromAmounts(amountMinor, input.currency, chargedMinor, input.baseCurrency);
     return {

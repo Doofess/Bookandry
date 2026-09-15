@@ -317,3 +317,49 @@ export function lastInstallmentDate(date: LocalDate, recurrence: Recurrence): Lo
 function yearlySlot(year: number, month: number, day: number): LocalDate {
   return makeLocalDate(year, month, clampDay(year, month, day));
 }
+
+/**
+ * Sensible values when the recurrence mode changes.
+ *
+ * Pure, and here rather than beside the controls so the component file exports
+ * nothing but components - which is what lets Vite hot-swap it instead of
+ * reloading the page, losing a half-filled form each time.
+ *
+ * A recurring bill defaults to the LAST day of the month: rent, arnona, the
+ * va'ad and most הוראות קבע land there, and defaulting to whatever day the form
+ * happened to be opened produces a series that is right once and wrong every
+ * month after. Switching back to one-time restores the date's own day, so
+ * toggling twice does not quietly move the row.
+ */
+export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): Partial<TxFormValues> {
+  // The raw form value, so it may not be a date at all - the field is a
+  // string until the schema says otherwise. Falling back to the 1st keeps this
+  // total rather than throwing inside a change handler.
+  const dayOfDate = isLocalDate(values.date) ? String(parseLocalDate(values.date).day) : '1';
+
+  switch (mode) {
+    case 'one_time':
+      return { mode, dayOfMonth: dayOfDate, endDate: '', installmentCount: '' };
+
+    case 'monthly':
+      return {
+        mode,
+        // Only impose the last-day default if the user has not already chosen a
+        // day: overwriting a deliberate 10th on every toggle would be worse
+        // than having no default at all.
+        dayOfMonth: values.dayOfMonth === dayOfDate ? String(defaultRecurringDay()) : values.dayOfMonth,
+        installmentCount: '',
+      };
+
+    case 'installments':
+      return {
+        mode,
+        dayOfMonth: dayOfDate,
+        endDate: '',
+        installmentCount: values.installmentCount === '' ? '12' : values.installmentCount,
+      };
+
+    case 'yearly':
+      return { mode, installmentCount: '' };
+  }
+}
