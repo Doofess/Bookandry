@@ -10,11 +10,12 @@ import './index.css';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
-import { ROUTES } from '@/app/routes';
+import { LINKED_ROUTES, ROUTES } from '@/app/routes';
 import { TodayProvider } from '@/app/today-provider';
 import { db } from '@/db/db';
 import { ensureSettings } from '@/db/repos/settings';
 import { ChartScreen } from '@/features/chart/chart-screen';
+import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
 import { FirstRun } from '@/features/first-run/first-run';
 import { ProfilesScreen } from '@/features/profiles/profiles-screen';
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
       { path: ROUTES.chart, element: <ChartScreen /> },
       { path: ROUTES.profiles, element: <ProfilesScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
+      { path: LINKED_ROUTES.commitments, element: <CommitmentsScreen /> },
     ],
   },
 ]);

@@ -305,3 +305,19 @@ export function rateDeviationExceeds(
   const magnitude = difference < 0n ? -difference : difference;
   return magnitude * toleranceDenominator > toleranceNumerator * v.d * r.n;
 }
+
+/**
+ * Divide a minor amount into equal parts, rounding once.
+ *
+ * For the "monthly equivalent" of a yearly bill and nothing else: a yearly
+ * insurance premium has to be comparable with a monthly one, and comparing them
+ * requires dividing money by twelve. Half away from zero, like every other
+ * rounding here, so a negative amount rounds symmetrically with its positive.
+ */
+export function divideMinor(minor: Minor, divisor: number): Minor {
+  if (!Number.isSafeInteger(minor)) throw new RangeError('minor must be a safe integer');
+  if (!Number.isSafeInteger(divisor) || divisor === 0) {
+    throw new RangeError(`divisor must be a non-zero integer, got ${String(divisor)}`);
+  }
+  return toSafeNumber(divRound(BigInt(minor), BigInt(divisor)));
+}

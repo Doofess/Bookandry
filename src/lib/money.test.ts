@@ -8,6 +8,7 @@ import {
   convertMinor,
   crossRate,
   decimalToRational,
+  divideMinor,
   divRound,
   InvalidDecimalError,
   invertRate,
@@ -470,5 +471,32 @@ describe('rateDeviationExceeds', () => {
   it('treats a non-positive value as out of band rather than dividing by it', () => {
     expect(rateDeviationExceeds('0', '4', 1n, 4n)).toBe(true);
     expect(rateDeviationExceeds('4', '0', 1n, 4n)).toBe(true);
+  });
+});
+
+describe('divideMinor', () => {
+  it('rounds half away from zero, like every other rounding here', () => {
+    expect(divideMinor(100, 3)).toBe(33);
+    expect(divideMinor(101, 3)).toBe(34);
+    expect(divideMinor(5, 2)).toBe(3);
+    expect(divideMinor(-5, 2)).toBe(-3);
+  });
+
+  it('turns a yearly premium into a monthly equivalent', () => {
+    // The only reason this exists: a 1,200 yearly bill has to be comparable
+    // with a 100 monthly one.
+    expect(divideMinor(120_000, 12)).toBe(10_000);
+    expect(divideMinor(100_000, 12)).toBe(8333);
+  });
+
+  it('refuses a zero or fractional divisor rather than returning Infinity', () => {
+    expect(() => divideMinor(100, 0)).toThrow(RangeError);
+    expect(() => divideMinor(100, 1.5)).toThrow(RangeError);
+  });
+
+  it('refuses a non-integer amount rather than rounding it twice', () => {
+    // A float here means precision was already lost upstream, and silently
+    // rounding it would hide where.
+    expect(() => divideMinor(100.5, 12)).toThrow(RangeError);
   });
 });
