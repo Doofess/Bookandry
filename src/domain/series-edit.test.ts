@@ -268,3 +268,70 @@ describe('scope: future — the split', () => {
     expect(JSON.stringify(once)).toBe(JSON.stringify(twice));
   });
 });
+
+describe('a rule change across the whole series', () => {
+  /*
+   * The defect this section exists for, found by walking the UI in a browser
+   * rather than by reading the code: scope 'all' with a rule change left every
+   * per-occurrence override in the table, keyed to slots the new rule no longer
+   * emits. Expansion iterates slots, so they were invisible - and would have
+   * reappeared, months later, the moment anyone changed the rule back.
+   */
+  const edits = () => [
+    modify('rent', d('2026-11-10'), { note: 'november' }),
+    modify('rent', d('2026-12-10'), { note: 'december' }),
+  ];
+
+  it('drops overrides whose slot the new rule no longer emits', () => {
+    const overrides = edits();
+
+    const result = plan({
+      overrides,
+      scope: 'all',
+      at: d('2026-09-10'),
+      patch: { recurrence: { type: 'monthly', dayOfMonth: 20 } },
+    });
+
+    expect(result.deleteOverrideIds).toEqual(overrides.map((o) => o.id));
+  });
+
+  it('reports how many, so the confirmation can name a number', () => {
+    const result = plan({
+      overrides: edits(),
+      scope: 'all',
+      at: d('2026-09-10'),
+      patch: { recurrence: { type: 'monthly', dayOfMonth: 20 } },
+    });
+
+    expect(result.warnings).toContainEqual({ kind: 'overrides_dropped', count: 2 });
+  });
+
+  it('KEEPS an override whose slot survives the new rule', () => {
+    // Ending the series in November leaves that slot intact; only December
+    // falls outside the new rule.
+    const overrides = edits();
+
+    const result = plan({
+      overrides,
+      scope: 'all',
+      at: d('2026-09-10'),
+      patch: { recurrence: { type: 'monthly', dayOfMonth: 10, endDate: d('2026-11-10') } },
+    });
+
+    expect(result.deleteOverrideIds).toEqual([overrides[1]?.id]);
+  });
+
+  it('touches no override when the rule is unchanged', () => {
+    // Editing the amount for the whole series must not disturb per-occurrence
+    // edits: every one of their slots is still a slot.
+    const result = plan({
+      overrides: edits(),
+      scope: 'all',
+      at: d('2026-09-10'),
+      patch: { note: 'renamed' },
+    });
+
+    expect(result.deleteOverrideIds).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+});

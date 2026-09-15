@@ -6,14 +6,29 @@ import { useTranslation } from 'react-i18next';
 import { AmountInput } from '@/components/amount-input';
 import { CurrencySelect } from '@/components/currency-select';
 import { Segmented } from '@/components/segmented';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
-import { saveNewTransaction } from '@/db/save-transaction';
+import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
+import { applySeriesEdit } from '@/db/series-edit';
+import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
+import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } from '@/domain/tx-edit';
 import {
   defaultFormValues,
+  firstOccurrenceDate,
   MAX_INSTALLMENTS,
   MIN_INSTALLMENTS,
   NOTE_MAX_LENGTH,
@@ -24,10 +39,10 @@ import {
 import { categoriesFor } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
-import { isLocalDate } from '@/lib/dates';
+import { isLocalDate, monthsBetween } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import { toDecimalString, toMinor } from '@/lib/money';
-import type { Category, PaymentMethod, Profile, Transaction } from '@/types/domain';
+import type { Category, PaymentMethod, Profile } from '@/types/domain';
 import type { Currency, Kind, LocalDate, Minor } from '@/types/money';
 
 import { CategoryField } from './category-field';
@@ -35,7 +50,14 @@ import { DateField } from './date-field';
 import { PaymentMethodField } from './payment-method-field';
 import { RateField } from './rate-field';
 import { RecurrenceFields } from './recurrence-fields';
+import { ScopeChooser } from './scope-chooser';
 import { useRateField } from './use-rate-field';
+import {
+  useEditTarget,
+  type EditTarget,
+  type EditTargetState,
+  type SheetTarget,
+} from './use-transaction-sheet';
 
 /**
  * The add-transaction sheet.
@@ -57,7 +79,7 @@ import { useRateField } from './use-rate-field';
  * genuinely never seen a rate for.
  */
 export function TransactionSheet({
-  open,
+  target,
   onOpenChange,
   profiles,
   categories,
@@ -67,7 +89,7 @@ export function TransactionSheet({
   today,
   onSaved,
 }: {
-  readonly open: boolean;
+  readonly target: SheetTarget;
   readonly onOpenChange: (open: boolean) => void;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
@@ -76,10 +98,11 @@ export function TransactionSheet({
   readonly activeProfileId: string;
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (transaction: Transaction) => void;
+  readonly onSaved: (date: LocalDate) => void;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const titleId = useId();
+  const editing = useEditTarget(target, today);
 
   // A transaction must belong to ONE profile, so the merged "All" view cannot
   // seed it; the first profile is the sensible default and the field is shown
@@ -90,7 +113,7 @@ export function TransactionSheet({
     [profiles, activeProfileId],
   );
 
-  const initial = useMemo<TxFormValues>(
+  const adding = useMemo<TxFormValues>(
     () => ({
       ...defaultFormValues({ profileId: defaultProfileId, currency: baseCurrency, today }),
       categoryId: categoriesFor(categories, 'expense')[0]?.id ?? '',
@@ -98,25 +121,42 @@ export function TransactionSheet({
     [defaultProfileId, baseCurrency, today, categories],
   );
 
+  const isAdd = target.mode === 'add';
+  const open = target.mode !== 'closed';
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
         <SheetHeader>
-          <SheetTitle id={titleId}>{t('tx.addTitle')}</SheetTitle>
-          <SheetDescription>{t('tx.addBody')}</SheetDescription>
+          <SheetTitle id={titleId}>{isAdd ? t('tx.addTitle') : t('tx.editTitle')}</SheetTitle>
+          <SheetDescription>{isAdd ? t('tx.addBody') : t('tx.editBody')}</SheetDescription>
         </SheetHeader>
 
         {/*
-         * Keyed on `open`, so every opening starts from a clean form.
+         * Keyed, so every opening starts from the right values.
          *
-         * Without the key the sheet keeps the previous draft - including a
-         * half-typed amount and a rate looked up for a currency the user was
-         * only browsing - and "add another" silently inherits it.
+         * Without the key the sheet keeps the previous draft - a half-typed
+         * amount, a rate looked up for a currency the user was only browsing -
+         * and "add another", or opening a different row, silently inherits it.
          */}
-        {open ? (
+        {isAdd ? (
           <TransactionForm
-            key={String(open)}
-            initial={initial}
+            key="add"
+            initial={adding}
+            profiles={profiles}
+            categories={categories}
+            paymentMethods={paymentMethods}
+            baseCurrency={baseCurrency}
+            today={today}
+            onSaved={onSaved}
+            onCancel={() => {
+              onOpenChange(false);
+            }}
+          />
+        ) : target.mode === 'edit' ? (
+          <EditBody
+            key={`${target.transactionId}#${target.at}`}
+            state={editing}
             profiles={profiles}
             categories={categories}
             paymentMethods={paymentMethods}
@@ -133,8 +173,76 @@ export function TransactionSheet({
   );
 }
 
+function EditBody({
+  state,
+  profiles,
+  categories,
+  paymentMethods,
+  baseCurrency,
+  today,
+  onSaved,
+  onCancel,
+}: {
+  readonly state: EditTargetState;
+  readonly profiles: readonly Profile[];
+  readonly categories: readonly Category[];
+  readonly paymentMethods: readonly PaymentMethod[];
+  readonly baseCurrency: Currency;
+  readonly today: LocalDate;
+  readonly onSaved: (date: LocalDate) => void;
+  readonly onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+
+  if (state.status === 'loading' || state.status === 'idle') {
+    return (
+      <div className="space-y-3 px-4 pb-6" aria-busy="true">
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-11 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (state.status === 'gone') {
+    /*
+     * The record was deleted elsewhere while this sheet was open.
+     *
+     * A PWA people leave open in two tabs makes this ordinary rather than
+     * exotic, and the live query is what notices. Saving anyway would
+     * resurrect a row the user deleted somewhere else - silently, and with
+     * whatever they had half-typed here written into it.
+     */
+    return (
+      <div className="px-4 pb-6">
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t('tx.gone')}
+        </p>
+        <Button type="button" variant="outline" onClick={onCancel} className="mt-4 w-full">
+          {t('action.close')}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <TransactionForm
+      initial={occurrenceToFormValues(state.target.occurrence, state.target.transaction)}
+      editing={state.target}
+      profiles={profiles}
+      categories={categories}
+      paymentMethods={paymentMethods}
+      baseCurrency={baseCurrency}
+      today={today}
+      onSaved={onSaved}
+      onCancel={onCancel}
+    />
+  );
+}
+
 function TransactionForm({
   initial,
+  editing,
   profiles,
   categories,
   paymentMethods,
@@ -144,16 +252,36 @@ function TransactionForm({
   onCancel,
 }: {
   readonly initial: TxFormValues;
+  /** Absent when adding. */
+  readonly editing?: EditTarget;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (transaction: Transaction) => void;
+  readonly onSaved: (date: LocalDate) => void;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+
+  /*
+   * Default scope 'one', not 'all'.
+   *
+   * The safe default is the one that touches the least. Someone correcting
+   * this month's electricity bill means this month's bill; if they meant the
+   * standing amount they will say so, and the control is right there. A default
+   * of 'all' quietly rewrites a year of history on a typo fix.
+   */
+  const [scope, setScope] = useState<EditScope>('one');
+  /** A rule change that would discard per-occurrence edits, awaiting a yes. */
+  const [pendingDrop, setPendingDrop] = useState<{ count: number; run: () => void } | undefined>(undefined);
+
+  const isSeries = editing !== undefined && editing.transaction.recurrence.type !== 'one_time';
+  const isPlan = editing !== undefined && isInstallmentPlan(editing.transaction.recurrence);
+  // A one-time transaction has exactly one occurrence, so there is nothing to
+  // scope: it edits as a whole either way.
+  const effectiveScope: EditScope = isSeries ? scope : 'all';
 
   const kindId = useId();
   const amountId = useId();
@@ -266,6 +394,27 @@ function TransactionForm({
     [t],
   );
 
+  /**
+   * The planner's refusals, in the user's words.
+   *
+   * Both of the last two are cases the form is supposed to prevent by hiding or
+   * disabling the control, so reaching one means the form and the planner have
+   * disagreed - which is exactly when a vague message is least useful.
+   */
+  const editErrorText = useCallback(
+    (error: SeriesEditError): string => {
+      switch (error.kind) {
+        case 'not_a_slot':
+          return t('tx.notASlot');
+        case 'rule_change_needs_series':
+          return t('tx.ruleNeedsSeries');
+        case 'move_needs_single':
+          return t('tx.moveNeedsSingle');
+      }
+    },
+    [t],
+  );
+
   const formErrors = form.formState.errors;
   const errors = useMemo<Partial<Record<keyof TxFormValues, string>>>(() => {
     const out: Partial<Record<keyof TxFormValues, string>> = {};
@@ -283,23 +432,109 @@ function TransactionForm({
     const resolution = rateField.resolution;
     if (resolution.status === 'invalid') return;
 
+    const rate =
+      resolution.status === 'resolved'
+        ? {
+            rate: resolution.rate,
+            rateDate: resolution.rateDate,
+            rateSource: resolution.rateSource,
+          }
+        : undefined;
+
     try {
-      const result = await saveNewTransaction(db, {
+      if (editing === undefined) {
+        const result = await saveNewTransaction(db, {
+          parsed,
+          baseCurrency,
+          ...(rate === undefined ? {} : { rate }),
+          now: systemClock.nowIso(),
+          newId,
+        });
+        /*
+         * The first OCCURRENCE, not the transaction's date.
+         *
+         * They are not the same thing for a series: a bill entered on the 15th
+         * with a due day of 10 first lands on the 10th of NEXT month, so
+         * jumping to the transaction's own month shows an empty feed and the
+         * save looks like it did nothing. Found by saving one in a browser.
+         */
+        onSaved(firstOccurrenceDate(result.transaction.date, result.transaction.recurrence));
+        return;
+      }
+
+      /*
+       * The money is rebuilt unconditionally and then COMPARED, rather than
+       * rebuilt only when the amount changed.
+       *
+       * A snapshot is seven fields, and the interesting changes are not always
+       * the amount: switching currency, or moving the date on a foreign row,
+       * re-derives the rate too. Building it and diffing is one code path;
+       * deciding up front which edits need a new snapshot is four, and the one
+       * that gets it wrong stores a stale converted amount that every
+       * calculator then trusts.
+       */
+      const money = buildMoney({
         parsed,
         baseCurrency,
-        ...(resolution.status === 'resolved'
-          ? {
-              rate: {
-                rate: resolution.rate,
-                rateDate: resolution.rateDate,
-                rateSource: resolution.rateSource,
-              },
-            }
-          : {}),
+        ...(rate === undefined ? {} : { rate }),
         now: systemClock.nowIso(),
         newId,
       });
-      onSaved(result.transaction);
+
+      const patch = buildPatch({
+        parsed,
+        occurrence: editing.occurrence,
+        transaction: editing.transaction,
+        scope: effectiveScope,
+        money,
+      });
+
+      if (isEmptyPatch(patch)) {
+        // Nothing changed. Writing anyway would bump updatedAt and hand the
+        // next import merge a spurious winner.
+        onSaved(editing.occurrence.date);
+        return;
+      }
+
+      /*
+       * Plan first, apply second - two steps, deliberately.
+       *
+       * `planSeriesEdit` is pure, so it can be run to ASK a question without
+       * writing anything: it reports how many per-occurrence edits a rule
+       * change would discard, which is what lets the confirmation name a number
+       * instead of warning in the abstract. The plan's words: a destructive
+       * multi-row op gets a typed confirm, not a six-second undo window.
+       */
+      const planned = planSeriesEdit({
+        transaction: editing.transaction,
+        overrides: editing.overrides,
+        scope: effectiveScope,
+        // The ORIGINAL slot, never the moved date: it is the override's key.
+        at: editing.occurrence.originalDate,
+        patch,
+        today,
+        now: systemClock.nowIso(),
+        newId,
+      });
+
+      if (!planned.ok) {
+        setSaveError(editErrorText(planned.error));
+        return;
+      }
+
+      const { plan } = planned;
+      const run = async (): Promise<void> => {
+        await applySeriesEdit(db, plan);
+        onSaved(patch.date ?? editing.occurrence.date);
+      };
+
+      const dropped = plan.warnings.find((w) => w.kind === 'overrides_dropped')?.count ?? 0;
+      if (dropped > 0) {
+        setPendingDrop({ count: dropped, run: () => void run() });
+        return;
+      }
+
+      await run();
     } catch {
       // The write is one Dexie transaction, so a failure changed nothing - and
       // saying so is the difference between retrying and checking for a
@@ -316,6 +551,8 @@ function TransactionForm({
       className="space-y-4 px-4 pb-6"
       noValidate
     >
+      {isSeries ? <ScopeChooser value={scope} onChange={setScope} at={editing.occurrence.date} /> : null}
+
       <div className="space-y-1.5">
         <Label id={kindId}>{t('tx.kind')}</Label>
         <Controller
@@ -467,27 +704,52 @@ function TransactionForm({
               onChange={field.onChange}
               labelledBy={dateId}
               invalid={errors.date !== undefined}
+              // Moving a date means moving ONE occurrence. Applied to a rule it
+              // silently becomes "move every one of them", which is why the
+              // planner refuses it outside scope 'one'.
+              disabled={editing !== undefined && effectiveScope !== 'one'}
             />
           )}
         />
       </div>
 
-      <RecurrenceFields
-        values={values}
-        onChange={(patch) => {
-          // Applied key by key rather than by spreading over Object.entries:
-          // the generic form of setValue cannot type a (key, value) pair from
-          // a loop, and the `as never` it takes to compile would let a typo
-          // through silently.
-          if (patch.mode !== undefined) setValue('mode', patch.mode);
-          if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
-          if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
-          if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
-        }}
-        currency={values.currency}
-        amountMinor={amountMinor}
-        errors={errors}
-      />
+      {isPlan ? (
+        /*
+         * An instalment plan is shown, not edited.
+         *
+         * Changing the count or the total would have to re-split the payments
+         * AND rewrite the first-occurrence remainder override in step, or the
+         * plan stops summing to its total - the one invariant תשלומים has. A
+         * read-only line and a clear instruction beat a control that silently
+         * breaks it.
+         */
+        <div className="rounded-xl border border-border bg-muted/40 p-3">
+          <p className="text-sm font-medium">{t('tx.installmentPlan')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t('tx.installmentReadonly', {
+              index: installmentIndex(editing),
+              count: installmentCountOf(editing),
+            })}
+          </p>
+        </div>
+      ) : editing !== undefined && effectiveScope === 'one' ? null : ( // editor is absent rather than present and rejected on submit. // Scope 'one' cannot change the rule - the planner refuses it - so the
+        <RecurrenceFields
+          values={values}
+          onChange={(patch) => {
+            // Applied key by key rather than by spreading over Object.entries:
+            // the generic form of setValue cannot type a (key, value) pair from
+            // a loop, and the `as never` it takes to compile would let a typo
+            // through silently.
+            if (patch.mode !== undefined) setValue('mode', patch.mode);
+            if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
+            if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
+            if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
+          }}
+          currency={values.currency}
+          amountMinor={amountMinor}
+          errors={errors}
+        />
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor={noteId}>{t('tx.note')}</Label>
@@ -506,6 +768,37 @@ function TransactionForm({
           {saveError}
         </p>
       )}
+
+      <AlertDialog
+        open={pendingDrop !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setPendingDrop(undefined);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('tx.confirmTitle', { count: pendingDrop?.count ?? 0 })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('tx.confirmBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('action.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              // Destructive styling, not the primary green: this discards work
+              // the user did on purpose, and a confirmation whose dangerous
+              // answer looks like the safe default is a confirmation in name
+              // only.
+              variant="destructive"
+              onClick={() => {
+                const pending = pendingDrop;
+                setPendingDrop(undefined);
+                pending?.run();
+              }}
+            >
+              {t('tx.confirmGo')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="flex gap-2 pt-1">
         <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
@@ -527,4 +820,14 @@ function parseAmount(text: string, currency: Currency): Minor | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** 1-based position of this occurrence within its instalment plan. */
+function installmentIndex(editing: EditTarget): number {
+  return monthsBetween(editing.transaction.date, editing.occurrence.originalDate) + 1;
+}
+
+function installmentCountOf(editing: EditTarget): number {
+  const recurrence = editing.transaction.recurrence;
+  return recurrence.type === 'monthly' ? (recurrence.installments ?? 0) : 0;
 }

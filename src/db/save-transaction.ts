@@ -1,9 +1,17 @@
+import {
+  planSeriesEdit,
+  type EditScope,
+  type SeriesEditError,
+  type SeriesEditPlan,
+  type TransactionPatch,
+} from '@/domain/series-edit';
 import type { TxFormParsed } from '@/domain/tx-form';
 import { convertMinor } from '@/lib/money';
+import type { Override, Transaction } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, MoneySnapshot, RateSource, RateString } from '@/types/money';
 
 import type { GreenbackDB } from './db';
-import { createTransaction, type NewTransactionResult } from './series-edit';
+import { applySeriesEdit, createTransaction, type NewTransactionResult } from './series-edit';
 
 /**
  * Turn a validated form into a row.
@@ -108,4 +116,39 @@ export async function saveNewTransaction(db: GreenbackDB, input: SaveInput): Pro
     now,
     newId,
   });
+}
+
+/**
+ * Apply an edit to one occurrence, this-and-future, or the whole series.
+ *
+ * Thin by design: `planSeriesEdit` does the thinking purely and
+ * `applySeriesEdit` writes the result in one transaction. This exists so the
+ * sheet never touches either directly - it hands over a patch and a scope, and
+ * gets back the warnings it has to show.
+ */
+export type EditTransactionInput = {
+  readonly transaction: Transaction;
+  readonly overrides: readonly Override[];
+  readonly scope: EditScope;
+  /** The ORIGINAL slot date, never the moved one: it is the override's key. */
+  readonly at: LocalDate;
+  readonly patch: TransactionPatch;
+  readonly today: LocalDate;
+  readonly now: IsoInstant;
+  readonly newId: () => string;
+};
+
+export type EditTransactionResult =
+  | { readonly ok: true; readonly plan: SeriesEditPlan }
+  | { readonly ok: false; readonly error: SeriesEditError };
+
+export async function applyTransactionEdit(
+  db: GreenbackDB,
+  input: EditTransactionInput,
+): Promise<EditTransactionResult> {
+  const planned = planSeriesEdit(input);
+  if (!planned.ok) return planned;
+
+  await applySeriesEdit(db, planned.plan);
+  return { ok: true, plan: planned.plan };
 }

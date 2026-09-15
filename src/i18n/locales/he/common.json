@@ -220,6 +220,26 @@
     "discardKeep": "המשך עריכה",
     "installmentsEven_one": "תשלום אחד של <amount/>.",
     "installmentsEven_two": "שני תשלומים של <amount/>.",
-    "installmentsEven_other": "{{count}} תשלומים של <amount/>."
+    "installmentsEven_other": "{{count}} תשלומים של <amount/>.",
+    "editBody": "תנועה חוזרת? בחרו על מה החישוב חל.",
+    "scope": "להחיל על",
+    "scopeOne": "רק על זו",
+    "scopeFuture": "מכאן והלאה",
+    "scopeAll": "כל הסדרה",
+    "scopeOneHint": "{{date}} בלבד",
+    "scopeFutureHint": "החל מ-{{date}}",
+    "scopeAllHint": "כל המופעים, בעבר ובעתיד",
+    "installmentPlan": "תוכנית תשלומים",
+    "installmentReadonly": "תשלום {{index}} מתוך {{count}}. כדי לשנות את התוכנית, מחקו והוסיפו מחדש.",
+    "gone": "התנועה הזו כבר לא קיימת. ייתכן שנמחקה בכרטיסייה אחרת.",
+    "notASlot": "היום הזה כבר לא חלק מהסדרה.",
+    "ruleNeedsSeries": "כלל החזרה שייך לכל הסדרה, לא למופע בודד.",
+    "moveNeedsSingle": "שינוי תאריך חל על מופע אחד. בחרו \"רק על זו\".",
+    "confirmBody": "שינוי כלל החזרה ימחק עריכות שנעשו במופעים בודדים אחרי זה. אי אפשר לבטל.",
+    "confirmGo": "שנה את הכלל",
+    "promoted": "זה המופע הראשון, ולכן השינוי חל על כל הסדרה.",
+    "confirmTitle_one": "לשכתב מופע אחד שנערך?",
+    "confirmTitle_two": "לשכתב שני מופעים שנערכו?",
+    "confirmTitle_other": "לשכתב {{count}} מופעים שנערכו?"
   }
 }

@@ -193,12 +193,36 @@ export function planSeriesEdit(input: SeriesEditInput): SeriesEditResult {
   }
 
   if (scope === 'all') {
+    const updated = applyToTransaction(tx, patch, now);
+
+    /*
+     * A rule change orphans every override whose slot the new rule no longer
+     * emits.
+     *
+     * This is the SAME defect the split path was built to avoid, on a different
+     * route, and it was in this branch until a browser walkthrough turned it
+     * up: change a monthly bill from the 10th to the 20th for the whole series,
+     * and the per-occurrence edits on the 10th stay in the table pointing at
+     * days that are no longer occurrences. Expansion iterates slots, so they
+     * are invisible - right up until someone changes the rule back to the 10th,
+     * at which point months-old edits reappear on live occurrences.
+     *
+     * Dropping them is the honest outcome, and the count is reported so the
+     * sheet can ask before doing it rather than after.
+     */
+    const stale =
+      patch.recurrence === undefined
+        ? []
+        : overrides.filter((o) => o.transactionId === tx.id && !isSlot(updated, [], o.occurrenceDate, today));
+
+    if (stale.length > 0) warnings.push({ kind: 'overrides_dropped', count: stale.length });
+
     return {
       ok: true,
       plan: {
-        transactions: [applyToTransaction(tx, patch, now)],
+        transactions: [updated],
         overrides: [],
-        deleteOverrideIds: [],
+        deleteOverrideIds: stale.map((o) => o.id),
         warnings,
         effectiveScope: scope,
       },

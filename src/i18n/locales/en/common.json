@@ -217,6 +217,25 @@
     "discardConfirm": "Leave",
     "discardKeep": "Keep editing",
     "installmentsEven_one": "One payment of <amount/>.",
-    "installmentsEven_other": "{{count}} payments of <amount/>."
+    "installmentsEven_other": "{{count}} payments of <amount/>.",
+    "editBody": "Changing a recurring transaction? Choose what it applies to.",
+    "scope": "Apply to",
+    "scopeOne": "Only this one",
+    "scopeFuture": "This and future",
+    "scopeAll": "The whole series",
+    "scopeOneHint": "{{date}} only",
+    "scopeFutureHint": "From {{date}} onwards",
+    "scopeAllHint": "Every occurrence, past and future",
+    "installmentPlan": "Instalment plan",
+    "installmentReadonly": "Payment {{index}} of {{count}}. To change the plan itself, delete it and add it again.",
+    "gone": "This transaction no longer exists. It may have been deleted in another tab.",
+    "notASlot": "This day is no longer part of the series.",
+    "ruleNeedsSeries": "A repeat rule belongs to the whole series, not to one occurrence.",
+    "moveNeedsSingle": "Moving a date applies to one occurrence. Choose \"Only this one\".",
+    "confirmBody": "Changing the repeat rule discards edits made to individual occurrences after this one. This cannot be undone.",
+    "confirmGo": "Change the rule",
+    "promoted": "This is the first occurrence, so the change applies to the whole series.",
+    "confirmTitle_one": "Rewrite one edited occurrence?",
+    "confirmTitle_other": "Rewrite {{count}} edited occurrences?"
   }
 }

@@ -139,7 +139,15 @@ export function FeedScreen() {
             onClearFilters={hasActiveFilters(filters) ? clear : undefined}
           />
         ) : context === undefined ? null : (
-          <VirtualFeed rows={rows} context={context} />
+          <VirtualFeed
+            rows={rows}
+            context={context}
+            // Both the row body and its always-present menu open the editor.
+            // The menu will grow skip/delete next; until it does, pointing it
+            // at the same place is honest, where a dead button is not.
+            onOpen={sheet.openEdit}
+            onMenu={sheet.openEdit}
+          />
         )}
       </div>
 
@@ -150,11 +158,11 @@ export function FeedScreen() {
         is worse than one that is visibly unavailable. In practice the first-run
         wizard guarantees at least one, so this is a guard rather than a state.
       */}
-      <Fab onClick={sheet.open} disabled={(lookups?.profiles.length ?? 0) === 0} />
+      <Fab onClick={sheet.openAdd} disabled={(lookups?.profiles.length ?? 0) === 0} />
 
       {lookups === undefined ? null : (
         <TransactionSheet
-          open={sheet.isOpen}
+          target={sheet.target}
           onOpenChange={sheet.setOpen}
           profiles={lookups.profiles}
           categories={[...lookups.categories.values()]}
@@ -162,12 +170,13 @@ export function FeedScreen() {
           activeProfileId={filters.profileId}
           baseCurrency={settings.defaultCurrency}
           today={today}
-          onSaved={(transaction) => {
+          onSaved={(date) => {
             sheet.close();
-            // Jump to the month the transaction landed in, so a bill dated next
-            // month does not save into apparent nothingness. liveQuery brings
-            // the row itself; this is only about which window is on screen.
-            setMonth(startOfMonth(transaction.date));
+            // Jump to the month the row landed in, so a bill dated next month
+            // does not save into apparent nothingness - and so an edit that
+            // MOVED an occurrence follows it. liveQuery brings the data; this
+            // is only about which window is on screen.
+            setMonth(startOfMonth(date));
           }}
         />
       )}
