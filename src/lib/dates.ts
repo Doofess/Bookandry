@@ -201,3 +201,13 @@ export function externalTimestampToLocalDate(value: string): LocalDate | undefin
   if (Number.isNaN(parsed.getTime())) return undefined;
   return makeLocalDate(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
 }
+
+/**
+ * An ISO instant from epoch milliseconds.
+ *
+ * For createdAt/updatedAt/deletedAt only - NEVER for a transaction date, which
+ * is a local calendar date and would shift by the UTC offset (§12).
+ */
+export function instantFromMs(ms: number): IsoInstant {
+  return new Date(ms).toISOString() as IsoInstant;
+}
