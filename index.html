@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover is REQUIRED: without it every env(safe-area-inset-*) resolves to 0px
+         and the entire safe-area handling silently does nothing. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Greenback</title>
+    <script>
+      /* Pre-paint boot: applies language, direction and theme before first paint.
+         Reads a FLAT mirror key, never Zustand's {state,version} envelope — that
+         envelope is an implementation detail that changes across persist majors.
+         Settings live in Dexie (async); this mirror exists solely so the first
+         frame is already correct. Must never throw: private mode, blocked storage
+         and corrupt JSON all fall through to the defaults. */
+      (function () {
+        var d = document.documentElement;
+        var lang = 'en';
+        var theme = 'system';
+        try {
+          var raw = localStorage.getItem('gb.boot');
+          if (raw) {
+            var o = JSON.parse(raw);
+            if (o && (o.lang === 'he' || o.lang === 'en')) lang = o.lang;
+            if (o && (o.theme === 'light' || o.theme === 'dark' || o.theme === 'system')) theme = o.theme;
+          }
+        } catch (e) {
+          /* ignore */
+        }
+        var dark =
+          theme === 'dark' ||
+          (theme === 'system' &&
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        d.lang = lang;
+        d.dir = lang === 'he' ? 'rtl' : 'ltr';
+        d.classList.toggle('dark', dark);
+        d.style.colorScheme = dark ? 'dark' : 'light';
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Contrast-audited against WCAG 2.2 AA. The spec's original accent
+   (152 76% 36%) measured 3.30:1 on white and FAILED the 4.5:1 it demanded;
+   white-on-fill at 152 70% 44% measured 2.39:1. Primary is therefore the
+   deeper emerald below (5.13:1 with white text), and the vivid green survives
+   only as --brand-vivid for the logo and dark-mode fills.
+
+   --border (decorative) and --input (an affordance needing 3:1) are separate
+   tokens on purpose; shadcn ships them at the same value, which fails 1.4.11.
+--------------------------------------------------------------------------- */
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.004 285.8);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.004 285.8);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.004 285.8);
+
+  /* 152 76% 28% — white text 5.13:1, and 5.13:1 as a UI surface vs white */
+  --primary: oklch(0.523 0.121 156.1);
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.458 0.106 156.2);
+
+  --secondary: oklch(0.968 0.001 286.4);
+  --secondary-foreground: oklch(0.141 0.004 285.8);
+  --muted: oklch(0.968 0.001 286.4);
+  --muted-foreground: oklch(0.516 0.013 285.9); /* 5.61:1 */
+  --accent: oklch(0.971 0.017 166.4); /* green tint for income chips */
+  --accent-foreground: oklch(0.523 0.121 156.1);
+
+  --destructive: oklch(0.531 0.199 27.4); /* white text 5.81:1 */
+  --destructive-foreground: oklch(1 0 0);
+
+  --border: oklch(0.92 0.004 286.3);
+  --input: oklch(0.667 0.018 285.9); /* 3.04:1 — the field's only affordance */
+  --ring: oklch(0.627 0.148 155.7); /* 3.31:1 focus ring */
+
+  --income: oklch(0.523 0.121 156.1);
+  --expense: oklch(0.505 0.188 27.3);
+  --chart-income: oklch(0.601 0.141 155.8);
+  --chart-expense: oklch(0.531 0.199 27.4);
+  --chart-balance: oklch(0.516 0.013 285.9);
+
+  /* Logo + dark fills ONLY. Never text on a light background. */
+  --brand-vivid: oklch(0.71 0.163 156.3);
+  --avatar-paper: oklch(0.985 0 0);
+  --avatar-ink: oklch(0.2 0.01 286);
+}
+
+.dark {
+  --background: oklch(0.141 0.004 285.8);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.9);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.231 0.007 285.8);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: oklch(0.773 0.167 157.5); /* 9.23:1 on card */
+  --primary-foreground: oklch(0.141 0.004 285.8); /* 10.38:1 */
+  --primary-hover: oklch(0.795 0.153 159.4);
+
+  --secondary: oklch(0.254 0.005 286);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.254 0.005 286);
+  --muted-foreground: oklch(0.755 0.011 286.1); /* 7.23:1 */
+  --accent: oklch(0.334 0.047 162.2);
+  --accent-foreground: oklch(0.773 0.167 157.5);
+
+  --destructive: oklch(0.531 0.199 27.4);
+  --destructive-foreground: oklch(1 0 0);
+
+  --border: oklch(0.315 0.007 286);
+  --input: oklch(0.53 0.017 285.8); /* 3.35:1 vs card */
+  --ring: oklch(0.773 0.167 157.5);
+
+  --income: oklch(0.773 0.167 157.5);
+  --expense: oklch(0.667 0.167 22.7); /* 5.41:1 — spec's 0 63% 51% was 2.50:1 */
+  --chart-income: oklch(0.788 0.147 159.7);
+  --chart-expense: oklch(0.667 0.167 22.7);
+  --chart-balance: oklch(0.755 0.011 286.1);
+
+  --brand-vivid: oklch(0.71 0.163 156.3);
+  --avatar-paper: oklch(0.985 0 0);
+  --avatar-ink: oklch(0.2 0.01 286);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
+  --color-chart-balance: var(--chart-balance);
+  --color-brand-vivid: var(--brand-vivid);
+  --color-avatar-paper: var(--avatar-paper);
+  --color-avatar-ink: var(--avatar-ink);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-stack-sans);
+
+  --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-soft: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Typography.
+
+   THE ORDER OF THIS STACK IS LOAD-BEARING. Font fallback is per-glyph:
+   ASCII digits resolve to Inter (which has tabular figures), Hebrew letters
+   fall through to Heebo (which does NOT ship tnum). Putting Heebo first, or
+   adding a `:lang(he) { font-family: Heebo }` rule, silently breaks
+   `tabular-nums` alignment in every amount column in Hebrew.
+
+   Do not declare font-family anywhere outside this file.
+--------------------------------------------------------------------------- */
+:root {
+  --font-stack-sans:
+    'Inter Variable', 'Heebo Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    'Noto Sans Hebrew', Arial, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-stack-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Amounts are mathematical runs: always lining, always tabular. */
+  .tabular {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,9 @@
+Fixture for the gate:rtl self-test. NOT a real component — it lives outside the
+gate's scan patterns on purpose, so `pnpm verify` stays green while the test
+below proves the rule actually fires.
+
+  <div className="ml-4 text-left rounded-l-md border-r pr-2 left-0" />
+
+Adjacent forms that must NOT be flagged (regression guards):
+  rounded-lg  border-ring  ms-4  pe-2  text-start  start-0
+  rtl:-translate-x-2  ltr:ml-4  data-[side=left]:left-0

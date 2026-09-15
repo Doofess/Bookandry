@@ -1,0 +1,13 @@
+allowBuilds:
+  unrs-resolver: true
+  esbuild: true
+  sharp: true
+minimumReleaseAgeExclude:
+  - '@tanstack/react-virtual@3.14.13'
+  - '@tanstack/virtual-core@3.17.11'
+  - lucide-react@1.46.0
+peerDependencyRules:
+  allowedVersions:
+    # @vite-pwa/assets-generator is a standalone CLI used only by `pnpm icons`;
+    # vite-plugin-pwa declares it as an OPTIONAL peer at ^1.0.0. v2 is correct for us.
+    '@vite-pwa/assets-generator': '2'
