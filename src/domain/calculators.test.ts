@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Occurrence, Profile } from '@/types/domain';
-import type { IsoInstant } from '@/types/money';
+import { endOfMonth, makeLocalDate, startOfMonth } from '@/lib/dates';
+import type { Occurrence, Profile, Transaction } from '@/types/domain';
+import type { IsoInstant, LocalDate } from '@/types/money';
 
 import {
   availableBalance,
+  balanceParts,
   expectedMonthlyExpense,
+  groupMonthlyExpenses,
   signedBaseAmount,
   splitInstallments,
   summariseRange,
@@ -257,5 +260,136 @@ describe('splitInstallments (תשלומים)', () => {
     expect(() => splitInstallments(1000, 0)).toThrow(RangeError);
     expect(() => splitInstallments(1000, -1)).toThrow(RangeError);
     expect(() => splitInstallments(1000, 1.5)).toThrow(RangeError);
+  });
+});
+
+/**
+ * One occurrence from a transaction, built through the REAL expander.
+ *
+ * Expanded across the whole month rather than a single day: the fixtures below
+ * deliberately use different `dayOfMonth` values, and a one-day window would
+ * silently return nothing for most of them.
+ */
+function occurrenceOf(tx: Transaction, on: LocalDate): Occurrence {
+  const [first] = expandOccurrences(tx, [], startOfMonth(on), endOfMonth(on), { today: d('2026-09-15') });
+  if (first === undefined) throw new Error(`no occurrence for ${tx.id} in ${on}`);
+  return first;
+}
+
+describe('groupMonthlyExpenses', () => {
+  /**
+   * The series START must itself be a valid slot.
+   *
+   * A monthly series dated the 10th with `dayOfMonth: 1` emits nothing until
+   * the following month - correct behaviour, and a fixture that ignores it
+   * produces an empty expansion rather than a failing assertion.
+   */
+  const startFor = (recurrence: Parameters<typeof makeTx>[0]['recurrence']): LocalDate =>
+    recurrence.type === 'monthly'
+      ? makeLocalDate(2026, 9, recurrence.dayOfMonth)
+      : recurrence.type === 'yearly'
+        ? makeLocalDate(2026, recurrence.month, recurrence.day)
+        : d('2026-09-10');
+
+  const expense = (id: string, amount: number, recurrence: Parameters<typeof makeTx>[0]['recurrence']) => {
+    const start = startFor(recurrence);
+    return {
+      ...occurrenceOf(makeTx({ id, date: start, recurrence }), start),
+      money: { ...MONEY, amountMinor: amount, baseAmountMinor: amount },
+    };
+  };
+
+  it('separates instalments from standing orders', () => {
+    const groups = groupMonthlyExpenses([
+      expense('rent', 720_000, { type: 'monthly', dayOfMonth: 1 }),
+      expense('fridge', 29_916, { type: 'monthly', dayOfMonth: 8, installments: 12 }),
+    ]);
+    // תשלומים are a monthly series that ENDS; lumping them in with the standing
+    // orders hides the one thing the user wants to know.
+    expect(groups.map((g) => g.kind)).toEqual(['recurring', 'installments']);
+  });
+
+  it('puts a yearly bill in its own group', () => {
+    const groups = groupMonthlyExpenses([
+      expense('test', 145_000, { type: 'yearly', month: 9, day: 15 }),
+      expense('coffee', 1800, { type: 'one_time' }),
+    ]);
+    // The usual reason a month looks wrong is a yearly bill landing in it.
+    expect(groups.map((g) => g.kind)).toEqual(['yearly', 'one_time']);
+  });
+
+  it('orders groups from most to least predictable', () => {
+    const groups = groupMonthlyExpenses([
+      expense('coffee', 1800, { type: 'one_time' }),
+      expense('test', 145_000, { type: 'yearly', month: 9, day: 15 }),
+      expense('fridge', 29_916, { type: 'monthly', dayOfMonth: 8, installments: 12 }),
+      expense('rent', 720_000, { type: 'monthly', dayOfMonth: 1 }),
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(['recurring', 'installments', 'yearly', 'one_time']);
+  });
+
+  it('sorts within a group by size, because the big one is the explanation', () => {
+    const groups = groupMonthlyExpenses([
+      expense('small', 1800, { type: 'one_time' }),
+      expense('big', 90_000, { type: 'one_time' }),
+    ]);
+    expect(groups[0]?.occurrences.map((o) => o.seriesId)).toEqual(['big', 'small']);
+  });
+
+  it('totals each group and ignores income entirely', () => {
+    const income = {
+      ...occurrenceOf(
+        makeTx({
+          id: 'salary',
+          kind: 'income',
+          date: d('2026-09-01'),
+          recurrence: { type: 'monthly', dayOfMonth: 1 },
+        }),
+        d('2026-09-01'),
+      ),
+      money: { ...MONEY, amountMinor: 1_840_000, baseAmountMinor: 1_840_000 },
+    };
+    const groups = groupMonthlyExpenses([
+      income,
+      expense('a', 1000, { type: 'one_time' }),
+      expense('b', 2000, { type: 'one_time' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.totalMinor).toBe(3000);
+  });
+
+  it('returns nothing for an empty month', () => {
+    expect(groupMonthlyExpenses([])).toEqual([]);
+  });
+});
+
+describe('balanceParts', () => {
+  it('shows the formula the balance is the answer to', () => {
+    const profiles = [
+      { openingBalanceMinor: 100_000 } as Profile,
+      { openingBalanceMinor: 50_000 } as Profile,
+    ];
+    const occurrences = [
+      {
+        ...occurrenceOf(
+          makeTx({ id: 'in', kind: 'income', date: d('2026-09-01'), recurrence: { type: 'one_time' } }),
+          d('2026-09-01'),
+        ),
+        money: { ...MONEY, amountMinor: 20_000, baseAmountMinor: 20_000 },
+      },
+      {
+        ...occurrenceOf(
+          makeTx({ id: 'out', date: d('2026-09-02'), recurrence: { type: 'one_time' } }),
+          d('2026-09-02'),
+        ),
+        money: { ...MONEY, amountMinor: 7000, baseAmountMinor: 7000 },
+      },
+    ];
+
+    const parts = balanceParts(profiles, occurrences);
+    expect(parts).toEqual({ openingMinor: 150_000, incomeMinor: 20_000, expenseMinor: 7000 });
+    // "That is not how much money I have" is almost always the opening balance
+    // they typed once and forgot.
+    expect(parts.openingMinor + parts.incomeMinor - parts.expenseMinor).toBe(163_000);
   });
 });

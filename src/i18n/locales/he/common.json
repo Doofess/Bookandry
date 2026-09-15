@@ -116,5 +116,33 @@
     "clearFilters": "ניקוי הסינון",
     "skipped": "דולג",
     "restore": "שחזור"
+  },
+  "breakdown": {
+    "balanceBody": "כל מה שנספר מ-{{date}}.",
+    "opening": "יתרת פתיחה",
+    "income": "נכנס",
+    "expense": "יצא",
+    "total": "יתרה",
+    "expenseBody": "ממה מורכב {{month}}.",
+    "empty": "אין הוצאות צפויות החודש.",
+    "groupRecurring": "כל חודש",
+    "groupInstallments": "תשלומים",
+    "groupYearly": "פעם בשנה",
+    "groupOneTime": "חד-פעמי"
+  },
+  "profile": {
+    "switcher": "פרופיל",
+    "all": "הכול"
+  },
+  "filter": {
+    "search": "חיפוש",
+    "searchPlaceholder": "חיפוש בהערות ובקטגוריות",
+    "kind": "סוג",
+    "kindAll": "הכול",
+    "kindIncome": "הכנסות",
+    "kindExpense": "הוצאות",
+    "active_one": "סינון אחד פעיל",
+    "active_two": "שני סינונים פעילים",
+    "active_other": "{{count}} סינונים פעילים"
   }
 }

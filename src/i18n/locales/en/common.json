@@ -116,5 +116,32 @@
     "clearFilters": "Clear filters",
     "skipped": "Skipped",
     "restore": "Restore"
+  },
+  "breakdown": {
+    "balanceBody": "Everything counted since {{date}}.",
+    "opening": "Starting balance",
+    "income": "Money in",
+    "expense": "Money out",
+    "total": "Balance",
+    "expenseBody": "What makes up {{month}}.",
+    "empty": "Nothing expected this month.",
+    "groupRecurring": "Every month",
+    "groupInstallments": "Instalments",
+    "groupYearly": "Once a year",
+    "groupOneTime": "One-off"
+  },
+  "profile": {
+    "switcher": "Profile",
+    "all": "All"
+  },
+  "filter": {
+    "search": "Search",
+    "searchPlaceholder": "Search notes and categories",
+    "kind": "Type",
+    "kindAll": "All",
+    "kindIncome": "Income",
+    "kindExpense": "Expenses",
+    "active_other": "{{count}} filters active",
+    "active_one": "{{count}} filter active"
   }
 }

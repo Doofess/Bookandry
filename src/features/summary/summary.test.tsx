@@ -20,6 +20,7 @@ const ready = (minor: number): BalanceState => ({
   minor,
   since: d('2026-03-01'),
   profiles: [],
+  parts: { openingMinor: 0, incomeMinor: minor, expenseMinor: 0 },
 });
 
 describe('BalanceCard', () => {

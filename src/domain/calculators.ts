@@ -160,3 +160,85 @@ export function splitInstallments(totalMinor: Minor, count: number): Minor[] {
 
   return Array.from({ length: count }, (_, i) => sign * (base + (i === 0 ? remainder : 0)));
 }
+
+export type ExpenseGroupKind = 'recurring' | 'yearly' | 'installments' | 'one_time';
+
+export type ExpenseGroup = {
+  readonly kind: ExpenseGroupKind;
+  readonly totalMinor: Minor;
+  readonly occurrences: readonly Occurrence[];
+};
+
+/**
+ * What makes up "Expected this month", grouped by where it comes from.
+ *
+ * This is the whole point of the breakdown sheet: a user who thinks the figure
+ * is wrong is almost always looking at a yearly bill that happens to land this
+ * month, or at instalments they had forgotten they were still paying. Showing a
+ * total and nothing else turns that into "the app is wrong"; showing the groups
+ * turns it into "oh, the insurance".
+ *
+ * A tooltip cannot do this job - there is no hover on a phone, and the
+ * explanation is a list rather than a sentence.
+ */
+export function groupMonthlyExpenses(occurrences: readonly Occurrence[]): ExpenseGroup[] {
+  const buckets = new Map<ExpenseGroupKind, Occurrence[]>();
+
+  for (const occurrence of occurrences) {
+    if (occurrence.transaction.kind !== 'expense') continue;
+    const recurrence = occurrence.transaction.recurrence;
+
+    const kind: ExpenseGroupKind =
+      recurrence.type === 'one_time'
+        ? 'one_time'
+        : recurrence.type === 'yearly'
+          ? 'yearly'
+          : // תשלומים are a monthly series, but they END - lumping them in with
+            // the standing orders hides the one thing the user wants to know,
+            // which is when they stop.
+            recurrence.installments === undefined
+            ? 'recurring'
+            : 'installments';
+
+    const bucket = buckets.get(kind);
+    if (bucket === undefined) buckets.set(kind, [occurrence]);
+    else bucket.push(occurrence);
+  }
+
+  const order: readonly ExpenseGroupKind[] = ['recurring', 'installments', 'yearly', 'one_time'];
+  return order
+    .filter((kind) => buckets.has(kind))
+    .map((kind) => {
+      const group = buckets.get(kind) ?? [];
+      return {
+        kind,
+        totalMinor: sum(group.map((o) => o.money.baseAmountMinor)),
+        occurrences: [...group].sort((a, b) => b.money.baseAmountMinor - a.money.baseAmountMinor),
+      };
+    });
+}
+
+export type BalanceParts = {
+  readonly openingMinor: Minor;
+  readonly incomeMinor: Minor;
+  readonly expenseMinor: Minor;
+};
+
+/**
+ * The three numbers that add up to the balance.
+ *
+ * `opening + income - expense` is the whole formula, and showing it is what
+ * answers "that is not how much money I have": the running total includes an
+ * opening balance the user typed once, months ago, and has forgotten.
+ */
+export function balanceParts(profiles: readonly Profile[], occurrences: readonly Occurrence[]): BalanceParts {
+  return {
+    openingMinor: sum(profiles.map((p) => p.openingBalanceMinor)),
+    incomeMinor: sum(
+      occurrences.filter((o) => o.transaction.kind === 'income').map((o) => o.money.baseAmountMinor),
+    ),
+    expenseMinor: sum(
+      occurrences.filter((o) => o.transaction.kind === 'expense').map((o) => o.money.baseAmountMinor),
+    ),
+  };
+}

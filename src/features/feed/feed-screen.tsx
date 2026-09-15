@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSettings, useToday } from '@/app/app-context';
 import { Fab } from '@/components/fab';
-import { expectedMonthlyExpense } from '@/domain/calculators';
+import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -11,18 +11,24 @@ import { ALL_PROFILES } from '@/types/domain';
 
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
+import { FilterBar } from './filter-bar';
+import { ProfileSwitcher } from './profile-switcher';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
 import { VirtualFeed } from './virtual-feed';
+import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { MonthCursor } from '../summary/month-cursor';
 import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
+
+type Breakdown = 'balance' | 'expense' | undefined;
 
 export function FeedScreen() {
   const { t } = useTranslation(['common', 'categories']);
   const today = useToday();
   const settings = useSettings();
-  const { filters, stepMonth, clear } = useFeedFilters();
+  const { filters, stepMonth, set, setProfile, clear } = useFeedFilters();
+  const [breakdown, setBreakdown] = useState<Breakdown>(undefined);
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
 
@@ -47,11 +53,19 @@ export function FeedScreen() {
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);
 
-  // The summary card uses the UNFILTERED window: "expected this month" must not
+  // The summary cards use the UNFILTERED window: "expected this month" must not
   // change because the user searched for "pizza".
   const expense = useMemo(
     () => (occurrences === undefined ? undefined : expectedMonthlyExpense(occurrences, today, filters.month)),
     [occurrences, today, filters.month],
+  );
+
+  const expenseGroups = useMemo(
+    () =>
+      occurrences === undefined
+        ? []
+        : groupMonthlyExpenses(occurrences.filter((o) => o.date >= window.from && o.date <= window.to)),
+    [occurrences, window.from, window.to],
   );
 
   const context = useMemo<RowContext | undefined>(
@@ -73,25 +87,47 @@ export function FeedScreen() {
   const reason = isLoading ? undefined : emptyReason(windowCount, rows.length, hasAnyTransactions);
 
   return (
-    // The FAB floats above the tab bar, so the list needs clearance for BOTH
-    // or the last row of every month sits under a button. The shell already
-    // pads for the tab bar; this is the FAB's share.
+    // The FAB floats above the tab bar, so the list needs clearance for BOTH or
+    // the last row of every month sits under a button. The shell already pads
+    // for the tab bar; this is the FAB's share.
     <section className="mx-auto max-w-2xl px-4 pt-4 pb-24 lg:pb-8">
       <h1 className="sr-only">{t('nav.feed')}</h1>
 
       <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
 
+      {lookups === undefined ? null : (
+        <ProfileSwitcher
+          profiles={lookups.profiles}
+          active={filters.profileId}
+          onSelect={setProfile}
+          className="mt-3"
+        />
+      )}
+
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <BalanceCard state={balance} currency={settings.defaultCurrency} />
+        <BalanceCard
+          state={balance}
+          currency={settings.defaultCurrency}
+          onOpenBreakdown={() => {
+            setBreakdown('balance');
+          }}
+        />
         <ExpectedCard
           expense={expense}
           currency={settings.defaultCurrency}
           month={filters.month}
           today={today}
+          onOpenBreakdown={() => {
+            setBreakdown('expense');
+          }}
         />
       </div>
 
       <div className="mt-4">
+        <FilterBar filters={filters} onChange={set} onClear={clear} />
+      </div>
+
+      <div className="mt-3">
         {reason !== undefined ? (
           <EmptyState
             reason={reason}
@@ -103,13 +139,38 @@ export function FeedScreen() {
         )}
       </div>
 
-      {/* Wired to the add sheet in Phase 4; until then it is deliberately
-          inert rather than fake. */}
+      {/* Wired to the add sheet in Phase 4; until then it is deliberately inert
+          rather than fake. */}
       <Fab
         onClick={() => {
           /* Phase 4 */
         }}
       />
+
+      {balance.status === 'ready' ? (
+        <BalanceBreakdownSheet
+          open={breakdown === 'balance'}
+          onOpenChange={(open) => {
+            setBreakdown(open ? 'balance' : undefined);
+          }}
+          parts={balance.parts}
+          since={balance.since}
+          currency={settings.defaultCurrency}
+        />
+      ) : null}
+
+      {context !== undefined ? (
+        <ExpenseBreakdownSheet
+          open={breakdown === 'expense'}
+          onOpenChange={(open) => {
+            setBreakdown(open ? 'expense' : undefined);
+          }}
+          groups={expenseGroups}
+          month={filters.month}
+          currency={settings.defaultCurrency}
+          categories={context.categories}
+        />
+      ) : null}
     </section>
   );
 }

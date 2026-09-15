@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
-import { availableBalance } from '@/domain/calculators';
+import { availableBalance, balanceParts, type BalanceParts } from '@/domain/calculators';
 import { expandOccurrences } from '@/domain/occurrences';
 import { compareLocal } from '@/lib/dates';
 import { ALL_PROFILES, type Profile } from '@/types/domain';
@@ -15,6 +15,15 @@ export type BalanceState =
       readonly minor: Minor;
       readonly since: LocalDate;
       readonly profiles: readonly Profile[];
+      /**
+       * opening + income - expense, computed HERE.
+       *
+       * The breakdown sheet needs the three numbers, and this is the only place
+       * holding the occurrences they come from - the feed's window is one
+       * month. Returning the array instead would hand every consumer a decade
+       * of objects to keep alive.
+       */
+      readonly parts: BalanceParts;
     }
   /** A profile's opening balance is in a currency we have no rate for. */
   | { readonly status: 'blocked'; readonly currencies: readonly Currency[] };
@@ -38,7 +47,13 @@ export function useBalance(profileId: string, today: LocalDate, baseCurrency: Cu
     const profiles = profileId === ALL_PROFILES ? all : all.filter((p) => p.id === profileId);
 
     if (profiles.length === 0) {
-      return { status: 'ready', minor: 0, since: today, profiles: [] };
+      return {
+        status: 'ready',
+        minor: 0,
+        since: today,
+        profiles: [],
+        parts: { openingMinor: 0, incomeMinor: 0, expenseMinor: 0 },
+      };
     }
 
     const missing = [
@@ -61,7 +76,13 @@ export function useBalance(profileId: string, today: LocalDate, baseCurrency: Cu
 
     // Nothing has happened yet: the window would end before it began.
     if (compareLocal(since, today) > 0) {
-      return { status: 'ready', minor: sumOpening(profiles), since, profiles };
+      return {
+        status: 'ready',
+        minor: sumOpening(profiles),
+        since,
+        profiles,
+        parts: balanceParts(profiles, []),
+      };
     }
 
     const transactions = await findCandidates(db, { profileId, from: since, to: today });
@@ -93,6 +114,7 @@ export function useBalance(profileId: string, today: LocalDate, baseCurrency: Cu
       minor: availableBalance({ profiles, occurrences, baseCurrency }),
       since,
       profiles,
+      parts: balanceParts(profiles, occurrences),
     };
   }, [profileId, today, baseCurrency]);
 
