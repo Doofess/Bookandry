@@ -178,3 +178,39 @@ test.describe('@hermetic', () => {
     expect(offOrigin).toEqual([]);
   });
 });
+
+test.describe('@fab add button', () => {
+  test('renders as a circle with the plus centred', async ({ page }) => {
+    await page.goto('/');
+    const fab = page.getByTestId('fab');
+    await expect(fab).toBeVisible();
+
+    const box = await fab.boundingBox();
+    expect(box).not.toBeNull();
+    // A squashed oval shipped once because a width utility overrode size-14.
+    // Assert the real rendered geometry, not the class list.
+    expect(Math.abs(box!.width - box!.height)).toBeLessThanOrEqual(1);
+    expect(box!.width).toBeGreaterThanOrEqual(44); // WCAG 2.2 target size
+  });
+
+  test('sits on the inline-end side in LTR and mirrors in RTL', async ({ page }) => {
+    await page.goto('/');
+    const ltr = await page.getByTestId('fab').boundingBox();
+    const viewport = page.viewportSize()!;
+    expect(ltr!.x).toBeGreaterThan(viewport.width / 2);
+
+    await page.addInitScript(() => {
+      localStorage.setItem('gb.boot', JSON.stringify({ lang: 'he', theme: 'light' }));
+    });
+    await page.reload();
+    const rtl = await page.getByTestId('fab').boundingBox();
+    expect(rtl!.x).toBeLessThan(viewport.width / 2);
+  });
+
+  test('is operable and announces itself', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: /add transaction/i })).toBeVisible();
+    await page.getByTestId('fab').click();
+    await expect(page.getByText(/FAB pressed: 1/)).toBeVisible();
+  });
+});

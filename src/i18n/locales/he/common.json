@@ -22,7 +22,8 @@
     "edit": "עריכה",
     "undo": "שחזר",
     "close": "סגירה",
-    "retry": "נסה שוב"
+    "retry": "נסה שוב",
+    "addTransaction": "הוספת תנועה"
   },
   "theme": {
     "label": "ערכת נושא",

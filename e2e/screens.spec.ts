@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 const CASES = [
   { name: 'feed-light-en', route: '/', lang: 'en', theme: 'light' },
   { name: 'feed-dark-he', route: '/', lang: 'he', theme: 'dark' },
+  { name: 'feed-light-he', route: '/', lang: 'he', theme: 'light' },
 ] as const;
 
 for (const c of CASES) {
