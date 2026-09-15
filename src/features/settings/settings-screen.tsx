@@ -7,6 +7,7 @@ import { useSettings, useToday } from '@/app/app-context';
 import { LINKED_ROUTES } from '@/app/routes';
 import { CurrencyBadge } from '@/components/currency-select';
 import { Segmented } from '@/components/segmented';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { db } from '@/db/db';
@@ -17,6 +18,7 @@ import { systemClock } from '@/lib/clock';
 
 import { DataCard } from './data-card';
 import { RecentlyDeleted } from './recently-deleted';
+import { ReconvertDialog } from './reconvert-dialog';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -28,6 +30,7 @@ export function SettingsScreen() {
   const themeId = useId();
 
   const persisted = usePersisted();
+  const [reconverting, setReconverting] = useState(false);
 
   /*
    * Both writes go through `writeSettings`, never straight to Dexie.
@@ -91,14 +94,24 @@ export function SettingsScreen() {
           <CardTitle>{t('settings.baseCurrency')}</CardTitle>
           <CardDescription>{t('settings.baseCurrencyBody')}</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex items-center justify-between gap-3">
           {/*
-            Shown, not editable here.
-            Changing it rewrites every stored amount, so it is a flow with a
-            forced backup and a progress bar - not a picker that silently
-            re-denominates a decade of history on a mis-tap.
+            A badge and a button, not a picker.
+            Changing this rewrites every stored amount, so it goes through a
+            flow with a forced backup and a progress bar rather than a control
+            that re-denominates a decade of history on a mis-tap.
           */}
           <CurrencyBadge code={settings.defaultCurrency} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setReconverting(true);
+            }}
+          >
+            {t('reconvert.change')}
+          </Button>
         </CardContent>
       </Card>
 
@@ -126,6 +139,13 @@ export function SettingsScreen() {
       <DataCard lastExportedAt={settings.lastExportedAt} today={today} persisted={persisted} />
 
       <RecentlyDeleted />
+
+      <ReconvertDialog
+        open={reconverting}
+        onOpenChange={setReconverting}
+        currentCurrency={settings.defaultCurrency}
+        today={today}
+      />
     </section>
   );
 }

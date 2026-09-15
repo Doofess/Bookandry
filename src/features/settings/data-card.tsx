@@ -12,6 +12,8 @@ import { systemClock } from '@/lib/clock';
 import { daysBetween, externalTimestampToLocalDate } from '@/lib/dates';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
+import { downloadJson } from './download';
+
 /**
  * Export and import.
  *
@@ -47,7 +49,7 @@ export function DataCard({
     try {
       const now = systemClock.nowIso();
       const envelope = await buildExport(db, now);
-      download(envelope, now);
+      downloadJson(envelope, now);
       // Recorded only after the file is handed over, so a failure part way
       // through does not reset the clock on a backup that never happened.
       await writeSettings(db, { lastExportedAt: now }, now);
@@ -239,21 +241,4 @@ function relative(days: number, locale: string): string {
   if (days < 1) return format.format(0, 'day');
   if (days < 30) return format.format(-days, 'day');
   return format.format(-Math.round(days / 30), 'month');
-}
-
-/**
- * Hand the file over.
- *
- * A Blob and an object URL, revoked immediately after the click: leaving it
- * alive pins the whole export in memory for the life of the document, and an
- * export of a few thousand transactions is not small.
- */
-function download(envelope: unknown, now: IsoInstant): void {
-  const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `greenback-${now.slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
 }

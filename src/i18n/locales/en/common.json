@@ -302,5 +302,25 @@
     "manage": "Manage",
     "categoriesLink": "Categories",
     "methodsLink": "Payment methods"
+  },
+  "reconvert": {
+    "change": "Change base currency",
+    "title": "Change base currency to {{currency}}?",
+    "body": "Every amount you have saved is recalculated from what it originally cost. Nothing is rounded twice and nothing is lost, but it touches every row in the database.",
+    "pick": "New base currency",
+    "backupFirst": "Take a backup first",
+    "backupDone": "Backup saved. You can change the currency now.",
+    "backupWhy": "This rewrites your whole history. A backup takes one tap and makes it undoable.",
+    "start": "Change it",
+    "fetching": "Getting rates… {{done}} of {{total}}",
+    "applying": "Rewriting amounts…",
+    "done": "Everything is now in {{currency}}.",
+    "failedFetch": "Could not get every rate needed, so nothing was changed. Try again when you have a connection.",
+    "failedFetchList": "Missing: {{list}}",
+    "failedUnresolved": "Some rows have no rate for their date and currency, so nothing was changed.",
+    "failedBusy": "Another tab is already changing the currency.",
+    "failedOther": "That did not work, and nothing was changed.",
+    "manualKept": "Rates you entered by hand are kept and bridged, never overwritten.",
+    "same": "That is already the base currency."
   }
 }
