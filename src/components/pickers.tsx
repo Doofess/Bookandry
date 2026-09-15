@@ -3,12 +3,16 @@ import { Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Avatar } from '@/components/avatars/avatar';
-import { AVATAR_ROTATION } from '@/domain/first-run';
+import { ALL_AVATARS } from '@/domain/avatars';
 import { PROFILE_PALETTE } from '@/domain/palette';
 import type { AvatarKey } from '@/types/domain';
 
 /**
  * Colour and avatar pickers.
+ *
+ * In `components/` rather than beside the wizard: first run and the profile
+ * editor ask exactly the same two questions, and a second copy is how the two
+ * screens end up with different keyboard behaviour.
  *
  * Taken swatches use `aria-disabled`, NEVER `disabled`. A `disabled` button is
  * removed from the tab order entirely, so a keyboard user tabbing through the
@@ -80,7 +84,7 @@ export function AvatarPicker({
 
   return (
     <div role="radiogroup" aria-labelledby={labelledBy} className="flex flex-wrap gap-2">
-      {AVATAR_ROTATION.map((avatar) => {
+      {ALL_AVATARS.map((avatar) => {
         const selected = avatar === value;
         return (
           <button

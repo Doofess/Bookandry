@@ -37,8 +37,28 @@ describe('Avatar', () => {
     }
   });
 
-  it('has at least the four faces Phase 3 needs', () => {
-    expect(Object.keys(FACES).sort()).toEqual(['bear', 'cat', 'fox', 'owl']);
+  it('has a drawing for every avatar key', () => {
+    /*
+     * Was "at least the four faces Phase 3 needs", pinned to an exact list.
+     * That assertion did its job - it kept the phased delivery honest - and
+     * then failed the moment the other twelve landed, which is the right way
+     * for a scaffolding test to end. It now asserts the property that will
+     * still matter in a year: no key falls through to the fallback.
+     */
+    expect(Object.keys(FACES).sort()).toEqual([...ALL_KEYS].sort());
+  });
+
+  it('renders an unknown key as a person rather than nothing', () => {
+    /*
+     * The table is exhaustive by type, so this can only happen at RUNTIME: an
+     * avatar key from a file exported by a newer version. A profile list that
+     * renders an empty box for one person - or throws - is worse than one that
+     * renders a generic face.
+     */
+    const { container } = render(<Avatar avatar={'unicorn' as never} color="#16794a" />);
+
+    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(container.querySelectorAll('svg *').length).toBeGreaterThan(3);
   });
 
   it('is decorative unless given a label', () => {

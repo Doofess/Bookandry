@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Avatar } from '@/components/avatars/avatar';
+import { AvatarPicker, ColorPicker } from '@/components/pickers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,8 +20,6 @@ import {
 } from '@/domain/first-run';
 import { MAX_PROFILES } from '@/domain/palette';
 import { NAME_MAX_LENGTH } from '@/domain/validation';
-
-import { AvatarPicker, ColorPicker } from './pickers';
 
 /**
  * Who is tracking money here.

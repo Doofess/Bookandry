@@ -2,6 +2,7 @@ import { startOfMonth } from '@/lib/dates';
 import type { AvatarKey, Profile } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
+import { AVATAR_ROTATION } from './avatars';
 import type { Language } from './locale-defaults';
 import { MAX_PROFILES, nextFreeColor, PROFILE_PALETTE } from './palette';
 import { graphemeLength, NAME_MAX_LENGTH, normalizeName } from './validation';
@@ -46,8 +47,6 @@ export type FirstRunDraft = {
   readonly shape: SetupShape;
   readonly people: readonly PersonDraft[];
 };
-
-export const AVATAR_ROTATION: readonly AvatarKey[] = ['fox', 'owl', 'bear', 'cat'];
 
 const FIRST_COLOR = PROFILE_PALETTE[0].hex;
 

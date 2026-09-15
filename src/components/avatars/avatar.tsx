@@ -20,7 +20,13 @@ export type AvatarProps = {
 
 export function Avatar({ avatar, color, size = 'md', label, className }: AvatarProps) {
   const px = AVATAR_SIZES[size];
-  const Face = FACES[avatar] ?? FALLBACK_FACE;
+  /*
+   * The table is exhaustive by TYPE - a new AvatarKey without a drawing is a
+   * compile error - but the guard is a RUNTIME one: an avatar key can arrive
+   * from a file exported by a newer version, and an unknown one must render a
+   * person rather than crash a list of profiles.
+   */
+  const Face = Object.hasOwn(FACES, avatar) ? FACES[avatar] : FALLBACK_FACE;
   const decorative = label === undefined;
 
   return (

@@ -43,5 +43,33 @@
     "standing_order": "Standing order",
     "digital_wallet": "Digital wallet",
     "other": "Other"
+  },
+  "screen": {
+    "title": "Profiles",
+    "body": "Profiles organise your money; they do not hide it. There is no sign-in, so anyone using this device sees everything.",
+    "add": "Add a person",
+    "addDisabled": "All {{count}} colours are in use.",
+    "editTitle": "Edit profile",
+    "newTitle": "New profile",
+    "name": "Name",
+    "namePlaceholder": "Dana",
+    "openingBalance": "Opening balance",
+    "openingBalanceHelp": "Counting starts here. Anything before this date is ignored.",
+    "openingBalanceFrom": "From",
+    "balanceOn": "{{amount}} since {{date}}",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteEmptyBody": "This profile has no transactions, so nothing moves.",
+    "deleteBusyBody_one": "This profile has one transaction. Choose where it goes.",
+    "deleteBusyBody_other": "This profile has {{count}} transactions. Choose where they go.",
+    "deleteMoveTo": "Move them to",
+    "deleteLast": "This is your only profile. Add another before deleting this one.",
+    "deleteConfirm": "Delete",
+    "deleteMethodsWarning_one": "Its payment method is deleted too.",
+    "deleteMethodsWarning_other": "Its {{count}} payment methods are deleted too.",
+    "toastDeleted": "{{name}} deleted",
+    "toastMoved_one": "One transaction moved to {{name}}",
+    "toastMoved_other": "{{count}} transactions moved to {{name}}",
+    "errSave": "Could not save. Nothing was changed.",
+    "errColorTaken": "Someone already has that colour."
   }
 }
