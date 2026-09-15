@@ -92,3 +92,39 @@ export function scanSource(file: string, src: string): RtlHit[] {
 
 export const LOGICAL_HINT =
   'Use the logical form: ms-/me-/ps-/pe-/start-/end-/text-start/text-end/border-s/border-e/rounded-s/rounded-e.';
+
+/**
+ * Variants used in source but never declared in CSS.
+ *
+ * `rtl:` and `ltr:` are NOT built-in in Tailwind v4, and an undeclared variant
+ * does not warn - it compiles to nothing at all. The failure is invisible in the
+ * worst possible way: v4 handles LOGICAL utilities' direction by itself, so the
+ * stylesheet is full of `:dir(rtl)` rules while every `rtl:`-prefixed class
+ * silently does nothing. That disabled the RTL corrections shadcn's own
+ * `rtl: true` transform had generated - dialogs off-centre by their own width,
+ * every directional chevron pointing the wrong way - and nothing anywhere said so.
+ */
+export function findUndeclaredVariants(cssSource: string, usedVariants: Iterable<string>): string[] {
+  const declared = new Set(
+    [...cssSource.matchAll(/@custom-variant\s+([a-zA-Z][\w-]*)/g)].map((match) => match[1] ?? ''),
+  );
+  // Tailwind's own built-ins never need declaring; only the ones v4 dropped.
+  const mustDeclare = new Set(['rtl', 'ltr']);
+
+  return [...new Set(usedVariants)]
+    .filter((variant) => mustDeclare.has(variant) && !declared.has(variant))
+    .sort();
+}
+
+/** Every variant prefix appearing on a class in this source file. */
+export function collectVariants(src: string): string[] {
+  const found: string[] = [];
+  for (const line of src.split(/\r?\n/)) {
+    for (const raw of line.split(/[\s"'`{},;]+/)) {
+      if (!raw || raw.length > 200) continue;
+      const { variants } = splitVariants(raw);
+      found.push(...variants);
+    }
+  }
+  return [...new Set(found)];
+}

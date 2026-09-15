@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
-import { isLocalDate, makeLocalDate, startOfMonth } from '@/lib/dates';
+import { addMonthsClamped, compareLocal, isLocalDate, makeLocalDate, startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES } from '@/types/domain';
 import type { Kind, LocalDate } from '@/types/money';
+
+import { PROJECTION_HORIZON_MONTHS } from './occurrences';
 
 /**
  * Feed filter state, parsed from and written back to the URL.
@@ -102,7 +104,10 @@ export function parseFeedFilters(params: URLSearchParams, defaults: FilterDefaul
 
   return {
     profileId,
-    month: monthSchema.catch(startOfMonth(defaults.today)).parse(raw(PARAM.month) ?? ''),
+    month: clampMonthToHorizon(
+      monthSchema.catch(startOfMonth(defaults.today)).parse(raw(PARAM.month) ?? ''),
+      defaults.today,
+    ),
     kind: kindSchema.catch('all').parse(raw(PARAM.kind) ?? ''),
     categoryIds: idListSchema.catch([]).parse(raw(PARAM.categories) ?? ''),
     paymentMethodIds: idListSchema.catch([]).parse(raw(PARAM.methods) ?? ''),
@@ -170,4 +175,31 @@ export function matchesKind(filter: KindFilter, kind: Kind): boolean {
 /** Guard for a hand-typed `?m=`, used by the month cursor's arrows. */
 export function isMonthStart(date: string): boolean {
   return isLocalDate(date) && date.endsWith('-01');
+}
+
+/**
+ * The month cursor is bounded, in both directions and for different reasons.
+ *
+ * Forward: `PROJECTION_HORIZON_MONTHS`. Past it there is nothing to show -
+ * projections stop - so a cursor that kept going would present an empty month
+ * as if it were a real one.
+ *
+ * Backward: a programming-error guard, not a product limit. `expandOccurrences`
+ * THROWS above a 1200-month window, so a hand-typed `?m=1000-01` would crash the
+ * route rather than showing an empty feed.
+ */
+export const MONTHS_FORWARD = PROJECTION_HORIZON_MONTHS;
+export const MONTHS_BACK = 1200;
+
+export function clampMonthToHorizon(month: LocalDate, today: LocalDate): LocalDate {
+  const earliest = startOfMonth(addMonthsClamped(startOfMonth(today), -MONTHS_BACK, 1));
+  const latest = startOfMonth(addMonthsClamped(startOfMonth(today), MONTHS_FORWARD, 1));
+  if (compareLocal(month, earliest) < 0) return earliest;
+  if (compareLocal(month, latest) > 0) return latest;
+  return month;
+}
+
+/** Whether a month sits at the forward edge, so the feed can say the future stops here. */
+export function isAtHorizon(month: LocalDate, today: LocalDate): boolean {
+  return compareLocal(month, startOfMonth(addMonthsClamped(startOfMonth(today), MONTHS_FORWARD, 1))) >= 0;
 }

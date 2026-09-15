@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { scanSource, splitVariants } from './rtl-scan';
+import { collectVariants, findUndeclaredVariants, scanSource, splitVariants } from './rtl-scan';
 
 /**
  * Proves gate:rtl actually FIRES. A gate that has never failed is
@@ -80,5 +80,40 @@ describe('precision: the gate must not cry wolf', () => {
 
   it('still honours the rtl:/ltr: escape', () => {
     expect(scanSource('src/x.tsx', 'className="rtl:left-4"')).toEqual([]);
+  });
+});
+
+describe('undeclared variants', () => {
+  const CSS = '@custom-variant dark (&:is(.dark *));\n@custom-variant rtl (&:where(:dir(rtl)));';
+
+  it('reports a variant used but never declared', () => {
+    // An undeclared variant compiles to NOTHING and warns about nothing, which
+    // is how every rtl: class in the codebase - including shadcn's own - came
+    // to be silently inert.
+    expect(findUndeclaredVariants('@custom-variant dark (&:is(.dark *));', ['rtl'])).toEqual(['rtl']);
+    expect(findUndeclaredVariants(CSS, ['rtl'])).toEqual([]);
+  });
+
+  it('reports ltr independently of rtl', () => {
+    expect(findUndeclaredVariants(CSS, ['rtl', 'ltr'])).toEqual(['ltr']);
+  });
+
+  it('ignores variants Tailwind ships itself', () => {
+    // hover/focus/lg/dark need no declaration; flagging them would make the
+    // gate unusable.
+    expect(findUndeclaredVariants('', ['hover', 'focus', 'lg', 'dark', 'data-[side=top]'])).toEqual([]);
+  });
+
+  it('collects the variant prefixes actually used', () => {
+    const src = 'className={cn("size-4 rtl:rotate-180", "lg:ms-2", "hover:focus:underline")}';
+    expect(collectVariants(src).sort()).toEqual(['hover', 'focus', 'lg', 'rtl'].sort());
+  });
+
+  it('does not treat a bare utility as a variant', () => {
+    expect(collectVariants('className="size-4 rounded-full"')).toEqual([]);
+  });
+
+  it('keeps an arbitrary variant intact rather than splitting it', () => {
+    expect(collectVariants('className="[&_svg:not(.x)]:size-4"')).toEqual(['[&_svg:not(.x)]']);
   });
 });

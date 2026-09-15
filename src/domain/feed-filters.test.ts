@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  clampMonthToHorizon,
   defaultFilters,
   feedFiltersToParams,
   hasActiveFilters,
   isAllProfiles,
+  isAtHorizon,
   isMonthStart,
   matchesKind,
   monthParam,
@@ -131,5 +133,30 @@ describe('predicates', () => {
   it('rejects a non-month-start date', () => {
     expect(isMonthStart('2026-09-15')).toBe(false);
     expect(isMonthStart('nope')).toBe(false);
+  });
+});
+
+describe('month cursor bounds', () => {
+  it('clamps forward to the projection horizon', () => {
+    // Past the horizon there is nothing to show, so an unbounded cursor would
+    // present an empty month as if it were a real one.
+    expect(parse('?m=2099-01').month).toBe('2027-09-01');
+    expect(clampMonthToHorizon(d('2030-01-01'), DEFAULTS.today)).toBe('2027-09-01');
+  });
+
+  it('clamps backward far enough to keep expansion from throwing', () => {
+    // expandOccurrences THROWS above a 1200-month window, so ?m=1000-01 would
+    // crash the route rather than show an empty feed.
+    expect(parse('?m=1000-01').month).toBe('1926-09-01');
+  });
+
+  it('leaves an ordinary month alone', () => {
+    expect(clampMonthToHorizon(d('2026-03-01'), DEFAULTS.today)).toBe('2026-03-01');
+    expect(clampMonthToHorizon(d('2020-01-01'), DEFAULTS.today)).toBe('2020-01-01');
+  });
+
+  it('reports the forward edge', () => {
+    expect(isAtHorizon(d('2027-09-01'), DEFAULTS.today)).toBe(true);
+    expect(isAtHorizon(d('2027-08-01'), DEFAULTS.today)).toBe(false);
   });
 });

@@ -9,6 +9,14 @@ export type MoneyProps = {
   readonly currency: Currency;
   readonly signMode?: SignMode;
   readonly className?: string;
+  /**
+   * Set false for a value that is mid-animation.
+   *
+   * A count-up passes through ~39 intermediate values; announcing each one
+   * turns a single balance into forty interruptions. The settled figure is
+   * announced once, by a live region the caller owns.
+   */
+  readonly announce?: boolean;
 };
 
 /**
@@ -31,7 +39,7 @@ export type MoneyProps = {
  *    formatted string: pinning "$1,234.50" in a test makes the suite fail the
  *    next time ICU changes a separator, which it has done before.
  */
-export function Money({ minor, currency, signMode = 'negative', className }: MoneyProps) {
+export function Money({ minor, currency, signMode = 'negative', className, announce = true }: MoneyProps) {
   const { i18n } = useTranslation();
   const display = formatMoney(minor, currency, { locale: i18n.language, signMode });
 
@@ -41,9 +49,10 @@ export function Money({ minor, currency, signMode = 'negative', className }: Mon
       className={cn('tabular inline-block', className)}
       data-value={minor}
       data-currency={currency}
+      aria-hidden={announce ? undefined : true}
     >
       <span aria-hidden="true">{display.text}</span>
-      <span className="sr-only">{display.aria}</span>
+      {announce ? <span className="sr-only">{display.aria}</span> : null}
     </span>
   );
 }

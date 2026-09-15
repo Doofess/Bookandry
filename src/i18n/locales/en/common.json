@@ -12,7 +12,8 @@
   },
   "a11y": {
     "skipToContent": "Skip to content",
-    "loading": "Loading"
+    "loading": "Loading",
+    "rowActions": "Actions for {{name}}"
   },
   "action": {
     "add": "Add",
@@ -82,5 +83,38 @@
     "amountInvalid": "Enter an amount.",
     "nameDuplicate": "Someone already has this name.",
     "colorDuplicate": "Someone already has this colour."
+  },
+  "month": {
+    "previous": "Previous month",
+    "next": "Next month",
+    "horizon": "Projections stop here"
+  },
+  "summary": {
+    "balance": "Balance",
+    "balanceSince": "since {{date}}",
+    "balanceBlocked": "Needs a rate for {{currencies}} before this can be shown.",
+    "expected": "Expected this month",
+    "spent": "Spent",
+    "spentSoFar": "spent so far",
+    "stillDue": "still due",
+    "split": "{{spent}} and {{due}}",
+    "breakdownOf": "Show what makes up {{title}}",
+    "notCountedYet": "Not counted yet",
+    "projected": "Projected",
+    "splitLine": "<spent></spent> spent so far · <due></due> still due"
+  },
+  "feed": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "horizon": "Projections shown through {{date}}",
+    "emptyNoDataTitle": "Nothing here yet",
+    "emptyNoDataBody": "Add your first income or expense and it will show up here.",
+    "emptyMonthTitle": "Nothing in {{month}}",
+    "emptyMonthBody": "Try another month, or add something to this one.",
+    "emptyResultsTitle": "No matches",
+    "emptyResultsBody": "Nothing in {{month}} matches these filters.",
+    "clearFilters": "Clear filters",
+    "skipped": "Skipped",
+    "restore": "Restore"
   }
 }

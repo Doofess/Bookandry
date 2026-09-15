@@ -3,6 +3,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * rtl:/ltr: are NOT built-in variants in Tailwind v4.
+ *
+ * v4 understands direction for LOGICAL utilities on its own - `slide-in-from-start-2`
+ * compiles to a `:dir(rtl)` selector without help - which is exactly why the
+ * gap was invisible: the CSS was full of direction-aware rules while every
+ * `rtl:`-prefixed class compiled to NOTHING.
+ *
+ * That silently disabled the RTL corrections shadcn's own `rtl: true` transform
+ * had generated: Dialog and AlertDialog centre themselves with
+ * `rtl:translate-x-1/2`, DropdownMenu and Calendar flip their chevrons with
+ * `rtl:rotate-180`. In Hebrew the dialogs were off-centre by their own width
+ * and every directional arrow pointed the wrong way.
+ *
+ * Selectors mirror what Tailwind emits for its own logical utilities, so the
+ * two agree about what "rtl" means.
+ */
+@custom-variant rtl (&:where(:dir(rtl), [dir='rtl'], [dir='rtl'] *));
+@custom-variant ltr (&:where(:dir(ltr), [dir='ltr'], [dir='ltr'] *));
+
 /* ---------------------------------------------------------------------------
    Design tokens.
 

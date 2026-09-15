@@ -43,9 +43,18 @@ export async function completeFirstRun(
   const { draft, ids, today, now } = input;
   const profiles = buildProfiles({ draft, ids, today, now });
 
-  // One profile means no switcher and no "All" chip, so pointing the app at the
-  // merged view would show a control that is not there.
-  const activeProfileId = profiles.length === 1 ? (profiles[0]?.id ?? ALL_PROFILES) : ALL_PROFILES;
+  /*
+   * One profile means no switcher and no "All" chip, so pointing the app at the
+   * merged view would select a control that is not rendered.
+   *
+   * ...unless the demo is coming, which adds three more profiles of its own.
+   * Without this the app opened on the user's empty profile with sixty demo
+   * transactions sitting invisibly in someone else's, and the feed said
+   * "Nothing here yet" immediately after they asked to be shown something.
+   */
+  const willHaveDemoProfiles = input.loadDemo === true && isDemoSupported(draft.currency);
+  const activeProfileId =
+    profiles.length === 1 && !willHaveDemoProfiles ? (profiles[0]?.id ?? ALL_PROFILES) : ALL_PROFILES;
 
   const theme = await db.transaction('rw', [db.profiles, db.settings], async () => {
     await db.profiles.bulkAdd(profiles);
@@ -72,7 +81,7 @@ export async function completeFirstRun(
   writeBootMirror({ lang: draft.language, theme });
 
   let demoLoaded = false;
-  if (input.loadDemo === true && isDemoSupported(draft.currency)) {
+  if (willHaveDemoProfiles) {
     await loadDemoData(db, {
       today,
       baseCurrency: draft.currency,

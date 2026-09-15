@@ -12,7 +12,8 @@
   },
   "a11y": {
     "skipToContent": "דילוג לתוכן",
-    "loading": "טוען"
+    "loading": "טוען",
+    "rowActions": "פעולות עבור {{name}}"
   },
   "action": {
     "add": "הוספה",
@@ -82,5 +83,38 @@
     "amountInvalid": "צריך להזין סכום.",
     "nameDuplicate": "כבר יש מישהו עם השם הזה.",
     "colorDuplicate": "כבר יש מישהו עם הצבע הזה."
+  },
+  "month": {
+    "previous": "החודש הקודם",
+    "next": "החודש הבא",
+    "horizon": "התחזית נעצרת כאן"
+  },
+  "summary": {
+    "balance": "יתרה",
+    "balanceSince": "מ-{{date}}",
+    "balanceBlocked": "צריך שער עבור {{currencies}} כדי להציג את זה.",
+    "expected": "צפי להוצאות החודש",
+    "spent": "הוצאות",
+    "spentSoFar": "הוצאתם עד כה",
+    "stillDue": "צפוי",
+    "split": "{{spent}} ו{{due}}",
+    "breakdownOf": "הצגת הפירוט של {{title}}",
+    "notCountedYet": "טרם נכלל",
+    "projected": "צפוי",
+    "splitLine": "<spent></spent> הוצאתם עד כה · <due></due> צפוי"
+  },
+  "feed": {
+    "today": "היום",
+    "yesterday": "אתמול",
+    "horizon": "התחזית מוצגת עד {{date}}",
+    "emptyNoDataTitle": "עוד אין כאן כלום",
+    "emptyNoDataBody": "הוסיפו הכנסה או הוצאה ראשונה והן יופיעו כאן.",
+    "emptyMonthTitle": "אין תנועות ב{{month}}",
+    "emptyMonthBody": "אפשר לעבור לחודש אחר, או להוסיף משהו לחודש הזה.",
+    "emptyResultsTitle": "אין תוצאות",
+    "emptyResultsBody": "שום דבר ב{{month}} לא תואם לסינון הזה.",
+    "clearFilters": "ניקוי הסינון",
+    "skipped": "דולג",
+    "restore": "שחזור"
   }
 }

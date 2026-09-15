@@ -45,11 +45,14 @@ export function Fab({ onClick, className, disabled = false }: FabProps) {
         'motion-reduce:transition-none motion-reduce:active:scale-100',
         // Mobile: centred horizontally, clearing the tab bar and the home indicator.
         // NB: no `w-max` here - it would override size-14's width and render an
-        // oval. `inset-inline: 0` plus `mx-auto` centres a fixed-width element.
-        'inset-inline-0 mx-auto',
+        // oval. `start-0 end-0` plus `mx-auto` centres a fixed-width element.
+        // NOT `inset-inline-0`: that is not a Tailwind utility, emits no CSS at
+        // all, and left the button sitting at its static position - which looked
+        // deliberate enough to survive a screenshot review.
+        'start-0 end-0 mx-auto',
         'bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+1rem)]',
         // Desktop: inline-end, no tab bar to clear.
-        'lg:inset-inline-auto lg:end-6 lg:bottom-6 lg:mx-0',
+        'lg:start-auto lg:end-6 lg:bottom-6 lg:mx-0',
         className,
       )}
     >

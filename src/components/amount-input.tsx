@@ -135,7 +135,7 @@ export function AmountInput({
     <div className={cn('relative', className)}>
       <CurrencyBadge
         code={currency}
-        className="inset-inline-start-2 pointer-events-none absolute top-1/2 -translate-y-1/2"
+        className="pointer-events-none absolute start-2 top-1/2 -translate-y-1/2"
       />
       <Input
         id={inputId}
