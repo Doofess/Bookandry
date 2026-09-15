@@ -10,10 +10,31 @@ import type { LocalDate } from '@/types/money';
 
 import { DayHeader, TransactionRow, type RowContext } from './feed-rows';
 
-/** Estimates only; every element is measured once it renders. */
+/**
+ * AUTHORITATIVE heights, not estimates.
+ *
+ * Every row in this feed is the same height by design - the note truncates
+ * rather than wrapping - so dynamic measurement was re-measuring 28 elements
+ * through a ResizeObserver to rediscover numbers that never change. Measured
+ * live: rows are 64px and headers 36px, exactly these constants.
+ *
+ * Making them authoritative removes the observer, removes the re-measure churn
+ * that dominated a scroll profile, and makes `getTotalSize()` exact from the
+ * first frame - so the scrollbar does not creep as rows measure themselves.
+ *
+ * The wrapper sets the height from the SAME constant it is virtualised with, so
+ * the two cannot drift: if content ever outgrows the box it is clipped, which
+ * is visible, rather than silently shifting every row below it.
+ */
 const DAY_HEADER_HEIGHT = 36;
 const ROW_HEIGHT = 64;
 const HORIZON_HEIGHT = 44;
+
+function heightOf(row: FeedRow | undefined): number {
+  if (row?.kind === 'day') return DAY_HEADER_HEIGHT;
+  if (row?.kind === 'horizon') return HORIZON_HEIGHT;
+  return ROW_HEIGHT;
+}
 
 /**
  * The virtualised feed.
@@ -103,12 +124,7 @@ export function VirtualFeed({
 
   const virtualizer = useWindowVirtualizer({
     count: rows.length,
-    estimateSize: (index) => {
-      const row = rows[index];
-      if (row?.kind === 'day') return DAY_HEADER_HEIGHT;
-      if (row?.kind === 'horizon') return HORIZON_HEIGHT;
-      return ROW_HEIGHT;
-    },
+    estimateSize: (index) => heightOf(rows[index]),
     overscan: 8,
     scrollMargin,
     // Keyed by the occurrence, so a row keeps its measurement across a re-sort.
@@ -152,22 +168,27 @@ export function VirtualFeed({
         return (
           <div
             key={item.key}
-            // measureElement resolves elements by this ATTRIBUTE, not by the
-            // React key - the two are independent, and omitting it silently
-            // disables dynamic measurement.
+            // Kept for debugging and for e2e assertions; the virtualizer no
+            // longer measures through it, because the heights are authoritative.
             data-index={item.index}
-            ref={virtualizer.measureElement}
             className={isSticky ? 'z-10' : undefined}
             style={
               isSticky
                 ? // No transform: `sticky` positions this against the viewport,
                   // and a transform would both double-count scrollMargin and
                   // create a containing block that cancels the stickiness.
-                  { position: 'sticky', top: 'var(--feed-sticky-top, 0px)', insetInline: 0 }
+                  {
+                    position: 'sticky',
+                    top: 'var(--feed-sticky-top, 0px)',
+                    insetInline: 0,
+                    height: heightOf(row),
+                  }
                 : {
                     position: 'absolute',
                     top: 0,
                     insetInline: 0,
+                    height: heightOf(row),
+                    overflow: 'hidden',
                     transform: `translateY(${String(item.start - scrollMargin)}px)`,
                   }
             }

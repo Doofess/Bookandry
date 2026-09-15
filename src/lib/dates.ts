@@ -175,13 +175,37 @@ export function fromUtcInstant(ms: number): LocalDate {
   return makeLocalDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
 }
 
-/** Intl ALWAYS gets timeZone: 'UTC' here, or half the planet renders the wrong day. */
+/**
+ * Formatter cache.
+ *
+ * Constructing an `Intl.DateTimeFormat` is expensive - it resolves a locale and
+ * builds an ICU pattern - and the feed formats a date on every visible row plus
+ * every day header. It showed up as ~2% of a load profile with 2,000 rows, for
+ * work whose inputs never change: a handful of (locale, options) pairs across
+ * the whole app.
+ *
+ * Keyed on the options, so a caller asking for `{ weekday: 'short' }` does not
+ * get the `{ dateStyle: 'medium' }` formatter.
+ */
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormatter(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  const cached = dateFormatters.get(key);
+  if (cached) return cached;
+  // Intl ALWAYS gets timeZone: 'UTC' here, or half the planet renders the wrong
+  // day: a LocalDate is a calendar date, not an instant.
+  const created = new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' });
+  dateFormatters.set(key, created);
+  return created;
+}
+
 export function formatLocalDate(
   date: LocalDate,
   locale: string,
   options: Intl.DateTimeFormatOptions = { dateStyle: 'medium' },
 ): string {
-  return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(toUtcInstant(date));
+  return dateFormatter(locale, options).format(toUtcInstant(date));
 }
 
 export function nowIso(now: Date): IsoInstant {

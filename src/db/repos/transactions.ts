@@ -47,9 +47,28 @@ export async function findCandidates(db: GreenbackDB, q: TransactionQuery): Prom
   return rows.filter((t) => compareLocal(t.seriesStart, q.to) <= 0);
 }
 
+/**
+ * How many ids are worth looking up one at a time.
+ *
+ * `anyOf` walks the index once PER KEY, so 2,000 candidate transactions means
+ * 2,000 index seeks - which measured as the single largest cost in loading a
+ * dense month. Above this, one full scan of a table that is small by
+ * construction wins easily: an override exists only where someone edited a
+ * single occurrence of a series, so there are orders of magnitude fewer of them
+ * than transactions.
+ */
+const OVERRIDE_LOOKUP_LIMIT = 200;
+
 /** Overrides for a set of transactions, via the unique compound index. */
 export async function findOverrides(db: GreenbackDB, ids: readonly string[]): Promise<Override[]> {
   if (ids.length === 0) return [];
+
+  if (ids.length > OVERRIDE_LOOKUP_LIMIT) {
+    const wanted = new Set(ids);
+    const all = await db.overrides.toArray();
+    return all.filter((o) => wanted.has(o.transactionId));
+  }
+
   return db.overrides
     .where('transactionId')
     .anyOf([...ids])

@@ -287,3 +287,63 @@ describe('override lifecycle', () => {
     expect(await findOverrides(handle.db, [])).toEqual([]);
   });
 });
+
+describe('findOverrides at scale', () => {
+  /**
+   * The two lookup strategies must be indistinguishable.
+   *
+   * Above OVERRIDE_LOOKUP_LIMIT the repo stops using `anyOf` - which walks the
+   * index once per key, and measured as the single largest cost in loading a
+   * dense month - and scans a table that is small by construction instead. A
+   * fast path that returns different rows is not an optimisation.
+   */
+  it('returns the same rows either side of the threshold', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 260; i += 1) {
+      const id = `t${String(i).padStart(3, '0')}`;
+      ids.push(id);
+      if (i % 10 === 0) {
+        await handle.db.overrides.put({
+          id: `o${String(i)}`,
+          transactionId: id,
+          occurrenceDate: d('2026-09-01'),
+          action: 'skip',
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+      }
+    }
+    // An override belonging to a transaction NOT asked for must never come back.
+    await handle.db.overrides.put({
+      id: 'o-other',
+      transactionId: 'not-requested',
+      occurrenceDate: d('2026-09-01'),
+      action: 'skip',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const viaScan = await findOverrides(handle.db, ids);
+    const viaAnyOf = await findOverrides(handle.db, ids.slice(0, 100));
+
+    expect(viaScan.map((o) => o.id).sort()).toEqual(
+      Array.from({ length: 26 }, (_, i) => `o${String(i * 10)}`).sort(),
+    );
+    expect(viaScan.some((o) => o.transactionId === 'not-requested')).toBe(false);
+    expect(viaAnyOf.map((o) => o.id).sort()).toEqual(
+      Array.from({ length: 10 }, (_, i) => `o${String(i * 10)}`).sort(),
+    );
+  });
+
+  it('returns nothing for no ids, without touching the table', async () => {
+    await handle.db.overrides.put({
+      id: 'o1',
+      transactionId: 't1',
+      occurrenceDate: d('2026-09-01'),
+      action: 'skip',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(await findOverrides(handle.db, [])).toEqual([]);
+  });
+});
