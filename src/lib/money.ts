@@ -223,3 +223,85 @@ export function multiplyRates(a: RateString, b: RateString, dp = 12): RateString
   const frac = digits.slice(-dp).replace(/0+$/, '');
   return `${whole}${frac ? `.${frac}` : ''}`;
 }
+
+/**
+ * The rate implied by "I was charged X" - the everyday foreign-purchase case.
+ *
+ * An Israeli buys EUR 45 online and the card charges ILS 178.40 INCLUDING the
+ * foreign-transaction fee. They know the shekel figure from the bank's SMS;
+ * they do not know, and cannot look up, the ECB rate their issuer used. So the
+ * charged amount is the primary input and the rate is derived from it, not the
+ * other way round.
+ *
+ * Exact throughout: the exponent difference is one shift term, and the only
+ * rounding is the final truncation to `dp` decimals.
+ */
+export function rateFromAmounts(
+  amountMinor: Minor,
+  from: Currency,
+  chargedMinor: Minor,
+  to: Currency,
+  dp = 10,
+): RateString {
+  if (!Number.isSafeInteger(amountMinor) || !Number.isSafeInteger(chargedMinor)) {
+    throw new RangeError('amounts must be safe integers');
+  }
+  if (amountMinor <= 0) throw new RangeError('amountMinor must be positive');
+  if (chargedMinor <= 0) throw new RangeError('chargedMinor must be positive');
+
+  const shift = exponentOf(from) - exponentOf(to);
+  const scale = 10n ** BigInt(dp);
+  let numerator = BigInt(chargedMinor) * scale;
+  let denominator = BigInt(amountMinor);
+  if (shift >= 0) numerator *= 10n ** BigInt(shift);
+  else denominator *= 10n ** BigInt(-shift);
+
+  const scaled = divRound(numerator, denominator);
+  const digits = scaled.toString().padStart(dp + 1, '0');
+  const whole = digits.slice(0, -dp);
+  const frac = digits.slice(-dp).replace(/0+$/, '');
+  return `${whole}${frac ? `.${frac}` : ''}`;
+}
+
+/** `1 / rate`, exactly. Used to test whether a typed rate was entered backwards. */
+export function invertRate(rate: RateString, dp = 10): RateString {
+  const { n, d } = decimalToRational(rate);
+  if (n <= 0n) throw new RangeError('Exchange rate must be positive');
+
+  const scale = 10n ** BigInt(dp);
+  const scaled = divRound(d * scale, n);
+  const digits = scaled.toString().padStart(dp + 1, '0');
+  const whole = digits.slice(0, -dp);
+  const frac = digits.slice(-dp).replace(/0+$/, '');
+  return `${whole}${frac ? `.${frac}` : ''}`;
+}
+
+export function isPositiveRate(rate: RateString): boolean {
+  try {
+    return decimalToRational(rate).n > 0n;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * |value - reference| / reference > tolerance, computed exactly.
+ *
+ * The tolerance arrives as a fraction rather than a decimal because this
+ * decides whether to warn the user that a rate looks wrong; doing that
+ * comparison in floating point would make the boundary itself fuzzy.
+ */
+export function rateDeviationExceeds(
+  value: RateString,
+  reference: RateString,
+  toleranceNumerator: bigint,
+  toleranceDenominator: bigint,
+): boolean {
+  const v = decimalToRational(value);
+  const r = decimalToRational(reference);
+  if (v.n <= 0n || r.n <= 0n) return true;
+
+  const difference = v.n * r.d - r.n * v.d;
+  const magnitude = difference < 0n ? -difference : difference;
+  return magnitude * toleranceDenominator > toleranceNumerator * v.d * r.n;
+}

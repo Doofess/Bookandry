@@ -10,8 +10,12 @@ import {
   decimalToRational,
   divRound,
   InvalidDecimalError,
+  invertRate,
+  isPositiveRate,
   multiplyRates,
   normalizeAmountInput,
+  rateDeviationExceeds,
+  rateFromAmounts,
   sum,
   toDecimalString,
   toMinor,
@@ -371,5 +375,100 @@ describe('multiplyRates formatting', () => {
   it('strips trailing zeros from the fraction', () => {
     expect(multiplyRates('1.5', '2')).toBe('3');
     expect(multiplyRates('1.25', '2')).toBe('2.5');
+  });
+});
+
+describe('rateFromAmounts', () => {
+  it('refuses a non-integer amount', () => {
+    // The caller has already lost precision by this point; rounding here would
+    // hide where it happened.
+    expect(() => rateFromAmounts(45.5, 'EUR', 17_840, 'ILS')).toThrow(RangeError);
+    expect(() => rateFromAmounts(4500, 'EUR', 178.4, 'ILS')).toThrow(RangeError);
+  });
+
+  it('refuses a non-positive amount on either side', () => {
+    expect(() => rateFromAmounts(0, 'EUR', 17_840, 'ILS')).toThrow(RangeError);
+    expect(() => rateFromAmounts(-4500, 'EUR', 17_840, 'ILS')).toThrow(RangeError);
+    expect(() => rateFromAmounts(4500, 'EUR', 0, 'ILS')).toThrow(RangeError);
+    expect(() => rateFromAmounts(4500, 'EUR', -1, 'ILS')).toThrow(RangeError);
+  });
+
+  it('emits a whole number with no trailing decimal point', () => {
+    expect(rateFromAmounts(10_000, 'USD', 40_000, 'ILS')).toBe('4');
+  });
+
+  it.each([
+    // The exponent shift, in both directions and at both extremes of the
+    // table. Applied the wrong way round, USD -> KWD is out by a factor of
+    // ten and JPY -> KWD by a factor of a million.
+    [10_000, 'USD', 15_000, 'JPY', '150'],
+    [15_000, 'JPY', 46_125, 'KWD', '0.003075'],
+    [10_000, 'USD', 30_750, 'KWD', '0.3075'],
+    [30_750, 'KWD', 10_000, 'USD', '3.2520325203'],
+    [10_000, 'USD', 36_500, 'ILS', '3.65'],
+  ])('%i %s charged as %i %s is %s', (amount, from, charged, to, expected) => {
+    expect(rateFromAmounts(amount, from, charged, to)).toBe(expected);
+  });
+
+  it('honours the requested precision', () => {
+    expect(rateFromAmounts(30_000, 'USD', 10_000, 'ILS', 4)).toBe('0.3333');
+  });
+});
+
+describe('invertRate', () => {
+  it('round-trips an exact reciprocal', () => {
+    expect(invertRate('4')).toBe('0.25');
+    expect(invertRate('0.25')).toBe('4');
+  });
+
+  it('rounds a repeating reciprocal at the requested precision', () => {
+    expect(invertRate('3', 4)).toBe('0.3333');
+  });
+
+  it('rejects a non-positive rate', () => {
+    expect(() => invertRate('0')).toThrow(RangeError);
+    expect(() => invertRate('-2')).toThrow(RangeError);
+  });
+});
+
+describe('isPositiveRate', () => {
+  it.each([
+    ['1', true],
+    ['0.0001', true],
+    ['0', false],
+    ['-1', false],
+  ])('%s is positive: %s', (value, expected) => {
+    expect(isPositiveRate(value)).toBe(expected);
+  });
+
+  it('is false rather than throwing on junk', () => {
+    // It guards a form field that is re-evaluated on every keystroke, so a
+    // half-typed value must not throw into a render.
+    expect(isPositiveRate('abc')).toBe(false);
+    expect(isPositiveRate('')).toBe(false);
+  });
+});
+
+describe('rateDeviationExceeds', () => {
+  it('is false for identical values at zero tolerance', () => {
+    expect(rateDeviationExceeds('3.9644', '3.9644', 0n, 1n)).toBe(false);
+  });
+
+  it('is true for any difference at zero tolerance', () => {
+    expect(rateDeviationExceeds('3.96441', '3.9644', 0n, 1n)).toBe(true);
+  });
+
+  it('is symmetric about the reference, not about zero', () => {
+    // A quarter ABOVE and a quarter BELOW are different absolute distances,
+    // because the denominator is the reference. Both must land inside.
+    expect(rateDeviationExceeds('5', '4', 1n, 4n)).toBe(false);
+    expect(rateDeviationExceeds('3', '4', 1n, 4n)).toBe(false);
+    expect(rateDeviationExceeds('5.01', '4', 1n, 4n)).toBe(true);
+    expect(rateDeviationExceeds('2.99', '4', 1n, 4n)).toBe(true);
+  });
+
+  it('treats a non-positive value as out of band rather than dividing by it', () => {
+    expect(rateDeviationExceeds('0', '4', 1n, 4n)).toBe(true);
+    expect(rateDeviationExceeds('4', '0', 1n, 4n)).toBe(true);
   });
 });
