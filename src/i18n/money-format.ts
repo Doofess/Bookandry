@@ -165,3 +165,30 @@ export function currencyName(code: Currency, locale: string): string {
     return code;
   }
 }
+
+/**
+ * A compact amount for a chart axis tick: "$1.2K", "‏₪1.2 אלף".
+ *
+ * Axis labels have room for about six characters, and a full "1,234,567.00"
+ * tick either overlaps its neighbour or forces the plot area down to nothing.
+ *
+ * Still no float: `Intl.NumberFormat` has accepted exact decimal STRINGS since
+ * ES2023, so the value reaches the formatter with every digit intact and the
+ * rounding to one decimal is the formatter's, not ours. The bidi marks are
+ * stripped for the same reason as everywhere else - the tick renders inside the
+ * chart's LTR island.
+ */
+export function formatCompactMoney(minor: Minor, currency: Currency, locale: string): string {
+  const decimal = toDecimalString(Math.abs(minor), currency);
+  const text = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  })
+    .format(decimal as Intl.StringNumericLiteral)
+    .replace(BIDI_MARKS, '');
+
+  return minor < 0 ? `${MINUS_SIGN}${text}` : text;
+}

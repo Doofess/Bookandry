@@ -210,6 +210,38 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   The chart's plot area is an LTR island.
+
+   A plot is a coordinate system, not prose: time runs left to right in every
+   language. The island is set with dir="ltr" on the wrapper in TSX; these two
+   rules handle what that alone cannot.
+
+   "unicode-bidi: plaintext" on the SVG text: an axis tick in Hebrew is a MIXED
+   run - Hebrew month name, Latin digits - and inside an LTR island the bidi
+   algorithm would reorder it. Plaintext resolves each tick's direction from its
+   own first strong character, which is what makes "מרץ 2026" read correctly
+   while "1.2K" beside it still reads left to right.
+
+   The tooltip is PROSE and lives inside that wrapper, so it takes the page
+   direction back through a `dir` attribute in TSX.
+
+   Note what is NOT here: a `direction` declaration on `.chart-tooltip`. The
+   `dir` attribute works through a UA-level rule, so ANY author rule setting
+   `direction` on the same element wins - including `direction: inherit`, which
+   looks like a no-op and in fact pins the tooltip to the island's LTR. The
+   isolation below is all this class needs.
+--------------------------------------------------------------------------- */
+.recharts-wrapper text {
+  unicode-bidi: plaintext;
+}
+
+@layer base {
+  .chart-tooltip {
+    unicode-bidi: isolate;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

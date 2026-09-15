@@ -12,3 +12,7 @@ blob-report/
 .env*
 .DS_Store
 Thumbs.db
+
+# Screenshot matrix and ad-hoc browser captures. Phase 7 reviews these by eye;
+# they are build output, not source, and a 400KB PNG per run bloats history.
+artifacts/
