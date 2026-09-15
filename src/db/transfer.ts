@@ -6,6 +6,7 @@ import { validateEnvelope, type ValidationIssue } from '@/domain/transfer-valida
 import type { Override, Transaction } from '@/types/domain';
 import type { Currency, IsoInstant } from '@/types/money';
 
+import { LOCK_IMPORT, LockBusyError, withLock } from './lock';
 import { SETTINGS_ID } from './repos/settings';
 
 export const APP_VERSION = '0.1.0';
@@ -110,7 +111,9 @@ export type ImportResult =
       readonly reason: 'base_mismatch';
       readonly fileCurrency: Currency;
       readonly localCurrency: Currency;
-    };
+    }
+  /** Another tab is already importing. Two interleaved rewrites is no rewrite. */
+  | { readonly ok: false; readonly reason: 'busy' };
 
 /**
  * Re-denominate incoming rows into the LOCAL base currency.
@@ -157,11 +160,27 @@ function redenominate(
   };
 }
 
+/**
+ * Apply a file, under the same origin-wide lock the reconvert takes.
+ *
+ * An import-replace deletes every row in the database; a second tab part-way
+ * through its own import would interleave two full rewrites. `ifAvailable`,
+ * because the second one is never what the user meant.
+ */
 export async function importDocument(
   db: GreenbackDB,
   input: unknown,
   options: ImportOptions,
 ): Promise<ImportResult> {
+  try {
+    return await withLock(LOCK_IMPORT, () => runImport(db, input, options), { ifAvailable: true });
+  } catch (error) {
+    if (error instanceof LockBusyError) return { ok: false, reason: 'busy' };
+    throw error;
+  }
+}
+
+async function runImport(db: GreenbackDB, input: unknown, options: ImportOptions): Promise<ImportResult> {
   const validated = validateEnvelope(input);
   if (!validated.ok) {
     return validated.reason === 'unknown_version'

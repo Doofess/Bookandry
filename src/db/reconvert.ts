@@ -10,6 +10,7 @@ import {
 } from '@/domain/reconvert';
 import type { Currency, IsoInstant, LocalDate } from '@/types/money';
 
+import { LOCK_RECONVERT, LockBusyError, withLock } from './lock';
 import { SETTINGS_ID } from './repos/settings';
 
 /**
@@ -47,7 +48,9 @@ export type ReconvertResult =
       readonly changed: { transactions: number; overrides: number; profiles: number };
     }
   | { readonly ok: false; readonly reason: 'unresolved'; readonly unresolved: readonly UnresolvedRow[] }
-  | { readonly ok: false; readonly reason: 'fetch_failed'; readonly failed: readonly string[] };
+  | { readonly ok: false; readonly reason: 'fetch_failed'; readonly failed: readonly string[] }
+  /** Another tab is already reconverting. Both finishing would split the base. */
+  | { readonly ok: false; readonly reason: 'busy' };
 
 export async function loadReconvertInput(
   db: GreenbackDB,
@@ -144,7 +147,15 @@ export async function applyReconvertPlan(
   });
 }
 
-/** The whole flow. Aborts before writing anything if any rate is missing. */
+/**
+ * The whole flow. Aborts before writing anything if any rate is missing.
+ *
+ * Held under an origin-wide lock for its entire duration - prefetch included,
+ * because the seconds spent fetching are exactly when a second tab would start
+ * its own run. `ifAvailable` rather than queueing: a progress bar silently
+ * waiting on another tab is indistinguishable from a hang, and the second run
+ * would be pointless anyway once the first one lands.
+ */
 export async function reconvertDefaultCurrency(
   db: GreenbackDB,
   oldBase: Currency,
@@ -155,6 +166,22 @@ export async function reconvertDefaultCurrency(
     return { ok: true, changed: { transactions: 0, overrides: 0, profiles: 0 } };
   }
 
+  try {
+    return await withLock(LOCK_RECONVERT, () => runReconvert(db, oldBase, newBase, deps), {
+      ifAvailable: true,
+    });
+  } catch (error) {
+    if (error instanceof LockBusyError) return { ok: false, reason: 'busy' };
+    throw error;
+  }
+}
+
+async function runReconvert(
+  db: GreenbackDB,
+  oldBase: Currency,
+  newBase: Currency,
+  deps: ReconvertDeps,
+): Promise<ReconvertResult> {
   const input = await loadReconvertInput(db, oldBase, newBase);
 
   const { lookup, failed } = await prefetchRates(input, deps);

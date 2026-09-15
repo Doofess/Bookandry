@@ -1,0 +1,153 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { materialize } from '@/db/materialize';
+import { buildSeedCategories } from '@/db/seed';
+import { MONEY, d, modify } from '@/domain/test-factories';
+import { InvalidNameError } from '@/domain/validation';
+import { freshDb, type TestDb } from '@/test/db-harness';
+import type { IsoInstant } from '@/types/money';
+
+import {
+  BuiltinCategoryError,
+  createCategory,
+  deleteCategory,
+  listCategories,
+  renameCategory,
+  setCategoryArchived,
+} from './categories';
+
+const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
+
+let handle: TestDb;
+beforeEach(async () => {
+  handle = freshDb();
+  await handle.db.categories.bulkPut(buildSeedCategories(NOW));
+});
+afterEach(async () => {
+  await handle.dispose();
+});
+
+const addTx = async (id: string, categoryId: string) =>
+  handle.db.transactions.put(
+    materialize({
+      id,
+      profileId: 'p1',
+      kind: 'expense',
+      categoryId,
+      money: MONEY,
+      recurrence: { type: 'one_time' },
+      date: d('2026-09-01'),
+      seriesRootId: id,
+      createdAt: NOW,
+      updatedAt: NOW,
+    }),
+  );
+
+describe('listCategories', () => {
+  it('hides archived categories by default', async () => {
+    await setCategoryArchived(handle.db, 'cat.gift', true, NOW);
+    const visible = await listCategories(handle.db);
+    expect(visible.some((c) => c.id === 'cat.gift')).toBe(false);
+    expect(
+      (await listCategories(handle.db, { includeArchived: true })).some((c) => c.id === 'cat.gift'),
+    ).toBe(true);
+  });
+
+  it('filters by kind and stays in sort order', async () => {
+    const income = await listCategories(handle.db, { kind: 'income' });
+    expect(income.every((c) => c.kind === 'income')).toBe(true);
+    expect(income.map((c) => c.sortOrder)).toEqual([...income.map((c) => c.sortOrder)].sort((a, b) => a - b));
+  });
+
+  it('includes the Israeli built-ins nobody files under Utilities', async () => {
+    const ids = (await listCategories(handle.db, { kind: 'expense' })).map((c) => c.id);
+    expect(ids).toContain('cat.arnona');
+    expect(ids).toContain('cat.buildingFee');
+  });
+});
+
+describe('custom categories', () => {
+  it('appends after the last built-in of its kind', async () => {
+    const before = await listCategories(handle.db, { kind: 'expense' });
+    const highest = Math.max(...before.map((c) => c.sortOrder));
+
+    const created = await createCategory(
+      handle.db,
+      'c1',
+      { name: 'Pets', kind: 'expense', icon: 'Dog' },
+      NOW,
+    );
+
+    expect(created.sortOrder).toBe(highest + 1);
+    expect(created.source).toBe('custom');
+    // Income and expense are ordered independently, so a new expense must not
+    // renumber against the income list.
+    const income = await listCategories(handle.db, { kind: 'income' });
+    expect(Math.max(...income.map((c) => c.sortOrder))).toBeLessThan(created.sortOrder);
+  });
+
+  it('enforces the name limits', async () => {
+    await expect(
+      createCategory(handle.db, 'c1', { name: '  ', kind: 'expense', icon: 'Dog' }, NOW),
+    ).rejects.toThrow(InvalidNameError);
+    await expect(
+      createCategory(handle.db, 'c2', { name: 'x'.repeat(41), kind: 'expense', icon: 'Dog' }, NOW),
+    ).rejects.toThrow(InvalidNameError);
+  });
+});
+
+describe('built-ins are archivable, not editable', () => {
+  it('refuses to rename one, because the name is an i18n key', async () => {
+    await expect(renameCategory(handle.db, 'cat.groceries', 'Food', NOW)).rejects.toThrow(
+      BuiltinCategoryError,
+    );
+  });
+
+  it('refuses to delete one', async () => {
+    await expect(deleteCategory(handle.db, 'cat.groceries', {}, NOW)).rejects.toThrow(BuiltinCategoryError);
+  });
+
+  it('archives one instead', async () => {
+    await setCategoryArchived(handle.db, 'cat.groceries', true, NOW);
+    expect((await handle.db.categories.get('cat.groceries'))?.isArchived).toBe(1);
+    await setCategoryArchived(handle.db, 'cat.groceries', false, NOW);
+    expect((await handle.db.categories.get('cat.groceries'))?.archivedAt).toBeUndefined();
+  });
+});
+
+describe('deleteCategory', () => {
+  beforeEach(async () => {
+    await createCategory(handle.db, 'c1', { name: 'Pets', kind: 'expense', icon: 'Dog' }, NOW);
+  });
+
+  it('moves transactions to the fallback category', async () => {
+    await addTx('t1', 'c1');
+    const result = await deleteCategory(handle.db, 'c1', {}, NOW);
+
+    expect(result.transactionsMoved).toBe(1);
+    expect((await handle.db.transactions.get('t1'))?.categoryId).toBe('cat.otherExpense');
+    expect(await handle.db.categories.get('c1')).toBeUndefined();
+  });
+
+  it('moves per-occurrence category edits too', async () => {
+    await addTx('t1', 'cat.groceries');
+    await handle.db.overrides.put({
+      ...modify('t1', d('2026-09-01'), { categoryId: 'c1' }),
+      id: 'o1',
+    });
+
+    const result = await deleteCategory(handle.db, 'c1', { reassignTo: 'cat.shopping' }, NOW);
+
+    expect(result.overridesMoved).toBe(1);
+    const override = await handle.db.overrides.get('o1');
+    // An override pointing at a deleted category renders one feed row with no
+    // icon and no name, and nothing on screen explains why.
+    expect(override?.action === 'modify' ? override.patch.categoryId : undefined).toBe('cat.shopping');
+  });
+
+  it('refuses to move expenses into an income category', async () => {
+    await addTx('t1', 'c1');
+    await expect(deleteCategory(handle.db, 'c1', { reassignTo: 'cat.salary' }, NOW)).rejects.toThrow();
+    expect(await handle.db.categories.get('c1')).toBeDefined();
+  });
+});

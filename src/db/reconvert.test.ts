@@ -291,3 +291,39 @@ describe('prefetchRates', () => {
     expect(failed).toEqual(['GBP on 2026-03-12']);
   });
 });
+
+describe('two tabs', () => {
+  it('refuses a second reconvert while one is running', async () => {
+    await seedTx('t1', '2026-03-12', money({ currency: 'EUR', amountMinor: 4500 }));
+    await seedProfile();
+
+    // Hold the first run inside its fetch - the seconds a real prefetch spends
+    // on the network are exactly when a second tab would start its own.
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const slowQuote = async (currency: Currency, on: LocalDate) => {
+      await held;
+      return quoteFor('ILS')(currency, on);
+    };
+
+    const first = reconvertDefaultCurrency(handle.db, 'USD', 'ILS', {
+      fetchQuote: slowQuote,
+      now: NOW,
+    });
+    await Promise.resolve();
+
+    const second = await reconvertDefaultCurrency(handle.db, 'USD', 'ILS', {
+      fetchQuote: quoteFor('ILS'),
+      now: NOW,
+    });
+    expect(second).toEqual({ ok: false, reason: 'busy' });
+
+    release();
+    expect(await first).toMatchObject({ ok: true });
+    // Exactly one conversion happened, so the base was never split.
+    expect((await handle.db.transactions.get('t1'))?.money.baseCurrency).toBe('ILS');
+  });
+});

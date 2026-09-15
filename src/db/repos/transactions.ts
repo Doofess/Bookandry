@@ -1,4 +1,5 @@
 import type { GreenbackDB } from '@/db/db';
+import { LOCK_SWEEP, withLock } from '@/db/lock';
 import { materialize, type TransactionDraft } from '@/db/materialize';
 import { compareLocal, instantFromMs } from '@/lib/dates';
 import type { Override, Transaction } from '@/types/domain';
@@ -109,6 +110,22 @@ export async function purgeExpiredDeletions(
 
     return { purged: ids.length, overridesRemoved: orphans.length };
   });
+}
+
+/**
+ * The sweeper's entry point.
+ *
+ * Queues rather than refusing: two tabs both sweeping is harmless in outcome
+ * but races on the same tombstones, and unlike the reconvert there is no user
+ * waiting on a progress bar. The lock-free primitive above stays directly
+ * testable.
+ */
+export async function sweepExpiredDeletions(
+  db: GreenbackDB,
+  nowMs: number,
+  windowMs = RECOVERY_WINDOW_MS,
+): Promise<{ purged: number; overridesRemoved: number }> {
+  return withLock(LOCK_SWEEP, () => purgeExpiredDeletions(db, nowMs, windowMs));
 }
 
 /**
