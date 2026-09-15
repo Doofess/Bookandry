@@ -27,7 +27,8 @@ export class InvalidNameError extends Error {
  */
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
-function graphemeLength(value: string): number {
+/** Characters as a PERSON counts them, not UTF-16 units. */
+export function graphemeLength(value: string): number {
   let count = 0;
   for (const _ of segmenter.segment(value)) count += 1;
   return count;

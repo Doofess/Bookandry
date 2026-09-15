@@ -35,5 +35,52 @@
     "label": "Language",
     "en": "English",
     "he": "עברית"
+  },
+  "currency": {
+    "label": "Currency",
+    "search": "Search currencies",
+    "empty": "No currency found",
+    "suggested": "Suggested",
+    "all": "All currencies"
+  },
+  "firstRun": {
+    "step": "Step {{current}} of {{total}}",
+    "back": "Back",
+    "next": "Continue",
+    "finish": "Start tracking",
+    "welcomeTitle": "Welcome to Greenback",
+    "welcomeBody": "Three quick questions, then you are done. Everything stays on this device.",
+    "localeTitle": "Language and currency",
+    "localeLanguageHelp": "You can change this later in Settings.",
+    "localeCurrencyHelp": "Everything is converted into this currency. Changing it later rewrites every amount you have saved, so it is worth getting right now.",
+    "peopleTitle": "Who is tracking money here?",
+    "peoplePrivacy": "Profiles organise your money; they do not hide it. There is no sign-in, so anyone using this device sees everything.",
+    "peopleName": "Name",
+    "peopleNamePlaceholder": "Dana",
+    "peopleAdd": "Add another person",
+    "peopleRemove": "Remove {{name}}",
+    "peopleAtLimit": "That is the maximum, one profile per colour.",
+    "shapeTitle": "How do you want to set this up?",
+    "shapeSolo": "Just me",
+    "shapeSoloHint": "One profile. You can add people later.",
+    "shapeCouple": "Two of us, plus a shared household",
+    "shapeCoupleHint": "Two personal profiles and a joint one for rent, groceries and bills. The pattern that stops joint spending landing on one person.",
+    "balanceTitle": "How much do you have right now?",
+    "balanceBody": "Greenback ignores everything before today and starts counting from here. You can change it later in Settings.",
+    "balanceLabel": "Balance for {{name}}",
+    "balanceFrom": "Counting from {{date}}",
+    "balanceSkip": "Skip, start from zero",
+    "demoTitle": "Want something to look at first?",
+    "demoLoad": "Load demo data",
+    "demoHint": "A sample Israeli household. Everything it adds is tagged and removable in one tap.",
+    "demoUnavailable": "Demo data is not available for {{currency}}.",
+    "creating": "Setting things up"
+  },
+  "validation": {
+    "nameRequired": "Give this person a name.",
+    "nameTooLong": "Names are limited to {{count}} characters.",
+    "amountInvalid": "Enter an amount.",
+    "nameDuplicate": "Someone already has this name.",
+    "colorDuplicate": "Someone already has this colour."
   }
 }

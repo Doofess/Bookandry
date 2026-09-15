@@ -1,0 +1,24 @@
+{
+  "builtin": {
+    "salary": "משכורת",
+    "freelance": "פרילנס",
+    "gift": "מתנה",
+    "investment": "השקעות",
+    "refund": "החזר",
+    "otherIncome": "הכנסה אחרת",
+    "rent": "שכר דירה",
+    "groceries": "מצרכים",
+    "utilities": "חשבונות בית",
+    "arnona": "ארנונה",
+    "buildingFee": "ועד בית",
+    "transport": "תחבורה",
+    "dining": "אוכל בחוץ",
+    "health": "בריאות",
+    "insurance": "ביטוח",
+    "subscriptions": "מנויים",
+    "shopping": "קניות",
+    "entertainment": "בילויים",
+    "education": "חינוך",
+    "otherExpense": "הוצאה אחרת"
+  }
+}

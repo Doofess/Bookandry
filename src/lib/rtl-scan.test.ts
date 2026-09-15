@@ -56,3 +56,29 @@ describe('rtl scanner', () => {
     expect(hits[0]?.line).toBe(2);
   });
 });
+
+describe('precision: the gate must not cry wolf', () => {
+  it('ignores the words "left-to-right" and "right-to-left" in prose', () => {
+    // It fired on exactly this, in the file documenting bidi handling. A gate
+    // that reports false positives is a gate everyone learns to skip.
+    const src = [
+      '// Render the amount in a left-to-right island.',
+      '/* CLDR injects a right-to-left mark before the symbol. */',
+    ].join('\n');
+    expect(scanSource('src/x.tsx', src)).toEqual([]);
+  });
+
+  it('still catches a real positional utility', () => {
+    expect(scanSource('src/x.tsx', 'className="left-4"').map((h) => h.token)).toEqual(['left-4']);
+    expect(scanSource('src/x.tsx', 'className="-right-2"').map((h) => h.token)).toEqual(['-right-2']);
+    expect(scanSource('src/x.tsx', 'className="left-auto"').map((h) => h.token)).toEqual(['left-auto']);
+    expect(scanSource('src/x.tsx', 'className="right-full"').map((h) => h.token)).toEqual(['right-full']);
+    expect(scanSource('src/x.tsx', 'className="left-px"').map((h) => h.token)).toEqual(['left-px']);
+    expect(scanSource('src/x.tsx', 'className="left-[3px]"').map((h) => h.token)).toEqual(['left-[3px]']);
+    expect(scanSource('src/x.tsx', 'className="left-(--x)"').map((h) => h.token)).toEqual(['left-(--x)']);
+  });
+
+  it('still honours the rtl:/ltr: escape', () => {
+    expect(scanSource('src/x.tsx', 'className="rtl:left-4"')).toEqual([]);
+  });
+});

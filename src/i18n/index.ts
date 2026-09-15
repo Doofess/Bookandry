@@ -2,8 +2,12 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import { readBootMirror, type Language } from './boot';
+import enCategories from './locales/en/categories.json';
 import enCommon from './locales/en/common.json';
+import enProfiles from './locales/en/profiles.json';
+import heCategories from './locales/he/categories.json';
 import heCommon from './locales/he/common.json';
+import heProfiles from './locales/he/profiles.json';
 
 export const defaultNS = 'common' as const;
 
@@ -15,9 +19,20 @@ export const defaultNS = 'common' as const;
  * (`globPatterns` covers js/css/html), so switching to Hebrew while offline
  * would fail — unacceptable for an offline-first app.
  */
+export const NAMESPACES = ['common', 'categories', 'profiles'] as const;
+
+/**
+ * Three namespaces, not one.
+ *
+ * `categories` and `profiles` are referenced by KEY from stored rows -
+ * `Category.nameKey` is `categories:builtin.groceries` - so their shape is
+ * part of the data model rather than of the UI. Keeping them separate makes
+ * that visible, and keeps a rename of a button label away from anything a row
+ * points at.
+ */
 export const resources = {
-  en: { common: enCommon },
-  he: { common: heCommon },
+  en: { common: enCommon, categories: enCategories, profiles: enProfiles },
+  he: { common: heCommon, categories: heCategories, profiles: heProfiles },
 } as const;
 
 /**
@@ -37,7 +52,7 @@ export async function initI18n(): Promise<typeof i18n> {
     fallbackLng: 'en',
     supportedLngs: ['en', 'he'],
     defaultNS,
-    ns: ['common'],
+    ns: [...NAMESPACES],
     keySeparator: '.',
     nsSeparator: ':',
     // React already escapes; double-escaping mangles currency symbols and quotes.

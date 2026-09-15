@@ -4,8 +4,10 @@ import { type ReactElement, type ReactNode } from 'react';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
 import { MemoryRouter } from 'react-router-dom';
 
+import { TodayProvider } from '@/app/today-provider';
 import { DirectionProvider } from '@/components/ui/direction';
-import { resources } from '@/i18n';
+import { NAMESPACES, resources } from '@/i18n';
+import { fixedClock } from '@/lib/clock';
 
 let ready = false;
 
@@ -16,7 +18,7 @@ export async function initTestI18n(lng: 'en' | 'he' = 'en'): Promise<void> {
       lng,
       fallbackLng: 'en',
       defaultNS: 'common',
-      ns: ['common'],
+      ns: [...NAMESPACES],
       interpolation: { escapeValue: false },
       react: { useSuspense: false },
     });
@@ -25,6 +27,15 @@ export async function initTestI18n(lng: 'en' | 'he' = 'en'): Promise<void> {
     await i18n.changeLanguage(lng);
   }
 }
+
+/**
+ * The date every component test sees.
+ *
+ * Frozen, and injected rather than mocked: `today` is an argument everywhere in
+ * the domain, and a suite that reads the ambient clock passes in September and
+ * fails on the 1st of a month, on 29 February, and in March.
+ */
+export const TEST_NOW = new Date('2026-09-15T10:00:00.000Z');
 
 export function renderWithProviders(
   ui: ReactElement,
@@ -36,7 +47,9 @@ export function renderWithProviders(
     return (
       <I18nextProvider i18n={i18n}>
         <DirectionProvider direction={dir}>
-          <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+          <TodayProvider clock={fixedClock(TEST_NOW)}>
+            <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+          </TodayProvider>
         </DirectionProvider>
       </I18nextProvider>
     );

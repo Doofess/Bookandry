@@ -77,21 +77,3 @@ export function buildSeedPaymentMethods(now: IsoInstant): PaymentMethod[] {
     },
   ];
 }
-
-/** The curated colour palette. Uniqueness across profiles caps the app at 12. */
-export const PROFILE_PALETTE: readonly { hex: string; nameKey: string }[] = [
-  { hex: '#16794a', nameKey: 'profiles:color.emerald' },
-  { hex: '#0f766e', nameKey: 'profiles:color.teal' },
-  { hex: '#0369a1', nameKey: 'profiles:color.ocean' },
-  { hex: '#4338ca', nameKey: 'profiles:color.indigo' },
-  { hex: '#7e22ce', nameKey: 'profiles:color.violet' },
-  { hex: '#a21caf', nameKey: 'profiles:color.orchid' },
-  { hex: '#be123c', nameKey: 'profiles:color.ruby' },
-  { hex: '#c2410c', nameKey: 'profiles:color.ember' },
-  { hex: '#a16207', nameKey: 'profiles:color.amber' },
-  { hex: '#4d7c0f', nameKey: 'profiles:color.olive' },
-  { hex: '#57534e', nameKey: 'profiles:color.stone' },
-  { hex: '#1e293b', nameKey: 'profiles:color.slate' },
-];
-
-export const MAX_PROFILES = PROFILE_PALETTE.length;

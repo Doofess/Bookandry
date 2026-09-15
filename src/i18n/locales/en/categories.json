@@ -1,0 +1,24 @@
+{
+  "builtin": {
+    "salary": "Salary",
+    "freelance": "Freelance",
+    "gift": "Gift",
+    "investment": "Investment",
+    "refund": "Refund",
+    "otherIncome": "Other income",
+    "rent": "Rent",
+    "groceries": "Groceries",
+    "utilities": "Utilities",
+    "arnona": "Arnona",
+    "buildingFee": "Building fee",
+    "transport": "Transport",
+    "dining": "Eating out",
+    "health": "Health",
+    "insurance": "Insurance",
+    "subscriptions": "Subscriptions",
+    "shopping": "Shopping",
+    "entertainment": "Entertainment",
+    "education": "Education",
+    "otherExpense": "Other"
+  }
+}

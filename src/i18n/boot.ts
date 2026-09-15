@@ -30,20 +30,56 @@ function isTheme(v: unknown): v is Theme {
   return v === 'light' || v === 'dark' || v === 'system';
 }
 
-export function readBootMirror(): BootMirror {
+/**
+ * The stored mirror, or undefined when nothing has been written yet.
+ *
+ * The distinction matters exactly once, and it is the first launch: "no mirror"
+ * is not the same as "English". Collapsing the two gave an Israeli opening the
+ * app for the first time an English, left-to-right wizard whose own language
+ * toggle already said Hebrew.
+ */
+export function readStoredBootMirror(): BootMirror | undefined {
   try {
     const raw = localStorage.getItem(BOOT_KEY);
-    if (!raw) return DEFAULT_BOOT;
+    if (!raw) return undefined;
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return DEFAULT_BOOT;
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
     const o = parsed as Record<string, unknown>;
     return {
       lang: isLanguage(o['lang']) ? o['lang'] : DEFAULT_BOOT.lang,
       theme: isTheme(o['theme']) ? o['theme'] : DEFAULT_BOOT.theme,
     };
   } catch {
-    return DEFAULT_BOOT;
+    return undefined;
   }
+}
+
+/** The stored mirror, falling back to the browser's own language on first launch. */
+export function readBootMirror(): BootMirror {
+  const stored = readStoredBootMirror();
+  if (stored !== undefined) return stored;
+  return { lang: detectBootLanguage(), theme: DEFAULT_BOOT.theme };
+}
+
+/**
+ * Hebrew if any preferred language is Hebrew.
+ *
+ * Kept here rather than in `domain/locale-defaults` because this runs before
+ * anything else and must mirror the inline script in index.html exactly - two
+ * implementations of one rule, on purpose, because one of them cannot import.
+ */
+export function detectBootLanguage(): Language {
+  try {
+    const tags = navigator.languages.length > 0 ? navigator.languages : [navigator.language];
+    for (const tag of tags) {
+      const code = tag.slice(0, 2).toLowerCase();
+      // 'iw' is the deprecated ISO 639-1 code for Hebrew, still emitted.
+      if (code === 'he' || code === 'iw') return 'he';
+    }
+  } catch {
+    /* navigator unavailable; fall through */
+  }
+  return 'en';
 }
 
 /**

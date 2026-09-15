@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { materialize } from '@/db/materialize';
-import { MAX_PROFILES, PROFILE_PALETTE } from '@/db/seed';
+import { MAX_PROFILES, PROFILE_PALETTE } from '@/domain/palette';
 import { MONEY, d } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
 import { freshDb, type TestDb } from '@/test/db-harness';
@@ -61,14 +61,14 @@ describe('createProfile', () => {
   it('assigns the first free palette colour', async () => {
     const a = await createProfile(handle.db, 'p1', draft('Dana'), NOW);
     const b = await createProfile(handle.db, 'p2', draft('Yossi'), NOW);
-    expect(a.color).toBe(PROFILE_PALETTE[0]?.hex);
-    expect(b.color).toBe(PROFILE_PALETTE[1]?.hex);
+    expect(a.color).toBe(PROFILE_PALETTE[0].hex);
+    expect(b.color).toBe(PROFILE_PALETTE[1].hex);
   });
 
   it('refuses a colour another profile already has', async () => {
     await createProfile(handle.db, 'p1', draft('Dana'), NOW);
     await expect(
-      createProfile(handle.db, 'p2', { ...draft('Yossi'), color: PROFILE_PALETTE[0]?.hex }, NOW),
+      createProfile(handle.db, 'p2', { ...draft('Yossi'), color: PROFILE_PALETTE[0].hex }, NOW),
     ).rejects.toThrow(ColorTakenError);
   });
 
@@ -107,7 +107,7 @@ describe('updateProfile', () => {
   it('refuses to take a colour that is already in use', async () => {
     await createProfile(handle.db, 'p1', draft('Dana'), NOW);
     await createProfile(handle.db, 'p2', draft('Yossi'), NOW);
-    await expect(updateProfile(handle.db, 'p2', { color: PROFILE_PALETTE[0]?.hex }, NOW)).rejects.toThrow(
+    await expect(updateProfile(handle.db, 'p2', { color: PROFILE_PALETTE[0].hex }, NOW)).rejects.toThrow(
       ColorTakenError,
     );
   });

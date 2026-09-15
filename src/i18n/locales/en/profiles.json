@@ -1,0 +1,38 @@
+{
+  "color": {
+    "label": "Colour",
+    "emerald": "Emerald",
+    "teal": "Teal",
+    "ocean": "Ocean",
+    "indigo": "Indigo",
+    "violet": "Violet",
+    "orchid": "Orchid",
+    "ruby": "Ruby",
+    "ember": "Ember",
+    "amber": "Amber",
+    "olive": "Olive",
+    "stone": "Stone",
+    "slate": "Slate"
+  },
+  "avatar": {
+    "label": "Avatar",
+    "fox": "Fox",
+    "cat": "Cat",
+    "panda": "Panda",
+    "owl": "Owl",
+    "frog": "Frog",
+    "koala": "Koala",
+    "penguin": "Penguin",
+    "bear": "Bear",
+    "bunny": "Bunny",
+    "sloth": "Sloth",
+    "whale": "Whale",
+    "hedgehog": "Hedgehog",
+    "otter": "Otter",
+    "duck": "Duck",
+    "monkey": "Monkey",
+    "robot": "Robot"
+  },
+  "household": "Household",
+  "limit": "Greenback supports up to {{count}} profiles, one per colour."
+}

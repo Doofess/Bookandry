@@ -11,12 +11,17 @@ import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
 import { ROUTES } from '@/app/routes';
+import { TodayProvider } from '@/app/today-provider';
+import { db } from '@/db/db';
+import { ensureSettings } from '@/db/repos/settings';
 import { ChartScreen } from '@/features/chart/chart-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
+import { FirstRun } from '@/features/first-run/first-run';
 import { ProfilesScreen } from '@/features/profiles/profiles-screen';
 import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
 import { readBootMirror } from '@/i18n/boot';
+import { systemClock } from '@/lib/clock';
 
 const router = createBrowserRouter([
   {
@@ -37,6 +42,13 @@ async function bootstrap(): Promise<void> {
   // local-first app with no sync.
   void navigator.storage.persist();
 
+  // Open the database before the first render so `on('populate')` has run and
+  // the settings singleton exists. The boot gate then distinguishes "still
+  // loading" from "no profiles yet" instead of conflating them into one
+  // skeleton that never resolves.
+  await db.open();
+  await ensureSettings(db, systemClock.nowIso());
+
   await initI18n();
 
   const rootEl = document.getElementById('root');
@@ -48,9 +60,11 @@ async function bootstrap(): Promise<void> {
     <StrictMode>
       <I18nextProvider i18n={i18n}>
         <AppDirection theme={theme}>
-          <BootGate ready>
-            <RouterProvider router={router} />
-          </BootGate>
+          <TodayProvider>
+            <BootGate firstRun={<FirstRun />}>
+              <RouterProvider router={router} />
+            </BootGate>
+          </TodayProvider>
         </AppDirection>
       </I18nextProvider>
     </StrictMode>,

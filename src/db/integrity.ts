@@ -1,4 +1,5 @@
-import { FALLBACK_CATEGORY, PROFILE_PALETTE } from '@/db/seed';
+import { FALLBACK_CATEGORY } from '@/db/seed';
+import { PROFILE_PALETTE } from '@/domain/palette';
 import type { Category, Override, Profile, Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 

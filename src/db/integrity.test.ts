@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { PROFILE_PALETTE } from '@/domain/palette';
 import { MONEY, d } from '@/domain/test-factories';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import type { Profile, Transaction } from '@/types/domain';
@@ -8,7 +9,7 @@ import type { IsoInstant } from '@/types/money';
 import { checkIntegrity, repairIntegrity } from './integrity';
 import { materialize } from './materialize';
 import { ensureSettings } from './repos/settings';
-import { buildSeedCategories, buildSeedPaymentMethods, PROFILE_PALETTE } from './seed';
+import { buildSeedCategories, buildSeedPaymentMethods } from './seed';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 const EARLIER = '2026-01-01T00:00:00.000Z' as IsoInstant;
@@ -19,7 +20,7 @@ const profile = (id: string, over: Partial<Profile> = {}): Profile => ({
   id,
   name: id,
   avatar: 'fox',
-  color: PROFILE_PALETTE[0]?.hex ?? '#16794a',
+  color: PROFILE_PALETTE[0].hex,
   openingBalanceMinor: 0,
   openingBalanceCurrency: 'USD',
   openingBalanceDate: d('2026-01-01'),
@@ -114,7 +115,7 @@ describe('repairIntegrity', () => {
   });
 
   it('moves an ownerless transaction to the oldest profile', async () => {
-    await handle.db.profiles.put(profile('p2', { color: PROFILE_PALETTE[1]?.hex, createdAt: NOW }));
+    await handle.db.profiles.put(profile('p2', { color: PROFILE_PALETTE[1].hex, createdAt: NOW }));
     await handle.db.transactions.put(tx({ id: 't1', profileId: 'ghost' }));
 
     await repairIntegrity(handle.db, NOW);
@@ -192,8 +193,8 @@ describe('repairIntegrity', () => {
     await repairIntegrity(handle.db, NOW);
 
     const [a, b] = [await handle.db.profiles.get('p1'), await handle.db.profiles.get('p2')];
-    expect(a?.color).toBe(PROFILE_PALETTE[0]?.hex);
-    expect(b?.color).toBe(PROFILE_PALETTE[1]?.hex);
+    expect(a?.color).toBe(PROFILE_PALETTE[0].hex);
+    expect(b?.color).toBe(PROFILE_PALETTE[1].hex);
   });
 
   it('applies several repairs to one row in a single write', async () => {

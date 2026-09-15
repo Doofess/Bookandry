@@ -19,7 +19,14 @@ export type RtlHit = { file: string; line: number; token: string };
  */
 const PHYSICAL: readonly RegExp[] = [
   /^-?(ml|mr|pl|pr)-/,
-  /^-?(left|right)-/,
+  /**
+   * A REAL positional utility always takes a value: a number, a fraction,
+   * `auto`, `full`, `px`, or an arbitrary `[...]`/`(...)`. Matching a bare
+   * `left-` prefix instead makes the gate fire on the words "left-to-right"
+   * and "right-to-left" in a comment - which it did, on the very file
+   * documenting bidi handling. A gate that cries wolf gets ignored.
+   */
+  /^-?(left|right)-(\d|auto$|full$|px$|\[|\()/,
   /^(text|float|origin|object|bg)-(left|right)$/,
   /^-?scroll-(ml|mr|pl|pr)-/,
   /^rounded-(l|r|tl|tr|bl|br)(?![a-z])/,
@@ -66,7 +73,11 @@ export function scanSource(file: string, src: string): RtlHit[] {
       return;
     }
 
-    for (const raw of line.split(/[\s"'`{}(),;]+/)) {
+    // Parens are deliberately NOT separators: splitting on them tore
+    // `left-(--x)` into `left-` and `--x`, and `[&_svg:not(...)]:size-4` into  rtl-allow: the example IS the class
+    // pieces that `splitVariants` was written to keep whole. Quotes, braces and
+    // commas already bound every class string.
+    for (const raw of line.split(/[\s"'`{},;]+/)) {
       if (!raw || raw.length > 200) continue;
       const { variants, utility } = splitVariants(raw);
       if (!utility || isExempt(variants)) continue;

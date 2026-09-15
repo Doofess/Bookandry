@@ -38,9 +38,29 @@ const hits = [];
 for (const file of files) {
   if (ALLOWED.includes(file.split(BACKSLASH).join('/'))) continue;
   const src = await readFile(file, 'utf8');
+  // Block-comment state, carried across lines. Prose is not arithmetic, and a
+  // gate that fires on the JSDoc EXPLAINING why a pattern was avoided teaches
+  // people to reach for the escape hatch instead of reading the message.
+  let inBlockComment = false;
+
   src.split(/\r?\n/).forEach((line, i) => {
     if (line.includes('money-allow')) return;
-    const code = line.replace(/\/\/.*$/, '');
+
+    let code = line;
+    if (inBlockComment) {
+      const end = code.indexOf('*/');
+      if (end === -1) return;
+      inBlockComment = false;
+      code = code.slice(end + 2);
+    }
+    code = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    const open = code.indexOf('/*');
+    if (open !== -1) {
+      inBlockComment = true;
+      code = code.slice(0, open);
+    }
+    code = code.replace(/\/\/.*$/, '');
+
     for (const { re, msg } of BANNED) {
       if (re.test(code)) hits.push(`${file}:${i + 1}  ${msg}\n      ${line.trim().slice(0, 100)}`);
     }

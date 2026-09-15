@@ -35,5 +35,52 @@
     "label": "שפה",
     "en": "English",
     "he": "עברית"
+  },
+  "currency": {
+    "label": "מטבע",
+    "search": "חיפוש מטבעות",
+    "empty": "לא נמצא מטבע",
+    "suggested": "מוצעים",
+    "all": "כל המטבעות"
+  },
+  "firstRun": {
+    "step": "שלב {{current}} מתוך {{total}}",
+    "back": "חזרה",
+    "next": "המשך",
+    "finish": "אפשר להתחיל",
+    "welcomeTitle": "ברוכים הבאים ל-Greenback",
+    "welcomeBody": "שלוש שאלות קצרות וזהו. הכול נשאר על המכשיר הזה.",
+    "localeTitle": "שפה ומטבע",
+    "localeLanguageHelp": "אפשר לשנות בהמשך בהגדרות.",
+    "localeCurrencyHelp": "כל הסכומים מומרים למטבע הזה. שינוי שלו בהמשך יכתוב מחדש כל סכום שנשמר, ולכן כדאי לבחור נכון עכשיו.",
+    "peopleTitle": "מי עוקב כאן אחרי הכסף?",
+    "peoplePrivacy": "פרופילים מסדרים את הכסף, לא מסתירים אותו. אין התחברות, וכל מי שמשתמש במכשיר רואה הכול.",
+    "peopleName": "שם",
+    "peopleNamePlaceholder": "דנה",
+    "peopleAdd": "הוספת עוד אדם",
+    "peopleRemove": "מחיקת {{name}}",
+    "peopleAtLimit": "זה המקסימום, פרופיל אחד לכל צבע.",
+    "shapeTitle": "איך להגדיר את זה?",
+    "shapeSolo": "רק אני",
+    "shapeSoloHint": "פרופיל אחד. אפשר להוסיף אנשים בהמשך.",
+    "shapeCouple": "שנינו, ועוד משק בית משותף",
+    "shapeCoupleHint": "שני פרופילים אישיים ועוד אחד משותף לשכר דירה, מצרכים וחשבונות. כך הוצאות משותפות לא נרשמות על אדם אחד.",
+    "balanceTitle": "כמה כסף יש לכם כרגע?",
+    "balanceBody": "Greenback מתעלם מכל מה שהיה לפני היום ומתחיל לספור מכאן. אפשר לשנות בהמשך בהגדרות.",
+    "balanceLabel": "יתרה של {{name}}",
+    "balanceFrom": "סופרים מ-{{date}}",
+    "balanceSkip": "דילוג, להתחיל מאפס",
+    "demoTitle": "רוצים לראות משהו קודם?",
+    "demoLoad": "טעינת נתוני הדגמה",
+    "demoHint": "משק בית ישראלי לדוגמה. כל מה שנוסף מסומן וניתן להסרה בלחיצה אחת.",
+    "demoUnavailable": "נתוני הדגמה אינם זמינים עבור {{currency}}.",
+    "creating": "מכינים הכול"
+  },
+  "validation": {
+    "nameRequired": "צריך לתת לאדם הזה שם.",
+    "nameTooLong": "שמות מוגבלים ל-{{count}} תווים.",
+    "amountInvalid": "צריך להזין סכום.",
+    "nameDuplicate": "כבר יש מישהו עם השם הזה.",
+    "colorDuplicate": "כבר יש מישהו עם הצבע הזה."
   }
 }

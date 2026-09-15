@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { PROFILE_PALETTE } from '@/domain/palette';
 import { freshDb, type TestDb } from '@/test/db-harness';
 
-import { BUILTIN_EXPENSE, BUILTIN_INCOME, FALLBACK_CATEGORY, PROFILE_PALETTE } from './seed';
+import { BUILTIN_EXPENSE, BUILTIN_INCOME, FALLBACK_CATEGORY } from './seed';
 
 let handle: TestDb;
 beforeEach(() => {

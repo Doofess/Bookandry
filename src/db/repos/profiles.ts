@@ -1,5 +1,5 @@
 import type { GreenbackDB } from '@/db/db';
-import { MAX_PROFILES, PROFILE_PALETTE } from '@/db/seed';
+import { MAX_PROFILES, nextFreeColor } from '@/domain/palette';
 import { normalizeName } from '@/domain/validation';
 import { ALL_PROFILES, SHARED_OWNER, type AvatarKey, type Profile } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
@@ -59,8 +59,7 @@ export async function listProfiles(db: GreenbackDB): Promise<Profile[]> {
  * on submit.
  */
 export function nextAvailableColor(existing: readonly Profile[]): string | undefined {
-  const taken = new Set(existing.map((p) => p.color));
-  return PROFILE_PALETTE.find((c) => !taken.has(c.hex))?.hex;
+  return nextFreeColor(existing.map((p) => p.color));
 }
 
 /**

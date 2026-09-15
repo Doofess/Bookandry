@@ -19,7 +19,24 @@
          and corrupt JSON all fall through to the defaults. */
       (function () {
         var d = document.documentElement;
+        /* No mirror yet means a FIRST launch, and the honest default there is the
+           browser's own language - not English. Without this, an Israeli opening
+           the app for the first time gets an English, left-to-right wizard whose
+           language toggle already says Hebrew. */
         var lang = 'en';
+        try {
+          var tags = navigator.languages || [navigator.language || 'en'];
+          for (var i = 0; i < tags.length; i++) {
+            var code = String(tags[i]).slice(0, 2).toLowerCase();
+            /* `iw` is the deprecated ISO 639-1 code for Hebrew, still emitted. */
+            if (code === 'he' || code === 'iw') {
+              lang = 'he';
+              break;
+            }
+          }
+        } catch (e) {
+          /* ignore */
+        }
         var theme = 'system';
         try {
           var raw = localStorage.getItem('gb.boot');
