@@ -26,7 +26,8 @@
     "gates": "pnpm gate:rtl && pnpm gate:money && pnpm gate:pci",
     "icons": "pwa-assets-generator",
     "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm gates && pnpm test:cov && pnpm build",
-    "verify:full": "pnpm verify && pnpm knip && pnpm test:e2e"
+    "verify:full": "pnpm verify && pnpm test:tz && pnpm knip && pnpm test:e2e",
+    "test:tz": "node scripts/test-hostile-tz.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

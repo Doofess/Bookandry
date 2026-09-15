@@ -1,0 +1,219 @@
+import type { Currency, IsoInstant, Kind, LocalDate, Minor, MoneySnapshot } from './money';
+
+/** Shared payment methods use a sentinel: IndexedDB cannot index null. */
+export const SHARED_OWNER = '*';
+
+/** The merged view. A literal union with string collapses, so name the sentinel. */
+export const ALL_PROFILES = 'all';
+
+export type AvatarKey =
+  | 'fox'
+  | 'cat'
+  | 'panda'
+  | 'owl'
+  | 'frog'
+  | 'koala'
+  | 'penguin'
+  | 'bear'
+  | 'bunny'
+  | 'sloth'
+  | 'whale'
+  | 'hedgehog'
+  | 'otter'
+  | 'duck'
+  | 'monkey'
+  | 'robot';
+
+export type Profile = {
+  readonly id: string;
+  readonly name: string;
+  readonly avatar: AvatarKey;
+  /** Hex from the curated palette; unique across profiles. */
+  readonly color: string;
+  readonly openingBalanceMinor: Minor;
+  /**
+   * The spec had no currency here, so a reconvert would have to round-trip
+   * base->base and lose a minor unit on every switch. Recording the origin
+   * currency makes the opening balance recomputable like any transaction.
+   */
+  readonly openingBalanceCurrency: Currency;
+  readonly openingBalanceDate: LocalDate;
+  readonly createdAt: IsoInstant;
+  /** Required for last-write-wins import merge. */
+  readonly updatedAt: IsoInstant;
+};
+
+/**
+ * Exactly one of nameKey/name, enforced by the type rather than by a comment.
+ *
+ * Built-in ids MUST be deterministic ("cat.groceries"), or every merge-import
+ * between two installs produces a duplicate set of built-in categories.
+ */
+export type Category = {
+  readonly id: string;
+  readonly kind: Kind;
+  readonly icon: string;
+  readonly sortOrder: number;
+  /** Numeric because IndexedDB cannot index booleans. */
+  readonly isArchived: 0 | 1;
+  readonly archivedAt?: IsoInstant;
+  readonly createdAt: IsoInstant;
+  readonly updatedAt: IsoInstant;
+} & (
+  | { readonly source: 'builtin'; readonly nameKey: string }
+  | { readonly source: 'custom'; readonly name: string }
+);
+
+export type PaymentMethodType =
+  | 'cash'
+  | 'credit_card'
+  | 'debit_card'
+  | 'bank_transfer'
+  /** הוראת קבע. Rent, arnona, insurance and the va'ad are all paid this way, and
+   *  Israelis treat it as categorically different from a transfer they made. */
+  | 'standing_order'
+  | 'digital_wallet'
+  | 'other';
+
+export type PaymentMethod = {
+  readonly id: string;
+  /** SHARED_OWNER for household-wide methods. Never null: IndexedDB cannot index it. */
+  readonly profileId: string;
+  readonly type: PaymentMethodType;
+  /** A user-chosen LABEL only. Never a number, expiry or any credential (§12). */
+  readonly label: string;
+  readonly color?: string;
+  readonly isArchived: 0 | 1;
+  readonly archivedAt?: IsoInstant;
+  readonly createdAt: IsoInstant;
+  readonly updatedAt: IsoInstant;
+};
+
+export type Recurrence =
+  | { readonly type: 'one_time' }
+  | {
+      readonly type: 'monthly';
+      /** 1-31, clamped per month. 31 means "last day of month". */
+      readonly dayOfMonth: number;
+      readonly endDate?: LocalDate;
+      /**
+       * תשלומים: interest-free instalments. When set, the series has exactly
+       * this many occurrences and they sum to the original total EXACTLY, with
+       * the first absorbing the rounding remainder (Israeli card convention).
+       */
+      readonly installments?: number;
+    }
+  | {
+      readonly type: 'yearly';
+      readonly month: number;
+      readonly day: number;
+      readonly endDate?: LocalDate;
+    };
+
+export type Transaction = {
+  readonly id: string;
+  readonly profileId: string;
+  readonly kind: Kind;
+  readonly categoryId: string;
+  /** Expenses only. */
+  readonly paymentMethodId?: string;
+  readonly money: MoneySnapshot;
+  readonly recurrence: Recurrence;
+  /** First occurrence of the series. */
+  readonly date: LocalDate;
+  readonly note?: string;
+
+  // --- denormalised by materialize(); never written by hand ---
+  /** === date */
+  readonly seriesStart: LocalDate;
+  /**
+   * endDate ?? SERIES_MAX, WIDENED to cover any override that moves an
+   * occurrence later. Without the widening, a series that ended in 2021 with an
+   * occurrence moved into 2026 is never returned by the interval query, and the
+   * moved-in fix below becomes dead code.
+   */
+  readonly seriesEnd: LocalDate;
+  readonly isDeleted: 0 | 1;
+
+  // --- split lineage ---
+  readonly seriesRootId: string;
+  readonly splitFromId?: string;
+  readonly splitAtDate?: LocalDate;
+
+  readonly deletedAt?: IsoInstant;
+  readonly createdAt: IsoInstant;
+  readonly updatedAt: IsoInstant;
+};
+
+/**
+ * A per-occurrence edit.
+ *
+ * `patch.money` is an all-or-nothing MoneySnapshot: the spec's
+ * `Partial<Pick<Transaction, 'amountMinor' | 'baseAmountMinor' | ...>>` allowed
+ * patching the amount without the converted amount, after which every
+ * calculator silently uses a stale base figure.
+ *
+ * `null` means "clear this field" - something Partial cannot express, which
+ * made clearing a note or a payment method unrepresentable.
+ */
+export type Override = {
+  readonly id: string;
+  readonly transactionId: string;
+  /** The ORIGINAL slot date. The key, even when the occurrence has been moved. */
+  readonly occurrenceDate: LocalDate;
+  readonly createdAt: IsoInstant;
+  readonly updatedAt: IsoInstant;
+} & (
+  | { readonly action: 'skip'; readonly patch?: never }
+  | {
+      readonly action: 'modify';
+      readonly patch: {
+        readonly money?: MoneySnapshot;
+        readonly categoryId?: string;
+        readonly paymentMethodId?: string | null;
+        readonly note?: string | null;
+        /** Moves the occurrence off its slot. */
+        readonly date?: LocalDate;
+      };
+    }
+);
+
+/**
+ * One emitted occurrence of a transaction.
+ *
+ * `originalDate` and `key` are additions to the spec's shape. Without
+ * `originalDate` there is no way to find the Override row behind a moved
+ * occurrence, so clicking it in the feed could not open the right editor.
+ */
+export type Occurrence = {
+  /** The DB row identity when not overridden - preserved by reference for React.memo. */
+  readonly transaction: Transaction;
+  readonly seriesId: string;
+  /** Effective date, after any move. */
+  readonly date: LocalDate;
+  /** The slot this occurrence came from; the Override lookup key. */
+  readonly originalDate: LocalDate;
+  /** Stable React key, unchanged across a move. */
+  readonly key: string;
+  readonly money: MoneySnapshot;
+  readonly categoryId: string;
+  readonly paymentMethodId?: string;
+  readonly note?: string;
+  readonly isOverridden: boolean;
+  readonly isMoved: boolean;
+  readonly isSkipped: boolean;
+  /** Strictly date > today. Today's occurrences are NOT projected. */
+  readonly isProjected: boolean;
+};
+
+export type Settings = {
+  readonly id: 'singleton';
+  readonly defaultCurrency: Currency;
+  readonly language: 'en' | 'he';
+  readonly theme: 'light' | 'dark' | 'system';
+  /** A profile id, or ALL_PROFILES for the merged view. */
+  readonly activeProfileId: string;
+  readonly onboardingCompletedAt?: IsoInstant;
+  readonly lastExportedAt?: IsoInstant;
+  readonly updatedAt: IsoInstant;
+};
