@@ -10,6 +10,7 @@ import {
   decimalToRational,
   divRound,
   InvalidDecimalError,
+  multiplyRates,
   normalizeAmountInput,
   sum,
   toDecimalString,
@@ -327,5 +328,48 @@ describe('divRound sign handling', () => {
   it('handles an exactly divisible negative pair', () => {
     expect(divRound(-4n, 2n)).toBe(-2n);
     expect(divRound(4n, -2n)).toBe(-2n);
+  });
+});
+
+describe('multiplyRates', () => {
+  it('composes two rates exactly', () => {
+    // 1 EUR = 3.95 ILS, 1 ILS = 0.32 USD  =>  1 EUR = 1.264 USD
+    expect(multiplyRates('3.95', '0.32')).toBe('1.264');
+  });
+
+  it('is the identity when one leg is 1', () => {
+    expect(multiplyRates('3.95', '1')).toBe('3.95');
+    expect(multiplyRates('1', '0.32')).toBe('0.32');
+  });
+
+  it('round-trips through an inverse to within the stated precision', () => {
+    const composed = multiplyRates('3.95', '0.2531645569');
+    expect(Number(composed)).toBeCloseTo(1, 8);
+  });
+
+  it('composing rates rounds ONCE, unlike converting twice', () => {
+    // The point of the function. Two sequential conversions round at each step;
+    // composing first applies a single rounding to the original amount.
+    const twice = convertMinor(convertMinor(4500, 'EUR', 'ILS', '3.95'), 'ILS', 'USD', '0.32');
+    const once = convertMinor(4500, 'EUR', 'USD', multiplyRates('3.95', '0.32'));
+    expect(once).toBe(5688);
+    expect(Math.abs(once - twice)).toBeLessThanOrEqual(1);
+  });
+
+  it('rejects non-positive rates', () => {
+    expect(() => multiplyRates('0', '1')).toThrow(RangeError);
+    expect(() => multiplyRates('1', '-2')).toThrow(RangeError);
+  });
+});
+
+describe('multiplyRates formatting', () => {
+  it('emits a whole number with no trailing decimal point', () => {
+    expect(multiplyRates('2', '3')).toBe('6');
+    expect(multiplyRates('4', '0.25')).toBe('1');
+  });
+
+  it('strips trailing zeros from the fraction', () => {
+    expect(multiplyRates('1.5', '2')).toBe('3');
+    expect(multiplyRates('1.25', '2')).toBe('2.5');
   });
 });

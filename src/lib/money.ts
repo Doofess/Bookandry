@@ -197,3 +197,29 @@ export function crossRate(fromRate: RateString, toRate: RateString, dp = 10): Ra
   const frac = digits.slice(-dp).replace(/0+$/, '');
   return `${whole}${frac ? `.${frac}` : ''}`;
 }
+
+/**
+ * Compose two rates exactly: rate(X to Y) * rate(Y to Z) = rate(X to Z).
+ *
+ * Needed by the reconvert flow. When a row carries a rate the USER supplied
+ * (say 1 EUR = 3.95 ILS) and the base currency changes from ILS to USD, the
+ * honest move is to keep their EUR leg and compose it with a provider rate for
+ * the ILS leg - NOT to discard their figure, and NOT to convert the stored
+ * base amount a second time.
+ *
+ * Composing the RATES and applying the result once means a single rounding
+ * step. Converting twice would round twice and drift.
+ */
+export function multiplyRates(a: RateString, b: RateString, dp = 12): RateString {
+  const ra = decimalToRational(a);
+  const rb = decimalToRational(b);
+  if (ra.n <= 0n || rb.n <= 0n) throw new RangeError('Exchange rates must be positive');
+
+  const scale = 10n ** BigInt(dp);
+  const scaled = divRound(ra.n * rb.n * scale, ra.d * rb.d);
+
+  const digits = scaled.toString().padStart(dp + 1, '0');
+  const whole = digits.slice(0, -dp);
+  const frac = digits.slice(-dp).replace(/0+$/, '');
+  return `${whole}${frac ? `.${frac}` : ''}`;
+}
