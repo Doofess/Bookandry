@@ -111,7 +111,16 @@ export default tseslint.config(
 
   {
     files: ['src/**/*.ts', 'src/**/*.tsx'],
-    ignores: ['src/lib/clock.ts', 'src/lib/dates.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
+    ignores: [
+      'src/lib/clock.ts',
+      'src/lib/dates.ts',
+      // UUIDv7 embeds Date.now() as an opaque sortable prefix, never a calendar
+      // date, so it cannot produce the drift this rule guards against.
+      'src/lib/id.ts',
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'src/test/**',
+    ],
     rules: {
       'no-restricted-syntax': [
         'error',

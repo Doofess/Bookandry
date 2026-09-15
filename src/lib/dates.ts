@@ -187,3 +187,17 @@ export function formatLocalDate(
 export function nowIso(now: Date): IsoInstant {
   return now.toISOString() as IsoInstant;
 }
+
+/**
+ * Parse an external ISO-ish timestamp (e.g. an API's `time_last_update_utc`)
+ * down to a calendar date.
+ *
+ * Lives here because this is one of only two modules permitted to construct a
+ * Date; callers elsewhere must not, so that no module can quietly acquire a
+ * dependency on the host clock.
+ */
+export function externalTimestampToLocalDate(value: string): LocalDate | undefined {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return makeLocalDate(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
+}
