@@ -25,4 +25,6 @@ export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'profiles', 'set
  */
 export const LINKED_ROUTES = {
   commitments: '/commitments',
+  categories: '/categories',
+  paymentMethods: '/payment-methods',
 } as const;

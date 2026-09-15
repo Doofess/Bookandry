@@ -19,6 +19,8 @@ import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
 import { FirstRun } from '@/features/first-run/first-run';
 import { ProfilesScreen } from '@/features/profiles/profiles-screen';
+import { CategoriesScreen } from '@/features/settings/categories-screen';
+import { PaymentMethodsScreen } from '@/features/settings/payment-methods-screen';
 import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
 import { readBootMirror } from '@/i18n/boot';
@@ -34,6 +36,8 @@ const router = createBrowserRouter([
       { path: ROUTES.profiles, element: <ProfilesScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
       { path: LINKED_ROUTES.commitments, element: <CommitmentsScreen /> },
+      { path: LINKED_ROUTES.categories, element: <CategoriesScreen /> },
+      { path: LINKED_ROUTES.paymentMethods, element: <PaymentMethodsScreen /> },
     ],
   },
 ]);

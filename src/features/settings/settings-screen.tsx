@@ -1,5 +1,5 @@
-import { ChevronRight, Repeat } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { ChevronRight, CreditCard, Repeat, Tags } from 'lucide-react';
+import { useEffect, useId, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
@@ -21,7 +21,7 @@ import { RecentlyDeleted } from './recently-deleted';
 type Theme = 'light' | 'dark' | 'system';
 
 export function SettingsScreen() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(['common', 'categories']);
   const settings = useSettings();
   const today = useToday();
   const languageId = useId();
@@ -102,7 +102,26 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
-      <LinkCard to={LINKED_ROUTES.commitments} label={t('commitments.title')} hint={t('commitments.open')} />
+      <div className="grid gap-2">
+        <LinkCard
+          icon={Repeat}
+          to={LINKED_ROUTES.commitments}
+          label={t('commitments.title')}
+          hint={t('commitments.open')}
+        />
+        <LinkCard
+          icon={Tags}
+          to={LINKED_ROUTES.categories}
+          label={t('categories:manage.title')}
+          hint={t('categories:manage.open')}
+        />
+        <LinkCard
+          icon={CreditCard}
+          to={LINKED_ROUTES.paymentMethods}
+          label={t('categories:manage.methodsTitle')}
+          hint={t('categories:manage.methodsOpen')}
+        />
+      </div>
 
       <DataCard lastExportedAt={settings.lastExportedAt} today={today} persisted={persisted} />
 
@@ -112,10 +131,12 @@ export function SettingsScreen() {
 }
 
 function LinkCard({
+  icon: Icon,
   to,
   label,
   hint,
 }: {
+  readonly icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
   readonly to: string;
   readonly label: string;
   readonly hint: string;
@@ -125,7 +146,7 @@ function LinkCard({
       to={to}
       className="flex min-h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <Repeat className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{label}</span>
         <span className="block text-xs text-muted-foreground">{hint}</span>
