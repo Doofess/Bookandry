@@ -1,19 +1,60 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { I18nextProvider } from 'react-i18next';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import '@fontsource-variable/inter';
 import '@fontsource-variable/heebo';
 import './index.css';
 
-const rootEl = document.getElementById('root');
-if (!rootEl) throw new Error('#root not found');
+import { AppShell } from '@/app/app-shell';
+import { BootGate } from '@/app/boot-gate';
+import { AppDirection } from '@/app/direction-provider';
+import { ROUTES } from '@/app/routes';
+import { ChartScreen } from '@/features/chart/chart-screen';
+import { FeedScreen } from '@/features/feed/feed-screen';
+import { ProfilesScreen } from '@/features/profiles/profiles-screen';
+import { SettingsScreen } from '@/features/settings/settings-screen';
+import i18n, { initI18n } from '@/i18n';
+import { readBootMirror } from '@/i18n/boot';
 
-createRoot(rootEl).render(
-  <StrictMode>
-    <div className="p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Greenback</h1>
-      <p className="mt-2 text-sm text-muted-foreground">scaffold</p>
-      <p className="tabular mt-4 text-4xl font-bold tracking-tighter text-[var(--income)]">1,234.56</p>
-    </div>
-  </StrictMode>,
-);
+const router = createBrowserRouter([
+  {
+    path: ROUTES.feed,
+    element: <AppShell />,
+    children: [
+      { index: true, element: <FeedScreen /> },
+      { path: ROUTES.chart, element: <ChartScreen /> },
+      { path: ROUTES.profiles, element: <ProfilesScreen /> },
+      { path: ROUTES.settings, element: <SettingsScreen /> },
+    ],
+  },
+]);
+
+async function bootstrap(): Promise<void> {
+  // Ask for durable storage before anything writes. If denied, Settings > Data
+  // surfaces a note (Phase 2) — export is the only backup story for a
+  // local-first app with no sync.
+  void navigator.storage.persist();
+
+  await initI18n();
+
+  const rootEl = document.getElementById('root');
+  if (!rootEl) throw new Error('#root not found');
+
+  const { theme } = readBootMirror();
+
+  createRoot(rootEl).render(
+    <StrictMode>
+      <I18nextProvider i18n={i18n}>
+        <AppDirection theme={theme}>
+          <BootGate ready>
+            <RouterProvider router={router} />
+          </BootGate>
+        </AppDirection>
+      </I18nextProvider>
+    </StrictMode>,
+  );
+}
+
+void bootstrap();

@@ -1,0 +1,38 @@
+{
+  "app": {
+    "name": "Greenback",
+    "tagline": "Track what comes in and what goes out."
+  },
+  "nav": {
+    "primary": "Primary",
+    "feed": "Feed",
+    "chart": "Chart",
+    "profiles": "Profiles",
+    "settings": "Settings"
+  },
+  "a11y": {
+    "skipToContent": "Skip to content",
+    "loading": "Loading"
+  },
+  "action": {
+    "add": "Add",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "undo": "Undo",
+    "close": "Close",
+    "retry": "Try again"
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "he": "עברית"
+  }
+}

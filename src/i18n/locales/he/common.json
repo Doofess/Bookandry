@@ -1,0 +1,38 @@
+{
+  "app": {
+    "name": "Greenback",
+    "tagline": "מעקב אחרי מה שנכנס ומה שיוצא."
+  },
+  "nav": {
+    "primary": "ניווט ראשי",
+    "feed": "תנועות",
+    "chart": "תרשים",
+    "profiles": "פרופילים",
+    "settings": "הגדרות"
+  },
+  "a11y": {
+    "skipToContent": "דילוג לתוכן",
+    "loading": "טוען"
+  },
+  "action": {
+    "add": "הוספה",
+    "save": "שמירה",
+    "cancel": "ביטול",
+    "delete": "מחיקה",
+    "edit": "עריכה",
+    "undo": "שחזר",
+    "close": "סגירה",
+    "retry": "נסה שוב"
+  },
+  "theme": {
+    "label": "ערכת נושא",
+    "light": "בהיר",
+    "dark": "כהה",
+    "system": "לפי המערכת"
+  },
+  "language": {
+    "label": "שפה",
+    "en": "English",
+    "he": "עברית"
+  }
+}
