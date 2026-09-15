@@ -8,14 +8,16 @@ import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { startOfMonth } from '@/lib/dates';
-import { ALL_PROFILES } from '@/types/domain';
+import { ALL_PROFILES, type Occurrence } from '@/types/domain';
 
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
 import { FilterBar } from './filter-bar';
 import { ProfileSwitcher } from './profile-switcher';
+import { RowActionsSheet } from './row-actions-sheet';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
+import { useRowActions } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { MonthCursor } from '../summary/month-cursor';
@@ -33,6 +35,15 @@ export function FeedScreen() {
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
   const sheet = useTransactionSheet();
   const [breakdown, setBreakdown] = useState<Breakdown>(undefined);
+  /*
+   * The row whose menu is open, held here rather than in the URL.
+   *
+   * Unlike the edit sheet, this is not somewhere you navigated to: it is a
+   * transient menu, and pushing a history entry for it would make the back
+   * button walk through every menu the user opened and dismissed.
+   */
+  const [menuFor, setMenuFor] = useState<Occurrence | undefined>(undefined);
+  const runAction = useRowActions();
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
 
@@ -146,7 +157,7 @@ export function FeedScreen() {
             // The menu will grow skip/delete next; until it does, pointing it
             // at the same place is honest, where a dead button is not.
             onOpen={sheet.openEdit}
-            onMenu={sheet.openEdit}
+            onMenu={setMenuFor}
           />
         )}
       </div>
@@ -180,6 +191,23 @@ export function FeedScreen() {
           }}
         />
       )}
+
+      <RowActionsSheet
+        occurrence={menuFor}
+        onOpenChange={(open) => {
+          if (!open) setMenuFor(undefined);
+        }}
+        onAction={(action, occurrence) => {
+          // Closed first, unconditionally: leaving it open over a toast covers
+          // the Undo the toast just offered.
+          setMenuFor(undefined);
+          if (action === 'edit') {
+            sheet.openEdit(occurrence);
+            return;
+          }
+          void runAction(action, occurrence);
+        }}
+      />
 
       {balance.status === 'ready' ? (
         <BalanceBreakdownSheet

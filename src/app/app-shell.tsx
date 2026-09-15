@@ -7,6 +7,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { Logo } from '@/components/logo';
 
 import { NAV_ORDER, ROUTES, type RouteKey } from './routes';
+import { Toaster } from './toaster';
 
 const ICONS: Record<RouteKey, ComponentType<{ className?: string }>> = {
   feed: Receipt,
@@ -102,6 +103,10 @@ export function AppShell() {
       >
         <Outlet />
       </main>
+
+      {/* At shell level, so a toast raised on the feed survives navigating
+          away - the undo is still valid wherever the user has gone. */}
+      <Toaster />
     </div>
   );
 }

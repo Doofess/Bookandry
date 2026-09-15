@@ -127,6 +127,16 @@ const transactionSchema = z.object({
   updatedAt: isoInstant,
 });
 
+const patchSchema = z.object({
+  money: moneySchema.optional(),
+  categoryId: z.string().optional(),
+  // `null` means "clear this field" - a distinction Partial<> cannot express,
+  // which is why clearing a note was unrepresentable before.
+  paymentMethodId: z.string().nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
+  date: localDate.optional(),
+});
+
 const overrideSchema = z.intersection(
   z.object({
     id: z.string().min(1),
@@ -136,19 +146,11 @@ const overrideSchema = z.intersection(
     updatedAt: isoInstant,
   }),
   z.discriminatedUnion('action', [
-    z.object({ action: z.literal('skip') }),
-    z.object({
-      action: z.literal('modify'),
-      patch: z.object({
-        money: moneySchema.optional(),
-        categoryId: z.string().optional(),
-        // `null` means "clear this field" - a distinction Partial<> cannot
-        // express, which is why clearing a note was unrepresentable before.
-        paymentMethodId: z.string().nullable().optional(),
-        note: z.string().max(2000).nullable().optional(),
-        date: localDate.optional(),
-      }),
-    }),
+    // A skip may carry the edit it superseded, so that un-skipping restores the
+    // occurrence as the user had it. Zod strips unknown keys, so omitting this
+    // would quietly drop that edit on every export/import round trip.
+    z.object({ action: z.literal('skip'), patch: patchSchema.optional() }),
+    z.object({ action: z.literal('modify'), patch: patchSchema }),
   ]),
 );
 

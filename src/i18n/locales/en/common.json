@@ -236,6 +236,25 @@
     "confirmGo": "Change the rule",
     "promoted": "This is the first occurrence, so the change applies to the whole series.",
     "confirmTitle_one": "Rewrite one edited occurrence?",
-    "confirmTitle_other": "Rewrite {{count}} edited occurrences?"
+    "confirmTitle_other": "Rewrite {{count}} edited occurrences?",
+    "actionsTitle": "Transaction",
+    "actionEdit": "Edit",
+    "actionSkip": "Skip this one",
+    "actionSkipHint": "Marks it as not having happened. The rest of the series is unchanged.",
+    "actionRestore": "Bring this one back",
+    "actionRestoreHint": "Undoes the skip, with any changes you had made to it.",
+    "actionDelete": "Delete",
+    "actionDeleteSeries": "Delete the whole series",
+    "actionDeleteHint": "Recoverable for 24 hours from Settings.",
+    "actionDeleteSeriesHint": "Every occurrence, past and future. Recoverable for 24 hours.",
+    "toastSkipped": "Skipped {{date}}",
+    "toastRestored": "Restored",
+    "toastDeleted": "Deleted",
+    "toastFailed": "That did not work. Nothing was changed.",
+    "deletedTitle": "Recently deleted",
+    "deletedBody": "Deleted transactions stay here for {{count}} hours, then go for good.",
+    "deletedEmpty": "Nothing deleted in the last 24 hours.",
+    "deletedRestore": "Restore",
+    "deletedAgo": "Deleted {{when}}"
   }
 }

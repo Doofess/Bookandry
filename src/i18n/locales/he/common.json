@@ -240,6 +240,25 @@
     "promoted": "זה המופע הראשון, ולכן השינוי חל על כל הסדרה.",
     "confirmTitle_one": "לשכתב מופע אחד שנערך?",
     "confirmTitle_two": "לשכתב שני מופעים שנערכו?",
-    "confirmTitle_other": "לשכתב {{count}} מופעים שנערכו?"
+    "confirmTitle_other": "לשכתב {{count}} מופעים שנערכו?",
+    "actionsTitle": "תנועה",
+    "actionEdit": "עריכה",
+    "actionSkip": "דילוג על זו",
+    "actionSkipHint": "מסמן שהיא לא קרתה. שאר הסדרה לא משתנה.",
+    "actionRestore": "החזרת התנועה",
+    "actionRestoreHint": "מבטל את הדילוג, יחד עם השינויים שעשיתם בה.",
+    "actionDelete": "מחיקה",
+    "actionDeleteSeries": "מחיקת כל הסדרה",
+    "actionDeleteHint": "ניתן לשחזר במשך 24 שעות מההגדרות.",
+    "actionDeleteSeriesHint": "כל המופעים, בעבר ובעתיד. ניתן לשחזר במשך 24 שעות.",
+    "toastSkipped": "דילוג על {{date}}",
+    "toastRestored": "שוחזר",
+    "toastDeleted": "נמחק",
+    "toastFailed": "הפעולה נכשלה. שום דבר לא השתנה.",
+    "deletedTitle": "נמחקו לאחרונה",
+    "deletedBody": "תנועות שנמחקו נשמרות כאן {{count}} שעות ואז נמחקות לתמיד.",
+    "deletedEmpty": "לא נמחק כלום ב-24 השעות האחרונות.",
+    "deletedRestore": "שחזר",
+    "deletedAgo": "נמחק {{when}}"
   }
 }

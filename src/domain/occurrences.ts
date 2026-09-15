@@ -138,7 +138,15 @@ function effectiveOccurrence(
   override: Override | undefined,
   today: LocalDate,
 ): Occurrence {
-  const patch = override?.action === 'modify' ? override.patch : undefined;
+  /*
+   * Read regardless of action.
+   *
+   * A skip can carry the edit it superseded, and a ghosted "skipped" row that
+   * shows the SERIES amount rather than the amount the user set for that
+   * occurrence describes a different transaction from the one they are looking
+   * at. It is excluded from every total either way - `isSkipped` does that.
+   */
+  const patch = override?.patch;
   const date = patch?.date ?? slot;
 
   // `null` in a patch means "clear this field", which Partial<Pick<>> could not

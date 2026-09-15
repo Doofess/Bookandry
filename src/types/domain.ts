@@ -156,6 +156,15 @@ export type Transaction = {
  * `null` means "clear this field" - something Partial cannot express, which
  * made clearing a note or a payment method unrepresentable.
  */
+export type OverridePatch = {
+  readonly money?: MoneySnapshot;
+  readonly categoryId?: string;
+  readonly paymentMethodId?: string | null;
+  readonly note?: string | null;
+  /** Moves the occurrence off its slot. */
+  readonly date?: LocalDate;
+};
+
 export type Override = {
   readonly id: string;
   readonly transactionId: string;
@@ -164,18 +173,22 @@ export type Override = {
   readonly createdAt: IsoInstant;
   readonly updatedAt: IsoInstant;
 } & (
-  | { readonly action: 'skip'; readonly patch?: never }
   | {
-      readonly action: 'modify';
-      readonly patch: {
-        readonly money?: MoneySnapshot;
-        readonly categoryId?: string;
-        readonly paymentMethodId?: string | null;
-        readonly note?: string | null;
-        /** Moves the occurrence off its slot. */
-        readonly date?: LocalDate;
-      };
+      readonly action: 'skip';
+      /**
+       * The edit this skip SUPERSEDED, kept so un-skipping is lossless.
+       *
+       * The unique `[transactionId+occurrenceDate]` index allows exactly one
+       * override per slot, so skipping an occurrence the user had already
+       * edited has to overwrite that row. Without somewhere to put the patch,
+       * the edit is silently discarded and restoring gives back the series'
+       * values instead of theirs - a data loss they neither asked for nor saw.
+       *
+       * Optional, because most skips supersede nothing.
+       */
+      readonly patch?: OverridePatch;
     }
+  | { readonly action: 'modify'; readonly patch: OverridePatch }
 );
 
 /**
