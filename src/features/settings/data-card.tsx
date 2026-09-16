@@ -157,9 +157,17 @@ export function DataCard({
             />
           </div>
 
+          {/*
+            `sr-only`, not `hidden` - a hidden input cannot be opened by
+            `.click()` in every browser - which means it IS in the accessibility
+            tree and therefore needs a name. An unlabelled file input announces
+            as "file upload, button" with nothing saying what file, and axe
+            rates it critical.
+          */}
           <input
             ref={fileRef}
             type="file"
+            aria-label={t('settings.importFile')}
             accept="application/json,.json"
             className="sr-only"
             onChange={(event) => {

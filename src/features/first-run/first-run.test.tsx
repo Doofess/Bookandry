@@ -63,6 +63,34 @@ describe('FirstRun', () => {
     await initTestI18n('en');
   });
 
+  it('lets a STORED language outrank the browser, so the control matches the screen', () => {
+    /*
+     * A mirror with no database behind it is reachable: IndexedDB cleared but
+     * localStorage kept, or a reset. The app has already booted and painted the
+     * wizard in the mirror's language - seeding the control from `navigator`
+     * instead would show "English" selected on a Hebrew screen, and then write
+     * English to settings on finish, silently changing the language the user
+     * was reading.
+     */
+    localStorage.setItem('gb.boot', JSON.stringify({ lang: 'he', theme: 'light' }));
+
+    renderWithProviders(<FirstRun languages={['en-US']} />);
+
+    expect(screen.getByRole('radio', { name: 'עברית' })).toHaveAttribute('aria-checked', 'true');
+    // The currency still comes from the REGION, which the mirror does not carry.
+    expect(screen.getByRole('combobox', { name: /US Dollar/i })).toBeInTheDocument();
+
+    localStorage.removeItem('gb.boot');
+  });
+
+  it('falls back to the browser when nothing is stored, which is the true first launch', () => {
+    localStorage.removeItem('gb.boot');
+
+    renderWithProviders(<FirstRun languages={['he-IL']} />);
+
+    expect(screen.getByRole('radio', { name: 'עברית' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('refuses to continue past an unnamed person, and says why', async () => {
     const user = userEvent.setup();
     renderWithProviders(<FirstRun languages={['en-US']} />);
@@ -122,7 +150,9 @@ describe('FirstRun — the details that only show up live', () => {
     const user = userEvent.setup();
     renderWithProviders(<FirstRun languages={['en-US']} />);
 
-    await user.click(screen.getByRole('button', { name: 'עברית' }));
+    // `radio`, not `button`: the language control is a real radiogroup, so it
+    // announces "2 of 2" rather than "pressed".
+    await user.click(screen.getByRole('radio', { name: 'עברית' }));
 
     // A preview that waits until the end previews nothing, and for Hebrew the
     // entire layout flips - the user should see that before committing.

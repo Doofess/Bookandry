@@ -101,19 +101,23 @@
   --secondary: oklch(0.254 0.005 286);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.254 0.005 286);
-  --muted-foreground: oklch(0.755 0.011 286.1); /* 7.23:1 */
+  --muted-foreground: oklch(0.755 0.011 286.1); /* 7.23:1 on --muted, the tightest surface it lands on */
   --accent: oklch(0.334 0.047 162.2);
   --accent-foreground: oklch(0.773 0.167 157.5);
 
-  --destructive: oklch(0.531 0.199 27.4);
-  --destructive-foreground: oklch(1 0 0);
+  /* Dark mode INVERTS the pair, exactly as --primary does: a light red with
+     dark text on it. Carrying the light-mode red over left `text-destructive`
+     at 3.03:1 on the dark page - the one axe violation the token audit missed,
+     because it checked white-on-fill and never destructive-as-TEXT. */
+  --destructive: oklch(0.667 0.167 22.7); /* 6.08:1 as text on --background */
+  --destructive-foreground: oklch(0.141 0.004 285.8);
 
   --border: oklch(0.315 0.007 286);
   --input: oklch(0.53 0.017 285.8); /* 3.35:1 vs card */
   --ring: oklch(0.773 0.167 157.5);
 
   --income: oklch(0.773 0.167 157.5);
-  --expense: oklch(0.667 0.167 22.7); /* 5.41:1 — spec's 0 63% 51% was 2.50:1 */
+  --expense: oklch(0.667 0.167 22.7); /* 5.42:1 on --card; spec's 0 63% 51% was 2.50:1 */
   --chart-income: oklch(0.788 0.147 159.7);
   --chart-expense: oklch(0.667 0.167 22.7);
   --chart-balance: oklch(0.755 0.011 286.1);

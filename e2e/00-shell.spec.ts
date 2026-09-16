@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { bootAs, completeFirstRun } from './support/seed';
+
 /**
  * Phase 0 exit gate. §11's "PWA config" and "pnpm test passes" are not
  * observable claims on their own; these are.
@@ -7,7 +9,32 @@ import { expect, test } from '@playwright/test';
 
 const ROUTES = ['/', '/chart', '/profiles', '/settings'] as const;
 
+test.describe('@smoke0 first run', () => {
+  test('gates a fresh install on the wizard, not on the shell', async ({ page }) => {
+    /*
+     * A cold install has no profile, so there IS no shell to render: the feed
+     * would filter by an `activeProfileId` pointing at nothing and the Add form
+     * would have no profile to submit to. This spec asserted the tab bar here
+     * for three phases after the gate landed, and passed the whole time -
+     * because `pnpm verify` does not run Playwright and `verify:full` had not
+     * been run since. Both halves are now asserted explicitly.
+     */
+    // Pinned to English, because the wizard otherwise follows the BROWSER and
+    // this assertion is about the gate, not about the language.
+    await bootAs(page, 'en', 'light');
+    await page.goto('/');
+
+    await expect(page.getByRole('heading', { name: /language and currency/i })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: /primary|ניווט/i })).toHaveCount(0);
+  });
+});
+
 test.describe('@smoke0 app shell', () => {
+  // Seeded: the shell only exists once a profile does.
+  test.beforeEach(async ({ page }) => {
+    await completeFirstRun(page, 'en', { demo: false });
+  });
+
   for (const route of ROUTES) {
     test(`renders ${route} with no console errors`, async ({ page }) => {
       const errors: string[] = [];
@@ -24,14 +51,12 @@ test.describe('@smoke0 app shell', () => {
   }
 
   test('exposes exactly one primary navigation landmark', async ({ page }) => {
-    await page.goto('/');
     // Two copies of the nav (one mobile, one desktop) would double the
     // aria-current bookkeeping and confuse screen readers.
     await expect(page.getByRole('navigation', { name: /primary|ניווט/i })).toHaveCount(1);
   });
 
   test('never scrolls horizontally', async ({ page }) => {
-    await page.goto('/');
     const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
@@ -53,6 +78,17 @@ test.describe('@rtl boot', () => {
   });
 
   test('survives a corrupt boot mirror without throwing', async ({ page }) => {
+    /*
+     * Corrupt JSON must degrade to the DETECTED default, never throw into the
+     * render - private mode, blocked site data and a half-written key all land
+     * here.
+     *
+     * The fallback is the browser's own language, not a hard-coded `ltr`:
+     * "no usable mirror" is not the same as "English", and collapsing the two
+     * gave an Israeli opening the app an English wizard whose own language
+     * toggle already said Hebrew. So the assertion is that the direction
+     * matches the BROWSER, which differs per project.
+     */
     await page.addInitScript(() => {
       localStorage.setItem('gb.boot', '{not json');
     });
@@ -60,7 +96,11 @@ test.describe('@rtl boot', () => {
     page.on('pageerror', (e) => errors.push(e.message));
 
     await page.goto('/');
-    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+
+    const expected = await page.evaluate(() =>
+      navigator.languages.some((l) => l.startsWith('he')) ? 'rtl' : 'ltr',
+    );
+    await expect(page.locator('html')).toHaveAttribute('dir', expected);
     expect(errors).toEqual([]);
   });
 
@@ -180,8 +220,12 @@ test.describe('@hermetic', () => {
 });
 
 test.describe('@fab add button', () => {
+  // The FAB lives on the feed, which only exists once a profile does.
+  test.beforeEach(async ({ page }) => {
+    await completeFirstRun(page, 'en', { demo: false });
+  });
+
   test('renders as a circle with the plus centred', async ({ page }) => {
-    await page.goto('/');
     const fab = page.getByTestId('fab');
     await expect(fab).toBeVisible();
 
@@ -193,24 +237,47 @@ test.describe('@fab add button', () => {
     expect(box!.width).toBeGreaterThanOrEqual(44); // WCAG 2.2 target size
   });
 
-  test('sits on the inline-end side in LTR and mirrors in RTL', async ({ page }) => {
-    await page.goto('/');
-    const ltr = await page.getByTestId('fab').boundingBox();
+  test('is centred on mobile, inline-end from lg, and mirrors only where it can', async ({ page }) => {
+    /*
+     * The FAB has TWO positions by design (§5.1, §8.2): bottom-centre above the
+     * tab bar on mobile, bottom-inline-end from `lg` where there is no tab bar.
+     *
+     * Asserting "inline-end, and mirrors" at every width was simply wrong, and
+     * it failed on the mobile project for the right reason - a centred element
+     * has nothing to mirror. Both halves are worth pinning: the centred case
+     * depends on `start-0 end-0 mx-auto`, which has already regressed once to
+     * `inset-inline-0` - a class that emits no CSS at all and left the button
+     * at its static position, looking deliberate enough to pass a screenshot
+     * review.
+     */
     const viewport = page.viewportSize()!;
-    expect(ltr!.x).toBeGreaterThan(viewport.width / 2);
+    const centre = viewport.width / 2;
+    const isDesktop = viewport.width >= 1024;
+
+    const ltr = (await page.getByTestId('fab').boundingBox())!;
+    if (isDesktop) expect(ltr.x).toBeGreaterThan(centre);
+    else expect(ltr.x + ltr.width / 2).toBeCloseTo(centre, 0);
 
     await page.addInitScript(() => {
       localStorage.setItem('gb.boot', JSON.stringify({ lang: 'he', theme: 'light' }));
     });
     await page.reload();
-    const rtl = await page.getByTestId('fab').boundingBox();
-    expect(rtl!.x).toBeLessThan(viewport.width / 2);
+
+    const rtl = (await page.getByTestId('fab').boundingBox())!;
+    if (isDesktop) expect(rtl.x).toBeLessThan(centre);
+    else expect(rtl.x + rtl.width / 2).toBeCloseTo(centre, 0);
   });
 
-  test('is operable and announces itself', async ({ page }) => {
-    await page.goto('/');
+  test('opens the transaction sheet', async ({ page }) => {
+    /*
+     * Was asserting `FAB pressed: 1` - a Phase 0 throwaway counter that the
+     * real FAB replaced three phases ago. A test pinned to scaffolding that no
+     * longer exists proves nothing about the button it is named after.
+     */
     await expect(page.getByRole('button', { name: /add transaction/i })).toBeVisible();
+
     await page.getByTestId('fab').click();
-    await expect(page.getByText(/FAB pressed: 1/)).toBeVisible();
+
+    await expect(page.getByRole('dialog')).toBeVisible();
   });
 });

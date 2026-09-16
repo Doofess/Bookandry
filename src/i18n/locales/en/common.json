@@ -97,7 +97,6 @@
     "spent": "Spent",
     "spentSoFar": "spent so far",
     "stillDue": "still due",
-    "split": "{{spent}} and {{due}}",
     "breakdownOf": "Show what makes up {{title}}",
     "notCountedYet": "Not counted yet",
     "projected": "Projected",
@@ -298,7 +297,6 @@
     "open": "See what repeats",
     "monthlyOut": "Out each month",
     "monthlyIn": "In each month",
-    "perMonth": "{{amount}} / month",
     "nextOn": "Next {{date}}",
     "nextNone": "No more payments",
     "endsOn": "Ends {{date}}",
@@ -335,7 +333,8 @@
     "baseCurrencyBody": "Every amount is converted to this for the balance and the chart.",
     "manage": "Manage",
     "categoriesLink": "Categories",
-    "methodsLink": "Payment methods"
+    "methodsLink": "Payment methods",
+    "importFile": "Choose a backup file to restore"
   },
   "reconvert": {
     "change": "Change base currency",

@@ -21,6 +21,21 @@ export async function initTestI18n(lng: 'en' | 'he' = 'en'): Promise<void> {
       ns: [...NAMESPACES],
       interpolation: { escapeValue: false },
       react: { useSuspense: false },
+      /*
+       * A missing key is a TEST FAILURE, not a fallback.
+       *
+       * This is what actually enforces "no hardcoded strings" (§12). i18next's
+       * default behaviour is to render the key itself, so `t('tx.svae')`
+       * renders the literal text "tx.svae" - which passes every test that does
+       * not happen to assert on that exact string, and ships. The dev build
+       * throws for the same reason; the suite is where it gets caught.
+       *
+       * `saveMissing` is what makes i18next call the handler at all.
+       */
+      saveMissing: true,
+      missingKeyHandler: (lngs, ns, key) => {
+        throw new Error(`[i18n] missing key "${ns}:${key}" for ${lngs.join(',')}`);
+      },
     });
     ready = true;
   } else {

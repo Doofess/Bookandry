@@ -97,7 +97,6 @@
     "spent": "הוצאות",
     "spentSoFar": "הוצאתם עד כה",
     "stillDue": "צפוי",
-    "split": "{{spent}} ו{{due}}",
     "breakdownOf": "הצגת הפירוט של {{title}}",
     "notCountedYet": "טרם נכלל",
     "projected": "צפוי",
@@ -303,7 +302,6 @@
     "open": "מה חוזר כל חודש",
     "monthlyOut": "יוצא בחודש",
     "monthlyIn": "נכנס בחודש",
-    "perMonth": "{{amount}} לחודש",
     "nextOn": "הבא ב-{{date}}",
     "nextNone": "אין תשלומים נוספים",
     "endsOn": "מסתיים ב-{{date}}",
@@ -341,7 +339,8 @@
     "baseCurrencyBody": "כל הסכומים מומרים למטבע הזה עבור היתרה והתרשים.",
     "manage": "ניהול",
     "categoriesLink": "קטגוריות",
-    "methodsLink": "אמצעי תשלום"
+    "methodsLink": "אמצעי תשלום",
+    "importFile": "בחירת קובץ גיבוי לשחזור"
   },
   "reconvert": {
     "change": "שינוי מטבע הבסיס",

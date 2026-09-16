@@ -12,7 +12,7 @@ import { isDemoSupported } from '@/domain/demo';
 import { initialDraft, isDraftValid, type FirstRunDraft } from '@/domain/first-run';
 import { detectLocaleDefaults, type Language } from '@/domain/locale-defaults';
 import i18n from '@/i18n';
-import { applyDocumentChrome } from '@/i18n/boot';
+import { applyDocumentChrome, readStoredBootMirror } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
 
@@ -52,7 +52,23 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
     // every prototype getter on it (`storage`, `userAgent`), which Dexie reads
     // while opening the database.
     const detected = detectLocaleDefaults(languages ?? navigator.languages);
-    return initialDraft(detected.language, detected.currency);
+
+    /*
+     * A stored mirror OUTRANKS the browser for language.
+     *
+     * The app has already booted, painted and rendered this wizard in whatever
+     * the mirror said; seeding the draft from `navigator` instead would put a
+     * different language in the control than the one on screen around it - and
+     * then write that one to settings on finish, so the wizard would end by
+     * silently changing the language the user was just reading.
+     *
+     * A mirror with no database behind it is reachable: site data cleared for
+     * IndexedDB but not localStorage, or a reset. The currency still comes from
+     * the REGION, which the mirror does not carry.
+     */
+    const language = readStoredBootMirror()?.lang ?? detected.language;
+
+    return initialDraft(language, detected.currency);
   });
   const [step, setStep] = useState<Step>('locale');
   const [showErrors, setShowErrors] = useState(false);

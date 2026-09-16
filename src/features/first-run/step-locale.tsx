@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
 import { CurrencySelect } from '@/components/currency-select';
+import { Segmented } from '@/components/segmented';
 import { Label } from '@/components/ui/label';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { Language } from '@/domain/locale-defaults';
 import type { Currency } from '@/types/money';
 
@@ -36,22 +36,26 @@ export function StepLocale({
     <div className="space-y-6">
       <div className="space-y-2">
         <Label id="first-run-language">{t('language.label')}</Label>
-        <ToggleGroup
-          value={[language]}
-          onValueChange={(next) => {
-            const picked = next[0];
-            if (picked === 'en' || picked === 'he') onLanguage(picked);
-          }}
-          aria-labelledby="first-run-language"
-          className="w-full"
-        >
-          <ToggleGroupItem value="en" className="h-11 flex-1">
-            {t('language.en')}
-          </ToggleGroupItem>
-          <ToggleGroupItem value="he" className="h-11 flex-1">
-            {t('language.he')}
-          </ToggleGroupItem>
-        </ToggleGroup>
+        {/*
+          `Segmented`, not ToggleGroup - the same control Settings uses.
+
+          ToggleGroup models a MULTI selection: its value is an array, and
+          single-select is a one-element array with the multiple behaviour
+          turned off. Screen readers hear the pretence, announcing "English,
+          not pressed / Hebrew, pressed" instead of "Hebrew, radio button, 2 of
+          2". This is the first control anyone meets, and choosing a language is
+          the one decision a screen-reader user in the wrong language most needs
+          to make unambiguously.
+        */}
+        <Segmented<Language>
+          value={language}
+          onChange={onLanguage}
+          labelledBy="first-run-language"
+          options={[
+            { value: 'en', label: t('language.en') },
+            { value: 'he', label: t('language.he') },
+          ]}
+        />
         <p className="text-sm text-muted-foreground">{t('firstRun.localeLanguageHelp')}</p>
       </div>
 
