@@ -42,15 +42,20 @@ export async function bootAs(page: Page, lang: SeedLanguage, theme: 'light' | 'd
 export async function completeFirstRun(
   page: Page,
   lang: SeedLanguage,
-  options: { demo?: boolean; theme?: 'light' | 'dark' } = {},
+  options: { demo?: boolean; theme?: 'light' | 'dark'; origin?: string } = {},
 ): Promise<void> {
   const copy = COPY[lang];
-  const { demo = true, theme = 'light' } = options;
+  /*
+   * `origin` exists for the offline spec, which owns its own preview server so
+   * that it can kill it. Everything else seeds against the suite's baseURL and
+   * should never pass this.
+   */
+  const { demo = true, theme = 'light', origin = '' } = options;
 
   // Pinned here rather than left to the caller: the language the wizard renders
   // in decides which button labels below exist at all.
   await bootAs(page, lang, theme);
-  await page.goto('/');
+  await page.goto(`${origin}/`);
 
   // Welcome, then language + currency: both pre-filled from the mirror.
   await page.getByRole('button', { name: copy.next }).click();

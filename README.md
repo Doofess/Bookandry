@@ -30,6 +30,24 @@ pnpm dev             # http://localhost:5173
 `pnpm verify` is the gate at every phase boundary. `verify:full` is slower and
 runs at the checkpoints.
 
+### What the suite cannot check
+
+`e2e/09-pwa-offline.spec.ts` takes the PWA as far as a machine can: it starts its
+own preview server, installs the service worker, **kills the server**, and then
+asserts the app still renders, still resolves a deep route through
+`navigateFallback`, and still has its data. DevTools' Offline checkbox only lies
+to the page about the network; a dead port cannot be fooled.
+
+Two things stay manual, and neither is a gap in coverage — they are outside what
+any driver can reach:
+
+- **The install click.** The omnibox install icon, its confirmation and the
+  standalone window are browser chrome, not page content. `beforeinstallprompt`
+  is the signal behind that icon, and headless Chromium never fires it — so the
+  spec omits it rather than ship an assertion that can only ever skip.
+- **The keyboard journey.** The specs check tab order, focus rings and the focus
+  trap; whether the journey makes sense without a pointer is a judgement.
+
 ### The three bespoke gates
 
 Lint cannot express these, so they are scripts.
