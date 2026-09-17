@@ -11,8 +11,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Deliberately NOT sticky while expanded: a sticky element pins at its natural
  * height, so the full cards would follow the user down the page and cover the
  * rows they were scrolling to. It becomes sticky only once collapsed, and the
- * threshold is the header's own measured height, so the bar appears exactly as
- * the cards leave rather than jumping in early over content.
+ * threshold is where the header ENDS in the document, so the bar appears
+ * exactly as the cards leave rather than jumping in early over content.
  *
  * The scroll source is the WINDOW, which is what the feed virtualizer measures
  * against too - a second scroll container here would put the two one frame out
@@ -56,7 +56,7 @@ export function useCollapsingHeader(): CollapsingHeader {
    * the middle of a scroll, which drops frames exactly when it is being used.
    */
   const collapsedRef = useRef(false);
-  const heightRef = useRef(0);
+  const bottomRef = useRef(0);
 
   useEffect(() => {
     let frame: number | undefined;
@@ -67,14 +67,23 @@ export function useCollapsingHeader(): CollapsingHeader {
       frame = requestAnimationFrame(() => {
         frame = undefined;
 
-        // Only measurable while expanded, and it genuinely changes: the profile
-        // row appears with a second profile, filter chips wrap, and Hebrew
-        // wraps at different widths than English.
-        if (!collapsedRef.current) {
-          heightRef.current = elementRef.current?.offsetHeight ?? heightRef.current;
+        /*
+         * The header's own BOTTOM, in document coordinates - not its height.
+         *
+         * The two differ by everything above it: the mobile app bar and the
+         * feed section's own top padding, about 60px. Measured as a height, the
+         * bar appeared ~60px early, so the fixed 48px strip mounted on top of a
+         * balance card that was still on screen and the same figure was drawn
+         * twice. Only measurable while expanded, and it genuinely moves: the
+         * profile row appears with a second profile, filter chips wrap, and
+         * Hebrew wraps at different widths than English.
+         */
+        if (!collapsedRef.current && elementRef.current !== null) {
+          const rect = elementRef.current.getBoundingClientRect();
+          bottomRef.current = rect.bottom + window.scrollY;
         }
 
-        const threshold = Math.max(heightRef.current, COLLAPSED_HEIGHT);
+        const threshold = Math.max(bottomRef.current, COLLAPSED_HEIGHT);
         const next = collapsedRef.current
           ? window.scrollY > threshold - HYSTERESIS
           : window.scrollY > threshold;

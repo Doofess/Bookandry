@@ -119,33 +119,99 @@ test.describe('@collapse the summary header', () => {
      */
     await completeFirstRun(page, 'en');
 
+    /*
+     * The boundary is MEASURED, not assumed.
+     *
+     * It is where the expanded header ends in the document - which moves with
+     * the profile row, with wrapped filter chips, and with the language. A
+     * hard-coded window that no longer contains the threshold reports zero
+     * flips and passes while testing nothing at all.
+     */
+    const boundary = await page.evaluate(() => {
+      const header = document.querySelector('[data-testid="feed-header"]');
+      if (header === null) return 0;
+      return Math.round(header.getBoundingClientRect().bottom + window.scrollY);
+    });
+    expect(boundary).toBeGreaterThan(0);
+
     const bar = page.getByTestId('collapsed-summary');
     let flips = 0;
     let previous = await bar.count();
 
-    for (let y = 180; y <= 340; y += 4) {
-      await scrollTo(page, y);
+    for (let y = boundary - 80; y <= boundary + 80; y += 4) {
+      await scrollTo(page, Math.max(y, 0));
       const now = await bar.count();
       if (now !== previous) flips += 1;
       previous = now;
     }
 
-    // One transition crossing the threshold, never a run of them.
-    expect(flips).toBeLessThanOrEqual(1);
+    // Exactly one: a walk across the threshold must cross it, and must cross it
+    // once. Zero would mean the window missed the boundary entirely.
+    expect(flips).toBe(1);
   });
 
   test('lets the day headers rest under the bar, not behind it', async ({ page }) => {
-    // The feed's sticky day headers pin against `--feed-sticky-top`. If the bar
-    // does not set it, a pinned header slides underneath and is unreadable.
+    /*
+     * The feed's sticky day headers pin against `--feed-sticky-top`. If the bar
+     * does not set it, a pinned header slides underneath and is unreadable.
+     *
+     * Measured RESOLVED, not read as a string: the property now carries the
+     * safe-area inset (`calc(48px + env(...))`), because on an installed app
+     * with a notch the bar is taller than its own constant and a header told to
+     * stop at a flat 48px slides under it again. Custom properties are not
+     * resolved by `getPropertyValue`, so asserting the text would only pin the
+     * expression - and would pass just as happily if the bar's height and the
+     * headers' stop disagreed.
+     */
     await completeFirstRun(page, 'en');
     await scrollTo(page, 600);
 
-    const stickyTop = await page.evaluate(() => {
+    const measured = await page.evaluate(() => {
       const section = document.querySelector('main section');
-      return section === null ? '' : getComputedStyle(section).getPropertyValue('--feed-sticky-top').trim();
+      if (section === null) return undefined;
+
+      const probe = document.createElement('div');
+      probe.style.position = 'absolute';
+      probe.style.top = 'var(--feed-sticky-top, 0px)';
+      section.append(probe);
+      const top = getComputedStyle(probe).top;
+      probe.remove();
+
+      const bar = document.querySelector('[data-testid="collapsed-summary"]');
+      return { top, barHeight: bar === null ? 0 : bar.getBoundingClientRect().height };
     });
 
-    expect(stickyTop).toBe('48px');
+    // No insets in a desktop viewport, so both resolve to the bare constant -
+    // and, more to the point, to the SAME number.
+    expect(measured?.top).toBe('48px');
+    expect(measured?.barHeight).toBe(48);
+  });
+});
+
+test.describe('@collapse on the desktop rail', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('stands in the column it replaced, not the whole viewport', async ({ page }) => {
+    /*
+     * The bar is `fixed`, so it centres on the VIEWPORT; the card it stands in
+     * for centres inside `main`, which clears the 224px nav rail. Without a
+     * matching offset the collapsed balance jumps ~112px to the inline-start of
+     * the number it just replaced - the kind of shift that reads as the page
+     * being broken rather than as a header collapsing.
+     */
+    await completeFirstRun(page, 'en');
+
+    const column = await page.locator('main section').boundingBox();
+    await page.evaluate(() => {
+      window.scrollTo(0, 600);
+    });
+
+    const row = await page.getByTestId('collapsed-summary').locator('button').boundingBox();
+
+    const columnCentre = (column?.x ?? 0) + (column?.width ?? 0) / 2;
+    const rowCentre = (row?.x ?? 0) + (row?.width ?? 0) / 2;
+
+    expect(Math.abs(columnCentre - rowCentre)).toBeLessThanOrEqual(2);
   });
 });
 

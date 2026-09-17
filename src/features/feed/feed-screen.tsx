@@ -110,8 +110,18 @@ export function FeedScreen() {
     // for the tab bar; this is the FAB's share.
     <section
       className="mx-auto max-w-2xl px-4 pt-4 pb-24 lg:pb-8"
-      /* The day headers pin against this. A fixed bar cannot set it for them. */
-      style={{ ['--feed-sticky-top' as string]: headerCollapsed ? `${String(COLLAPSED_HEIGHT)}px` : '0px' }}
+      /*
+       * The day headers pin against this. A fixed bar cannot set it for them.
+       *
+       * It carries the safe-area inset for the same reason the bar's height
+       * does: on an installed app with a notch the bar is 48px PLUS the inset,
+       * and a sticky header told to stop 48px down slides underneath it.
+       */
+      style={{
+        ['--feed-sticky-top' as string]: headerCollapsed
+          ? `calc(${String(COLLAPSED_HEIGHT)}px + env(safe-area-inset-top, 0px))`
+          : '0px',
+      }}
     >
       <h1 className="sr-only">{t('nav.feed')}</h1>
 
@@ -142,7 +152,7 @@ export function FeedScreen() {
         />
       ) : null}
 
-      <div ref={measureHeader}>
+      <div ref={measureHeader} data-testid="feed-header">
         <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
 
         {lookups === undefined ? null : (

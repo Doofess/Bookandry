@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { d } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
+import { CollapsedSummaryBar } from './collapsed-bar';
 import { MonthCursor } from './month-cursor';
 import { BalanceCard, ExpectedCard } from './summary-cards';
 import type { BalanceState } from './use-balance';
@@ -54,6 +55,43 @@ describe('BalanceCard', () => {
     // A zero that animates up to the real figure makes the wrong number the
     // thing the eye follows.
     expect(container.querySelector('[data-value]')).toBeNull();
+  });
+});
+
+describe('CollapsedSummaryBar', () => {
+  it('keeps the balance, which is the only reason it exists', () => {
+    const { container } = renderWithProviders(
+      <CollapsedSummaryBar state={ready(5_325_874)} currency="USD" />,
+    );
+    // The integer, never the formatted string: pinning "$53,258.74" breaks the
+    // next time ICU moves a separator.
+    expect(container.querySelector('[data-value]')).toHaveAttribute('data-value', '5325874');
+  });
+
+  it('says WHY the balance is missing instead of showing a permanent spinner', () => {
+    /*
+     * `blocked` used to fall through to the loading branch, so scrolling turned
+     * an explained problem into a spinner that never resolves - on a disabled
+     * button, with no way left to ask what was wrong.
+     */
+    renderWithProviders(
+      <CollapsedSummaryBar state={{ status: 'blocked', currencies: ['EUR'] }} currency="USD" />,
+    );
+
+    expect(screen.getByText(/Needs a rate for EUR/)).toBeInTheDocument();
+    expect(screen.queryByText('Loading')).not.toBeInTheDocument();
+  });
+
+  it('offers the chevron only when there is a breakdown to open', () => {
+    const { container } = renderWithProviders(
+      <CollapsedSummaryBar
+        state={{ status: 'blocked', currencies: ['EUR'] }}
+        currency="USD"
+        onOpenBreakdown={vi.fn()}
+      />,
+    );
+    // An affordance pointing into a sheet the disabled button cannot open.
+    expect(container.querySelector('svg')).toBeNull();
   });
 });
 

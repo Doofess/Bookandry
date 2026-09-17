@@ -177,6 +177,18 @@ async function fromNetwork(
 
     return { rate: derived.rate, rateDate, rateSource: row.source, origin: 'network' };
   } catch (error) {
+    /*
+     * A cancellation is not a failure, and recording it as one is worse than
+     * doing nothing.
+     *
+     * `recordFailure` arms `nextAttemptAt`, which is honoured BEFORE the next
+     * request - so counting an aborted lookup would let ordinary form edits
+     * (the rate field cancels on every currency, date or sheet change) lock
+     * rate lookups out for a minute, then five, then fifteen, while the
+     * provider was reachable the entire time.
+     */
+    if (error instanceof RatesError && error.code === 'cancelled') return undefined;
+
     await recordFailure(db, meta, error, nowIso, deps);
     return undefined;
   }

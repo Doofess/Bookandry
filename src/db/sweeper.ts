@@ -18,6 +18,8 @@ import { sweepExpiredDeletions } from './repos/transactions';
  * A PWA is left open for days, so booting is not the only moment worth
  * sweeping - but `visibilitychange` fires every time the user flicks back to
  * the tab, and purging on each of those is pointless work against IndexedDB.
+ * It is therefore both the timer period and the floor between any two sweeps,
+ * whichever source woke this one.
  */
 export const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -77,7 +79,24 @@ export function startSweeper(
 
   run();
 
-  if (waker === undefined) return { stop: () => undefined };
+  /*
+   * A TIMER as well as the visibility hook, because they miss opposite cases.
+   *
+   * `visibilitychange` never fires on a desktop tab that simply stays open and
+   * focused - the most ordinary way to leave a PWA running - so boot was the
+   * only sweep it would ever get, and tombstones past the 24-hour window sat in
+   * the database still listed under "Recently deleted". The interval is the
+   * same value `run` throttles on, so the two cannot double up.
+   */
+  const timer = setInterval(run, intervalMs);
+
+  if (waker === undefined) {
+    return {
+      stop: () => {
+        clearInterval(timer);
+      },
+    };
+  }
 
   const onVisible = (): void => {
     if (waker.visibilityState === 'visible') run();
@@ -86,6 +105,7 @@ export function startSweeper(
 
   return {
     stop: () => {
+      clearInterval(timer);
       waker.removeEventListener('visibilitychange', onVisible);
     },
   };

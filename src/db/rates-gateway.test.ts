@@ -162,6 +162,26 @@ describe('when the network fails', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('does NOT arm the gate when the caller cancelled', async () => {
+    /*
+     * The rate field aborts its lookup on every dependency change - a currency
+     * switch, a date edit, closing the sheet - and each of those would
+     * otherwise count as a provider failure. Three edits and rate lookups are
+     * locked out for fifteen minutes with a perfectly good network, which the
+     * user experiences as the app quietly forgetting how to fetch rates.
+     */
+    const net = chain(new RatesError('cancelled', 'frankfurter', false));
+
+    await expect(
+      quoteRate(handle.db, 'EUR', 'ILS', TODAY, deps({ fetchTable: net.fetchTable })),
+    ).resolves.toBeUndefined();
+
+    const meta = await getRatesMeta(handle.db);
+
+    expect(meta.consecutiveFailures).toBe(0);
+    expect(meta.nextAttemptAt).toBeUndefined();
+  });
+
   it('arms the backoff gate', async () => {
     const net = offline();
     await quoteRate(handle.db, 'EUR', 'ILS', TODAY, deps({ fetchTable: net.fetchTable }));

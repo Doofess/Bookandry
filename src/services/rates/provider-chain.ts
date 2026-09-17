@@ -28,7 +28,17 @@ export type FetchTableOptions = {
   readonly signal?: AbortSignal;
 };
 
-function timeoutSignal(ms: number, outer?: AbortSignal): AbortSignal {
+/**
+ * A signal plus the teardown that goes with it.
+ *
+ * The timer used to be cleared only from the controller's own `abort` handler,
+ * so the SUCCESS path never cleared it: every completed lookup left a 6s and a
+ * 15s timer pending, firing into nothing long after the answer had arrived.
+ * Harmless in a browser; a handle leak that keeps node and vitest workers awake.
+ */
+type Timed = { readonly signal: AbortSignal; readonly done: () => void };
+
+function timeoutSignal(ms: number, outer?: AbortSignal): Timed {
   const controller = new AbortController();
 
   // An outer signal that has ALREADY aborted fires no event, so listening for
@@ -36,24 +46,23 @@ function timeoutSignal(ms: number, outer?: AbortSignal): AbortSignal {
   // exactly how a "total budget" ends up bounding nothing.
   if (outer?.aborted === true) {
     controller.abort();
-    return controller.signal;
+    return { signal: controller.signal, done: () => undefined };
   }
 
   const timer = setTimeout(() => {
     controller.abort();
   }, ms);
-  const cleanup = () => {
-    clearTimeout(timer);
+  const onOuter = (): void => {
+    controller.abort();
   };
-  controller.signal.addEventListener('abort', cleanup, { once: true });
-  outer?.addEventListener(
-    'abort',
-    () => {
-      controller.abort();
-    },
-    { once: true },
-  );
-  return controller.signal;
+  const done = (): void => {
+    clearTimeout(timer);
+    outer?.removeEventListener('abort', onOuter);
+  };
+  controller.signal.addEventListener('abort', done, { once: true });
+  outer?.addEventListener('abort', onOuter, { once: true });
+
+  return { signal: controller.signal, done };
 }
 
 export async function fetchRateTable(
@@ -76,20 +85,41 @@ export async function fetchRateTable(
   const budget = timeoutSignal(options.budgetMs ?? TOTAL_BUDGET_MS, options.signal);
   let lastError: RatesError | undefined;
 
-  for (const provider of providers) {
-    // Spent: stop rather than start an attempt that cannot finish.
-    if (budget.aborted) break;
-    if (options.lockedOut?.has(provider.id) === true) continue;
-    // A historical request is never served by a provider without history.
-    if (date !== 'latest' && !provider.supportsHistorical) continue;
+  try {
+    for (const provider of providers) {
+      // Spent: stop rather than start an attempt that cannot finish.
+      if (budget.signal.aborted) break;
+      if (options.lockedOut?.has(provider.id) === true) continue;
+      // A historical request is never served by a provider without history.
+      if (date !== 'latest' && !provider.supportsHistorical) continue;
 
-    try {
-      return await provider.getTable(base, date, timeoutSignal(timeoutMs, budget));
-    } catch (error) {
-      // An AbortError or a network failure becomes 'offline': from the app's
-      // point of view they are the same recoverable condition.
-      lastError = error instanceof RatesError ? error : new RatesError('offline', provider.id, true);
+      const attempt = timeoutSignal(timeoutMs, budget.signal);
+      try {
+        return await provider.getTable(base, date, attempt.signal);
+      } catch (error) {
+        // An AbortError or a network failure becomes 'offline': from the app's
+        // point of view they are the same recoverable condition.
+        lastError = error instanceof RatesError ? error : new RatesError('offline', provider.id, true);
+      } finally {
+        attempt.done();
+      }
     }
+  } finally {
+    budget.done();
+  }
+
+  /*
+   * The CALLER went away, which is not a provider failure.
+   *
+   * The rate field aborts its lookup on every dependency change - closing the
+   * sheet, editing the date, switching currency - and now that the budget
+   * signal carries that abort inward, a cancellation is indistinguishable from
+   * a timeout by the time it reaches here. Reported as one, the gateway records
+   * a failure and arms the backoff gate, so a few quick edits lock rate lookups
+   * out for minutes while the network was fine the whole time.
+   */
+  if (options.signal?.aborted === true) {
+    throw new RatesError('cancelled', providers[0]?.id ?? 'frankfurter', false);
   }
 
   throw lastError ?? new RatesError('offline', 'frankfurter', true);

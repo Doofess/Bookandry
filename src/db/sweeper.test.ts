@@ -132,6 +132,43 @@ describe('startSweeper', () => {
     handle.stop();
   });
 
+  it('sweeps on a timer, not only when the tab is refocused', async () => {
+    /*
+     * The opposite miss from the one above.
+     *
+     * `visibilitychange` never fires on a desktop tab that is simply left open
+     * and focused - the most ordinary way to leave a PWA running - so boot was
+     * the only sweep such a session ever got. Tombstones aged out of the
+     * 24-hour window and stayed in the database, still listed under "Recently
+     * deleted", because `listRecentlyDeleted` filters on being deleted rather
+     * than on age.
+     */
+    let clock = NOW;
+    const waker = fakeWaker(); // deliberately never woken
+    const handle = startSweeper(db, () => clock, { intervalMs: 20, waker });
+    await settle();
+
+    await addDeleted('old', NOW - RECOVERY_WINDOW_MS - 1000);
+    clock = NOW + 60_000; // past the throttle, so the tick is allowed to run
+    await settle();
+    handle.stop();
+
+    expect(await db.transactions.count()).toBe(0);
+  });
+
+  it('clears the timer when stopped', async () => {
+    let clock = NOW;
+    const handle = startSweeper(db, () => clock, { intervalMs: 20, waker: fakeWaker() });
+    await settle();
+    handle.stop();
+
+    await addDeleted('old', NOW - RECOVERY_WINDOW_MS - 1000);
+    clock = NOW + 60_000;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(await db.transactions.count()).toBe(1);
+  });
+
   it('stops listening when stopped', async () => {
     let clock = NOW;
     const waker = fakeWaker();

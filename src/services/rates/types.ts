@@ -18,7 +18,19 @@ export type RateTable = {
 };
 
 export type RatesErrorCode =
-  'offline' | 'timeout' | 'http' | 'rate_limited' | 'unsupported_currency' | 'no_data_for_date' | 'malformed';
+  | 'offline'
+  | 'timeout'
+  | 'http'
+  | 'rate_limited'
+  | 'unsupported_currency'
+  | 'no_data_for_date'
+  | 'malformed'
+  /**
+   * The caller abandoned the lookup. Deliberately NOT a provider failure: it
+   * must never reach the backoff gate, because nothing is wrong with the
+   * network and the next attempt should go out immediately.
+   */
+  | 'cancelled';
 
 export class RatesError extends Error {
   constructor(

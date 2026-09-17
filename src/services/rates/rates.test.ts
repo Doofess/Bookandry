@@ -286,6 +286,59 @@ describe('provider chain', () => {
     // The third never starts: the budget was gone before its turn came.
     expect(tried).toEqual(['one', 'two']);
   });
+
+  it('reports a CALLER cancellation as cancelled, never as a provider failure', async () => {
+    /*
+     * The cost of the budget fix, and it is not cosmetic.
+     *
+     * Threading the caller's signal into the budget means an abort now breaks
+     * the whole chain - correct - but it arrives here looking exactly like a
+     * spent budget. Reported as 'offline', the gateway records a failure and
+     * arms `nextAttemptAt`, so closing the transaction sheet (which aborts the
+     * lookup) would lock rate lookups out for a minute, then five. The code has
+     * to say which happened.
+     */
+    const outer = new AbortController();
+    const hanging = {
+      id: 'frankfurter',
+      supportsHistorical: true,
+      getTable: async (_base: string, _date: string, signal: AbortSignal) =>
+        new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            reject(new Error('aborted'));
+          });
+        }),
+    };
+
+    const pending = fetchRateTable('USD', 'latest', {
+      providers: [hanging, hanging] as never,
+      signal: outer.signal,
+    });
+    outer.abort();
+
+    const error = await pending.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RatesError);
+    expect((error as RatesError).code).toBe('cancelled');
+    // Not retryable: there is nothing to retry, the asker left.
+    expect((error as RatesError).retryable).toBe(false);
+  });
+
+  it('leaves no timer behind on the success path', async () => {
+    /*
+     * The timers were cleared only from the abort handler, so a lookup that
+     * SUCCEEDED left both its per-provider and its total-budget timer pending -
+     * up to 15 seconds of handles per call, which is what keeps a node worker
+     * alive after the work is done.
+     */
+    mockFetch(() => ({ body: FRANKFURTER_ROWS }));
+    vi.useFakeTimers();
+    try {
+      await fetchRateTable('USD', 'latest');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('backoff', () => {

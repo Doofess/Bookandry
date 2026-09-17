@@ -1,3 +1,4 @@
+import { cn } from 'cn';
 import { ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -45,28 +46,61 @@ export function CollapsedSummaryBar({
        *
        * The expanded header stays mounted and simply scrolls out of view, which
        * keeps the document height constant for the same reason.
+       *
+       * The inset is PART of the height, not something to sit under.
+       *
+       * `viewport-fit=cover` plus `display: standalone` means an installed app
+       * on a notched phone hands ~47px of the top of the viewport to the status
+       * bar. A 48px bar pinned at `top: 0` renders almost entirely behind it -
+       * the balance, which is the one thing the collapsed bar exists to keep,
+       * becomes the least readable thing on screen. Every other fixed surface
+       * in the shell already pads for its inset.
        */
       data-testid="collapsed-summary"
-      style={{ height: COLLAPSED_HEIGHT }}
-      className="fixed inset-x-0 top-0 z-30 border-b border-border bg-background/95 backdrop-blur"
+      style={{ height: `calc(${String(COLLAPSED_HEIGHT)}px + env(safe-area-inset-top, 0px))` }}
+      className={cn(
+        'fixed inset-x-0 top-0 z-30 border-b border-border bg-background/95 backdrop-blur',
+        'pt-[env(safe-area-inset-top,0px)]',
+        // The card it stands in for lives inside `main`, which clears the
+        // desktop nav rail. Without this the collapsed balance jumps ~112px to
+        // the inline-start of the column it replaced.
+        'lg:ps-56',
+      )}
     >
       <button
         type="button"
         onClick={onOpenBreakdown}
         disabled={state.status !== 'ready' || onOpenBreakdown === undefined}
-        className="mx-auto flex h-full w-full max-w-2xl items-center justify-between gap-3 px-4 text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default"
+        className={cn(
+          'mx-auto flex h-full w-full max-w-2xl items-center justify-between gap-3 text-start',
+          'ps-[max(1rem,env(safe-area-inset-left,0px))] pe-[max(1rem,env(safe-area-inset-right,0px))]',
+          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default',
+        )}
       >
         <span className="text-xs text-muted-foreground">{t('summary.balance')}</span>
 
         <span className="flex min-w-0 items-center gap-1">
+          {/*
+            THREE states, not two.
+
+            `blocked` - a profile's opening balance in a currency we have no
+            rate for - was falling through to the loading branch, so scrolling
+            turned an explained problem into a spinner that never resolves, on a
+            disabled button with no way to ask why. It says the same thing the
+            full card says.
+          */}
           {state.status === 'ready' ? (
             // Not animated here: a count-up that replays every time the header
             // collapses is motion with nothing to say.
             <Money minor={state.minor} currency={currency} className="truncate text-base font-semibold" />
+          ) : state.status === 'blocked' ? (
+            <span className="truncate text-sm text-destructive">
+              {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
+            </span>
           ) : (
             <span className="text-sm text-muted-foreground">{t('a11y.loading')}</span>
           )}
-          {onOpenBreakdown === undefined ? null : (
+          {onOpenBreakdown === undefined || state.status !== 'ready' ? null : (
             /* Directional: it points into the sheet, so it flips in Hebrew. */
             <ChevronRight
               className="cn-rtl-flip size-4 shrink-0 text-muted-foreground rtl:rotate-180"
