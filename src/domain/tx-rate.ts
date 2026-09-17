@@ -1,4 +1,3 @@
-import { exponentOf } from '@/lib/currency-meta';
 import {
   convertMinor,
   invertRate,
@@ -247,11 +246,6 @@ export function prefillRate(
   lastKnown: KnownRate | undefined,
 ): KnownRate | undefined {
   return onDate ?? lastKnown;
-}
-
-/** Exposed for the charged field's `inputMode` and decimal affordance. */
-export function chargedExponent(baseCurrency: Currency): number {
-  return exponentOf(baseCurrency);
 }
 
 /** Digits with at most one separator and no sign: rates are positive quantities. */

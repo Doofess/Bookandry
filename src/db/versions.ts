@@ -66,13 +66,3 @@ export const SCHEMA_VERSIONS: readonly SchemaVersion[] = [
     },
   },
 ];
-
-export const CURRENT_DB_VERSION = SCHEMA_VERSIONS.reduce((max, v) => Math.max(max, v.version), 0);
-
-/**
- * The EXPORT DOCUMENT format version - a different counter from the DB schema
- * version, deliberately. A pure index addition bumps `db.version(n)` without
- * changing the JSON shape at all, so conflating them would force pointless
- * export migrations. They will diverge; that is expected.
- */
-export const CURRENT_DOC_VERSION = 1;

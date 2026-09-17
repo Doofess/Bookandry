@@ -1,7 +1,7 @@
 import { splitInstallments } from '@/domain/calculators';
 import type { SeriesEditPlan } from '@/domain/series-edit';
 import type { Override, Transaction } from '@/types/domain';
-import type { IsoInstant, LocalDate, Minor, MoneySnapshot } from '@/types/money';
+import type { IsoInstant, Minor, MoneySnapshot } from '@/types/money';
 
 import type { GreenbackDB } from './db';
 import { materialize, type TransactionDraft } from './materialize';
@@ -131,6 +131,3 @@ function planInstallments(
     ...(first === regular ? {} : { firstMinor: first, firstBaseMinor: firstBase }),
   };
 }
-
-/** The occurrence date a skip or restore keys on. */
-export type OccurrenceRef = { readonly transactionId: string; readonly occurrenceDate: LocalDate };

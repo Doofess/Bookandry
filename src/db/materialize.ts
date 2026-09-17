@@ -1,4 +1,3 @@
-import { seriesEndDate } from '@/domain/occurrences';
 import { compareLocal, SERIES_MAX } from '@/lib/dates';
 import type { Override, Transaction } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
@@ -73,5 +72,3 @@ export function assertMaterialized(tx: Transaction, overrides: readonly Override
   }
   return problems;
 }
-
-export { seriesEndDate };

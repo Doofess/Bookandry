@@ -21,6 +21,8 @@ export const TOTAL_BUDGET_MS = 15_000;
 export type FetchTableOptions = {
   readonly providers?: readonly RatesProvider[];
   readonly timeoutMs?: number;
+  /** Overall wall-clock cap across every provider tried. */
+  readonly budgetMs?: number;
   /** Providers currently locked out (429), by id. */
   readonly lockedOut?: ReadonlySet<string>;
   readonly signal?: AbortSignal;
@@ -28,6 +30,15 @@ export type FetchTableOptions = {
 
 function timeoutSignal(ms: number, outer?: AbortSignal): AbortSignal {
   const controller = new AbortController();
+
+  // An outer signal that has ALREADY aborted fires no event, so listening for
+  // one would silently give the next attempt a full fresh timeout - which is
+  // exactly how a "total budget" ends up bounding nothing.
+  if (outer?.aborted === true) {
+    controller.abort();
+    return controller.signal;
+  }
+
   const timer = setTimeout(() => {
     controller.abort();
   }, ms);
@@ -52,15 +63,28 @@ export async function fetchRateTable(
 ): Promise<RateTable> {
   const providers = options.providers ?? PROVIDERS;
   const timeoutMs = options.timeoutMs ?? PER_PROVIDER_TIMEOUT_MS;
+
+  /*
+   * The TOTAL budget, which was a declared constant enforcing nothing.
+   *
+   * Per-provider timeouts alone bound each attempt, not the wait. The fallback
+   * is sequential by design - racing makes which source gets persisted
+   * nondeterministic - so the times ADD UP: two providers at 6s each is already
+   * 12s, and a third would take it past this cap with nothing to stop it. The
+   * person waiting is staring at a form they cannot submit.
+   */
+  const budget = timeoutSignal(options.budgetMs ?? TOTAL_BUDGET_MS, options.signal);
   let lastError: RatesError | undefined;
 
   for (const provider of providers) {
+    // Spent: stop rather than start an attempt that cannot finish.
+    if (budget.aborted) break;
     if (options.lockedOut?.has(provider.id) === true) continue;
     // A historical request is never served by a provider without history.
     if (date !== 'latest' && !provider.supportsHistorical) continue;
 
     try {
-      return await provider.getTable(base, date, timeoutSignal(timeoutMs, options.signal));
+      return await provider.getTable(base, date, timeoutSignal(timeoutMs, budget));
     } catch (error) {
       // An AbortError or a network failure becomes 'offline': from the app's
       // point of view they are the same recoverable condition.

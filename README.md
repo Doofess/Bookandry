@@ -1,0 +1,203 @@
+# Greenback
+
+A local-first personal money manager. Multi-profile income and expense tracking,
+multi-currency with the rate snapshotted at save time, a virtualised transaction
+feed, a scatter chart, English and Hebrew with full RTL.
+
+Everything stays in the browser. There is no server, no account and no sync.
+
+---
+
+## Setup
+
+Requires **Node 26** and **pnpm 12**. Node 25 is EOL and Node 24 entered
+maintenance in October 2026; corepack was unbundled from Node 25, so pnpm is
+installed directly rather than enabled.
+
+```bash
+pnpm install
+pnpm dev             # http://localhost:5173
+```
+
+| Command                  | What it does                                                               |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `pnpm verify`            | typecheck, lint, format, the three gates, tests + coverage, build          |
+| `pnpm verify:full`       | the above plus a hostile-timezone run, knip, and the full Playwright suite |
+| `pnpm test`              | unit, db and dom projects                                                  |
+| `pnpm test:e2e`          | Playwright, against a real `build` + `preview`                             |
+| `pnpm exec lhci autorun` | Lighthouse, four routes, median of three runs                              |
+
+`pnpm verify` is the gate at every phase boundary. `verify:full` is slower and
+runs at the checkpoints.
+
+### The three bespoke gates
+
+Lint cannot express these, so they are scripts.
+
+- **`gate:rtl`** — bans physical-direction utilities (`ml-`, `left-`,
+  `text-left`, …) across `className`, template literals, `cn`/`cva`/`clsx` and
+  plain CSS, **including `components/ui/**`**. Tailwind v4 has no `corePlugins`
+  to disable them with, and covering the generated primitives is the whole
+  point: they are where physical classes arrive.
+- **`gate:money`** — bans `parseFloat`, `.toFixed(`, `* 100` and `/ 100` outside
+  `src/lib/money.ts`. Block-comment aware, with a `money-allow` escape hatch for
+  the handful of lines that are arithmetic on pixels or counts rather than on
+  money.
+- **`gate:pci`** — bans card numbers, expiry dates, CVV, IBAN, SWIFT and routing
+  numbers from `src/**` and `e2e/**`, scanning i18n JSON as well as source.
+  Payment methods store a user-chosen **label** only. There is no escape hatch,
+  deliberately.
+
+---
+
+## Architecture
+
+One-way layering, enforced by lint:
+
+```
+types → lib → i18n → domain → {db, services} → features → app
+                              store/, components/  ← leaves
+```
+
+- **`lib/`** — money, dates, ids, colour. Pure. No clock: `new Date()` and
+  `Date.now()` are banned outside `lib/clock.ts`, so nothing can silently depend
+  on when the tests happen to run.
+- **`domain/`** — occurrence expansion, the calculators, the chart generator,
+  form parsing. Pure, and unaware that IndexedDB exists.
+- **`db/`** — Dexie, repositories, the transfer format, cross-tab locks.
+- **`services/rates/`** — HTTP only, zero Dexie. Split from `db/repos/rates.ts`
+  to break a cycle the original design guaranteed.
+- **`features/`** — screens and their hooks. `useLiveQuery` lives here and in
+  route containers only, never in a leaf: one IndexedDB subscription per feed
+  row would be thousands of observers on a list being flung past.
+
+### Three memo layers, deliberately different dependencies
+
+5,000 transactions across ten years of monthly series is ~600,000 occurrence
+objects. The answer is not to compute it faster, it is to refuse to compute it:
+
+| Layer | Work                   | Depends on                                    |
+| ----- | ---------------------- | --------------------------------------------- |
+| A     | Dexie interval query   | profile + window — **not filters**            |
+| B     | occurrence expansion   | candidates + window + today — **not filters** |
+| C     | filter, group, flatten | everything, over ≤ 2k items                   |
+
+Typing in the search box must not touch IndexedDB and must not re-expand a
+single series. Collapse the layers and every keystroke re-queries the database.
+
+No worker: structured-cloning 600k objects costs more than computing them, so it
+would only help in the case where it also cannot help.
+
+### Money
+
+Integer minor units everywhere. Exponents come from a **frozen, committed ISO
+4217 table**, never from `Intl` — `resolvedOptions().maximumFractionDigits`
+returns CLDR minor units, which vary by ICU build. `amountMinor` is storage: two
+browsers disagreeing about the exponent means the same integer denotes two
+different amounts.
+
+Rounding is **half away from zero**, matching `Intl`'s default `halfExpand`, so
+stored and displayed values never disagree, and `convert(−x) === −convert(x)`
+holds. One rounding per conversion, never an intermediate.
+
+### Dates
+
+Hand-rolled string maths on `"YYYY-MM-DD"`, no dependency. `date-fns` is
+actively wrong here: `new Date("2026-01-31")` parses as **UTC**, so west of UTC
+the local getters read January 30 before any arithmetic happens. Temporal is not
+viable yet.
+
+Two clocks, and conflating them is a real bug: `todayLocal()` reads the
+**device-local** calendar date, while every `Intl.DateTimeFormat` call on a
+stored date passes `timeZone: "UTC"` so the rendered day does not shift per
+viewer.
+
+---
+
+## Non-goals
+
+- **Budgets.** The two headline numbers are a balance and an expectation, not an
+  allowance. "Remaining" was renamed to "still due" for exactly this reason.
+- **Split expenses and transfers.** The product answer is a Household profile
+  plus a shared payment method, offered during onboarding. "I paid you back" is
+  an expense on A and an income on B, which nets correctly in "All" — at the
+  cost of inflating both stat cards.
+- **Sync, accounts, multi-device.** Export is the only durability story, which
+  is why the Data card nags after a month without one.
+- **CSV.** JSON export only; it round-trips, and a CSV of a recurring series is
+  a lie about the data model.
+- **Rate backfill.** A transaction's rate is snapshotted when it is saved and
+  never revisited.
+- **Cross-session undo.** The undo toast and the 24-hour tombstone window are
+  the whole recovery story.
+- **Privacy between profiles.** Profiles are _organisation, not privacy_. There
+  is no sign-in; everyone using the device sees everything. The onboarding says
+  so in as many words.
+- **A localised install name.** The PWA name is "Greenback" in both languages.
+
+---
+
+## Design decisions
+
+The ones that would look like bugs without an explanation.
+
+**Occurrences reuse the parent's rate snapshot.** A recurring transaction stores
+one rate, and every occurrence it emits uses it. Deriving a per-occurrence rate
+would make the headline balance a function of IndexedDB cache warmth — the same
+data, on the same device, showing a different number after a cache purge.
+
+**The balance line on the chart stops at today.** Projected bills are still
+drawn as dots, because they exist and hiding them makes the month look emptier
+than it is. But the balance card excludes projections by construction, and a
+line running past today would report a different balance from the card directly
+above it.
+
+**Monthly recurrence clamps non-stickily.** A series on the 31st yields
+`01-31, 02-28, 03-31, 04-30` and **returns to the 31st** after February.
+Iterative `addMonths` gives `Jan31 → Feb28 → Mar28` and loses the 31st forever.
+
+**Instalments (תשלומים) sum to the total exactly.** ₪1,000 over 3 payments is
+₪333.34 + ₪333.33 + ₪333.33, the first absorbing the remainder, which is the
+Israeli card convention. Interest-free means the parts must equal the whole.
+
+**Changing the base currency recomputes from the original amount**, never from
+the stored base amount. Round-tripping is lossy: `1.000 KWD → ¥501 → 1.001 KWD`.
+It forces an export first, and refuses while another tab holds the lock.
+
+**The chart's aggregation is a mode flag on one generator**, not a second
+implementation. The two modes differ in one expression — the bucket key — so
+`sum(aggregated) === sum(expanded)` holds by construction rather than by being
+tested into agreement.
+
+**The plot is an LTR island inside an RTL page.** A chart is a coordinate
+system, not prose: time runs left to right in Hebrew too. The legend, captions
+and stat cards are prose and stay in page direction.
+
+**Kind is encoded by shape as well as colour** — a circle for income, a diamond
+for expense. Red against green is 1.6–1.8:1 dot to dot, which fails WCAG 1.4.1
+outright.
+
+**The FAB is first in the DOM.** It is `position: fixed`, so markup order does
+not move it on screen — but it decides tab order, and rendered last it sat after
+every transaction row. The keyboard walkthrough found it; nothing looked wrong.
+
+**Amounts render in a `dir="ltr"` island with `data-value` carrying the
+integer.** CLDR's Hebrew currency pattern injects two right-to-left marks and
+puts the symbol after the number; left to inherit page direction, a leading
+minus jumps to the far end. Every test asserts the integer, never the formatted
+string — pinning `"$1,234.50"` breaks the next time ICU moves a separator.
+
+**The font stack order is load-bearing.** `'Inter Variable', 'Heebo Variable', …`
+— fallback is per-glyph, so digits resolve to Inter (which ships tabular
+figures) while Hebrew falls through to Heebo (which does not). Putting Heebo
+first silently breaks every amount column in Hebrew.
+
+### Known limitations
+
+- Instalment plans are read-only in the editor. Re-splitting an existing plan
+  would break the sum-to-total invariant.
+- Built-in categories can be archived but not renamed or deleted: they store an
+  i18n key, so a rename would have to fork them into custom rows.
+- Turning reduced-motion **off** mid-session leaves the last animated figure on
+  screen until the value next changes.
+- Flags are rendered as code badges, not emoji. Windows ships no flag glyphs.

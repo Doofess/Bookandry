@@ -33,12 +33,6 @@ export const PROFILE_PALETTE = [
 /** Twelve, because that is how many distinct colours the palette holds. */
 export const MAX_PROFILES = PROFILE_PALETTE.length;
 
-export type ColorNameKey = (typeof PROFILE_PALETTE)[number]['nameKey'];
-
-export function colorNameKey(hex: string): ColorNameKey | undefined {
-  return PROFILE_PALETTE.find((c) => c.hex === hex)?.nameKey;
-}
-
 /** The first palette colour nobody in `taken` is using. */
 export function nextFreeColor(taken: readonly string[]): string | undefined {
   const used = new Set(taken);

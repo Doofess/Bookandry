@@ -67,10 +67,10 @@ export function BalanceCard({
         ~39 interruptions; announcing nothing leaves a number that changed
         silently.
       */}
-      <p className="text-3xl font-semibold tracking-tight">
+      <p className="text-3xl font-semibold tracking-tight" data-testid="balance-amount">
         <Money minor={animated} currency={currency} announce={false} />
       </p>
-      <p className="sr-only" aria-live="polite" aria-atomic="true">
+      <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="balance-announced">
         {t('summary.balance')}: {settled.aria}
       </p>
     </CardShell>

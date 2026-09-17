@@ -8,7 +8,7 @@ import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { RateEntry, RateResolution } from '@/domain/tx-rate';
+import type { RateEntry } from '@/domain/tx-rate';
 import { formatLocalDate } from '@/lib/dates';
 import { toDecimalString } from '@/lib/money';
 import type { Currency, Minor, RateSource } from '@/types/money';
@@ -224,5 +224,3 @@ const SOURCE_KEY = {
   manual: 'tx.sourceManual',
   demo: 'tx.sourceDemo',
 } as const;
-
-export type { RateResolution };

@@ -14,6 +14,7 @@ import { LINKED_ROUTES, ROUTES } from '@/app/routes';
 import { TodayProvider } from '@/app/today-provider';
 import { db } from '@/db/db';
 import { ensureSettings } from '@/db/repos/settings';
+import { startSweeper } from '@/db/sweeper';
 import { ChartScreen } from '@/features/chart/chart-screen';
 import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
@@ -54,6 +55,16 @@ async function bootstrap(): Promise<void> {
   // skeleton that never resolves.
   await db.open();
   await ensureSettings(db, systemClock.nowIso());
+
+  /*
+   * Purge expired tombstones, unawaited.
+   *
+   * Soft-deleted rows are recoverable for 24 hours and hard-deleted after -
+   * a promise the Recently deleted screen makes and only this call keeps.
+   * Fire-and-forget: nobody is waiting on a purge, and it must not delay the
+   * first paint.
+   */
+  startSweeper(db, () => systemClock.nowMs());
 
   await initI18n();
 

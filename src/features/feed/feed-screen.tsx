@@ -20,9 +20,11 @@ import { useFeedFilters } from './use-feed-filters';
 import { useRowActions } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
+import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
 import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
+import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
 import { TransactionSheet } from '../transaction/transaction-sheet';
 import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 
@@ -44,6 +46,7 @@ export function FeedScreen() {
    */
   const [menuFor, setMenuFor] = useState<Occurrence | undefined>(undefined);
   const runAction = useRowActions();
+  const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
 
@@ -105,37 +108,70 @@ export function FeedScreen() {
     // The FAB floats above the tab bar, so the list needs clearance for BOTH or
     // the last row of every month sits under a button. The shell already pads
     // for the tab bar; this is the FAB's share.
-    <section className="mx-auto max-w-2xl px-4 pt-4 pb-24 lg:pb-8">
+    <section
+      className="mx-auto max-w-2xl px-4 pt-4 pb-24 lg:pb-8"
+      /* The day headers pin against this. A fixed bar cannot set it for them. */
+      style={{ ['--feed-sticky-top' as string]: headerCollapsed ? `${String(COLLAPSED_HEIGHT)}px` : '0px' }}
+    >
       <h1 className="sr-only">{t('nav.feed')}</h1>
 
-      <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
+      {/*
+        FIRST in the DOM, and deliberately so.
 
-      {lookups === undefined ? null : (
-        <ProfileSwitcher
-          profiles={lookups.profiles}
-          active={filters.profileId}
-          onSelect={setProfile}
-          className="mt-3"
-        />
-      )}
+        The FAB is `position: fixed`, so where it sits in the markup does not
+        move it on screen - but it does decide where it sits in the TAB ORDER,
+        and rendered last it came after every transaction row. With sixty rows,
+        each carrying its own actions menu, reaching the app's primary action by
+        keyboard took over a hundred presses. The keyboard walkthrough is what
+        found it; nothing about the screen looks wrong.
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <BalanceCard
+        Disabled until there is a profile to own the row: a transaction belongs
+        to exactly one profile, so with none the form has nothing to submit, and
+        a button that opens a sheet you cannot complete is worse than one that
+        is visibly unavailable.
+      */}
+      <Fab onClick={sheet.openAdd} disabled={(lookups?.profiles.length ?? 0) === 0} />
+
+      {headerCollapsed ? (
+        <CollapsedSummaryBar
           state={balance}
           currency={settings.defaultCurrency}
           onOpenBreakdown={() => {
             setBreakdown('balance');
           }}
         />
-        <ExpectedCard
-          expense={expense}
-          currency={settings.defaultCurrency}
-          month={filters.month}
-          today={today}
-          onOpenBreakdown={() => {
-            setBreakdown('expense');
-          }}
-        />
+      ) : null}
+
+      <div ref={measureHeader}>
+        <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
+
+        {lookups === undefined ? null : (
+          <ProfileSwitcher
+            profiles={lookups.profiles}
+            active={filters.profileId}
+            onSelect={setProfile}
+            className="mt-3"
+          />
+        )}
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <BalanceCard
+            state={balance}
+            currency={settings.defaultCurrency}
+            onOpenBreakdown={() => {
+              setBreakdown('balance');
+            }}
+          />
+          <ExpectedCard
+            expense={expense}
+            currency={settings.defaultCurrency}
+            month={filters.month}
+            today={today}
+            onOpenBreakdown={() => {
+              setBreakdown('expense');
+            }}
+          />
+        </div>
       </div>
 
       <div className="mt-4">
@@ -161,15 +197,6 @@ export function FeedScreen() {
           />
         )}
       </div>
-
-      {/*
-        Disabled until there is a profile to own the row.
-        A transaction belongs to exactly one profile, so with none the form has
-        nothing to submit - and a button that opens a sheet you cannot complete
-        is worse than one that is visibly unavailable. In practice the first-run
-        wizard guarantees at least one, so this is a guard rather than a state.
-      */}
-      <Fab onClick={sheet.openAdd} disabled={(lookups?.profiles.length ?? 0) === 0} />
 
       {lookups === undefined ? null : (
         <TransactionSheet

@@ -1,7 +1,7 @@
 import type { GreenbackDB } from '@/db/db';
 import { MAX_PROFILES, nextFreeColor } from '@/domain/palette';
 import { normalizeName } from '@/domain/validation';
-import { ALL_PROFILES, SHARED_OWNER, type AvatarKey, type Profile } from '@/types/domain';
+import { ALL_PROFILES, type AvatarKey, type Profile } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
 import { SETTINGS_ID } from './settings';
@@ -204,9 +204,4 @@ export async function deleteProfile(
       paymentMethodsDeleted: removed,
     };
   });
-}
-
-/** Profiles a transaction may be filed under, plus the shared sentinel. */
-export function isRealProfileId(id: string): boolean {
-  return id !== ALL_PROFILES && id !== SHARED_OWNER;
 }

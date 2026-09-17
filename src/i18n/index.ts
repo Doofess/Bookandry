@@ -39,9 +39,12 @@ export const resources = {
  * `he` is structurally required to match `en`. Typing CustomTypeOptions off `en`
  * (below, in types/i18next.d.ts) plus this assertion makes a missing or misspelt
  * Hebrew key a `tsc --noEmit` failure rather than a runtime fallback nobody sees.
+ *
+ * `satisfies` rather than a named binding: the binding existed only to be
+ * exported so it would not read as dead, which put an export in the public
+ * surface purely to satisfy a linter.
  */
-const _heMatchesEn: (typeof resources)['en'] = resources.he;
-export const HE_MATCHES_EN = _heMatchesEn;
+resources.he satisfies (typeof resources)['en'];
 
 export async function initI18n(): Promise<typeof i18n> {
   const { lang } = readBootMirror();

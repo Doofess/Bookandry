@@ -250,6 +250,42 @@ describe('provider chain', () => {
     const table = await fetchRateTable('USD', 'latest');
     expect(table.source).toBe('frankfurter');
   });
+
+  it('stops trying once the TOTAL budget is spent, not just each attempt', async () => {
+    /*
+     * `TOTAL_BUDGET_MS` was a declared constant that enforced nothing: only the
+     * per-provider timeout was ever applied, so the waits ADD UP. Sequential
+     * fallback is deliberate (racing makes which source gets persisted
+     * nondeterministic), which is exactly why the total needs its own cap.
+     */
+    const tried: string[] = [];
+    const slow = (id: string) => ({
+      id,
+      supportsHistorical: true,
+      getTable: async (_base: string, _date: string, signal: AbortSignal) => {
+        tried.push(id);
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 50);
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new Error('aborted'));
+          });
+        });
+        throw new RatesError('offline', id as never, true);
+      },
+    });
+
+    await expect(
+      fetchRateTable('USD', 'latest', {
+        providers: [slow('one'), slow('two'), slow('three')] as never,
+        timeoutMs: 40,
+        budgetMs: 60,
+      }),
+    ).rejects.toBeInstanceOf(RatesError);
+
+    // The third never starts: the budget was gone before its turn came.
+    expect(tried).toEqual(['one', 'two']);
+  });
 });
 
 describe('backoff', () => {

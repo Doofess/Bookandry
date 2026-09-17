@@ -14,9 +14,6 @@ import type { Currency } from '@/types/money';
  * price is worse than omitting it.
  */
 
-/** Metals and the IMF unit: real quotes, but nobody keeps a household budget in them. */
-export const NON_CURRENCY_CODES: ReadonlySet<string> = new Set(['XAG', 'XAU', 'XDR', 'XPD', 'XPT']);
-
 export const SUPPORTED_CURRENCIES: readonly Currency[] = Object.freeze([
   'AED',
   'AFN',
@@ -180,8 +177,6 @@ export const SUPPORTED_CURRENCIES: readonly Currency[] = Object.freeze([
   'ZWG',
 ]);
 
-export const SUPPORTED_CURRENCY_SET: ReadonlySet<Currency> = new Set(SUPPORTED_CURRENCIES);
-
 /**
  * Pinned to the top of the picker.
  *
@@ -189,7 +184,3 @@ export const SUPPORTED_CURRENCY_SET: ReadonlySet<Currency> = new Set(SUPPORTED_C
  * someone who has just been asked to choose their currency.
  */
 export const PINNED_CURRENCIES: readonly Currency[] = ['ILS', 'USD', 'EUR', 'GBP'];
-
-export function isSupportedCurrency(code: string): boolean {
-  return SUPPORTED_CURRENCY_SET.has(code);
-}
