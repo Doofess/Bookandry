@@ -48,6 +48,12 @@ any driver can reach:
 - **The keyboard journey.** The specs check tab order, focus rings and the focus
   trap; whether the journey makes sense without a pointer is a judgement.
 
+Both were performed by hand against this build on **2026-09-17**, along with a
+native-speaker review of the Hebrew copy. They are recorded here rather than
+implied, because a reader cannot otherwise tell a check that was done from one
+that was only described — and they need redoing whenever the shell, the focus
+order or the copy changes.
+
 ### The three bespoke gates
 
 Lint cannot express these, so they are scripts.
@@ -105,6 +111,14 @@ single series. Collapse the layers and every keystroke re-queries the database.
 
 No worker: structured-cloning 600k objects costs more than computing them, so it
 would only help in the case where it also cannot help.
+
+`src/domain/scale.test.ts` runs this at the size it is claimed about — 5,000
+series that have been recurring for ten years — because every other test in the
+suite runs at a few dozen rows, where the distinction cannot fail. It asserts the
+invariant rather than a frame rate: a month costs one occurrence per series, not
+one per month lived. The regression it exists for is an expander that walks
+forward from the series start, which returns the **right answer** ~120× too
+slowly and leaves every correctness test in the repository green.
 
 ### Money
 
