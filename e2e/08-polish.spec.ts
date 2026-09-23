@@ -310,8 +310,21 @@ test.describe('@keyboard the skip link', () => {
      */
     await completeFirstRun(page, 'en', { demo: false });
 
+    const link = page.getByRole('link', { name: /skip to content/i });
+
+    /*
+     * Wait for the link to actually HOLD focus before measuring it.
+     *
+     * It is `sr-only` until focused, so its box is meaningless until then - and
+     * pressing Tab does not guarantee focus has landed by the next statement.
+     * Measuring immediately passed on an idle machine and failed once in a full
+     * parallel run, which is the definition of a test that reports the load on
+     * the machine rather than the size of the target.
+     */
     await page.keyboard.press('Tab');
-    const box = await page.getByRole('link', { name: /skip to content/i }).boundingBox();
+    await expect(link).toBeFocused();
+
+    const box = await link.boundingBox();
 
     expect(box).not.toBeNull();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);

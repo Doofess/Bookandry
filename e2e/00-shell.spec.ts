@@ -281,3 +281,31 @@ test.describe('@fab add button', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
   });
 });
+
+test.describe('@nav the app mark', () => {
+  test('goes home from anywhere', async ({ page }) => {
+    /*
+     * The mark is the oldest convention on the web and the app had it inert.
+     * Two placements, because the shell renders a different one at each width:
+     * a header above the content on a phone, and the top of the nav rail on a
+     * desktop - a fix applied to one and not the other is invisible until
+     * someone resizes.
+     */
+    await completeFirstRun(page, 'en');
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+
+    await page.getByRole('link', { name: 'Greenback' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('main')).toBeVisible();
+  });
+
+  test('is a real tap target, not a 24px mark', async ({ page }) => {
+    // It is the full height of the header bar, so it can be hit with a thumb.
+    await completeFirstRun(page, 'en');
+
+    const box = await page.getByRole('link', { name: 'Greenback' }).boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  });
+});

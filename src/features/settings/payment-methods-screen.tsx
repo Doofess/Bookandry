@@ -27,9 +27,16 @@ import {
   setPaymentMethodArchived,
   updatePaymentMethod,
 } from '@/db/repos/payment-methods';
+import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
-import { SHARED_OWNER, type PaymentMethod, type PaymentMethodType, type Profile } from '@/types/domain';
+import {
+  isBuiltinPaymentMethod,
+  SHARED_OWNER,
+  type PaymentMethod,
+  type PaymentMethodType,
+  type Profile,
+} from '@/types/domain';
 
 /**
  * The payment-method manager.
@@ -45,10 +52,19 @@ import { SHARED_OWNER, type PaymentMethod, type PaymentMethodType, type Profile 
  * that exists to find it.
  */
 
+/**
+ * The types a method can be CREATED as. Cash is deliberately absent.
+ *
+ * There is exactly one cash, it is seeded with every install, and it is the
+ * same cash for everyone on the device - so "add a cash payment method" offers
+ * the user a decision with no content, and a second one called "Cash 2" is a
+ * mess nothing downstream can tell apart. Older databases and imported files
+ * may still contain user-made cash rows; those keep working and keep their
+ * type, they simply cannot be created here any more.
+ */
 const TYPES: readonly PaymentMethodType[] = [
   'credit_card',
   'debit_card',
-  'cash',
   'bank_transfer',
   'standing_order',
   'digital_wallet',
@@ -70,6 +86,7 @@ const TYPE_KEY: Record<PaymentMethodType, string> = {
 
 export function PaymentMethodsScreen() {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
+  const displayName = (method: PaymentMethod): string => methodDisplayName(method, t);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
   const [deleting, setDeleting] = useState<PaymentMethod | undefined>(undefined);
 
@@ -125,7 +142,7 @@ export function PaymentMethodsScreen() {
                 )}
 
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{method.label}</span>
+                  <span className="block truncate text-sm font-medium">{displayName(method)}</span>
                   <span className="block text-xs text-muted-foreground">
                     {t(TYPE_KEY[method.type] as MethodTypeKey)} · {ownerName(method.profileId)}
                     {archived ? ` · ${t('categories:manage.archived')}` : ''}
@@ -137,7 +154,7 @@ export function PaymentMethodsScreen() {
                   variant="ghost"
                   size="icon"
                   className="size-11"
-                  aria-label={`${archived ? t('categories:manage.unarchive') : t('categories:manage.archive')}: ${method.label}`}
+                  aria-label={`${archived ? t('categories:manage.unarchive') : t('categories:manage.archive')}: ${displayName(method)}`}
                   onClick={() => {
                     void setPaymentMethodArchived(db, method.id, !archived, systemClock.nowIso());
                   }}
@@ -149,31 +166,43 @@ export function PaymentMethodsScreen() {
                   )}
                 </Button>
 
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-11"
-                  aria-label={`${t('categories:manage.methodEdit')}: ${method.label}`}
-                  onClick={() => {
-                    setEditing(method);
-                  }}
-                >
-                  <Pencil className="size-4" aria-hidden="true" />
-                </Button>
+                {/*
+                  Archive stays; rename and delete do not.
+                  
+                  The same rule the built-in categories follow: someone who
+                  never carries cash can put it away, but nobody can leave the
+                  install without the one method every profile shares and no
+                  screen can recreate.
+                */}
+                {isBuiltinPaymentMethod(method.id) ? null : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11"
+                      aria-label={`${t('categories:manage.methodEdit')}: ${method.label}`}
+                      onClick={() => {
+                        setEditing(method);
+                      }}
+                    >
+                      <Pencil className="size-4" aria-hidden="true" />
+                    </Button>
 
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-11 text-destructive"
-                  aria-label={t('categories:manage.methodDeleteTitle', { name: method.label })}
-                  onClick={() => {
-                    setDeleting(method);
-                  }}
-                >
-                  <Trash2 className="size-4" aria-hidden="true" />
-                </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 text-destructive"
+                      aria-label={t('categories:manage.methodDeleteTitle', { name: method.label })}
+                      onClick={() => {
+                        setDeleting(method);
+                      }}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </>
+                )}
               </li>
             );
           })}

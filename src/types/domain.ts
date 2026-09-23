@@ -3,6 +3,23 @@ import type { Currency, IsoInstant, Kind, LocalDate, Minor, MoneySnapshot } from
 /** Shared payment methods use a sentinel: IndexedDB cannot index null. */
 export const SHARED_OWNER = '*';
 
+/**
+ * Cash, which every install has and nobody should have to create.
+ *
+ * A deterministic id for the same reason the built-in categories have one: it
+ * is how a merge-import recognises the row it already has instead of adding a
+ * second one. Cash is the only payment method that is not a thing the user
+ * owns - there is no card to name, no account to distinguish - so it is seeded,
+ * its label follows the UI language, and it cannot be renamed or deleted. It
+ * CAN be archived, exactly like a built-in category, for someone who never
+ * carries any.
+ */
+export const CASH_METHOD_ID = 'pm.cash';
+
+export function isBuiltinPaymentMethod(id: string): boolean {
+  return id === CASH_METHOD_ID;
+}
+
 /** The merged view. A literal union with string collapses, so name the sentinel. */
 export const ALL_PROFILES = 'all';
 

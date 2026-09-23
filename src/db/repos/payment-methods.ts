@@ -1,6 +1,11 @@
 import type { GreenbackDB } from '@/db/db';
 import { normalizeName } from '@/domain/validation';
-import { SHARED_OWNER, type PaymentMethod, type PaymentMethodType } from '@/types/domain';
+import {
+  isBuiltinPaymentMethod,
+  SHARED_OWNER,
+  type PaymentMethod,
+  type PaymentMethodType,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 export type PaymentMethodQuery = {
@@ -63,6 +68,18 @@ export async function updatePaymentMethod(
 ): Promise<PaymentMethod> {
   const label = patch.label === undefined ? undefined : normalizeName(patch.label);
 
+  /*
+   * The built-in keeps its name and its owner.
+   *
+   * Its label is not stored copy at all - `methodDisplayName` resolves it from
+   * the UI language - so a rename would write a value nothing ever reads. And
+   * cash belongs to the household, not a person: moving it to one profile would
+   * take it away from everyone else on the device.
+   */
+  if (isBuiltinPaymentMethod(id) && (patch.label !== undefined || patch.profileId !== undefined)) {
+    throw new Error(`${id} is built in: its name and owner are fixed`);
+  }
+
   return db.transaction('rw', db.paymentMethods, async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);
@@ -103,6 +120,18 @@ export async function deletePaymentMethod(
   options: { reassignTo?: string },
   now: IsoInstant,
 ): Promise<{ transactionsUpdated: number; overridesUpdated: number }> {
+  /*
+   * Enforced HERE, not only in the UI that hides the button.
+   *
+   * Cash is seeded rather than created, and a transaction can point at it from
+   * any profile. Deleting it would leave the only universally available method
+   * missing on an install that has no way to recreate it - there is no "add
+   * cash" any more, by design.
+   */
+  if (isBuiltinPaymentMethod(id)) {
+    throw new Error(`${id} is built in and cannot be deleted; archive it instead`);
+  }
+
   return db.transaction('rw', [db.paymentMethods, db.transactions, db.overrides], async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);

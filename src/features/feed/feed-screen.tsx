@@ -7,6 +7,7 @@ import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculato
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
+import { methodDisplayName } from '@/i18n/method-name';
 import { startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Occurrence } from '@/types/domain';
 
@@ -31,7 +32,7 @@ import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 type Breakdown = 'balance' | 'expense' | undefined;
 
 export function FeedScreen() {
-  const { t } = useTranslation(['common', 'categories']);
+  const { t } = useTranslation(['common', 'categories', 'profiles']);
   const today = useToday();
   const settings = useSettings();
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
@@ -61,12 +62,18 @@ export function FeedScreen() {
     [t],
   );
 
+  const translateMethod = useMemo(
+    () => (method: Parameters<typeof methodDisplayName>[0]) => methodDisplayName(method, t),
+    [t],
+  );
+
   const { rows, windowCount, isLoading } = useFeedRows(
     occurrences,
     filters,
     lookups,
     today,
     translateCategory,
+    translateMethod,
   );
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);

@@ -140,6 +140,13 @@ export function useFeedRows(
    * searching a string that is never on screen is the same defect in reverse.
    */
   categoryName: (category: Category) => string,
+  /**
+   * The same argument, for the same reason: cash is a BUILT-IN method whose
+   * name follows the UI language, so the string on screen is not the string in
+   * the row. Resolving it here rather than reading `label` is what lets a
+   * Hebrew speaker find מזומן.
+   */
+  methodName: (method: PaymentMethod) => string,
 ): FeedResult {
   const deferredQuery = useDeferredValue(filters.query);
 
@@ -156,7 +163,13 @@ export function useFeedRows(
           const category = lookups.categories.get(id);
           return category === undefined ? undefined : categoryName(category);
         },
-        paymentMethodLabel: (id) => lookups.paymentMethods.get(id)?.label,
+        paymentMethodLabel: (id) => {
+          // The NAME the user can see, for the same reason the category lookup
+          // resolves one: searching a string that is never on screen is a
+          // search that silently does not work.
+          const method = lookups.paymentMethods.get(id);
+          return method === undefined ? undefined : methodName(method);
+        },
       },
     );
 
@@ -166,5 +179,5 @@ export function useFeedRows(
       windowCount: occurrences.length,
       isLoading: false,
     };
-  }, [occurrences, lookups, filters, deferredQuery, today, categoryName]);
+  }, [occurrences, lookups, filters, deferredQuery, today, categoryName, methodName]);
 }

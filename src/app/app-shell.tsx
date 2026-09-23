@@ -40,10 +40,22 @@ function PrimaryNav() {
         'lg:border-e lg:border-t-0 lg:p-3 lg:pt-6',
       )}
     >
-      <div className="mb-6 hidden items-center gap-2 px-3 lg:flex">
+      {/*
+        The mark goes home, which is what every user already expects of it.
+
+        It sits INSIDE the nav rail, so it is a second route to the feed
+        alongside the Feed tab - deliberate, and the reason it is not given its
+        own "(current)" treatment: the tab below already says where you are, and
+        two controls announcing the same current page is noise, not redundancy.
+      */}
+      <NavLink
+        to={ROUTES.feed}
+        end
+        className="mb-6 hidden items-center gap-2 rounded-lg px-3 py-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:flex"
+      >
         <Logo size={28} decorative />
         <span className="text-base font-semibold tracking-tight">{t('app.name')}</span>
-      </div>
+      </NavLink>
 
       {NAV_ORDER.map((key) => {
         const Icon = ICONS[key];
@@ -89,9 +101,20 @@ export function AppShell() {
         {t('a11y.skipToContent')}
       </a>
 
-      <header className="flex items-center gap-2 px-4 pt-[env(safe-area-inset-top,0px)] lg:hidden">
-        <Logo size={24} decorative />
-        <span className="py-3 text-sm font-semibold tracking-tight">{t('app.name')}</span>
+      <header className="flex items-center px-4 pt-[env(safe-area-inset-top,0px)] lg:hidden">
+        {/*
+          Tappable, and sized to be tappable: the padding is on the LINK rather
+          than on the header, so the target is the full height of the bar
+          instead of a 24px mark somebody has to aim at.
+        */}
+        <NavLink
+          to={ROUTES.feed}
+          end
+          className="-mx-2 flex items-center gap-2 rounded-lg px-2 py-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <Logo size={24} decorative />
+          <span className="text-sm font-semibold tracking-tight">{t('app.name')}</span>
+        </NavLink>
       </header>
 
       <PrimaryNav />

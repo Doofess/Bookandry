@@ -4,7 +4,7 @@ import { materialize } from '@/db/materialize';
 import { MONEY, d, modify } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import { SHARED_OWNER } from '@/types/domain';
+import { CASH_METHOD_ID, SHARED_OWNER } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import {
@@ -169,5 +169,76 @@ describe('deletePaymentMethod', () => {
     await expect(deletePaymentMethod(handle.db, 'm1', { reassignTo: 'nope' }, NOW)).rejects.toThrow();
     await expect(deletePaymentMethod(handle.db, 'm1', { reassignTo: 'm1' }, NOW)).rejects.toThrow();
     expect(await handle.db.paymentMethods.get('m1')).toBeDefined();
+  });
+});
+
+describe('cash is built in', () => {
+  /*
+   * Cash is the one payment method nobody creates and nobody should be able to
+   * remove. There is exactly one of it, it is seeded with the install, it is
+   * shared by every profile, and there is no longer an "add cash" anywhere - so
+   * a delete would leave the database without the only universally available
+   * method and no screen able to put it back.
+   *
+   * Enforced in the repository, not only in the UI that hides the buttons: the
+   * UI is one caller, and an import, a future bulk action or a second screen
+   * would each have to remember the rule independently.
+   */
+  const seedCash = async () =>
+    handle.db.paymentMethods.put({
+      id: CASH_METHOD_ID,
+      profileId: SHARED_OWNER,
+      type: 'cash',
+      label: 'Cash',
+      isArchived: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+  it('refuses to be deleted', async () => {
+    await seedCash();
+
+    await expect(deletePaymentMethod(handle.db, CASH_METHOD_ID, {}, NOW)).rejects.toThrow(/built in/);
+    expect(await handle.db.paymentMethods.get(CASH_METHOD_ID)).toBeDefined();
+  });
+
+  it('refuses to be renamed or reassigned', async () => {
+    await seedCash();
+
+    await expect(
+      updatePaymentMethod(handle.db, CASH_METHOD_ID, { label: 'Pocket money' }, NOW),
+    ).rejects.toThrow(/built in/);
+    await expect(updatePaymentMethod(handle.db, CASH_METHOD_ID, { profileId: 'p1' }, NOW)).rejects.toThrow(
+      /built in/,
+    );
+
+    const row = await handle.db.paymentMethods.get(CASH_METHOD_ID);
+    expect(row?.label).toBe('Cash');
+    expect(row?.profileId).toBe(SHARED_OWNER);
+  });
+
+  it('can still be archived, like a built-in category', async () => {
+    // Someone who never carries cash should be able to put it away. That is a
+    // different thing from removing it, and it is reversible.
+    await seedCash();
+    await setPaymentMethodArchived(handle.db, CASH_METHOD_ID, true, NOW);
+
+    expect((await handle.db.paymentMethods.get(CASH_METHOD_ID))?.isArchived).toBe(1);
+    expect(await listPaymentMethods(handle.db)).toEqual([]);
+  });
+
+  it('leaves every other method deletable', async () => {
+    // The guard is the built-in id, not the 'cash' TYPE: a database or an
+    // imported file from before this rule may hold user-made cash rows, and
+    // those stay entirely ordinary.
+    await createPaymentMethod(
+      handle.db,
+      'pm.old-cash',
+      { label: 'Wallet', type: 'cash', profileId: 'p1' },
+      NOW,
+    );
+
+    await expect(deletePaymentMethod(handle.db, 'pm.old-cash', {}, NOW)).resolves.toBeDefined();
+    expect(await handle.db.paymentMethods.get('pm.old-cash')).toBeUndefined();
   });
 });

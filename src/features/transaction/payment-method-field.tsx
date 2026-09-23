@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { methodsFor } from '@/domain/tx-options';
+import { methodDisplayName } from '@/i18n/method-name';
 import type { PaymentMethod } from '@/types/domain';
 
 import { PickerField } from './picker-field';
@@ -44,7 +45,7 @@ export function PaymentMethodField({
       { id: '', label: t('tx.paymentMethodNone') },
       ...methodsFor(methods, profileId, value).map((method) => ({
         id: method.id,
-        label: method.label,
+        label: methodDisplayName(method, t),
         hint: t(PAYMENT_TYPE_KEY[method.type] as MethodTypeKey),
       })),
     ],
