@@ -77,12 +77,27 @@ export async function completeFirstRun(
 
   await page.getByRole('button', { name: copy.finish }).click();
 
-  // The wizard writes inside one transaction and then routes to the feed.
-  await page.waitForURL((url) => !url.pathname.startsWith('/welcome'));
-  await page.getByRole('main').waitFor();
+  /*
+   * Wait for the SHELL, by the one landmark the wizard does not have.
+   *
+   * The wizard is not a route. BootGate swaps it for the shell when the profile
+   * count goes above zero, and the URL is "/" throughout - so the two waits
+   * that used to sit here, for the URL to leave "/welcome" and for a <main>,
+   * both passed at once: the URL was never "/welcome", and the wizard has a
+   * <main> of its own. With demo data the rows below covered for it. Without,
+   * this returned while the wizard was still writing, and on a loaded machine
+   * the caller's next step landed on the wizard: a Tab went into the wizard and
+   * was lost when the shell replaced it, and a goto() reloaded before the write
+   * committed and came back to the wizard, with no navigation to be found.
+   *
+   * The primary nav is rendered only once a profile EXISTS - the gate reads the
+   * count from the committed database - so seeing it means the wizard is gone
+   * and its write is durable.
+   */
+  await expect(page.getByRole('navigation', { name: /^(Primary|ניווט ראשי)$/ })).toBeVisible();
 
-  // The seeded rows are what every caller is actually waiting for: the wizard
-  // routes as soon as the transaction commits, and the first live query lands
+  // The seeded rows are what every caller is actually waiting for: the shell
+  // appears as soon as the transaction commits, and the first live query lands
   // a frame or two later.
   if (demo) await expect(page.locator('[data-value]').first()).toBeAttached();
 }

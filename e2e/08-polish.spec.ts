@@ -313,13 +313,14 @@ test.describe('@keyboard the skip link', () => {
     const link = page.getByRole('link', { name: /skip to content/i });
 
     /*
-     * Wait for the link to actually HOLD focus before measuring it.
+     * Wait for the link to actually HOLD focus before measuring it: it is
+     * `sr-only` until focused, so its box is meaningless until then.
      *
-     * It is `sr-only` until focused, so its box is meaningless until then - and
-     * pressing Tab does not guarantee focus has landed by the next statement.
-     * Measuring immediately passed on an idle machine and failed once in a full
-     * parallel run, which is the definition of a test that reports the load on
-     * the machine rather than the size of the target.
+     * This spec failed intermittently under a full parallel run, and the first
+     * diagnosis - that Tab had not landed yet - was wrong. The seeding helper
+     * was returning while the WIZARD was still on screen, so the Tab went into
+     * the wizard and was lost when the shell replaced it. That is fixed in
+     * `completeFirstRun`, and pinned by the slow-write spec in 00-shell.
      */
     await page.keyboard.press('Tab');
     await expect(link).toBeFocused();

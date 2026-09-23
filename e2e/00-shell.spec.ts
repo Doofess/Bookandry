@@ -29,6 +29,51 @@ test.describe('@smoke0 first run', () => {
   });
 });
 
+test.describe('@smoke0 the seeding helper', () => {
+  test('returns only once the shell exists, even when the write is slow', async ({ page }, testInfo) => {
+    /*
+     * Every spec after this one trusts `completeFirstRun` to hand back an app,
+     * not a wizard that is still saving - and for a long time it did not. It
+     * waited for the URL to leave "/welcome" and for a <main>, and both were
+     * true from the start: the wizard is not a route, and it has a <main> of
+     * its own. Nothing caught it, because on an idle machine the write always
+     * won the race. On a loaded one the skip-link spec pressed Tab into the
+     * wizard, and the smoke specs reloaded before the profile was committed.
+     *
+     * So the race is forced here instead of waited for: the transaction that
+     * writes the profile is held open for 1.5s by a chain of reads, which keeps
+     * the page responsive while the commit arrives late.
+     */
+    test.skip(testInfo.project.name !== 'en', 'About the helper, not the locale.');
+
+    await page.addInitScript(() => {
+      const held = new WeakSet<IDBTransaction>();
+      for (const method of ['add', 'put'] as const) {
+        const original = IDBObjectStore.prototype[method];
+        IDBObjectStore.prototype[method] = function (this: IDBObjectStore, ...args: never[]) {
+          if (this.name === 'profiles' && !held.has(this.transaction)) {
+            held.add(this.transaction);
+            const until = Date.now() + 1500;
+            const spin = (): void => {
+              if (Date.now() < until) this.count().onsuccess = spin;
+            };
+            spin();
+          }
+          return (original as (...a: never[]) => IDBRequest).apply(this, args);
+        } as never;
+      }
+    });
+
+    await completeFirstRun(page, 'en', { demo: false });
+
+    // Checked at once, with no waiting: the helper's promise IS the claim.
+    expect(await page.getByRole('navigation', { name: /primary/i }).count()).toBe(1);
+    // And the profile is durable, so a reload lands in the app, not the wizard.
+    await page.reload();
+    await expect(page.getByRole('navigation', { name: /primary/i })).toBeVisible();
+  });
+});
+
 test.describe('@smoke0 app shell', () => {
   // Seeded: the shell only exists once a profile does.
   test.beforeEach(async ({ page }) => {
