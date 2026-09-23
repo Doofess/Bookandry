@@ -55,7 +55,14 @@ test.describe('@smoke0 the seeding helper', () => {
             held.add(this.transaction);
             const until = Date.now() + 1500;
             const spin = (): void => {
-              if (Date.now() < until) this.count().onsuccess = spin;
+              if (Date.now() >= until) return;
+              try {
+                this.count().onsuccess = spin;
+              } catch {
+                // Dexie may commit the transaction itself; once it has, the
+                // hold is over. Stop quietly rather than throw an uncaught
+                // error into the page mid-commit.
+              }
             };
             spin();
           }
