@@ -46,6 +46,9 @@ const recurrenceSchema = z.discriminatedUnion('type', [
     dayOfMonth: z.number().int().min(1).max(31),
     endDate: localDate.optional(),
     installments: z.number().int().min(1).max(120).optional(),
+    // Absent on files written before the distinction existed; those rows are
+    // תשלומים by construction, because it was the only plan the form could make.
+    plan: z.enum(['installments', 'credit']).optional(),
   }),
   z.object({
     type: z.literal('yearly'),

@@ -382,6 +382,8 @@ function TransactionForm({
             min: MIN_INSTALLMENTS,
             max: MAX_INSTALLMENTS,
           });
+        case 'frequency_required':
+          return t('tx.errFrequencyRequired');
         case 'end_before_start':
           return t('tx.errEndBeforeStart');
         case 'invalid_date':
@@ -744,7 +746,15 @@ function TransactionForm({
             if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
             if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
             if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
+            if (patch.frequency !== undefined) {
+              // Validated on change, not on blur: it is a segmented control, so
+              // there is no blur to wait for, and the error would otherwise sit
+              // on screen after the user had answered it.
+              setValue('frequency', patch.frequency, { shouldValidate: true });
+            }
           }}
+          isExpense={values.kind === 'expense'}
+          submitted={form.formState.isSubmitted}
           currency={values.currency}
           amountMinor={amountMinor}
           errors={errors}

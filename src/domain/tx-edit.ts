@@ -1,10 +1,10 @@
 import { parseLocalDate } from '@/lib/dates';
 import { toDecimalString } from '@/lib/money';
 import type { Occurrence, Recurrence, Transaction } from '@/types/domain';
-import type { LocalDate, MoneySnapshot } from '@/types/money';
+import type { Kind, LocalDate, MoneySnapshot } from '@/types/money';
 
 import type { EditScope, TransactionPatch } from './series-edit';
-import type { RecurrenceMode, TxFormParsed, TxFormValues } from './tx-form';
+import type { RecurrenceMode, StandingOrderFrequency, TxFormParsed, TxFormValues } from './tx-form';
 
 /**
  * The bridge between a stored occurrence and the form.
@@ -50,10 +50,31 @@ export function isInstallmentPlan(recurrence: Recurrence): boolean {
   return recurrence.type === 'monthly' && recurrence.installments !== undefined;
 }
 
-export function recurrenceModeOf(recurrence: Recurrence): RecurrenceMode {
+/**
+ * Which control the form should open on, for a row that already exists.
+ *
+ * `kind` matters because the same stored recurrence is described by two
+ * different vocabularies: monthly recurrence on an expense is a הוראת קבע, and
+ * on income it is just a salary that arrives every month. Opening a salary in
+ * a control labelled "standing order" would be wrong in the ordinary sense of
+ * the word - a standing order is something you set up to pay someone else.
+ *
+ * A plan with no `plan` field is תשלומים: rows written before the distinction
+ * existed could not have been anything else.
+ */
+export function recurrenceModeOf(recurrence: Recurrence, kind: Kind = 'expense'): RecurrenceMode {
   if (recurrence.type === 'one_time') return 'one_time';
-  if (recurrence.type === 'yearly') return 'yearly';
-  return recurrence.installments === undefined ? 'monthly' : 'installments';
+  if (recurrence.type === 'yearly') return kind === 'expense' ? 'standing_order' : 'yearly';
+  if (recurrence.installments !== undefined) {
+    return recurrence.plan === 'credit' ? 'credit' : 'installments';
+  }
+  return kind === 'expense' ? 'standing_order' : 'monthly';
+}
+
+/** The frequency control's value for a row that is already a standing order. */
+export function frequencyOf(recurrence: Recurrence, kind: Kind): StandingOrderFrequency {
+  if (recurrenceModeOf(recurrence, kind) !== 'standing_order') return '';
+  return recurrence.type === 'yearly' ? 'yearly' : 'monthly';
 }
 
 /**
@@ -77,13 +98,14 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
     // The EFFECTIVE date, so a moved occurrence opens on the day it is shown.
     date: occurrence.date,
     note: occurrence.note ?? '',
-    mode: recurrenceModeOf(recurrence),
+    mode: recurrenceModeOf(recurrence, transaction.kind),
     dayOfMonth: String(dayOfMonthOf(recurrence, transaction.date)),
     endDate: (recurrence.type === 'one_time' ? undefined : recurrence.endDate) ?? '',
     installmentCount:
       recurrence.type === 'monthly' && recurrence.installments !== undefined
         ? String(recurrence.installments)
         : '',
+    frequency: frequencyOf(recurrence, transaction.kind),
   };
 }
 

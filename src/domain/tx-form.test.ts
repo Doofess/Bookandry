@@ -373,3 +373,104 @@ describe('recurrenceDefaults', () => {
     expect(() => recurrenceDefaults('monthly', { ...base, date: 'nonsense' })).not.toThrow();
   });
 });
+
+describe('the expense type', () => {
+  /*
+   * An expense is described by WHAT IT IS, not by how often it repeats.
+   *
+   * The four types are the ones an Israeli already uses: עסקה רגילה, עסקת
+   * תשלומים, עסקת קרדיט, הוראת קבע. Three of them collapse onto recurrence the
+   * data model already had; the tests here are about the collapse being exact.
+   */
+
+  it('stores a קרדיט plan as an instalment series that says it is credit', () => {
+    const parsed = parse(values({ mode: 'credit', amount: '1200', installmentCount: '6' }));
+
+    expect(parsed.recurrence).toMatchObject({
+      type: 'monthly',
+      installments: 6,
+      plan: 'credit',
+    });
+    // The entered amount is the TOTAL for both plans, which is what makes the
+    // split mean anything.
+    expect(parsed.installmentTotalMinor).toBe(120_000);
+  });
+
+  it('stores תשלומים as the same series, recorded as interest-free', () => {
+    const parsed = parse(values({ mode: 'installments', amount: '1200', installmentCount: '6' }));
+
+    expect(parsed.recurrence).toMatchObject({ type: 'monthly', installments: 6, plan: 'installments' });
+    expect(parsed.installmentTotalMinor).toBe(120_000);
+  });
+
+  it('splits both plans identically, because only the interest differs', () => {
+    // The app does not model the issuer's interest, so the stored payments are
+    // the same either way. If that ever changes this test is the thing that
+    // should fail, rather than a number quietly moving somewhere downstream.
+    const credit = parse(values({ mode: 'credit', amount: '1000', installmentCount: '3' }));
+    const plain = parse(values({ mode: 'installments', amount: '1000', installmentCount: '3' }));
+
+    expect(credit.installmentTotalMinor).toBe(plain.installmentTotalMinor);
+    expect({ ...credit.recurrence, plan: undefined }).toEqual({ ...plain.recurrence, plan: undefined });
+  });
+
+  it('refuses a standing order that has not said monthly or yearly', () => {
+    // The one field with no default. Monthly is likelier, and preselecting it
+    // would still be wrong: arnona and most insurance are yearly.
+    expect(issuesFor(values({ mode: 'standing_order', frequency: '' }), 'frequency')).toEqual([
+      'frequency_required',
+    ]);
+  });
+
+  it('stores a monthly standing order as monthly recurrence', () => {
+    const parsed = parse(values({ mode: 'standing_order', frequency: 'monthly', dayOfMonth: '31' }));
+
+    expect(parsed.recurrence).toEqual({ type: 'monthly', dayOfMonth: 31 });
+  });
+
+  it('stores a yearly standing order as yearly recurrence, anchored on the date', () => {
+    const parsed = parse(values({ mode: 'standing_order', frequency: 'yearly', date: d('2026-03-01') }));
+
+    expect(parsed.recurrence).toEqual({ type: 'yearly', month: 3, day: 1 });
+  });
+
+  it('lets a standing order end, and a plan not', () => {
+    /*
+     * תשלומים already ends after exactly N payments, so a second bound could
+     * contradict the count and the two would disagree silently. A standing
+     * order has no such bound, so an end date is the only way to stop it.
+     */
+    const ending = parse(
+      values({
+        mode: 'standing_order',
+        frequency: 'monthly',
+        dayOfMonth: '10',
+        endDate: d('2027-03-10'),
+      }),
+    );
+    expect(ending.recurrence).toMatchObject({ endDate: '2027-03-10' });
+
+    const plan = parse(values({ mode: 'credit', installmentCount: '3', endDate: d('2027-03-10') }));
+    expect(plan.recurrence).not.toHaveProperty('endDate');
+  });
+
+  it('keeps the payment count when the plan is reclassified', () => {
+    // The two ask the same question. Clearing the answer because the user
+    // decided it was קרדיט after all is the form being pedantic at somebody.
+    const started = values({ mode: 'installments', installmentCount: '6' });
+    const patch = recurrenceDefaults('credit', started);
+
+    expect(patch.installmentCount).toBe('6');
+    expect(patch.frequency).toBe('');
+  });
+
+  it('never carries a stale frequency out of standing order', () => {
+    // Left behind, it would be read by nothing and mean nothing - until a
+    // future branch checked it.
+    const wasStanding = values({ mode: 'standing_order', frequency: 'yearly' });
+
+    for (const mode of ['one_time', 'installments', 'credit', 'yearly'] as const) {
+      expect(recurrenceDefaults(mode, wasStanding).frequency, mode).toBe('');
+    }
+  });
+});

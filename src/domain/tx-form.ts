@@ -62,7 +62,26 @@ export const LAST_DAY_OF_MONTH = 31;
  * is how users end up entering a 12,000 shekel total as a 12,000 shekel
  * monthly bill.
  */
-export type RecurrenceMode = 'one_time' | 'monthly' | 'installments' | 'yearly';
+/**
+ * What the form is asking for, which is not the same list as the data model's.
+ *
+ * An EXPENSE is described by its type: a regular purchase, a תשלומים plan, a
+ * קרדיט plan, or a הוראת קבע. The last of those is stored as ordinary monthly
+ * or yearly recurrence - a standing order IS a repeating charge - so the mode
+ * carries the user's word for it and `frequency` carries the shape.
+ *
+ * INCOME keeps the plain repeat vocabulary: a salary is monthly, and it is not
+ * a standing order, which is a thing you set up to pay someone else.
+ */
+export type RecurrenceMode = 'one_time' | 'monthly' | 'installments' | 'credit' | 'standing_order' | 'yearly';
+
+/** Both plans split a purchase the same way; only the interest differs. */
+export function isInstallmentMode(mode: RecurrenceMode): boolean {
+  return mode === 'installments' || mode === 'credit';
+}
+
+/** Nothing is preselected: a standing order has to say which it is. */
+export type StandingOrderFrequency = '' | 'monthly' | 'yearly';
 
 const localDate = z.string().refine(isLocalDate, { message: 'invalid_date' });
 
@@ -85,12 +104,21 @@ export const txFormSchema = z
     date: localDate,
     note: z.string(),
 
-    mode: z.enum(['one_time', 'monthly', 'installments', 'yearly']),
-    /** Only read in the monthly and instalment modes. */
+    mode: z.enum(['one_time', 'monthly', 'installments', 'credit', 'standing_order', 'yearly']),
+    /** Only read in the monthly, standing-order and instalment modes. */
     dayOfMonth: digits('day_invalid'),
     /** '' means open-ended. */
     endDate: z.string(),
     installmentCount: z.string(),
+    /**
+     * Standing orders only, and deliberately EMPTY by default.
+     *
+     * "Monthly" is the likelier answer and preselecting it would still be
+     * wrong: arnona and most insurance are yearly, and a default that is right
+     * most of the time is how the wrong one gets saved without being read. The
+     * form refuses to submit until this is answered.
+     */
+    frequency: z.enum(['', 'monthly', 'yearly']),
   })
   .superRefine((values, ctx) => {
     const amountMinor = parseAmount(values.amount, values.currency);
@@ -109,14 +137,25 @@ export const txFormSchema = z
       ctx.addIssue({ code: 'custom', path: ['note'], message: 'note_too_long' });
     }
 
-    if (values.mode === 'monthly' || values.mode === 'installments') {
+    const monthlyShaped =
+      values.mode === 'monthly' ||
+      isInstallmentMode(values.mode) ||
+      (values.mode === 'standing_order' && values.frequency !== 'yearly');
+
+    if (monthlyShaped) {
       const day = Number(values.dayOfMonth);
       if (day < 1 || day > LAST_DAY_OF_MONTH) {
         ctx.addIssue({ code: 'custom', path: ['dayOfMonth'], message: 'day_out_of_range' });
       }
     }
 
-    if (values.mode === 'installments') {
+    // The one field with no default: a standing order that has not said
+    // monthly or yearly is not a standing order yet.
+    if (values.mode === 'standing_order' && values.frequency === '') {
+      ctx.addIssue({ code: 'custom', path: ['frequency'], message: 'frequency_required' });
+    }
+
+    if (isInstallmentMode(values.mode)) {
       const count = Number(values.installmentCount);
       if (!/^\d+$/.test(values.installmentCount) || count < MIN_INSTALLMENTS || count > MAX_INSTALLMENTS) {
         ctx.addIssue({
@@ -134,7 +173,10 @@ export const txFormSchema = z
      * could contradict the count - and the two would disagree silently, with
      * expansion honouring whichever bound came first.
      */
-    if (values.endDate !== '' && (values.mode === 'monthly' || values.mode === 'yearly')) {
+    if (
+      values.endDate !== '' &&
+      (values.mode === 'monthly' || values.mode === 'yearly' || values.mode === 'standing_order')
+    ) {
       if (!isLocalDate(values.endDate)) {
         ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'invalid_date' });
       } else if (isLocalDate(values.date) && compareLocal(values.endDate, values.date) < 0) {
@@ -167,8 +209,9 @@ export const txFormSchema = z
        * form asked. `createTransaction` splits it so the payments sum to it
        * exactly, with the first absorbing the remainder.
        */
-      installmentTotalMinor:
-        values.mode === 'installments' ? (parseAmount(values.amount, values.currency) ?? 0) : undefined,
+      installmentTotalMinor: isInstallmentMode(values.mode)
+        ? (parseAmount(values.amount, values.currency) ?? 0)
+        : undefined,
     };
   });
 
@@ -181,6 +224,7 @@ function toRecurrence(
     dayOfMonth: string;
     endDate: string;
     installmentCount: string;
+    frequency: StandingOrderFrequency;
   },
   date: LocalDate,
 ): Recurrence {
@@ -197,6 +241,27 @@ function toRecurrence(
         ...(endDate === undefined ? {} : { endDate }),
       };
 
+    case 'standing_order': {
+      /*
+       * Stored as plain recurrence, because that is what it is.
+       *
+       * A הוראת קבע is a repeating charge the bank makes on a schedule: the
+       * word is the user's, the shape is monthly or yearly. A fourth
+       * recurrence type for it would hand expansion, the chart and the
+       * commitments list one more case each, all behaving identically.
+       */
+      if (values.frequency === 'yearly') {
+        const { month, day } = parseLocalDate(date);
+        return { type: 'yearly', month, day, ...(endDate === undefined ? {} : { endDate }) };
+      }
+      return {
+        type: 'monthly',
+        dayOfMonth: Number(values.dayOfMonth),
+        ...(endDate === undefined ? {} : { endDate }),
+      };
+    }
+
+    case 'credit':
     case 'installments':
       /*
        * The day comes from the purchase date, and is NOT user-settable here.
@@ -212,6 +277,7 @@ function toRecurrence(
         type: 'monthly',
         dayOfMonth: parseLocalDate(date).day,
         installments: Number(values.installmentCount),
+        plan: values.mode === 'credit' ? 'credit' : 'installments',
       };
 
     case 'yearly': {
@@ -255,6 +321,7 @@ export function defaultFormValues(input: {
     dayOfMonth: String(parseLocalDate(input.today).day),
     endDate: '',
     installmentCount: '',
+    frequency: '',
   };
 }
 
@@ -339,7 +406,7 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
 
   switch (mode) {
     case 'one_time':
-      return { mode, dayOfMonth: dayOfDate, endDate: '', installmentCount: '' };
+      return { mode, dayOfMonth: dayOfDate, endDate: '', installmentCount: '', frequency: '' };
 
     case 'monthly':
       return {
@@ -351,15 +418,30 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
         installmentCount: '',
       };
 
+    case 'credit':
     case 'installments':
       return {
         mode,
         dayOfMonth: dayOfDate,
         endDate: '',
+        // Kept across a switch between the two plans: they ask the same
+        // question, and re-typing "12" because you reclassified the purchase
+        // is the form being pedantic at somebody.
         installmentCount: values.installmentCount === '' ? '12' : values.installmentCount,
+        frequency: '',
+      };
+
+    case 'standing_order':
+      return {
+        mode,
+        // Blank, every time. See the schema: the point is that it gets
+        // answered rather than accepted.
+        frequency: '',
+        dayOfMonth: values.dayOfMonth === dayOfDate ? String(defaultRecurringDay()) : values.dayOfMonth,
+        installmentCount: '',
       };
 
     case 'yearly':
-      return { mode, installmentCount: '' };
+      return { mode, installmentCount: '', frequency: '' };
   }
 }

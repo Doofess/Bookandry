@@ -9,6 +9,7 @@ import {
   buildPatch,
   isEmptyPatch,
   isInstallmentPlan,
+  frequencyOf,
   occurrenceToFormValues,
   recurrenceModeOf,
   scopeAllowsMove,
@@ -61,13 +62,41 @@ describe('scope rules', () => {
 });
 
 describe('recurrenceModeOf', () => {
+  /*
+   * The same stored recurrence, described by two vocabularies.
+   *
+   * An expense that repeats monthly is a הוראת קבע - that is what an Israeli
+   * calls the arrangement, and it is what the form asks for. Income that
+   * arrives monthly is a salary, and calling it a standing order would be
+   * wrong in the ordinary sense of the words: a standing order is something
+   * you set up to pay somebody else.
+   */
   it.each([
-    [{ type: 'one_time' } as const, 'one_time'],
-    [{ type: 'monthly', dayOfMonth: 10 } as const, 'monthly'],
-    [{ type: 'monthly', dayOfMonth: 10, installments: 3 } as const, 'installments'],
-    [{ type: 'yearly', month: 3, day: 1 } as const, 'yearly'],
-  ])('reads %o as %s', (recurrence, expected) => {
-    expect(recurrenceModeOf(recurrence)).toBe(expected);
+    [{ type: 'one_time' } as const, 'expense', 'one_time'],
+    [{ type: 'one_time' } as const, 'income', 'one_time'],
+    [{ type: 'monthly', dayOfMonth: 10 } as const, 'expense', 'standing_order'],
+    [{ type: 'monthly', dayOfMonth: 10 } as const, 'income', 'monthly'],
+    [{ type: 'yearly', month: 3, day: 1 } as const, 'expense', 'standing_order'],
+    [{ type: 'yearly', month: 3, day: 1 } as const, 'income', 'yearly'],
+    [{ type: 'monthly', dayOfMonth: 10, installments: 3 } as const, 'expense', 'installments'],
+    [{ type: 'monthly', dayOfMonth: 10, installments: 3, plan: 'credit' } as const, 'expense', 'credit'],
+  ])('reads %o on %s as %s', (recurrence, kind, expected) => {
+    expect(recurrenceModeOf(recurrence, kind as 'expense' | 'income')).toBe(expected);
+  });
+
+  it('reads a plan with no recorded kind as תשלומים', () => {
+    // Rows written before קרדיט existed could not have been anything else: the
+    // form had one plan, and it was the interest-free one.
+    expect(recurrenceModeOf({ type: 'monthly', dayOfMonth: 10, installments: 3 })).toBe('installments');
+  });
+
+  it('reports the frequency a standing order was stored with', () => {
+    expect(frequencyOf({ type: 'monthly', dayOfMonth: 10 }, 'expense')).toBe('monthly');
+    expect(frequencyOf({ type: 'yearly', month: 3, day: 1 }, 'expense')).toBe('yearly');
+    // Not a standing order at all, so there is no frequency to report.
+    expect(frequencyOf({ type: 'monthly', dayOfMonth: 10 }, 'income')).toBe('');
+    expect(frequencyOf({ type: 'one_time' }, 'expense')).toBe('');
+    expect(frequencyOf({ type: 'monthly', dayOfMonth: 10, installments: 3 }, 'expense')).toBe('');
   });
 
   it('separates an instalment plan from an ordinary monthly bill', () => {
@@ -87,7 +116,10 @@ describe('occurrenceToFormValues', () => {
       amount: '45.00',
       currency: 'ILS',
       date: '2026-09-10',
-      mode: 'monthly',
+      // An expense on a monthly rule IS a standing order, and the form opens
+      // on the control the user would have created it with.
+      mode: 'standing_order',
+      frequency: 'monthly',
       dayOfMonth: '10',
       endDate: '',
     });

@@ -10,12 +10,14 @@ import { Label } from '@/components/ui/label';
 import { splitInstallments } from '@/domain/calculators';
 import {
   firstOccurrenceDate,
+  isInstallmentMode,
   isLastDayChoice,
   lastInstallmentDate,
   MAX_INSTALLMENTS,
   MIN_INSTALLMENTS,
   recurrenceDefaults,
   type RecurrenceMode,
+  type StandingOrderFrequency,
   type TxFormValues,
 } from '@/domain/tx-form';
 import { formatLocalDate, isLocalDate, parseLocalDate } from '@/lib/dates';
@@ -25,27 +27,51 @@ import type { Currency, LocalDate, Minor } from '@/types/money';
 import { DateField } from './date-field';
 
 /**
- * The recurrence controls.
+ * What KIND of expense this is - or, for income, how often it repeats.
  *
- * Instalments are a separate MODE from monthly, even though the data model
- * stores both as monthly recurrence. The two ask completely different
+ * An expense is not described by how often it repeats; it is described by what
+ * it IS, and in Israel that is a short list everybody already knows: a regular
+ * purchase, a תשלומים plan, a קרדיט plan, or a הוראת קבע. "Repeats: monthly"
+ * asks the user to translate their own word for the thing into the app's, and
+ * the two plans - which repeat monthly - are not repeats in any sense they
+ * would recognise.
+ *
+ * Income keeps the plain repeat vocabulary: a salary arrives every month and
+ * is nobody's standing order.
+ *
+ * Instalments stay a separate mode from a repeating charge even though the
+ * data model stores both as monthly recurrence, because they ask opposite
  * questions - "how much each month, until when" versus "what did it cost in
- * total, over how many payments" - and a single control that tries to serve
- * both is how a 12,000 shekel total gets entered as a 12,000 shekel bill.
+ * total, over how many payments" - and one control serving both is how a
+ * 12,000 shekel total gets entered as a 12,000 shekel monthly bill.
  *
- * Everything under the mode picker is derived and shown rather than left to be
- * discovered in the feed: which day the first payment lands on, and for
- * תשלומים, what each payment is and when the last one falls.
+ * Everything under the picker is derived and shown rather than left to be
+ * discovered in the feed: which day the first payment lands on, and for a
+ * plan, what each payment is and when the last one falls.
  */
 export function RecurrenceFields({
   values,
   onChange,
+  isExpense,
+  submitted,
   currency,
   amountMinor,
   errors,
 }: {
   readonly values: TxFormValues;
   readonly onChange: (patch: Partial<TxFormValues>) => void;
+  /** Expenses are described by TYPE; income by how often it repeats. */
+  readonly isExpense: boolean;
+  /**
+   * Whether a save has been attempted.
+   *
+   * The frequency is the one required field with no default, so the resolver
+   * flags it the instant the type is chosen - before the user could possibly
+   * have answered. Showing that as an ERROR is scolding somebody for not yet
+   * having done the thing you just asked them to do; the neutral hint says the
+   * same thing until they actually try to leave without it.
+   */
+  readonly submitted: boolean;
   readonly currency: Currency;
   /** The parsed amount, for the instalment preview. Undefined while unparseable. */
   readonly amountMinor: Minor | undefined;
@@ -53,6 +79,7 @@ export function RecurrenceFields({
 }) {
   const { t, i18n } = useTranslation();
   const modeLabelId = useId();
+  const freqLabelId = useId();
   const dayId = useId();
   const countId = useId();
   const endId = useId();
@@ -68,25 +95,74 @@ export function RecurrenceFields({
    */
   const date = isLocalDate(values.date) ? values.date : undefined;
 
+  /*
+   * A standing order IS monthly or yearly recurrence, so it reuses those
+   * controls rather than growing a parallel set that would drift from them.
+   * Until the frequency is answered it shows neither, which is the point:
+   * there is nothing to configure yet.
+   */
+  const monthlyShaped = mode === 'monthly' || (mode === 'standing_order' && values.frequency === 'monthly');
+  const yearlyShaped = mode === 'yearly' || (mode === 'standing_order' && values.frequency === 'yearly');
+
   return (
     <div className="space-y-3">
-      <Label id={modeLabelId}>{t('tx.repeat')}</Label>
+      <Label id={modeLabelId}>{isExpense ? t('tx.type') : t('tx.repeat')}</Label>
       <Segmented<RecurrenceMode>
         value={mode}
         labelledBy={modeLabelId}
         onChange={(next) => {
           onChange(recurrenceDefaults(next, values));
         }}
-        options={[
-          { value: 'one_time', label: t('tx.repeatOnce') },
-          { value: 'monthly', label: t('tx.repeatMonthly') },
-          { value: 'installments', label: t('tx.repeatInstallments') },
-          { value: 'yearly', label: t('tx.repeatYearly') },
-        ]}
+        options={
+          isExpense
+            ? [
+                { value: 'one_time', label: t('tx.typeRegular') },
+                { value: 'installments', label: t('tx.typeInstallments') },
+                { value: 'credit', label: t('tx.typeCredit') },
+                { value: 'standing_order', label: t('tx.typeStandingOrder') },
+              ]
+            : [
+                { value: 'one_time', label: t('tx.repeatOnce') },
+                { value: 'monthly', label: t('tx.repeatMonthly') },
+                { value: 'yearly', label: t('tx.repeatYearly') },
+              ]
+        }
         size="sm"
       />
 
-      {mode === 'monthly' && date !== undefined ? (
+      {mode === 'standing_order' ? (
+        <div className="space-y-1.5">
+          <Label id={freqLabelId}>{t('tx.frequency')}</Label>
+          {/*
+            No default, on purpose.
+
+            Monthly is the likelier answer, and preselecting it would still be
+            wrong: arnona and most insurance policies are yearly, and a default
+            that is right most of the time is exactly how the wrong one gets
+            saved without ever being read. The form will not submit until this
+            is answered.
+          */}
+          <Segmented<StandingOrderFrequency>
+            value={values.frequency}
+            labelledBy={freqLabelId}
+            onChange={(frequency) => {
+              onChange({ frequency });
+            }}
+            options={[
+              { value: 'monthly', label: t('tx.frequencyMonthly') },
+              { value: 'yearly', label: t('tx.frequencyYearly') },
+            ]}
+            size="sm"
+          />
+          {errors.frequency === undefined || !submitted ? (
+            <p className="text-xs text-muted-foreground">{t('tx.frequencyHint')}</p>
+          ) : (
+            <p className="text-xs text-destructive">{errors.frequency}</p>
+          )}
+        </div>
+      ) : null}
+
+      {monthlyShaped && date !== undefined ? (
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor={dayId}>{t('tx.dayOfMonth')}</Label>
@@ -137,7 +213,7 @@ export function RecurrenceFields({
         </div>
       ) : null}
 
-      {mode === 'installments' && date !== undefined ? (
+      {isInstallmentMode(mode) && date !== undefined ? (
         <div className="space-y-1.5">
           <Label htmlFor={countId}>{t('tx.installmentCount')}</Label>
           <Input
@@ -154,6 +230,7 @@ export function RecurrenceFields({
           />
           <p id={`${countId}-hint`} className="text-xs text-muted-foreground">
             {t('tx.installmentsTotalHint')}
+            {mode === 'credit' ? ` ${t('tx.creditInterestNote')}` : ''}
           </p>
           {errors.installmentCount === undefined ? (
             <InstallmentPreview
@@ -168,7 +245,7 @@ export function RecurrenceFields({
         </div>
       ) : null}
 
-      {mode === 'yearly' && date !== undefined ? (
+      {yearlyShaped && date !== undefined ? (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             {t('tx.firstOccurrence', {

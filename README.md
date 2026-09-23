@@ -188,6 +188,27 @@ above it.
 `01-31, 02-28, 03-31, 04-30` and **returns to the 31st** after February.
 Iterative `addMonths` gives `Jan31 → Feb28 → Mar28` and loses the 31st forever.
 
+**An expense has a TYPE, not a repeat frequency.** The four are the ones an
+Israeli already uses: עסקה רגילה, עסקת תשלומים, עסקת קרדיט, הוראת קבע. Three of
+them collapse onto recurrence the data model already had — a הוראת קבע _is_
+monthly or yearly recurrence — so the mode carries the user's word for the thing
+and the storage stays one shape. Income keeps the plain repeat vocabulary: a
+salary arrives every month and is nobody's standing order.
+
+**תשלומים and קרדיט are stored identically, and that is a limitation.** They are
+the same arrangement — a purchase split over N monthly payments — differing only
+in the interest the issuer adds, which this app does not model. Which one the
+user chose is recorded on the row, so nothing forgets it and a future interest
+field has somewhere to live, but the payments shown today are the plain split
+either way. The form says so where the count is entered.
+
+**The standing-order frequency has no default.** Monthly is the likelier answer
+and preselecting it would still be wrong: arnona and most insurance policies are
+yearly, and a default that is right most of the time is exactly how the wrong one
+gets saved without ever being read. The error waits for a save attempt rather
+than firing the instant the type is chosen, which would be scolding someone for
+not yet having done the thing they were just asked to do.
+
 **Instalments (תשלומים) sum to the total exactly.** ₪1,000 over 3 payments is
 ₪333.34 + ₪333.33 + ₪333.33, the first absorbing the remainder, which is the
 Israeli card convention. Interest-free means the parts must equal the whole.

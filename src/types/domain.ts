@@ -106,6 +106,16 @@ export type PaymentMethod = {
   readonly updatedAt: IsoInstant;
 };
 
+/**
+ * תשלומים versus קרדיט.
+ *
+ * Both are a purchase split over N monthly payments on a card. תשלומים is
+ * interest-free and is what "3 תשלומים" on a shop sign means; קרדיט is the
+ * same arrangement with interest, which the issuer adds and this app does not
+ * model.
+ */
+export type InstallmentPlan = 'installments' | 'credit';
+
 export type Recurrence =
   | { readonly type: 'one_time' }
   | {
@@ -114,11 +124,26 @@ export type Recurrence =
       readonly dayOfMonth: number;
       readonly endDate?: LocalDate;
       /**
-       * תשלומים: interest-free instalments. When set, the series has exactly
-       * this many occurrences and they sum to the original total EXACTLY, with
-       * the first absorbing the rounding remainder (Israeli card convention).
+       * How many payments the plan has. When set, the series has exactly this
+       * many occurrences and they sum to the original total EXACTLY, with the
+       * first absorbing the rounding remainder (Israeli card convention).
        */
       readonly installments?: number;
+      /**
+       * Which KIND of plan, which is a distinction Israeli cards make and no
+       * amount of arithmetic can recover.
+       *
+       * תשלומים and קרדיט split a purchase the same way; the difference is that
+       * קרדיט carries interest and תשלומים does not - a regular instalment plan
+       * is a credit plan at zero interest. The app does not model the interest
+       * itself (see README), so the stored split is identical either way, but
+       * which one the user chose is theirs to see on the row rather than
+       * something the app quietly forgets.
+       *
+       * Absent on rows written before the distinction existed, which are
+       * תשלומים by construction: it was the only plan the form could make.
+       */
+      readonly plan?: InstallmentPlan;
     }
   | {
       readonly type: 'yearly';
