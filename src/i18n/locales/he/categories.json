@@ -65,6 +65,8 @@
     "methodDeleteBody_two": "שתי תנועות משתמשות בו.",
     "methodDeleteBody_other": "{{count}} תנועות משתמשות בו.",
     "methodDeleteClear": "להשאיר אותן בלי אמצעי תשלום",
-    "methodDeleteMove": "להעביר אל"
+    "methodDeleteMove": "להעביר אל",
+    "methodRate": "ריבית שנתית לעסקאות קרדיט",
+    "methodRateHint": "משמשת לחישוב עסקת קרדיט בכרטיס הזה. אפשר להשאיר ריק אם אין ריבית."
   }
 }

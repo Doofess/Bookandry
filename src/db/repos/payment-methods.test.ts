@@ -242,3 +242,57 @@ describe('cash is built in', () => {
     expect(await handle.db.paymentMethods.get('pm.old-cash')).toBeUndefined();
   });
 });
+
+describe('a card’s credit rate', () => {
+  it('is stored as typed, trimmed', async () => {
+    const card = await createPaymentMethod(
+      handle.db,
+      'pm.visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1', creditAnnualRate: ' 12.5 ' },
+      NOW,
+    );
+    expect(card.creditAnnualRate).toBe('12.5');
+  });
+
+  it('is refused when it is not a rate, by the repository and not only the screen', async () => {
+    // The screen is one caller. Anything that reaches the table is copied onto
+    // every קרדיט plan charged to the card.
+    await expect(
+      createPaymentMethod(
+        handle.db,
+        'pm.visa',
+        { label: 'Visa', type: 'credit_card', profileId: 'p1', creditAnnualRate: '1.2.3' },
+        NOW,
+      ),
+    ).rejects.toThrow(RangeError);
+
+    await createPaymentMethod(
+      handle.db,
+      'pm.visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1' },
+      NOW,
+    );
+    await expect(updatePaymentMethod(handle.db, 'pm.visa', { creditAnnualRate: '150' }, NOW)).rejects.toThrow(
+      RangeError,
+    );
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.creditAnnualRate).toBeUndefined();
+  });
+
+  it('is left alone by undefined, set by a string and cleared by null', async () => {
+    await createPaymentMethod(
+      handle.db,
+      'pm.visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1', creditAnnualRate: '12' },
+      NOW,
+    );
+
+    await updatePaymentMethod(handle.db, 'pm.visa', { label: 'Visa Gold' }, NOW);
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.creditAnnualRate).toBe('12');
+
+    await updatePaymentMethod(handle.db, 'pm.visa', { creditAnnualRate: '9.9' }, NOW);
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.creditAnnualRate).toBe('9.9');
+
+    await updatePaymentMethod(handle.db, 'pm.visa', { creditAnnualRate: null }, NOW);
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.creditAnnualRate).toBeUndefined();
+  });
+});

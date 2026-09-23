@@ -63,6 +63,8 @@
     "methodDeleteBody_one": "One transaction uses it.",
     "methodDeleteBody_other": "{{count}} transactions use it.",
     "methodDeleteClear": "Leave them with no payment method",
-    "methodDeleteMove": "Move them to"
+    "methodDeleteMove": "Move them to",
+    "methodRate": "Annual credit interest",
+    "methodRateHint": "Used to price עסקת קרדיט on this card. Leave empty for interest-free."
   }
 }

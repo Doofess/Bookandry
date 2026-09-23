@@ -106,6 +106,17 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
         ? String(recurrence.installments)
         : '',
     frequency: frequencyOf(recurrence, transaction.kind),
+    /*
+     * Deliberately empty, even for a קרדיט plan that has a rate.
+     *
+     * The amount field of an existing plan holds ONE PAYMENT, not the purchase
+     * price, and the plan itself is read-only once saved. The schema prices an
+     * amount it believes is a purchase, so handing it the rate would add the
+     * interest a second time: correcting the note on a ₪207.06 payment would
+     * save it as ₪1,242.36. The snapshotted rate stays on the recurrence, which
+     * an edit of a plan never rewrites.
+     */
+    annualRate: '',
   };
 }
 

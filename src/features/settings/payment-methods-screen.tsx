@@ -30,6 +30,7 @@ import {
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
+import { normalizeAnnualRate } from '@/lib/money';
 import {
   isBuiltinPaymentMethod,
   SHARED_OWNER,
@@ -258,11 +259,15 @@ function MethodEditor({
   const [label, setLabel] = useState('');
   const [type, setType] = useState<PaymentMethodType>('credit_card');
   const [owner, setOwner] = useState<string>(SHARED_OWNER);
+  const [rate, setRate] = useState('');
+  /** Set by a save attempt: the rate error waits until somebody tries. */
+  const [attempted, setAttempted] = useState(false);
   const [seeded, setSeeded] = useState<string | undefined>(undefined);
 
   const labelId = useId();
   const typeId = useId();
   const ownerId = useId();
+  const rateId = useId();
 
   // Derived from the target during render, not synchronised in an effect: an
   // effect would paint one frame of the previous method's label.
@@ -272,14 +277,34 @@ function MethodEditor({
     setLabel(existing?.label ?? '');
     setType(existing?.type ?? 'credit_card');
     setOwner(existing?.profileId ?? profiles[0]?.id ?? SHARED_OWNER);
+    setRate(existing?.creditAnnualRate ?? '');
+    setAttempted(false);
   }
+
+  const rateInvalid = type === 'credit_card' && rate.trim() !== '' && normalizeAnnualRate(rate) === undefined;
 
   const save = async (): Promise<void> => {
     const now = systemClock.nowIso();
+    /*
+     * Only a card charges קרדיט interest, so only a card keeps a rate.
+     *
+     * Dropped rather than preserved when the type changes: a rate left on a
+     * bank transfer is a number nothing reads, until the day something does.
+     * `null` rather than omission, because the patch type uses `undefined` for
+     * "leave alone" - omitting it would make the rate unclearable.
+     */
+    const creditAnnualRate = type === 'credit_card' ? (normalizeAnnualRate(rate) ?? null) : null;
+
     try {
-      if (isNew) await createPaymentMethod(db, newId(), { label, type, profileId: owner }, now);
-      else if (existing !== undefined) {
-        await updatePaymentMethod(db, existing.id, { label, type, profileId: owner }, now);
+      if (isNew) {
+        await createPaymentMethod(
+          db,
+          newId(),
+          { label, type, profileId: owner, ...(creditAnnualRate === null ? {} : { creditAnnualRate }) },
+          now,
+        );
+      } else if (existing !== undefined) {
+        await updatePaymentMethod(db, existing.id, { label, type, profileId: owner, creditAnnualRate }, now);
       }
       onOpenChange(false);
     } catch {
@@ -300,7 +325,8 @@ function MethodEditor({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            if (label.trim() !== '') void save();
+            setAttempted(true);
+            if (label.trim() !== '' && !rateInvalid) void save();
           }}
           className="space-y-4 px-4 pb-6"
         >
@@ -330,6 +356,45 @@ function MethodEditor({
               }))}
             />
           </div>
+
+          {/*
+            The card's own interest rate, asked once instead of per purchase.
+
+            It is a property of the CARD: it is on the statement, it is the same
+            for every עסקת קרדיט charged to it, and typing it into each
+            transaction is how a wrong one gets in. Only for a credit card,
+            because nothing else charges it.
+          */}
+          {type === 'credit_card' ? (
+            <div className="space-y-1.5">
+              <Label htmlFor={rateId}>{t('categories:manage.methodRate')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id={rateId}
+                  type="text"
+                  inputMode="decimal"
+                  value={rate}
+                  onChange={(event) => {
+                    setRate(event.target.value.replace(/[^\d.]/g, '').slice(0, 6));
+                  }}
+                  aria-invalid={attempted && rateInvalid}
+                  aria-describedby={`${rateId}-hint`}
+                  className="h-11 w-24"
+                />
+                <span className="text-sm text-muted-foreground">{t('tx.annualRateUnit')}</span>
+              </div>
+              {/* The error REPLACES the hint in the described-by target, so a
+                  screen reader hears why the save did nothing. */}
+              <p
+                id={`${rateId}-hint`}
+                className={
+                  attempted && rateInvalid ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'
+                }
+              >
+                {attempted && rateInvalid ? t('tx.errRateOutOfRange') : t('categories:manage.methodRateHint')}
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label id={ownerId}>{t('categories:manage.methodOwner')}</Label>

@@ -8,7 +8,7 @@ import {
   makeLocalDate,
   parseLocalDate,
 } from '@/lib/dates';
-import { toMinor } from '@/lib/money';
+import { creditSchedule, normalizeAnnualRate, toMinor } from '@/lib/money';
 import type { Recurrence } from '@/types/domain';
 import type { Kind, LocalDate, Minor } from '@/types/money';
 
@@ -119,6 +119,18 @@ export const txFormSchema = z
      * form refuses to submit until this is answered.
      */
     frequency: z.enum(['', 'monthly', 'yearly']),
+    /**
+     * The annual nominal rate for עסקת קרדיט, as typed.
+     *
+     * Prefilled from the CARD, because that is what it belongs to - it is on
+     * the statement and it is the same for every קרדיט charged to it. Still
+     * editable per purchase: a promotional rate on one item is ordinary, and a
+     * field that cannot be corrected is a field people work around.
+     *
+     * '' means interest-free, which makes a קרדיט plan arithmetically identical
+     * to תשלומים rather than an error.
+     */
+    annualRate: z.string(),
   })
   .superRefine((values, ctx) => {
     const amountMinor = parseAmount(values.amount, values.currency);
@@ -153,6 +165,17 @@ export const txFormSchema = z
     // monthly or yearly is not a standing order yet.
     if (values.mode === 'standing_order' && values.frequency === '') {
       ctx.addIssue({ code: 'custom', path: ['frequency'], message: 'frequency_required' });
+    }
+
+    // An upper bound as well as a lower one: a mistyped "1200" is a plan whose
+    // payments are absurd, and absurd is easier to catch here than in the feed
+    // six months later.
+    if (
+      values.mode === 'credit' &&
+      values.annualRate !== '' &&
+      normalizeAnnualRate(values.annualRate) === undefined
+    ) {
+      ctx.addIssue({ code: 'custom', path: ['annualRate'], message: 'rate_out_of_range' });
     }
 
     if (isInstallmentMode(values.mode)) {
@@ -199,7 +222,11 @@ export const txFormSchema = z
        */
       paymentMethodId:
         values.kind === 'expense' && values.paymentMethodId !== '' ? values.paymentMethodId : undefined,
-      amountMinor: parseAmount(values.amount, values.currency) ?? 0,
+      // The credit total, where there is one: the money snapshot is what gets
+      // split into payments and converted to the base currency, so pricing the
+      // plan anywhere later would leave the base amount denominated in the
+      // purchase price while the payments were not.
+      amountMinor: planTotal(values) ?? parseAmount(values.amount, values.currency) ?? 0,
       currency: values.currency,
       date,
       note: values.note.trim() === '' ? undefined : values.note.trim(),
@@ -209,9 +236,16 @@ export const txFormSchema = z
        * form asked. `createTransaction` splits it so the payments sum to it
        * exactly, with the first absorbing the remainder.
        */
-      installmentTotalMinor: isInstallmentMode(values.mode)
-        ? (parseAmount(values.amount, values.currency) ?? 0)
-        : undefined,
+      /**
+       * What the plan will actually COST, which is not what was entered.
+       *
+       * For תשלומים the two are the same: the payments sum to the purchase.
+       * For קרדיט the issuer adds interest, so the amount stored per occurrence
+       * has to be the לוח שפיצר payment - what the card will charge each month
+       * - and the series total is that times the count. Entering ₪1,200 over 6
+       * at 12% is six payments of ₪207.06, not of ₪200.
+       */
+      installmentTotalMinor: isInstallmentMode(values.mode) ? planTotal(values) : undefined,
     };
   });
 
@@ -225,6 +259,7 @@ function toRecurrence(
     endDate: string;
     installmentCount: string;
     frequency: StandingOrderFrequency;
+    annualRate: string;
   },
   date: LocalDate,
 ): Recurrence {
@@ -278,6 +313,11 @@ function toRecurrence(
         dayOfMonth: parseLocalDate(date).day,
         installments: Number(values.installmentCount),
         plan: values.mode === 'credit' ? 'credit' : 'installments',
+        // Snapshotted, like an exchange rate: the card's rate can change next
+        // year and this plan's payments cannot.
+        ...(values.mode === 'credit' && values.annualRate !== ''
+          ? { creditAnnualRate: values.annualRate.trim() }
+          : {}),
       };
 
     case 'yearly': {
@@ -285,6 +325,37 @@ function toRecurrence(
       return { type: 'yearly', month, day, ...(endDate === undefined ? {} : { endDate }) };
     }
   }
+}
+
+/**
+ * What an instalment plan totals, priced.
+ *
+ * Returns undefined for anything that is not a plan, and for a plan whose
+ * inputs are not yet valid - the schema reports those, and pricing a
+ * half-typed form would be answering a question nobody asked.
+ */
+export function planTotal(values: {
+  mode: RecurrenceMode;
+  amount: string;
+  currency: string;
+  installmentCount: string;
+  annualRate: string;
+}): Minor | undefined {
+  if (!isInstallmentMode(values.mode)) return undefined;
+
+  const principal = parseAmount(values.amount, values.currency);
+  if (principal === undefined || principal <= 0) return undefined;
+
+  const count = Number(values.installmentCount);
+  if (!Number.isInteger(count) || count < MIN_INSTALLMENTS || count > MAX_INSTALLMENTS) return undefined;
+
+  // תשלומים, or קרדיט at no interest: the payments sum to the purchase.
+  if (values.mode !== 'credit' || values.annualRate === '') return principal;
+
+  const rate = normalizeAnnualRate(values.annualRate);
+  if (rate === undefined) return undefined;
+
+  return creditSchedule(principal, rate, count).totalMinor;
 }
 
 function parseAmount(display: string, currency: string): Minor | undefined {
@@ -322,6 +393,7 @@ export function defaultFormValues(input: {
     endDate: '',
     installmentCount: '',
     frequency: '',
+    annualRate: '',
   };
 }
 
@@ -406,7 +478,14 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
 
   switch (mode) {
     case 'one_time':
-      return { mode, dayOfMonth: dayOfDate, endDate: '', installmentCount: '', frequency: '' };
+      return {
+        mode,
+        dayOfMonth: dayOfDate,
+        endDate: '',
+        installmentCount: '',
+        frequency: '',
+        annualRate: '',
+      };
 
     case 'monthly':
       return {
@@ -416,6 +495,7 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
         // than having no default at all.
         dayOfMonth: values.dayOfMonth === dayOfDate ? String(defaultRecurringDay()) : values.dayOfMonth,
         installmentCount: '',
+        annualRate: '',
       };
 
     case 'credit':
@@ -429,6 +509,10 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
         // is the form being pedantic at somebody.
         installmentCount: values.installmentCount === '' ? '12' : values.installmentCount,
         frequency: '',
+        // Cleared leaving credit, kept entering it: the sheet fills it from the
+        // chosen card, and a rate left behind on a תשלומים plan would be read
+        // by nothing and mean nothing.
+        ...(mode === 'credit' ? {} : { annualRate: '' }),
       };
 
     case 'standing_order':
@@ -439,9 +523,10 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
         frequency: '',
         dayOfMonth: values.dayOfMonth === dayOfDate ? String(defaultRecurringDay()) : values.dayOfMonth,
         installmentCount: '',
+        annualRate: '',
       };
 
     case 'yearly':
-      return { mode, installmentCount: '', frequency: '' };
+      return { mode, installmentCount: '', frequency: '', annualRate: '' };
   }
 }

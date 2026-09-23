@@ -281,6 +281,48 @@ describe('buildPatch', () => {
     expect(patch).not.toHaveProperty('recurrence');
   });
 
+  it('never re-prices a קרדיט plan that is only being corrected', () => {
+    /*
+     * The amount field of a saved plan holds ONE PAYMENT. Handing the schema
+     * the plan's rate as well would treat ₪207.06 as a purchase and add the
+     * interest again - so fixing the note on one payment would save it as
+     * six times itself.
+     */
+    const plan = rent({
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 10,
+        installments: 6,
+        plan: 'credit',
+        creditAnnualRate: '12',
+      },
+      money: {
+        ...MONEY,
+        amountMinor: 20_706,
+        baseAmountMinor: 20_706,
+        currency: 'ILS',
+        baseCurrency: 'ILS',
+        rateUsed: '1',
+      },
+    });
+    const target = occurrenceOf(plan, [], '2026-05-10');
+    const values = occurrenceToFormValues(target, plan);
+
+    expect(values).toMatchObject({ mode: 'credit', amount: '207.06', annualRate: '' });
+
+    const parsed = parse({ ...values, note: 'fixed' });
+    expect(parsed.amountMinor).toBe(20_706);
+
+    const patch = buildPatch({
+      parsed,
+      occurrence: target,
+      transaction: plan,
+      scope: 'one',
+      money: target.money,
+    });
+    expect(patch).toEqual({ note: 'fixed' });
+  });
+
   it('combines several changes into one patch', () => {
     const changed: MoneySnapshot = { ...occurrence.money, amountMinor: 5000, baseAmountMinor: 5000 };
     const patch = buildPatch({

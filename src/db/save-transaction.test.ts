@@ -34,6 +34,7 @@ function form(over: Partial<TxFormValues> = {}) {
     endDate: '',
     installmentCount: '',
     frequency: '',
+    annualRate: '',
     ...over,
   });
   if (!result.success) throw new Error(result.error.issues.map((i) => i.message).join(', '));

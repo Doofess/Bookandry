@@ -191,6 +191,21 @@ describe('referential integrity', () => {
     }
   });
 
+  it('accepts a קרדיט plan with its rate, and refuses a rate that is not one', () => {
+    const plan = (creditAnnualRate: string) =>
+      withTx({
+        recurrence: { type: 'monthly', dayOfMonth: 12, installments: 6, plan: 'credit', creditAnnualRate },
+        seriesEnd: '2026-08-12',
+      });
+
+    expect(validateEnvelope(plan('12.5')).ok).toBe(true);
+    // A file is just another caller: "1e1" would be priced as ten percent and
+    // shown to nobody as anything readable.
+    for (const bad of ['1e1', '1.2.3', '-3', '101', ' 12']) {
+      expect(validateEnvelope(plan(bad)).ok, bad).toBe(false);
+    }
+  });
+
   it('rejects an impossible calendar date', () => {
     // A regex alone would wave 2026-02-30 through, and it would only surface
     // much later inside occurrence expansion.

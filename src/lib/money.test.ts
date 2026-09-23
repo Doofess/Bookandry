@@ -1,11 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import type { Minor } from '@/types/money';
+
 import { CURRENCY_EXPONENTS, exponentOf } from './currency-meta';
 import {
   add,
   AmountOverflowError,
   convertMinor,
+  creditSchedule,
   crossRate,
   decimalToRational,
   divideMinor,
@@ -15,8 +18,10 @@ import {
   isPositiveRate,
   multiplyRates,
   normalizeAmountInput,
+  normalizeAnnualRate,
   rateDeviationExceeds,
   rateFromAmounts,
+  spitzerPayment,
   sum,
   toDecimalString,
   toMinor,
@@ -498,5 +503,144 @@ describe('divideMinor', () => {
     // A float here means precision was already lost upstream, and silently
     // rounding it would hide where.
     expect(() => divideMinor(100.5, 12)).toThrow(RangeError);
+  });
+});
+
+describe('לוח שפיצר', () => {
+  /*
+   * The formula an Israeli card issuer uses for עסקת קרדיט:
+   *
+   *   PMT = PV · r(1+r)^n / ((1+r)^n − 1),  r = annual / 12
+   *
+   * Expectations are computed from the formula in floating point and compared
+   * to the exact BigInt implementation, which is the only comparison worth
+   * making: agreeing with a number I typed by hand would only prove I can type.
+   */
+  const reference = (principal: number, annualPercent: number, months: number): number => {
+    const r = annualPercent / 100 / 12; // money-allow: a reference implementation, in floats, on purpose.
+    if (r === 0) return Math.round(principal / months); // money-allow: same.
+    const grown = (1 + r) ** months;
+    return Math.round((principal * r * grown) / (grown - 1));
+  };
+
+  it.each([
+    [120_000, '12', 6],
+    [120_000, '15.5', 12],
+    [1_000_000, '9.9', 36],
+    [45_000, '3', 24],
+    [999_999, '21.75', 60],
+  ])('matches the formula for %i at %s%% over %i months', (principal, rate, months) => {
+    expect(spitzerPayment(principal, rate, months)).toBe(reference(principal, Number(rate), months));
+  });
+
+  it('gives the worked example everybody checks first', () => {
+    // ₪1,200 over 6 payments at 12% annual: 1% a month, ₪207.06 a payment.
+    expect(spitzerPayment(120_000, '12', 6)).toBe(20_706);
+  });
+
+  it('falls back to a plain split at zero interest', () => {
+    // Not a special case in the domain - it is exactly תשלומים - but it IS a
+    // hole in the formula: the denominator goes to zero.
+    expect(spitzerPayment(120_000, '0', 6)).toBe(20_000);
+    expect(spitzerPayment(100_000, '0.0', 3)).toBe(33_333);
+  });
+
+  it('keeps the three figures consistent with each other', () => {
+    /*
+     * The total is payment × count, not an independently rounded number,
+     * because that is what the card will actually charge. The interest is the
+     * difference, so the three can never disagree.
+     */
+    const plan = creditSchedule(120_000, '12', 6);
+
+    expect(plan.paymentMinor).toBe(20_706);
+    expect(plan.totalMinor).toBe(20_706 * 6);
+    expect(plan.interestMinor).toBe(20_706 * 6 - 120_000);
+    expect(plan.interestMinor).toBeGreaterThan(0);
+  });
+
+  it('costs nothing at zero interest', () => {
+    const plan = creditSchedule(120_000, '0', 6);
+    expect(plan.totalMinor).toBe(120_000);
+    expect(plan.interestMinor).toBe(0);
+  });
+
+  it('refuses inputs that have no answer', () => {
+    expect(() => spitzerPayment(120_000, '-1', 6)).toThrow(RangeError);
+    expect(() => spitzerPayment(120_000, '12', 0)).toThrow(RangeError);
+    expect(() => spitzerPayment(-1 as Minor, '12', 6)).toThrow(RangeError);
+    expect(() => spitzerPayment(120_000, 'not a rate', 6)).toThrow();
+  });
+
+  it('rounds once, not per payment', () => {
+    // An implementation that rounded the monthly rate first, or divided in
+    // steps, drifts by an agora on exactly this kind of input.
+    expect(spitzerPayment(333_333, '7.35', 17)).toBe(reference(333_333, 7.35, 17));
+  });
+});
+
+describe('normalizeAnnualRate', () => {
+  it.each([
+    ['12', '12'],
+    [' 12.5 ', '12.5'],
+    ['12.', '12.'],
+    ['.5', '.5'],
+    ['0', '0'],
+    ['100', '100'],
+    ['100.00', '100.00'],
+  ])('accepts %j', (input, expected) => {
+    expect(normalizeAnnualRate(input)).toBe(expected);
+  });
+
+  it.each(['', '.', '1.2.3', '-1', '+5', '1e1', '100.01', '1200', '12%', 'abc'])('refuses %j', (input) => {
+    // Every one of these either crashes the BigInt parser, means something
+    // other than it looks like, or is a typo rather than a loan.
+    expect(normalizeAnnualRate(input)).toBeUndefined();
+  });
+
+  it('accepts every rate it returns, so a stored rate always re-validates', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 10_000 }), (basisPoints) => {
+        const rate = (basisPoints / 100).toFixed(2); // money-allow: generating input text, not money.
+        const normalized = normalizeAnnualRate(rate);
+        expect(normalized).toBe(rate);
+        expect(normalizeAnnualRate(normalized!)).toBe(normalized);
+      }),
+    );
+  });
+});
+
+describe('creditSchedule never costs less than the purchase', () => {
+  it('costs exactly the purchase even when it does not divide evenly', () => {
+    // payment × count would be 333.33 × 3 = ₪999.99, and the lost agora would
+    // be displayed as a negative interest charge.
+    expect(creditSchedule(100_000, '0', 3)).toEqual({
+      paymentMinor: 33_333,
+      totalMinor: 100_000,
+      interestMinor: 0,
+    });
+    expect(creditSchedule(100_000, '0.00', 3).interestMinor).toBe(0);
+  });
+
+  it('treats a rate too small to survive rounding as interest-free', () => {
+    // Found by the property below. One agora over 3 at 0.01%: the payment
+    // rounds to zero, and payment × 3 would say the plan costs LESS than the
+    // purchase. Where the interest vanishes in rounding, the plan is תשלומים.
+    expect(creditSchedule(1, '0.01', 3)).toEqual({ paymentMinor: 0, totalMinor: 1, interestMinor: 0 });
+    expect(creditSchedule(100_000, '0.01', 3).totalMinor).toBeGreaterThanOrEqual(100_000);
+  });
+
+  it('never charges negative interest at any positive rate', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 100_000_000 }),
+        fc.integer({ min: 1, max: 10_000 }),
+        fc.integer({ min: 1, max: 120 }),
+        (principal, basisPoints, months) => {
+          const rate = (basisPoints / 100).toFixed(2); // money-allow: generating input text, not money.
+          expect(creditSchedule(principal, rate, months).interestMinor).toBeGreaterThanOrEqual(0);
+        },
+      ),
+    );
   });
 });

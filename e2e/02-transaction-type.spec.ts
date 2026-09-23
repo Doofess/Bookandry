@@ -33,6 +33,11 @@ const COPY = {
     yearly: 'Yearly',
     save: 'Save',
     amount: 'Amount',
+    paidWith: 'Paid with',
+    rate: 'Annual interest',
+    addMethod: 'Add a payment method',
+    methodLabel: 'Label',
+    methodRate: 'Annual credit interest',
   },
   he: {
     regular: 'עסקה רגילה',
@@ -45,6 +50,11 @@ const COPY = {
     yearly: 'שנתי',
     save: 'שמירה',
     amount: 'סכום',
+    paidWith: 'אמצעי תשלום',
+    rate: 'ריבית שנתית',
+    addMethod: 'הוספת אמצעי תשלום',
+    methodLabel: 'תווית',
+    methodRate: 'ריבית שנתית לעסקאות קרדיט',
   },
 } as const;
 
@@ -132,6 +142,70 @@ for (const lang of ['en', 'he'] as const) {
 
       // And now it closes, which is the only proof that the refusal was about
       // the frequency and not about something else on the form.
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test('prices a קרדיט plan with the card’s own rate, and shows the interest in money', async ({
+      page,
+    }) => {
+      /*
+       * The rate is set ONCE, on the card, and arrives in the form when the
+       * card is chosen - nobody should be asked for a number that is printed on
+       * their statement every month. ₪1,200 over 6 at 12% is six payments of
+       * ₪207.06: ₪1,242.36 in all, ₪42.36 of it interest.
+       */
+      await completeFirstRun(page, lang, { demo: false });
+
+      await page.goto('/payment-methods');
+      await page.getByRole('button', { name: copy.addMethod, exact: true }).click();
+      await page.getByLabel(copy.methodLabel, { exact: true }).fill('Visa');
+      await page.getByLabel(copy.methodRate, { exact: true }).fill('12');
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+
+      await page.goto('/');
+      await page.getByTestId('fab').click();
+      await page.getByLabel(copy.amount, { exact: true }).fill('1200');
+      await page.getByRole('radio', { name: copy.credit, exact: true }).click();
+      await page.getByLabel(copy.count, { exact: true }).fill('6');
+
+      const rate = page.getByLabel(copy.rate, { exact: true });
+      // No card yet, so no rate: an empty field is an interest-free plan.
+      await expect(rate).toHaveValue('');
+
+      await page.getByRole('combobox', { name: new RegExp(copy.paidWith) }).click();
+      await page.getByRole('option', { name: /Visa/ }).click();
+      await expect(rate).toHaveValue('12');
+
+      // The SHEET, by its slot: the method picker is a dialog too, and it is
+      // still in the DOM for the length of its closing animation.
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(sheet).toContainText('1,242.36');
+      await expect(sheet).toContainText('207.06');
+      // The interest on its own, not as the tail of "1,242.36".
+      await expect(sheet).toContainText(/(?<![\d,])42\.36/);
+
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(sheet).toHaveCount(0);
+
+      // What the feed shows is what the card will charge, not the price typed.
+      await expect(page.getByText(/207\.06/).first()).toBeVisible();
+    });
+
+    test('refuses a rate that is not one, and says why', async ({ page }) => {
+      await openAddSheet(page, lang);
+      await page.getByLabel(copy.amount, { exact: true }).fill('1200');
+      await page.getByRole('radio', { name: copy.credit, exact: true }).click();
+
+      const rate = page.getByLabel(copy.rate, { exact: true });
+      await rate.fill('150');
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(rate).toHaveAttribute('aria-invalid', 'true');
+
+      await rate.fill('9.9');
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
     });
   });

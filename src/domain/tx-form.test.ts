@@ -11,6 +11,7 @@ import {
   lastInstallmentDate,
   MAX_INSTALLMENTS,
   NOTE_MAX_LENGTH,
+  planTotal,
   recurrenceDefaults,
   txFormSchema,
   type TxFormValues,
@@ -403,10 +404,10 @@ describe('the expense type', () => {
     expect(parsed.installmentTotalMinor).toBe(120_000);
   });
 
-  it('splits both plans identically, because only the interest differs', () => {
-    // The app does not model the issuer's interest, so the stored payments are
-    // the same either way. If that ever changes this test is the thing that
-    // should fail, rather than a number quietly moving somewhere downstream.
+  it('splits both plans identically when the קרדיט carries no rate', () => {
+    // Only the interest differs, so with none the stored payments must be the
+    // same either way. An empty rate is a real answer - an interest-free card -
+    // not a missing one.
     const credit = parse(values({ mode: 'credit', amount: '1000', installmentCount: '3' }));
     const plain = parse(values({ mode: 'installments', amount: '1000', installmentCount: '3' }));
 
@@ -472,5 +473,88 @@ describe('the expense type', () => {
     for (const mode of ['one_time', 'installments', 'credit', 'yearly'] as const) {
       expect(recurrenceDefaults(mode, wasStanding).frequency, mode).toBe('');
     }
+  });
+});
+
+describe('עסקת קרדיט interest', () => {
+  /*
+   * ₪1,200 over 6 at 12% a year is 1% a month: six payments of ₪207.06. That
+   * is the number the card will charge, so it is the number that is stored -
+   * the purchase price is only what the user typed.
+   */
+  const credit = (over: Partial<TxFormValues> = {}) =>
+    values({ mode: 'credit', amount: '1200', installmentCount: '6', annualRate: '12', ...over });
+
+  it('stores what the plan will cost, not what was entered', () => {
+    const parsed = parse(credit());
+
+    expect(parsed.installmentTotalMinor).toBe(20_706 * 6);
+    // The money snapshot carries the same total, because it is what gets split
+    // and converted to the base currency. A snapshot left at ₪1,200 would put
+    // the base amount in one unit and the payments in another.
+    expect(parsed.amountMinor).toBe(20_706 * 6);
+    expect(splitInstallments(parsed.installmentTotalMinor!, 6)).toEqual(Array(6).fill(20_706));
+  });
+
+  it('snapshots the rate onto the plan', () => {
+    // Like an exchange rate: the card's rate can change next year and this
+    // plan's payments cannot.
+    expect(parse(credit({ annualRate: ' 12.5 ' })).recurrence).toMatchObject({
+      plan: 'credit',
+      creditAnnualRate: '12.5',
+    });
+  });
+
+  it('leaves no rate on an interest-free plan', () => {
+    expect(parse(credit({ annualRate: '' })).recurrence).not.toHaveProperty('creditAnnualRate');
+    expect(parse(credit({ mode: 'installments' })).recurrence).not.toHaveProperty('creditAnnualRate');
+  });
+
+  it('prices a zero rate as exactly the purchase', () => {
+    // Not payment × count: ₪1,000 over 3 at 0% is 333.33 × 3 = ₪999.99, and
+    // the missing agora would surface as "−₪0.01 of interest".
+    const parsed = parse(values({ mode: 'credit', amount: '1000', installmentCount: '3', annualRate: '0' }));
+    expect(parsed.installmentTotalMinor).toBe(100_000);
+  });
+
+  it('ignores a rate on תשלומים', () => {
+    // A stray rate on an interest-free plan must not price it. recurrenceDefaults
+    // clears it on the way out of קרדיט; this is the backstop.
+    const parsed = parse(credit({ mode: 'installments' }));
+    expect(parsed.installmentTotalMinor).toBe(120_000);
+  });
+
+  it.each(['1.2.3', '.', '100.01', '1200'])('refuses %j as a rate', (annualRate) => {
+    expect(issuesFor(credit({ annualRate }), 'annualRate')).toEqual(['rate_out_of_range']);
+  });
+
+  it.each(['0', '12', '12.', '.5', '100'])('accepts %j as a rate', (annualRate) => {
+    expect(issuesFor(credit({ annualRate }), 'annualRate')).toEqual([]);
+  });
+
+  it('only checks the rate on a קרדיט plan', () => {
+    // Anywhere else nothing reads it, so it cannot be wrong.
+    expect(issuesFor(credit({ mode: 'installments', annualRate: '1.2.3' }), 'annualRate')).toEqual([]);
+  });
+
+  it('prices nothing until the plan is complete', () => {
+    // Pricing a half-typed form answers a question nobody asked, and the
+    // preview reads this: it must be quiet rather than wrong.
+    expect(planTotal(credit({ amount: '' }))).toBeUndefined();
+    expect(planTotal(credit({ amount: '0' }))).toBeUndefined();
+    expect(planTotal(credit({ installmentCount: '' }))).toBeUndefined();
+    expect(planTotal(credit({ installmentCount: String(MAX_INSTALLMENTS + 1) }))).toBeUndefined();
+    expect(planTotal(credit({ annualRate: '1.2.3' }))).toBeUndefined();
+    expect(planTotal(credit({ mode: 'one_time' }))).toBeUndefined();
+  });
+
+  it('clears the rate leaving קרדיט and keeps it entering', () => {
+    // Entering, the sheet fills it from the card; a rate left behind on
+    // תשלומים would be read by nothing.
+    const wasCredit = credit();
+    for (const mode of ['one_time', 'installments', 'standing_order', 'yearly', 'monthly'] as const) {
+      expect(recurrenceDefaults(mode, wasCredit).annualRate, mode).toBe('');
+    }
+    expect(recurrenceDefaults('credit', wasCredit)).not.toHaveProperty('annualRate');
   });
 });

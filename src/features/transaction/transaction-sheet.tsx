@@ -60,6 +60,16 @@ import {
 } from './use-transaction-sheet';
 
 /**
+ * The interest a given card charges, or '' for no card and no rate.
+ *
+ * '' is a real answer rather than a missing one: a plan at no interest is
+ * arithmetically תשלומים, which is a coherent thing to have chosen.
+ */
+function rateOfCard(methods: readonly PaymentMethod[], methodId: string): string {
+  return methods.find((method) => method.id === methodId)?.creditAnnualRate ?? '';
+}
+
+/**
  * The add-transaction sheet.
  *
  * A bottom sheet rather than a route, because the feed is the context: people
@@ -382,6 +392,8 @@ function TransactionForm({
             min: MIN_INSTALLMENTS,
             max: MAX_INSTALLMENTS,
           });
+        case 'rate_out_of_range':
+          return t('tx.errRateOutOfRange');
         case 'frequency_required':
           return t('tx.errFrequencyRequired');
         case 'end_before_start':
@@ -665,7 +677,25 @@ function TransactionForm({
             render={({ field }) => (
               <PaymentMethodField
                 value={field.value}
-                onChange={field.onChange}
+                onChange={(methodId_) => {
+                  field.onChange(methodId_);
+                  /*
+                   * Re-price the plan against the card that will actually be
+                   * charged.
+                   *
+                   * The rate belongs to the card, so switching cards mid-form
+                   * has to move the rate with it - otherwise the plan is priced
+                   * with one card's interest and charged to another's, and
+                   * nothing on screen says so. Done in the CHANGE HANDLER and
+                   * not an effect: React Compiler forbids setState in an effect
+                   * body, and an effect would also fight the user's own typing.
+                   */
+                  if (values.mode === 'credit') {
+                    form.setValue('annualRate', rateOfCard(paymentMethods, methodId_), {
+                      shouldValidate: true,
+                    });
+                  }
+                }}
                 profileId={values.profileId}
                 methods={paymentMethods}
                 labelledBy={methodId}
@@ -746,6 +776,13 @@ function TransactionForm({
             if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
             if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
             if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
+            if (patch.mode === 'credit') {
+              // Entering קרדיט: the card's rate is the answer to a question the
+              // user should not have to be asked, so it arrives filled in.
+              setValue('annualRate', rateOfCard(paymentMethods, values.paymentMethodId));
+            } else if (patch.annualRate !== undefined) {
+              setValue('annualRate', patch.annualRate, { shouldValidate: true });
+            }
             if (patch.frequency !== undefined) {
               // Validated on change, not on blur: it is a segmented control, so
               // there is no blur to wait for, and the error would otherwise sit

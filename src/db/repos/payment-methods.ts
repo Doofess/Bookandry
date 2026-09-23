@@ -1,5 +1,6 @@
 import type { GreenbackDB } from '@/db/db';
 import { normalizeName } from '@/domain/validation';
+import { normalizeAnnualRate } from '@/lib/money';
 import {
   isBuiltinPaymentMethod,
   SHARED_OWNER,
@@ -39,12 +40,20 @@ export async function listPaymentMethods(
 export async function createPaymentMethod(
   db: GreenbackDB,
   id: string,
-  draft: { label: string; type: PaymentMethodType; profileId: string; color?: string },
+  draft: {
+    label: string;
+    type: PaymentMethodType;
+    profileId: string;
+    color?: string;
+    creditAnnualRate?: string;
+  },
   now: IsoInstant,
 ): Promise<PaymentMethod> {
   // §12: a LABEL, never a number, expiry or any other credential. The label is
   // the only free text this table holds, and gate:pci keeps it that way.
   const label = normalizeName(draft.label);
+  const creditAnnualRate =
+    draft.creditAnnualRate === undefined ? undefined : checkedRate(draft.creditAnnualRate);
 
   const row: PaymentMethod = {
     id,
@@ -52,6 +61,7 @@ export async function createPaymentMethod(
     type: draft.type,
     label,
     color: draft.color,
+    ...(creditAnnualRate === undefined ? {} : { creditAnnualRate }),
     isArchived: 0,
     createdAt: now,
     updatedAt: now,
@@ -63,10 +73,17 @@ export async function createPaymentMethod(
 export async function updatePaymentMethod(
   db: GreenbackDB,
   id: string,
-  patch: Partial<Pick<PaymentMethod, 'label' | 'type' | 'color' | 'profileId'>>,
+  patch: Partial<Pick<PaymentMethod, 'label' | 'type' | 'color' | 'profileId'>> & {
+    /** `null` CLEARS it, which `Partial<>` alone cannot express. */
+    readonly creditAnnualRate?: string | null;
+  },
   now: IsoInstant,
 ): Promise<PaymentMethod> {
   const label = patch.label === undefined ? undefined : normalizeName(patch.label);
+  const rate =
+    patch.creditAnnualRate === undefined || patch.creditAnnualRate === null
+      ? patch.creditAnnualRate
+      : checkedRate(patch.creditAnnualRate);
 
   /*
    * The built-in keeps its name and its owner.
@@ -83,15 +100,35 @@ export async function updatePaymentMethod(
   return db.transaction('rw', db.paymentMethods, async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);
+    const { creditAnnualRate: _raw, ...rest } = patch;
     const next: PaymentMethod = {
       ...current,
-      ...patch,
+      ...rest,
       ...(label === undefined ? {} : { label }),
+      // undefined leaves it alone; null clears it; a string sets it.
+      ...(rate === undefined
+        ? {}
+        : rate === null
+          ? { creditAnnualRate: undefined }
+          : { creditAnnualRate: rate }),
       updatedAt: now,
     };
     await db.paymentMethods.put(next);
     return next;
   });
+}
+
+/**
+ * A rate the rest of the app can price with, or a thrown error.
+ *
+ * Checked here and not only in the editor, for the same reason the built-in
+ * rules are: the screen is one caller. A rate that reached the table as "1e1"
+ * or "12.5.1" would be copied onto every קרדיט plan charged to the card.
+ */
+function checkedRate(input: string): string {
+  const rate = normalizeAnnualRate(input);
+  if (rate === undefined) throw new RangeError(`Not an annual rate: ${JSON.stringify(input)}`);
+  return rate;
 }
 
 export async function setPaymentMethodArchived(

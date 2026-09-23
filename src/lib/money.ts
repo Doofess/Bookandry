@@ -321,3 +321,127 @@ export function divideMinor(minor: Minor, divisor: number): Minor {
   }
   return toSafeNumber(divRound(BigInt(minor), BigInt(divisor)));
 }
+
+/**
+ * לוח שפיצר - the fixed monthly payment of an amortizing plan.
+ *
+ *   PMT = PV · r(1+r)^n / ((1+r)^n − 1)
+ *
+ * with `r` the MONTHLY rate (the annual nominal rate divided by twelve) and `n`
+ * the number of payments. It is how an Israeli card issuer computes עסקת
+ * קרדיט, and the reason the early payments are mostly interest and the later
+ * ones mostly principal: the payment is level, the split inside it is not.
+ *
+ * Done in exact BigInt rationals rather than floats, like everything else in
+ * this file. Writing it as `p * r * (1+r)**n / ...` in doubles gives an answer
+ * that is almost always right and occasionally an agora out, and "occasionally
+ * an agora out" in a ledger is a bug report nobody can reproduce. Expanding
+ * (1+r)^n = (b+a)^n / b^n lets the whole expression collapse to one integer
+ * division, so there is exactly ONE rounding - the same rule the rest of the
+ * money layer follows.
+ *
+ * A zero rate is not a special case in the maths so much as a hole in it: the
+ * denominator becomes zero. It is also the ordinary case of תשלומים, so it
+ * falls back to a plain division.
+ */
+export function spitzerPayment(principalMinor: Minor, annualRatePercent: string, months: number): Minor {
+  if (!Number.isSafeInteger(principalMinor) || principalMinor < 0) {
+    throw new RangeError('principal must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(months) || months < 1) {
+    throw new RangeError(`months must be a positive integer, got ${String(months)}`);
+  }
+
+  const rate = decimalToRational(annualRatePercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  // Interest-free: the plan is just the purchase split N ways.
+  if (rate.n === 0n) return divideMinor(principalMinor, months);
+
+  /*
+   * The monthly rate as a/b, exactly.
+   *
+   * `annualRatePercent` is a PERCENTAGE, so the fraction is rate/100, and the
+   * monthly rate is that over twelve: rate/1200. Both divisions fold into the
+   * denominator, so no decimal is ever taken.
+   */
+  const a = rate.n;
+  const b = rate.d * 1200n;
+
+  const grown = (b + a) ** BigInt(months);
+  const principal = BigInt(principalMinor);
+
+  // PV · a · (b+a)^n / (b · ((b+a)^n − b^n)), rounded half away from zero once.
+  return toSafeNumber(divRound(principal * a * grown, b * (grown - b ** BigInt(months))));
+}
+
+export type CreditSchedule = {
+  /** The level monthly payment. */
+  readonly paymentMinor: Minor;
+  /** What the plan costs in total: payment × months. */
+  readonly totalMinor: Minor;
+  /** The issuer's cut: total − principal. */
+  readonly interestMinor: Minor;
+};
+
+/**
+ * The three figures a קרדיט plan is judged by.
+ *
+ * The total is the payment times the count rather than an independently
+ * rounded number, because that is what the user will actually be charged:
+ * six payments of ₪207.06 is ₪1,242.36 even if the "true" total is a
+ * fraction of an agora off it. Deriving the interest from the same subtraction
+ * keeps the three consistent with each other, which matters more than either
+ * being independently ideal.
+ */
+export function creditSchedule(
+  principalMinor: Minor,
+  annualRatePercent: string,
+  months: number,
+): CreditSchedule {
+  /*
+   * A plan never costs less than the purchase.
+   *
+   * payment × months can come out BELOW the principal: at zero interest
+   * ₪1,000 over 3 is 333.33 × 3 = ₪999.99, and at a promotional 0.01% the
+   * interest is too small to lift the rounded payment past 333.33 either. That
+   * missing agora would be shown as "−₪0.01 of interest", which no issuer has
+   * ever charged. Where the interest does not survive rounding the plan IS
+   * תשלומים, whose first payment absorbs the remainder so the parts sum to
+   * the whole - so that is what is returned.
+   */
+  const paymentMinor = spitzerPayment(principalMinor, annualRatePercent, months);
+  const totalMinor = toSafeNumber(BigInt(paymentMinor) * BigInt(months));
+  if (totalMinor <= principalMinor) {
+    return {
+      paymentMinor: divideMinor(principalMinor, months),
+      totalMinor: principalMinor,
+      interestMinor: 0,
+    };
+  }
+  return { paymentMinor, totalMinor, interestMinor: totalMinor - principalMinor };
+}
+
+/** Rates above this are a typo, not a loan. */
+export const MAX_ANNUAL_RATE = 100;
+
+const ANNUAL_RATE_RE = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+/**
+ * An annual interest rate as the user typed it, or undefined if it is not one.
+ *
+ * The ONE place that decides what a rate is. The form, the preview, the card
+ * editor, the repository and the import all ask it, because each getting its
+ * own answer is how "1.2.3" passes one check and crashes the next: `Number`
+ * rejects it, but a preview that skipped the check hands it straight to the
+ * BigInt parser, which throws mid-render.
+ *
+ * Plain digits with at most one point - no sign, no exponent. `Number` alone
+ * would accept "1e1", and a rate stored as "1e1" is ten percent to this code
+ * and a mystery to anybody reading the export.
+ */
+export function normalizeAnnualRate(input: string): string | undefined {
+  const trimmed = input.trim();
+  if (!ANNUAL_RATE_RE.test(trimmed)) return undefined;
+  const rate = decimalToRational(trimmed);
+  return rate.n > BigInt(MAX_ANNUAL_RATE) * rate.d ? undefined : trimmed;
+}

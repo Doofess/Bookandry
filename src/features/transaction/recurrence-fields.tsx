@@ -15,12 +15,14 @@ import {
   lastInstallmentDate,
   MAX_INSTALLMENTS,
   MIN_INSTALLMENTS,
+  planTotal,
   recurrenceDefaults,
   type RecurrenceMode,
   type StandingOrderFrequency,
   type TxFormValues,
 } from '@/domain/tx-form';
 import { formatLocalDate, isLocalDate, parseLocalDate } from '@/lib/dates';
+import { creditSchedule, normalizeAnnualRate } from '@/lib/money';
 import type { Recurrence } from '@/types/domain';
 import type { Currency, LocalDate, Minor } from '@/types/money';
 
@@ -82,6 +84,7 @@ export function RecurrenceFields({
   const freqLabelId = useId();
   const dayId = useId();
   const countId = useId();
+  const rateId = useId();
   const endId = useId();
 
   const mode = values.mode;
@@ -230,13 +233,44 @@ export function RecurrenceFields({
           />
           <p id={`${countId}-hint`} className="text-xs text-muted-foreground">
             {t('tx.installmentsTotalHint')}
-            {mode === 'credit' ? ` ${t('tx.creditInterestNote')}` : ''}
           </p>
+          {mode === 'credit' ? (
+            <div className="space-y-1.5 pt-2">
+              <Label htmlFor={rateId}>{t('tx.annualRate')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id={rateId}
+                  type="text"
+                  inputMode="decimal"
+                  value={values.annualRate}
+                  onChange={(event) => {
+                    // Digits and points only. A second point is left for the
+                    // schema to report rather than eaten mid-keystroke, and a
+                    // number input would swallow "12." on the way to "12.5".
+                    onChange({ annualRate: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) });
+                  }}
+                  aria-invalid={errors.annualRate !== undefined}
+                  aria-describedby={`${rateId}-hint`}
+                  className="h-11 w-24"
+                />
+                <span className="text-sm text-muted-foreground">{t('tx.annualRateUnit')}</span>
+              </div>
+              <p id={`${rateId}-hint`} className="text-xs text-muted-foreground">
+                {errors.annualRate === undefined ? t('tx.annualRateHint') : ''}
+              </p>
+              {errors.annualRate === undefined ? null : (
+                <p className="text-xs text-destructive">{errors.annualRate}</p>
+              )}
+            </div>
+          ) : null}
+
           {errors.installmentCount === undefined ? (
             <InstallmentPreview
               date={date}
               count={Number(values.installmentCount)}
-              totalMinor={amountMinor}
+              principalMinor={amountMinor}
+              totalMinor={planTotal(values)}
+              annualRate={mode === 'credit' ? values.annualRate : ''}
               currency={currency}
             />
           ) : (
@@ -279,12 +313,19 @@ export function RecurrenceFields({
 function InstallmentPreview({
   date,
   count,
+  principalMinor,
   totalMinor,
+  annualRate,
   currency,
 }: {
   readonly date: LocalDate;
   readonly count: number;
+  /** What was entered: the purchase price. */
+  readonly principalMinor: Minor | undefined;
+  /** What it will cost: the same, plus interest on a קרדיט plan. */
   readonly totalMinor: Minor | undefined;
+  /** '' for an interest-free plan, which is every תשלומים. */
+  readonly annualRate: string;
   readonly currency: Currency;
 }) {
   const { t, i18n } = useTranslation();
@@ -293,6 +334,20 @@ function InstallmentPreview({
     return null;
   }
   if (count > MAX_INSTALLMENTS) return null;
+
+  /*
+   * Priced from the PRINCIPAL, not from the total.
+   *
+   * `totalMinor` already includes the interest, so re-deriving the schedule
+   * from it would compound the rate onto itself. The schedule is only needed
+   * for the summary line; the payments below come from splitting the total,
+   * which is exactly what the save path will do.
+   */
+  const rate = normalizeAnnualRate(annualRate);
+  const interest =
+    rate === undefined || principalMinor === undefined || principalMinor <= 0
+      ? undefined
+      : creditSchedule(principalMinor, rate, count);
 
   const payments = splitInstallments(totalMinor, count);
   const first = payments[0] ?? totalMinor;
@@ -345,6 +400,25 @@ function InstallmentPreview({
           {t('tx.lastPayment', {
             date: formatLocalDate(last, i18n.language, { month: 'long', year: 'numeric' }),
           })}
+        </>
+      )}
+      {/*
+        What the interest actually costs, in money, before saving.
+
+        A percentage is not a number anybody can feel. "12.5%" on a ₪1,200
+        purchase is ₪42.36, and seeing the shekels is the difference between
+        agreeing to a plan and noticing it.
+      */}
+      {interest === undefined ? null : (
+        <>
+          <br />
+          <Trans
+            i18nKey="tx.creditInterestSummary"
+            components={{
+              total: <Money minor={interest.totalMinor} currency={currency} announce={false} />,
+              interest: <Money minor={interest.interestMinor} currency={currency} announce={false} />,
+            }}
+          />
         </>
       )}
     </p>

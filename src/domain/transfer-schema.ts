@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { isLocalDate } from '@/lib/dates';
+import { normalizeAnnualRate } from '@/lib/money';
 
 /**
  * The export document format.
@@ -39,6 +40,13 @@ const moneySchema = z.object({
   rateSource: z.enum(['frankfurter', 'erapi', 'manual', 'demo']),
 });
 
+/**
+ * An annual interest rate, held to the same rule the form and the repository
+ * use. A file is just another caller: "1e1" arriving by import would be priced
+ * by nothing and displayed as nonsense.
+ */
+const annualRate = z.string().refine((value) => normalizeAnnualRate(value) === value, 'not an annual rate');
+
 const recurrenceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('one_time') }),
   z.object({
@@ -49,6 +57,7 @@ const recurrenceSchema = z.discriminatedUnion('type', [
     // Absent on files written before the distinction existed; those rows are
     // תשלומים by construction, because it was the only plan the form could make.
     plan: z.enum(['installments', 'credit']).optional(),
+    creditAnnualRate: annualRate.optional(),
   }),
   z.object({
     type: z.literal('yearly'),
@@ -102,6 +111,9 @@ const paymentMethodSchema = z.object({
   // A LABEL only. §12 forbids storing any credential, and gate:pci enforces
   // that no field name here ever drifts toward one.
   label: z.string().trim().min(1).max(40),
+  // The annual nominal interest the card charges on עסקת קרדיט. A rate, not a
+  // credential: it identifies nothing about the card.
+  creditAnnualRate: annualRate.optional(),
   color: z.string().optional(),
   isArchived: z.union([z.literal(0), z.literal(1)]),
   archivedAt: isoInstant.optional(),

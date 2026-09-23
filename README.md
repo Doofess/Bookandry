@@ -195,12 +195,23 @@ monthly or yearly recurrence — so the mode carries the user's word for the thi
 and the storage stays one shape. Income keeps the plain repeat vocabulary: a
 salary arrives every month and is nobody's standing order.
 
-**תשלומים and קרדיט are stored identically, and that is a limitation.** They are
-the same arrangement — a purchase split over N monthly payments — differing only
-in the interest the issuer adds, which this app does not model. Which one the
-user chose is recorded on the row, so nothing forgets it and a future interest
-field has somewhere to live, but the payments shown today are the plain split
-either way. The form says so where the count is entered.
+**קרדיט is priced as a לוח שפיצר; תשלומים is not priced at all.** They are the
+same arrangement — a purchase split over N monthly payments — differing only in
+the interest the issuer adds. The rate belongs to the **card**: it is set once
+in the payment method, and the form fills it in when קרדיט is chosen (and
+re-fills it when the card changes), editable per purchase for a promotional
+rate. The payment is the level Spitzer payment, `PV·r(1+r)^n / ((1+r)^n − 1)`
+with `r` the annual rate over twelve, computed in exact integer arithmetic with
+one rounding. What is stored is what the card will charge: ₪1,200 over 6 at 12%
+is six payments of ₪207.06, and the form shows the total and the interest in
+shekels before saving. The rate is **snapshotted** onto the plan, like an
+exchange rate, so changing the card's rate next year never re-prices a plan
+already running. An empty rate, or zero, makes a קרדיט plan exactly תשלומים.
+
+What is not modelled: issuer fees, and rates that differ from the nominal
+annual rate divided by twelve. The payment shown is the textbook one; a
+statement that differs by an agora or two is the issuer's rounding, not a bug
+here.
 
 **The standing-order frequency has no default.** Monthly is the likelier answer
 and preselecting it would still be wrong: arnona and most insurance policies are

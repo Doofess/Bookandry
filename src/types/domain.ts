@@ -99,6 +99,20 @@ export type PaymentMethod = {
   readonly type: PaymentMethodType;
   /** A user-chosen LABEL only. Never a number, expiry or any credential (§12). */
   readonly label: string;
+  /**
+   * The annual nominal interest this card charges on עסקת קרדיט, as a decimal
+   * string ("12.5" is 12.5% a year).
+   *
+   * Stored on the CARD rather than typed per purchase, because that is what it
+   * is a property of: it is printed on the statement, it is the same for every
+   * קרדיט charged to that card, and re-entering it per transaction is how a
+   * wrong one gets in. A string, like every other rate in this app, so what the
+   * user typed round-trips without a float rewriting it.
+   *
+   * Not a credential and not a card detail - §12 is about numbers that identify
+   * the card, and a rate identifies nothing.
+   */
+  readonly creditAnnualRate?: string;
   readonly color?: string;
   readonly isArchived: 0 | 1;
   readonly archivedAt?: IsoInstant;
@@ -144,6 +158,15 @@ export type Recurrence =
        * תשלומים by construction: it was the only plan the form could make.
        */
       readonly plan?: InstallmentPlan;
+      /**
+       * The annual nominal rate this plan was priced with, as a decimal string.
+       *
+       * A SNAPSHOT, exactly like a transaction's exchange rate: the card's rate
+       * can change next year, and a plan that silently re-priced itself would
+       * make the feed disagree with the statement the user is holding. Only
+       * meaningful alongside `plan: 'credit'`; absent means interest-free.
+       */
+      readonly creditAnnualRate?: string;
     }
   | {
       readonly type: 'yearly';
