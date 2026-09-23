@@ -36,22 +36,39 @@ export async function hasDemoData(db: GreenbackDB): Promise<boolean> {
  * failure the fixture exists to catch.
  */
 export async function loadDemoData(db: GreenbackDB, input: DemoInput): Promise<DemoCounts> {
-  const data = buildDemoData(input);
-  const rows = data.transactions.map((t) => materialize(t, data.overrides));
+  let counts: DemoCounts = { profiles: 0, paymentMethods: 0, transactions: 0, overrides: 0 };
 
   await db.transaction('rw', [db.profiles, db.paymentMethods, db.transactions, db.overrides], async () => {
+    /*
+     * Built INSIDE the transaction, because it depends on what is already here.
+     *
+     * The demo arrives on the last step of the wizard, after the user has named
+     * themselves - and both were reaching for the first colour in the palette.
+     * Reading the taken ones outside this transaction would leave a window in
+     * which a second tab adds a profile and the collision comes back.
+     *
+     * `buildDemoData` and `materialize` are synchronous, so calling them here
+     * cannot auto-commit the transaction the way awaiting a non-IDB promise
+     * would.
+     */
+    const existing = await db.profiles.toArray();
+    const data = buildDemoData({ ...input, takenColors: existing.map((p) => p.color) });
+    const rows = data.transactions.map((t) => materialize(t, data.overrides));
+
     await db.profiles.bulkPut([...data.profiles]);
     await db.paymentMethods.bulkPut([...data.paymentMethods]);
     await db.transactions.bulkPut(rows);
     await db.overrides.bulkPut([...data.overrides]);
+
+    counts = {
+      profiles: data.profiles.length,
+      paymentMethods: data.paymentMethods.length,
+      transactions: rows.length,
+      overrides: data.overrides.length,
+    };
   });
 
-  return {
-    profiles: data.profiles.length,
-    paymentMethods: data.paymentMethods.length,
-    transactions: rows.length,
-    overrides: data.overrides.length,
-  };
+  return counts;
 }
 
 export type DemoRemoval = {

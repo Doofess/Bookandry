@@ -15,6 +15,7 @@ import { SHARED_OWNER } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor, MoneySnapshot, RateString } from '@/types/money';
 
 import { splitInstallments } from './calculators';
+import { nextFreeColor, PROFILE_PALETTE } from './palette';
 
 /**
  * Seeded demo data.
@@ -241,6 +242,19 @@ export type DemoInput = {
   /** Names and notes are written into the rows; see STRINGS. */
   readonly language?: 'en' | 'he';
   readonly seed?: number;
+  /**
+   * Colours already spoken for, so the demo cannot take one twice.
+   *
+   * The demo arrives on the LAST step of the wizard, after the user has already
+   * named themselves - and the first colour the wizard hands out is the first
+   * colour in the palette, which is also the first colour the demo wanted.
+   * Two profiles then share one, which is not cosmetic: colour uniqueness is
+   * what the profile switcher, the avatars and the chart identify a profile by,
+   * it is what caps the app at twelve profiles, and `validateEnvelope` rejects
+   * a file that breaks it - so the app could write a backup it then refused to
+   * restore.
+   */
+  readonly takenColors?: readonly string[];
 };
 
 /**
@@ -467,11 +481,31 @@ export function buildDemoData(input: DemoInput): DemoData {
   const rng = mulberry32(seed);
   const openingDate = startOfMonth(addMonthsClamped(today, -6));
 
+  /*
+   * The authored colour where it is free, the next palette colour where it is
+   * not.
+   *
+   * Keeping the authored one whenever possible matters: on an empty database
+   * the demo is byte-identical to what it has always been, so the screenshot
+   * matrix does not move and the fixtures stay stable. It only shifts for the
+   * user who already owns that colour - who is exactly the user it would have
+   * collided with.
+   */
+  const taken = new Set(input.takenColors ?? []);
+  const pickColor = (index: number): string => {
+    const authoredColor = COLORS[index] ?? PROFILE_PALETTE[0].hex;
+    // The palette can only run dry past twelve profiles, which the wizard caps
+    // and the demo is never offered beyond; `repairIntegrity` is the net.
+    const color = taken.has(authoredColor) ? (nextFreeColor([...taken]) ?? authoredColor) : authoredColor;
+    taken.add(color);
+    return color;
+  };
+
   const profiles: Profile[] = [P_DANA, P_YOSSI, P_HOUSE].map((id, i) => ({
     id,
     name: s.people[i] ?? 'Demo',
     avatar: AVATARS[i] ?? 'fox',
-    color: COLORS[i] ?? '#16794a',
+    color: pickColor(i),
     openingBalanceMinor: authored(OPENING_ILS[i] ?? 0, base),
     openingBalanceCurrency: base,
     openingBalanceDate: openingDate,

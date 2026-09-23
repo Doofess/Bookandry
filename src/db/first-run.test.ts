@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { buildDemoData } from '@/domain/demo';
 import { applyShape, initialDraft, updatePerson, type FirstRunDraft } from '@/domain/first-run';
+import { validateEnvelope } from '@/domain/transfer-validate';
 import { BOOT_KEY } from '@/i18n/boot';
 import { assertLocalDate } from '@/lib/dates';
 import { freshDb, type TestDb } from '@/test/db-harness';
@@ -8,6 +10,7 @@ import type { IsoInstant } from '@/types/money';
 
 import { completeFirstRun } from './first-run';
 import { getSettings } from './repos/settings';
+import { buildExport } from './transfer';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 const TODAY = assertLocalDate('2026-09-15');
@@ -129,5 +132,67 @@ describe('completeFirstRun', () => {
 
     expect(await handle.db.profiles.count()).toBe(0);
     expect((await getSettings(handle.db))?.onboardingCompletedAt).toBeUndefined();
+  });
+});
+
+describe('the wizard plus the demo', () => {
+  /*
+   * The bug this exists for: the app could write a backup it then REFUSED to
+   * restore.
+   *
+   * The wizard hands the first profile the first colour in the palette. The
+   * demo generator hard-coded the same colour for its own first profile. Load
+   * the demo on the last step - which is where the switch is - and two profiles
+   * shared one, which `validateEnvelope` rejects as a duplicate. Export is this
+   * app's ONLY durability story, and a backup that cannot be restored is not a
+   * backup, so this is the worst outcome short of losing the rows outright.
+   *
+   * Nothing caught it: the round-trip tests seed their own profiles, the wizard
+   * tests never load the demo, and `repairIntegrity` - which knows how to fix a
+   * duplicate colour - has no caller.
+   */
+  it('gives every profile its own colour', async () => {
+    await completeFirstRun(handle.db, {
+      draft: solo(),
+      ids: ['p1'],
+      today: TODAY,
+      now: NOW,
+      loadDemo: true,
+    });
+
+    const profiles = await handle.db.profiles.toArray();
+    const colors = profiles.map((p) => p.color);
+
+    expect(profiles.length).toBeGreaterThan(3); // the user's, plus three demo
+    expect(new Set(colors).size, `duplicate colour among ${colors.join(', ')}`).toBe(colors.length);
+  });
+
+  it('exports a backup that the app will actually import', async () => {
+    // The round trip, end to end, on the state the wizard really produces.
+    await completeFirstRun(handle.db, {
+      draft: solo(),
+      ids: ['p1'],
+      today: TODAY,
+      now: NOW,
+      loadDemo: true,
+    });
+
+    const envelope = await buildExport(handle.db, NOW);
+    const validated = validateEnvelope(JSON.parse(JSON.stringify(envelope)));
+
+    expect(validated.ok ? [] : validated.issues.map((issue) => `${issue.path}: ${issue.message}`)).toEqual(
+      [],
+    );
+  });
+
+  it('leaves the demo palette alone when nothing is taken', () => {
+    /*
+     * The other half. Shifting the demo's colours unconditionally would move
+     * every screenshot in the matrix and make the fixture non-deterministic
+     * against its own history; it may only shift for the user who already owns
+     * the colour.
+     */
+    const data = buildDemoData({ today: TODAY, baseCurrency: 'ILS', now: NOW });
+    expect(data.profiles.map((p) => p.color)).toEqual(['#16794a', '#0369a1', '#7e22ce']);
   });
 });
