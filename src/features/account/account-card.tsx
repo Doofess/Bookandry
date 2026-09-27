@@ -100,6 +100,10 @@ function SignedIn({
             {t('account.unlock')}
           </Button>
         </div>
+      ) : view.keys === 'rolled_back' ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('account.downgrade')}
+        </p>
       ) : view.keys === 'unknown' ? (
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('account.status.unknown')}</p>

@@ -9,6 +9,9 @@ import { freshPg, type TestPg } from '@/test/pg-harness';
 
 import {
   changePassphrase,
+  DATA_OWNER_KEY,
+  ForeignDataError,
+  joinCheck,
   keyStatus,
   replaceRecoveryKey,
   rotateDataKey,
@@ -178,6 +181,95 @@ describe('joining an account', () => {
     await unlock(laptop.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS);
     expect((await laptop.db.meta.get('syncCursor'))?.value).toBe(5);
     expect([...((await loadKeys(laptop.db))?.byVersion.keys() ?? [])].sort()).toEqual([1, 2]);
+  });
+});
+
+describe("never uploading someone else's data", () => {
+  const OTHER = '00000000-0000-4000-8000-0000000000dd';
+
+  /** The laptop was someone else's synced device; they signed out and kept the data. */
+  async function leftBehindByAnotherAccount(): Promise<void> {
+    await laptop.db.meta.put({ key: DATA_OWNER_KEY, value: OTHER });
+    await laptop.db.profiles.put({ id: 'p-theirs' } as never);
+    const { forgetSyncIdentity } = await import('./keystore');
+    await forgetSyncIdentity(laptop.db);
+    await laptop.db.outbox.clear();
+  }
+
+  it('refuses to join until the person chooses, and says what is there', async () => {
+    await setUpSync(phone.db, server, USER, 'pass', OPTS);
+    await leftBehindByAnotherAccount();
+
+    expect(await joinCheck(laptop.db, USER)).toEqual({ kind: 'foreign', profiles: 1, transactions: 0 });
+    expect(await unlock(laptop.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS)).toEqual({
+      ok: false,
+      reason: 'foreign_data',
+    });
+    expect(await loadKeys(laptop.db)).toBeUndefined();
+    expect(await laptop.db.outbox.count()).toBe(0);
+
+    // Chosen knowingly: now it joins, and the data goes with it.
+    expect(
+      await unlock(
+        laptop.db,
+        server,
+        USER,
+        { kind: 'passphrase', passphrase: 'pass' },
+        { ...OPTS, addExistingData: true },
+      ),
+    ).toEqual({ ok: true });
+    expect(await laptop.db.outbox.get(['profiles', 'p-theirs'])).toBeDefined();
+    expect((await laptop.db.meta.get(DATA_OWNER_KEY))?.value).toBe(USER);
+  });
+
+  it('refuses to set up a new account on top of it, too', async () => {
+    await leftBehindByAnotherAccount();
+    await expect(setUpSync(laptop.db, server, USER, 'pass', OPTS)).rejects.toThrow(ForeignDataError);
+    expect((await getKeyState(pg.as(USER).rpc)).keyVersion).toBe(0); // nothing reached the server
+  });
+
+  it('lets the same account back in without asking', async () => {
+    await setUpSync(phone.db, server, USER, 'pass', OPTS);
+    await unlock(laptop.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS);
+    await laptop.db.profiles.put({ id: 'p-mine' } as never);
+    const { forgetSyncIdentity } = await import('./keystore');
+    await forgetSyncIdentity(laptop.db); // signed out, kept the data
+
+    expect(await joinCheck(laptop.db, USER)).toEqual({ kind: 'fresh' });
+    expect(await unlock(laptop.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("does not count sample data as anyone's", async () => {
+    const { loadDemoData } = await import('@/db/demo');
+    const { d } = await import('@/domain/test-factories');
+    await laptop.db.meta.put({ key: DATA_OWNER_KEY, value: OTHER });
+    await loadDemoData(laptop.db, { today: d('2026-09-15'), baseCurrency: 'ILS', now: NOW });
+    expect(await joinCheck(laptop.db, USER)).toEqual({ kind: 'fresh' });
+  });
+});
+
+describe('refusing an older key than this device has held', () => {
+  it('stops a server that replays the key a rotation retired', async () => {
+    await setUpSync(phone.db, server, USER, 'pass', OPTS);
+    await unlock(laptop.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS);
+    const retired = await server.getKeyState();
+    await rotateDataKey(phone.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, 'pass', OPTS);
+    await unlock(laptop.db, server, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS);
+    expect((await loadKeys(laptop.db))?.current.version).toBe(2);
+
+    // The server now serves the old, genuine v1 key state - which the old
+    // passphrase still opens, and which a lost device still holds.
+    const replaying: KeyServer = { ...server, getKeyState: () => Promise.resolve(retired) };
+    expect(await keyStatus(laptop.db, replaying, USER)).toBe('rolled_back');
+    expect(
+      await unlock(laptop.db, replaying, USER, { kind: 'passphrase', passphrase: 'pass' }, OPTS),
+    ).toEqual({
+      ok: false,
+      reason: 'downgrade',
+    });
+    expect((await loadKeys(laptop.db))?.current.version).toBe(2);
   });
 });
 

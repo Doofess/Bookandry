@@ -302,7 +302,14 @@ the ciphertext as authenticated data.
 - **A lost device** keeps whatever it already had in plaintext. "I lost a
   device" makes a new data key and a new recovery key, re-uploads everything,
   and signs out every other session; the lost device cannot read anything
-  written afterwards.
+  written afterwards. A malicious server could try to hand a device the
+  _retired_ key back (it opens with the old passphrase). A device that has held
+  a newer key refuses; a brand-new device has nothing to compare with and
+  would accept it. Accepted, as a server-compromise-plus-stolen-device case.
+- **A shared device.** Data kept after signing out remembers the account it
+  synced with. Signing in to a different account will not upload it unless the
+  person joining explicitly chooses to add it; the alternative offered is to
+  remove it first.
 - **Script running in this page** (XSS) can read the local data and use the
   keys while it runs. The keys are non-extractable, so it cannot carry them
   off, and the Content-Security-Policy (`dist/_headers`, built by

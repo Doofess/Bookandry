@@ -3,7 +3,9 @@ import { useSyncExternalStore } from 'react';
 import type { BookandryDB } from '@/db/db';
 import {
   changePassphrase,
+  joinCheck,
   keyStatus,
+  type JoinCheck,
   replaceRecoveryKey,
   rotateDataKey,
   setUpSync,
@@ -253,8 +255,24 @@ export class AccountController {
 
   // -- the key -----------------------------------------------------------------
 
-  async setUp(passphrase: string): Promise<{ readonly recoveryKey: string }> {
-    const result = await setUpSync(this.db, this.server(), this.userId(), passphrase);
+  /** Whether joining would take another account's data along: ask first. */
+  async joinCheck(): Promise<JoinCheck> {
+    return joinCheck(this.db, this.userId());
+  }
+
+  /**
+   * Remove everything from this device and start the app over, still signed
+   * in - the "start fresh" answer to joinCheck. The first-run screen then
+   * offers to unlock the account.
+   */
+  async eraseDevice(): Promise<void> {
+    this.stopRunner();
+    await this.db.delete();
+    window.location.assign('/');
+  }
+
+  async setUp(passphrase: string, addExistingData = false): Promise<{ readonly recoveryKey: string }> {
+    const result = await setUpSync(this.db, this.server(), this.userId(), passphrase, { addExistingData });
     // Not refreshed yet: the recovery key screen comes first, and syncing
     // starts when the person has saved it (finishSetUp).
     return result;
@@ -264,8 +282,8 @@ export class AccountController {
     await this.refreshKeys();
   }
 
-  async unlock(secret: Secret): Promise<UnlockResult> {
-    const result = await unlock(this.db, this.server(), this.userId(), secret);
+  async unlock(secret: Secret, addExistingData = false): Promise<UnlockResult> {
+    const result = await unlock(this.db, this.server(), this.userId(), secret, { addExistingData });
     if (result.ok) await this.refreshKeys();
     return result;
   }

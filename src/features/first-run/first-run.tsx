@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useAccount } from '@/app/account';
 import { useToday } from '@/app/app-context';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { completeFirstRun } from '@/db/first-run';
 import { isDemoSupported } from '@/domain/demo';
 import { initialDraft, isDraftValid, type FirstRunDraft } from '@/domain/first-run';
 import { detectLocaleDefaults, type Language } from '@/domain/locale-defaults';
+import { AccountCard } from '@/features/account/account-card';
 import i18n from '@/i18n';
 import { applyDocumentChrome, readStoredBootMirror } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
@@ -74,6 +76,8 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
   const [showErrors, setShowErrors] = useState(false);
   const [loadDemo, setLoadDemo] = useState(false);
   const [saving, setSaving] = useState(false);
+  const accounts = useAccount();
+  const [joining, setJoining] = useState(false);
 
   const index = STEPS.indexOf(step);
   const peopleValid = isDraftValid(draft);
@@ -127,6 +131,36 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
     });
   };
 
+  /*
+   * A second device joins an account instead of starting over. The account
+   * card does the rest; once the first sync brings a profile down, the boot
+   * gate swaps this screen for the app on its own. Coming back from "start
+   * fresh" (still signed in) lands here too.
+   */
+  if (
+    joining ||
+    (accounts.status === 'signed_in' && accounts.keys !== 'not_set_up' && accounts.keys !== 'checking')
+  ) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-lg flex-col gap-6 px-4 py-6">
+        <Logo size={32} title={t('app.name')} />
+        <p className="text-sm text-muted-foreground">{t('account.firstRunJoinBody')}</p>
+        <AccountCard />
+        {accounts.status === 'signed_in' ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setJoining(false);
+            }}
+          >
+            {t('account.firstRunBack')}
+          </Button>
+        )}
+      </main>
+    );
+  }
+
   const title =
     step === 'locale'
       ? t('firstRun.localeTitle')
@@ -147,6 +181,18 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {step === 'locale' ? (
           <p className="text-sm text-muted-foreground">{t('firstRun.welcomeBody')}</p>
+        ) : null}
+        {step === 'locale' && accounts.status !== 'unavailable' ? (
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto px-0"
+            onClick={() => {
+              setJoining(true);
+            }}
+          >
+            {t('account.firstRunHave')}
+          </Button>
         ) : null}
       </header>
 

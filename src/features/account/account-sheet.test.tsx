@@ -1,6 +1,6 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initAccount } from '@/app/account';
 import { freshDb } from '@/test/db-harness';
@@ -19,6 +19,10 @@ const controller = initAccount(freshDb().db);
 
 beforeAll(async () => {
   await initTestI18n();
+});
+beforeEach(() => {
+  // A device with nothing of anyone else's on it, unless a test says otherwise.
+  vi.spyOn(controller, 'joinCheck').mockResolvedValue({ kind: 'fresh' });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -51,8 +55,8 @@ describe('signing out', () => {
 describe('turning on sync', () => {
   it('needs a long enough passphrase, typed the same twice', async () => {
     const { user } = open({ kind: 'setup' });
+    const [first, second] = await screen.findAllByLabelText(/sync passphrase|type it again/i);
     const submit = screen.getByRole('button', { name: 'Turn on sync' });
-    const [first, second] = screen.getAllByLabelText(/sync passphrase|type it again/i);
 
     await user.type(first!, 'short');
     expect(screen.getByText('Use at least 10 characters.')).toBeInTheDocument();
@@ -74,12 +78,12 @@ describe('turning on sync', () => {
     const finish = vi.spyOn(controller, 'finishSetUp').mockResolvedValue();
     const { onClose, user } = open({ kind: 'setup' });
 
-    const [first, second] = screen.getAllByLabelText(/sync passphrase|type it again/i);
+    const [first, second] = await screen.findAllByLabelText(/sync passphrase|type it again/i);
     await user.type(first!, 'a long passphrase');
     await user.type(second!, 'a long passphrase');
     await user.click(screen.getByRole('button', { name: 'Turn on sync' }));
 
-    expect(setUp).toHaveBeenCalledWith('a long passphrase');
+    expect(setUp).toHaveBeenCalledWith('a long passphrase', false);
     const shown = await screen.findByLabelText('Recovery key');
     expect(shown).toHaveTextContent(KEY);
     expect(shown).toHaveAttribute('dir', 'ltr');
@@ -100,7 +104,7 @@ describe('turning on sync', () => {
     const { ServerError } = await import('@/services/supabase/transport');
     vi.spyOn(controller, 'setUp').mockRejectedValue(new ServerError('already_set_up'));
     const { user } = open({ kind: 'setup' });
-    const [first, second] = screen.getAllByLabelText(/sync passphrase|type it again/i);
+    const [first, second] = await screen.findAllByLabelText(/sync passphrase|type it again/i);
     await user.type(first!, 'a long passphrase');
     await user.type(second!, 'a long passphrase');
     await user.click(screen.getByRole('button', { name: 'Turn on sync' }));
@@ -108,11 +112,43 @@ describe('turning on sync', () => {
   });
 });
 
+describe("another account's data on this device", () => {
+  it('stops before unlocking, and adds it only when asked to', async () => {
+    vi.spyOn(controller, 'joinCheck').mockResolvedValue({ kind: 'foreign', profiles: 2, transactions: 40 });
+    const unlock = vi.spyOn(controller, 'unlock').mockResolvedValue({ ok: true });
+    const { user } = open({ kind: 'unlock' });
+
+    expect(await screen.findByText(/2 people, 40 transactions/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Sync passphrase', { selector: 'input' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add it to my account' }));
+    await user.type(screen.getByLabelText('Sync passphrase', { selector: 'input' }), 'pass');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    expect(unlock).toHaveBeenCalledWith({ kind: 'passphrase', passphrase: 'pass' }, true);
+  });
+
+  it('offers to remove it instead', async () => {
+    vi.spyOn(controller, 'joinCheck').mockResolvedValue({ kind: 'foreign', profiles: 1, transactions: 0 });
+    const erase = vi.spyOn(controller, 'eraseDevice').mockResolvedValue();
+    const { user } = open({ kind: 'setup' });
+    await user.click(await screen.findByRole('button', { name: 'Remove it from this device' }));
+    expect(erase).toHaveBeenCalled();
+  });
+
+  it('never adds it by default', async () => {
+    const unlock = vi.spyOn(controller, 'unlock').mockResolvedValue({ ok: true });
+    const { user } = open({ kind: 'unlock' });
+    await user.type(await screen.findByLabelText('Sync passphrase', { selector: 'input' }), 'pass');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    expect(unlock).toHaveBeenCalledWith({ kind: 'passphrase', passphrase: 'pass' }, false);
+  });
+});
+
 describe('unlocking', () => {
   it('turns each refusal into its own sentence', async () => {
     const unlock = vi.spyOn(controller, 'unlock');
     const { onClose, user } = open({ kind: 'unlock' });
-    const passphrase = screen.getByLabelText('Sync passphrase', { selector: 'input' });
+    const passphrase = await screen.findByLabelText('Sync passphrase', { selector: 'input' });
 
     unlock.mockResolvedValueOnce({ ok: false, reason: 'wrong' });
     await user.type(passphrase, 'nope');
@@ -134,6 +170,6 @@ describe('unlocking', () => {
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
     });
-    expect(unlock).toHaveBeenLastCalledWith({ kind: 'recovery', text: 'abcd' });
+    expect(unlock).toHaveBeenLastCalledWith({ kind: 'recovery', text: 'abcd' }, false);
   });
 });

@@ -1,5 +1,5 @@
 import { Check, Copy, Download } from 'lucide-react';
-import { useId, useState, type SyntheticEvent, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import type { Secret, UnlockResult } from '@/db/sync/account';
+import { ForeignDataError, type JoinCheck, type Secret, type UnlockResult } from '@/db/sync/account';
 import { systemClock } from '@/lib/clock';
 import type { AuthResult } from '@/services/supabase/auth';
 import { ServerError } from '@/services/supabase/transport';
@@ -95,9 +95,9 @@ function FlowBody({
     case 'signin':
       return <SignIn initial={flow.mode} onDone={onDone} />;
     case 'setup':
-      return <SetUp onDone={onDone} onPin={onPin} />;
+      return <JoinGate>{(add) => <SetUp addExisting={add} onDone={onDone} onPin={onPin} />}</JoinGate>;
     case 'unlock':
-      return <Unlock onDone={onDone} />;
+      return <JoinGate>{(add) => <Unlock addExisting={add} onDone={onDone} />}</JoinGate>;
     case 'recovery':
       return <NewRecoveryKey onDone={onDone} onPin={onPin} />;
     case 'passphrase':
@@ -133,16 +133,22 @@ function useMessages() {
           return t('account.notSetUp');
         case 'malformed':
           return t(`account.malformed.${result.detail}`);
+        case 'foreign_data':
+          return t('account.foreignRefused');
+        case 'downgrade':
+          return t('account.downgrade');
       }
     },
     thrown: (error: unknown): string =>
-      error instanceof ServerError && error.code === 'already_set_up'
-        ? t('account.alreadySetUp')
-        : error instanceof ServerError && error.code === 'key_version_changed'
-          ? t('account.keyChanged')
-          : navigator.onLine
-            ? t('account.errors.unknown')
-            : t('account.errors.offline'),
+      error instanceof ForeignDataError
+        ? t('account.foreignRefused')
+        : error instanceof ServerError && error.code === 'already_set_up'
+          ? t('account.alreadySetUp')
+          : error instanceof ServerError && error.code === 'key_version_changed'
+            ? t('account.keyChanged')
+            : navigator.onLine
+              ? t('account.errors.unknown')
+              : t('account.errors.offline'),
   };
 }
 
@@ -510,9 +516,11 @@ function SignIn({ initial, onDone }: { readonly initial: 'signin' | 'signup'; re
 }
 
 function SetUp({
+  addExisting,
   onDone,
   onPin,
 }: {
+  readonly addExisting: boolean;
   readonly onDone: () => void;
   readonly onPin: (pinned: boolean) => void;
 }) {
@@ -541,7 +549,7 @@ function SetUp({
     setBusy(true);
     setError(undefined);
     try {
-      const result = await accountController().setUp(passphrase.value);
+      const result = await accountController().setUp(passphrase.value, addExisting);
       onPin(true);
       setRecoveryKey(result.recoveryKey);
     } catch (e) {
@@ -564,7 +572,7 @@ function SetUp({
   );
 }
 
-function Unlock({ onDone }: { readonly onDone: () => void }) {
+function Unlock({ addExisting, onDone }: { readonly addExisting: boolean; readonly onDone: () => void }) {
   const { t } = useTranslation();
   const messages = useMessages();
   const [secret, setSecret] = useState<Secret>({ kind: 'passphrase', passphrase: '' });
@@ -576,7 +584,7 @@ function Unlock({ onDone }: { readonly onDone: () => void }) {
     setBusy(true);
     setError(undefined);
     try {
-      const result = await accountController().unlock(secret);
+      const result = await accountController().unlock(secret, addExisting);
       if (result.ok) onDone();
       else setError(messages.unlock(result));
     } catch (e) {
@@ -595,6 +603,73 @@ function Unlock({ onDone }: { readonly onDone: () => void }) {
         {busy ? t('account.unlocking') : t('account.unlock')}
       </Button>
     </form>
+  );
+}
+
+/**
+ * Before setting up or unlocking: does this device hold ANOTHER account's
+ * data? On a shared device that is the previous person's ledger, and joining
+ * would upload it into this account. Nothing proceeds until the person has
+ * chosen - add it, knowingly, or remove it and start this device over.
+ */
+function JoinGate({ children }: { readonly children: (addExisting: boolean) => ReactNode }) {
+  const { t } = useTranslation();
+  const [check, setCheck] = useState<JoinCheck | undefined>(undefined);
+  const [added, setAdded] = useState(false);
+  const [erasing, setErasing] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void accountController()
+      .joinCheck()
+      // If the check itself fails, carry on: the join enforces the same rule
+      // and refuses with a sentence the form shows.
+      .catch((): JoinCheck => ({ kind: 'fresh' }))
+      .then((result) => {
+        if (live) setCheck(result);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (check === undefined)
+    return <p className="text-sm text-muted-foreground">{t('account.status.checking')}</p>;
+  if (check.kind !== 'foreign' || added) return children(added);
+
+  return (
+    <div className="space-y-3">
+      <p role="alert" className="text-sm">
+        {t('account.foreignBody')}
+      </p>
+      <p className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
+        {t('account.foreignCounts', { profiles: check.profiles, transactions: check.transactions })}
+      </p>
+      <Button
+        type="button"
+        variant="destructive"
+        className="w-full"
+        disabled={erasing}
+        onClick={() => {
+          setErasing(true);
+          void accountController().eraseDevice();
+        }}
+      >
+        {t('account.foreignErase')}
+      </Button>
+      <p className="text-xs text-muted-foreground">{t('account.foreignEraseHint')}</p>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        disabled={erasing}
+        onClick={() => {
+          setAdded(true);
+        }}
+      >
+        {t('account.foreignAdd')}
+      </Button>
+    </div>
   );
 }
 

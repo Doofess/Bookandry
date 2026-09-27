@@ -511,6 +511,16 @@
         "title": "Choose a new password",
         "body": "For signing in to your account."
       }
-    }
+    },
+    "foreignBody": "This device still holds data from a different account. It is not added to yours unless you choose to.",
+    "foreignCounts": "On this device: {{profiles}} people, {{transactions}} transactions.",
+    "foreignErase": "Remove it from this device",
+    "foreignEraseHint": "The app starts over, still signed in. Then unlock your account.",
+    "foreignAdd": "Add it to my account",
+    "foreignRefused": "This device holds another account's data. Choose what to do with it first.",
+    "downgrade": "The server offered an older lock than this device already has. Sync is paused to protect your data.",
+    "firstRunHave": "I already have an account",
+    "firstRunBack": "Set up this device instead",
+    "firstRunJoinBody": "Sign in and unlock sync, and your data arrives on this device."
   }
 }
