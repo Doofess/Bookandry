@@ -16,7 +16,7 @@ export function downloadJson(envelope: unknown, now: IsoInstant): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `greenback-${now.slice(0, 10)}.json`;
+  link.download = `bookandry-${now.slice(0, 10)}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }

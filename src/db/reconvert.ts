@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import {
   collectRateRequests,
   planReconversion,
@@ -53,7 +53,7 @@ export type ReconvertResult =
   | { readonly ok: false; readonly reason: 'busy' };
 
 export async function loadReconvertInput(
-  db: GreenbackDB,
+  db: BookandryDB,
   oldBase: Currency,
   newBase: Currency,
 ): Promise<ReconvertInput> {
@@ -105,7 +105,7 @@ export async function prefetchRates(
  * transaction alive across all of it.
  */
 export async function applyReconvertPlan(
-  db: GreenbackDB,
+  db: BookandryDB,
   plan: ReconvertPlan,
   newBase: Currency,
   now: IsoInstant,
@@ -157,7 +157,7 @@ export async function applyReconvertPlan(
  * would be pointless anyway once the first one lands.
  */
 export async function reconvertDefaultCurrency(
-  db: GreenbackDB,
+  db: BookandryDB,
   oldBase: Currency,
   newBase: Currency,
   deps: ReconvertDeps,
@@ -177,7 +177,7 @@ export async function reconvertDefaultCurrency(
 }
 
 async function runReconvert(
-  db: GreenbackDB,
+  db: BookandryDB,
   oldBase: Currency,
   newBase: Currency,
   deps: ReconvertDeps,

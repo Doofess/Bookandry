@@ -1,7 +1,7 @@
 import type { Occurrence, Override } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { restoreDeleted, softDelete } from './repos/transactions';
 
 /**
@@ -35,7 +35,7 @@ export type UndoableAction = {
  * the superseded patch is carried across rather than discarded.
  */
 export async function skipOccurrence(
-  db: GreenbackDB,
+  db: BookandryDB,
   occurrence: Occurrence,
   now: IsoInstant,
   newId: () => string,
@@ -80,7 +80,7 @@ export async function skipOccurrence(
  * modified is exactly an occurrence with no override.
  */
 export async function restoreOccurrence(
-  db: GreenbackDB,
+  db: BookandryDB,
   occurrence: Occurrence,
   now: IsoInstant,
   newId: () => string,
@@ -130,7 +130,7 @@ export async function restoreOccurrence(
  * clear clutter - which would make tidying the screen destroy data.
  */
 export async function deleteTransaction(
-  db: GreenbackDB,
+  db: BookandryDB,
   transactionId: string,
   now: IsoInstant,
 ): Promise<UndoableAction> {

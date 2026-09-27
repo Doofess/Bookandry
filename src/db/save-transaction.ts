@@ -2,7 +2,7 @@ import type { TxFormParsed } from '@/domain/tx-form';
 import { convertMinor } from '@/lib/money';
 import type { Currency, IsoInstant, LocalDate, MoneySnapshot, RateSource, RateString } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { createTransaction, type NewTransactionResult } from './series-edit';
 
 /**
@@ -79,7 +79,7 @@ export function buildMoney(input: SaveInput): MoneySnapshot {
   };
 }
 
-export async function saveNewTransaction(db: GreenbackDB, input: SaveInput): Promise<NewTransactionResult> {
+export async function saveNewTransaction(db: BookandryDB, input: SaveInput): Promise<NewTransactionResult> {
   const { parsed, now, newId } = input;
   const money = buildMoney(input);
   const id = newId();

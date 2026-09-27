@@ -170,7 +170,7 @@ export type BuildProfilesInput = {
 /**
  * Turn the draft into rows.
  *
- * The opening balance date is the START OF THIS MONTH, not today. "Greenback
+ * The opening balance date is the START OF THIS MONTH, not today. "Bookandry
  * ignores everything before today" is the sentence the user reads, but anchoring
  * on today would drop the salary that arrived on the 1st and the rent that left
  * on the 2nd - so the first month the user sees would be missing most of itself.

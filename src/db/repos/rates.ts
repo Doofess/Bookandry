@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import type { RateTableRow, RatesMeta } from '@/db/rates-types';
 import { instantFromMs } from '@/lib/dates';
 import { crossRate } from '@/lib/money';
@@ -56,7 +56,7 @@ export function toRateTableRow(table: RateTable, nowMs: number): RateTableRow {
   };
 }
 
-export async function putRateTable(db: GreenbackDB, table: RateTable, nowMs: number): Promise<void> {
+export async function putRateTable(db: BookandryDB, table: RateTable, nowMs: number): Promise<void> {
   await db.ratesTables.put(toRateTableRow(table, nowMs));
 }
 
@@ -67,7 +67,7 @@ export async function putRateTable(db: GreenbackDB, table: RateTable, nowMs: num
  * absent entry, with no special path to get wrong.
  */
 export async function getRateTable(
-  db: GreenbackDB,
+  db: BookandryDB,
   source: RateSource,
   base: Currency,
   date: LocalDate | 'latest',
@@ -92,7 +92,7 @@ export async function getRateTable(
 
 /** Any cached table for this base, newest first, ignoring expiry. */
 export async function findAnyTableForBase(
-  db: GreenbackDB,
+  db: BookandryDB,
   base: Currency,
 ): Promise<RateTableRow | undefined> {
   const rows = await db.ratesTables.where('base').equals(base).toArray();
@@ -137,12 +137,12 @@ export function deriveRate(row: RateTableRow, from: Currency, to: Currency): Der
   };
 }
 
-export async function getRatesMeta(db: GreenbackDB): Promise<RatesMeta> {
+export async function getRatesMeta(db: BookandryDB): Promise<RatesMeta> {
   const existing = await db.ratesMeta.get(RATES_META_ID);
   return existing ?? { id: RATES_META_ID, consecutiveFailures: 0, lockouts: {} };
 }
 
-export async function putRatesMeta(db: GreenbackDB, meta: Omit<RatesMeta, 'id'>): Promise<void> {
+export async function putRatesMeta(db: BookandryDB, meta: Omit<RatesMeta, 'id'>): Promise<void> {
   await db.ratesMeta.put({ ...meta, id: RATES_META_ID });
 }
 

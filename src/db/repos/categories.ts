@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import { FALLBACK_CATEGORY } from '@/db/seed';
 import { normalizeName } from '@/domain/validation';
 import type { Category } from '@/types/domain';
@@ -20,7 +20,7 @@ export class BuiltinCategoryError extends Error {
 
 export type CategoryQuery = { readonly kind?: Kind; readonly includeArchived?: boolean };
 
-export async function listCategories(db: GreenbackDB, query: CategoryQuery = {}): Promise<Category[]> {
+export async function listCategories(db: BookandryDB, query: CategoryQuery = {}): Promise<Category[]> {
   const rows = await db.categories.toArray();
   return rows
     .filter(
@@ -32,7 +32,7 @@ export async function listCategories(db: GreenbackDB, query: CategoryQuery = {})
 }
 
 export async function createCategory(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   draft: { name: string; kind: Kind; icon: string },
   now: IsoInstant,
@@ -60,7 +60,7 @@ export async function createCategory(
 }
 
 export async function renameCategory(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   rawName: string,
   now: IsoInstant,
@@ -79,7 +79,7 @@ export async function renameCategory(
 }
 
 export async function setCategoryArchived(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   archived: boolean,
   now: IsoInstant,
@@ -99,7 +99,7 @@ export async function setCategoryArchived(
  * in the feed renders with no icon and no name and nothing explains why.
  */
 export async function deleteCategory(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   options: { reassignTo?: string },
   now: IsoInstant,

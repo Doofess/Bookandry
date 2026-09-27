@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
 import {
@@ -24,7 +24,7 @@ export type PaymentMethodQuery = {
  * value, which is the entire reason it exists.
  */
 export async function listPaymentMethods(
-  db: GreenbackDB,
+  db: BookandryDB,
   query: PaymentMethodQuery = {},
 ): Promise<PaymentMethod[]> {
   const rows = await db.paymentMethods.toArray();
@@ -38,7 +38,7 @@ export async function listPaymentMethods(
 }
 
 export async function createPaymentMethod(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   draft: {
     label: string;
@@ -71,7 +71,7 @@ export async function createPaymentMethod(
 }
 
 export async function updatePaymentMethod(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   patch: Partial<Pick<PaymentMethod, 'label' | 'type' | 'color' | 'profileId'>> & {
     /** `null` CLEARS it, which `Partial<>` alone cannot express. */
@@ -132,7 +132,7 @@ function checkedRate(input: string): string {
 }
 
 export async function setPaymentMethodArchived(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   archived: boolean,
   now: IsoInstant,
@@ -152,7 +152,7 @@ export async function setPaymentMethodArchived(
  * simply stops claiming it was paid by a card that no longer exists.
  */
 export async function deletePaymentMethod(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   options: { reassignTo?: string },
   now: IsoInstant,

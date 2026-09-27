@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import { planReconversion, type RateLookup } from '@/domain/reconvert';
 import { planMerge, type Timestamped } from '@/domain/transfer-merge';
 import { CURRENT_DOC_VERSION, type ExportEnvelope } from '@/domain/transfer-schema';
@@ -32,7 +32,7 @@ type MergeableTable = {
  * EXCLUDED: they are regenerable caches, and a stale rate table baked into a
  * shipped file is a liability rather than a feature.
  */
-export async function buildExport(db: GreenbackDB, now: IsoInstant): Promise<ExportEnvelope> {
+export async function buildExport(db: BookandryDB, now: IsoInstant): Promise<ExportEnvelope> {
   const [profiles, categories, paymentMethods, transactions, overrides, settings] = await Promise.all([
     db.profiles.toArray(),
     db.categories.toArray(),
@@ -43,7 +43,7 @@ export async function buildExport(db: GreenbackDB, now: IsoInstant): Promise<Exp
   ]);
 
   return {
-    app: 'greenback',
+    app: 'bookandry',
     schemaVersion: CURRENT_DOC_VERSION,
     appVersion: APP_VERSION,
     exportedAt: now,
@@ -168,7 +168,7 @@ function redenominate(
  * because the second one is never what the user meant.
  */
 export async function importDocument(
-  db: GreenbackDB,
+  db: BookandryDB,
   input: unknown,
   options: ImportOptions,
 ): Promise<ImportResult> {
@@ -180,7 +180,7 @@ export async function importDocument(
   }
 }
 
-async function runImport(db: GreenbackDB, input: unknown, options: ImportOptions): Promise<ImportResult> {
+async function runImport(db: BookandryDB, input: unknown, options: ImportOptions): Promise<ImportResult> {
   const validated = validateEnvelope(input);
   if (!validated.ok) {
     return validated.reason === 'unknown_version'

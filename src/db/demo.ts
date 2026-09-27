@@ -1,7 +1,7 @@
 import { buildDemoData, DEMO_PREFIX, type DemoInput, isDemoRow } from '@/domain/demo';
 import { ALL_PROFILES } from '@/types/domain';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { materialize } from './materialize';
 import { SETTINGS_ID } from './repos/settings';
 
@@ -21,7 +21,7 @@ export type DemoCounts = {
   readonly overrides: number;
 };
 
-export async function hasDemoData(db: GreenbackDB): Promise<boolean> {
+export async function hasDemoData(db: BookandryDB): Promise<boolean> {
   const count = await db.transactions.where('id').startsWith(DEMO_PREFIX).count();
   if (count > 0) return true;
   return (await db.profiles.where('id').startsWith(DEMO_PREFIX).count()) > 0;
@@ -35,7 +35,7 @@ export async function hasDemoData(db: GreenbackDB): Promise<boolean> {
  * list would leave that occurrence outside every interval query - the exact
  * failure the fixture exists to catch.
  */
-export async function loadDemoData(db: GreenbackDB, input: DemoInput): Promise<DemoCounts> {
+export async function loadDemoData(db: BookandryDB, input: DemoInput): Promise<DemoCounts> {
   let counts: DemoCounts = { profiles: 0, paymentMethods: 0, transactions: 0, overrides: 0 };
 
   await db.transaction('rw', [db.profiles, db.paymentMethods, db.transactions, db.overrides], async () => {
@@ -90,7 +90,7 @@ export type DemoRemoval = {
  *  - their own transaction charged to a demo payment method (clear the link);
  *  - `activeProfileId` pointing at a profile that is about to vanish.
  */
-export async function removeDemoData(db: GreenbackDB): Promise<DemoRemoval> {
+export async function removeDemoData(db: BookandryDB): Promise<DemoRemoval> {
   return db.transaction(
     'rw',
     [db.profiles, db.paymentMethods, db.transactions, db.overrides, db.settings],

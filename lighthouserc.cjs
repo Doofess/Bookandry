@@ -4,7 +4,7 @@
  * NOTE ON THE MISSING CATEGORY. `seo` is deliberately not asserted, and adding
  * it back would be a mistake rather than an improvement.
  *
- * Greenback has no public content: every route renders from the viewer's own
+ * Bookandry has no public content: every route renders from the viewer's own
  * IndexedDB, behind a first-run gate, on a device with no server. `public/
  * robots.txt` therefore disallows crawling, which is the correct posture for a
  * household's spending - and Lighthouse scores exactly that as an SEO failure

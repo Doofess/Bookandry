@@ -222,7 +222,7 @@ test.describe('@pwa', () => {
       icons: { src: string; sizes: string; purpose?: string }[];
     };
 
-    expect(manifest.name).toBe('Greenback');
+    expect(manifest.name).toBe('Bookandry');
     expect(manifest.short_name).toBeTruthy();
     expect(manifest.start_url).toBe('/');
     expect(manifest.display).toBe('standalone');
@@ -348,7 +348,7 @@ test.describe('@nav the app mark', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
 
-    await page.getByRole('link', { name: 'Greenback' }).click();
+    await page.getByRole('link', { name: 'Bookandry' }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('main')).toBeVisible();
   });
@@ -357,7 +357,7 @@ test.describe('@nav the app mark', () => {
     // It is the full height of the header bar, so it can be hit with a thumb.
     await completeFirstRun(page, 'en');
 
-    const box = await page.getByRole('link', { name: 'Greenback' }).boundingBox();
+    const box = await page.getByRole('link', { name: 'Bookandry' }).boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   });
 });

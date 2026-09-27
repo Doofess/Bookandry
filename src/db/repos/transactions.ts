@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import { LOCK_SWEEP, withLock } from '@/db/lock';
 import { materialize, type TransactionDraft } from '@/db/materialize';
 import { compareLocal, instantFromMs } from '@/lib/dates';
@@ -35,7 +35,7 @@ export type TransactionQuery = {
  * half (seriesStart <= to) is an in-memory filter over the already-narrow
  * result. IndexedDB cannot express both bounds in one index.
  */
-export async function findCandidates(db: GreenbackDB, q: TransactionQuery): Promise<Transaction[]> {
+export async function findCandidates(db: BookandryDB, q: TransactionQuery): Promise<Transaction[]> {
   const collection =
     q.profileId === ALL_PROFILES
       ? db.transactions.where('[isDeleted+seriesEnd]').between([0, q.from], [0, '￿'], true, true)
@@ -60,7 +60,7 @@ export async function findCandidates(db: GreenbackDB, q: TransactionQuery): Prom
 const OVERRIDE_LOOKUP_LIMIT = 200;
 
 /** Overrides for a set of transactions, via the unique compound index. */
-export async function findOverrides(db: GreenbackDB, ids: readonly string[]): Promise<Override[]> {
+export async function findOverrides(db: BookandryDB, ids: readonly string[]): Promise<Override[]> {
   if (ids.length === 0) return [];
 
   if (ids.length > OVERRIDE_LOOKUP_LIMIT) {
@@ -76,7 +76,7 @@ export async function findOverrides(db: GreenbackDB, ids: readonly string[]): Pr
 }
 
 export async function putTransaction(
-  db: GreenbackDB,
+  db: BookandryDB,
   draft: TransactionDraft,
   overrides: readonly Override[] = [],
 ): Promise<Transaction> {
@@ -86,15 +86,15 @@ export async function putTransaction(
 }
 
 /** Soft delete. The row stays queryable for undo and for Recently deleted. */
-export async function softDelete(db: GreenbackDB, id: string, now: IsoInstant): Promise<void> {
+export async function softDelete(db: BookandryDB, id: string, now: IsoInstant): Promise<void> {
   await db.transactions.update(id, { deletedAt: now, isDeleted: 1, updatedAt: now });
 }
 
-export async function restoreDeleted(db: GreenbackDB, id: string, now: IsoInstant): Promise<void> {
+export async function restoreDeleted(db: BookandryDB, id: string, now: IsoInstant): Promise<void> {
   await db.transactions.update(id, { deletedAt: undefined, isDeleted: 0, updatedAt: now });
 }
 
-export async function listRecentlyDeleted(db: GreenbackDB): Promise<Transaction[]> {
+export async function listRecentlyDeleted(db: BookandryDB): Promise<Transaction[]> {
   // The deletedAt index contains ONLY soft-deleted rows, because IndexedDB
   // cannot index undefined. What is normally a limitation is exactly the query
   // we want here.
@@ -111,7 +111,7 @@ export async function listRecentlyDeleted(db: GreenbackDB): Promise<Transaction[
  * Runs on boot and on an interval, independent of any toast.
  */
 export async function purgeExpiredDeletions(
-  db: GreenbackDB,
+  db: BookandryDB,
   nowMs: number,
   windowMs = RECOVERY_WINDOW_MS,
 ): Promise<{ purged: number; overridesRemoved: number }> {
@@ -140,7 +140,7 @@ export async function purgeExpiredDeletions(
  * testable.
  */
 export async function sweepExpiredDeletions(
-  db: GreenbackDB,
+  db: BookandryDB,
   nowMs: number,
   windowMs = RECOVERY_WINDOW_MS,
 ): Promise<{ purged: number; overridesRemoved: number }> {
@@ -155,7 +155,7 @@ export async function sweepExpiredDeletions(
  * a few skip/undo cycles.
  */
 export async function removeOverride(
-  db: GreenbackDB,
+  db: BookandryDB,
   transactionId: string,
   occurrenceDate: LocalDate,
 ): Promise<void> {

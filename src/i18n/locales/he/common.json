@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Greenback",
+    "name": "Bookandry",
     "tagline": "מעקב אחרי מה שנכנס ומה שיוצא."
   },
   "nav": {
@@ -49,7 +49,7 @@
     "back": "חזרה",
     "next": "המשך",
     "finish": "אפשר להתחיל",
-    "welcomeTitle": "ברוכים הבאים ל-Greenback",
+    "welcomeTitle": "ברוכים הבאים ל-Bookandry",
     "welcomeBody": "שלוש שאלות קצרות וזהו. הכול נשאר על המכשיר הזה.",
     "localeTitle": "שפה ומטבע",
     "localeLanguageHelp": "אפשר לשנות בהמשך בהגדרות.",
@@ -67,7 +67,7 @@
     "shapeCouple": "שנינו, ועוד משק בית משותף",
     "shapeCoupleHint": "שני פרופילים אישיים ועוד אחד משותף לשכר דירה, מצרכים וחשבונות. כך הוצאות משותפות לא נרשמות על אדם אחד.",
     "balanceTitle": "כמה כסף יש לכם כרגע?",
-    "balanceBody": "Greenback מתעלם מכל מה שהיה לפני היום ומתחיל לספור מכאן. אפשר לשנות בהמשך בהגדרות.",
+    "balanceBody": "Bookandry מתעלם מכל מה שהיה לפני היום ומתחיל לספור מכאן. אפשר לשנות בהמשך בהגדרות.",
     "balanceLabel": "יתרה של {{name}}",
     "balanceFrom": "סופרים מ-{{date}}",
     "balanceSkip": "דילוג, להתחיל מאפס",
@@ -219,7 +219,7 @@
     "endDateNever": "ללא תאריך סיום",
     "endDateClear": "הסרת תאריך הסיום",
     "installmentCount": "מספר תשלומים",
-    "installmentsTotalHint": "הזינו את המחיר המלא. גרינבק יחלק אותו לתשלומים שווים.",
+    "installmentsTotalHint": "הזינו את המחיר המלא. Bookandry יחלק אותו לתשלומים שווים.",
     "annualRate": "ריבית שנתית",
     "annualRateUnit": "% לשנה",
     "annualRateHint": "מהכרטיס. אפשר לשנות לעסקה הזו אם חברת האשראי נקבה בשיעור אחר.",
@@ -341,8 +341,8 @@
     "importChoose": "בחירת קובץ…",
     "importDone": "יובאו {{count}} תנועות",
     "importBusy": "כרטיסייה אחרת מייבאת כרגע. נסו שוב עוד רגע.",
-    "importInvalid": "הקובץ הזה אינו גיבוי של גרינבק.",
-    "importVersion": "הקובץ נכתב בגרסה חדשה יותר של גרינבק.",
+    "importInvalid": "הקובץ הזה אינו גיבוי של Bookandry.",
+    "importVersion": "הקובץ נכתב בגרסה חדשה יותר של Bookandry.",
     "importRefused": "הקובץ משתמש במטבע בסיס אחר, ולכן אי אפשר למזג את הסכומים בבטחה. אפשר להחליף הכול, או לשנות קודם את המכשיר ל-{{currency}}.",
     "lastBackup": "גיבוי אחרון {{when}}",
     "neverBackedUp": "אף פעם לא גובה.",

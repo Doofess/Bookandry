@@ -1,6 +1,6 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
-import { GreenbackDB } from '@/db/db';
+import { BookandryDB } from '@/db/db';
 
 /**
  * Per-test database isolation.
@@ -10,14 +10,14 @@ import { GreenbackDB } from '@/db/db';
  * The delete/open path also re-runs the real version(1) upgrade every time,
  * which is a free migration regression check.
  */
-export type TestDb = { db: GreenbackDB; dispose: () => Promise<void> };
+export type TestDb = { db: BookandryDB; dispose: () => Promise<void> };
 
 let counter = 0;
 
 export function freshDb(upTo = Infinity): TestDb {
   counter += 1;
-  const db = new GreenbackDB(
-    `greenback-test-${String(counter)}`,
+  const db = new BookandryDB(
+    `bookandry-test-${String(counter)}`,
     { indexedDB: new IDBFactory(), IDBKeyRange },
     upTo,
   );

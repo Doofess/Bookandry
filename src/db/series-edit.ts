@@ -3,7 +3,7 @@ import type { SeriesEditPlan } from '@/domain/series-edit';
 import type { Override, Transaction } from '@/types/domain';
 import type { IsoInstant, Minor, MoneySnapshot } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { materialize, type TransactionDraft } from './materialize';
 
 /**
@@ -15,7 +15,7 @@ import { materialize, type TransactionDraft } from './materialize';
  * itself - the database just quietly holds a different history than it did a
  * moment ago.
  */
-export async function applySeriesEdit(db: GreenbackDB, plan: SeriesEditPlan): Promise<void> {
+export async function applySeriesEdit(db: BookandryDB, plan: SeriesEditPlan): Promise<void> {
   await db.transaction('rw', [db.transactions, db.overrides], async () => {
     if (plan.deleteOverrideIds.length > 0) {
       await db.overrides.bulkDelete([...plan.deleteOverrideIds]);
@@ -67,7 +67,7 @@ export type NewTransactionResult = {
  * card-issuer convention.
  */
 export async function createTransaction(
-  db: GreenbackDB,
+  db: BookandryDB,
   input: NewTransactionInput,
 ): Promise<NewTransactionResult> {
   const { draft, installmentTotalMinor, now, newId } = input;

@@ -95,7 +95,7 @@ describe('export', () => {
     await seed();
     const doc = await buildExport(handle.db, NOW);
 
-    expect(doc.app).toBe('greenback');
+    expect(doc.app).toBe('bookandry');
     expect(doc.schemaVersion).toBe(1);
     expect(doc.defaultCurrency).toBe('USD');
     expect(doc.counts.transactions).toBe(1);
@@ -148,6 +148,18 @@ describe('import: replace', () => {
     expect(result).toMatchObject({ ok: true, mode: 'replace' });
     expect(await handle.db.transactions.count()).toBe(1);
     expect((await handle.db.transactions.get('tx1'))?.money.amountMinor).toBe(4500);
+  });
+
+  it('restores a backup exported before the app was renamed', async () => {
+    // Byte-for-byte what an old export looks like: identical but for the name.
+    await seed();
+    const doc = { ...(await buildExport(handle.db, NOW)), app: 'greenback' };
+
+    await handle.db.transactions.clear();
+
+    const result = await importDocument(handle.db, doc, { mode: 'replace', now: NOW });
+    expect(result).toMatchObject({ ok: true, mode: 'replace' });
+    expect(await handle.db.transactions.count()).toBe(1);
   });
 
   it('adopts the file settings, which is what makes a differently-based file coherent', async () => {
@@ -394,7 +406,7 @@ describe('import rejection', () => {
 
   it('rejects malformed input without touching the database', async () => {
     await seed();
-    for (const bad of [null, 'nonsense', {}, { app: 'greenback' }]) {
+    for (const bad of [null, 'nonsense', {}, { app: 'bookandry' }, { app: 'greenback' }]) {
       const result = await importDocument(handle.db, bad, { mode: 'replace', now: NOW });
       expect(result.ok).toBe(false);
     }

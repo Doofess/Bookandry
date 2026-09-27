@@ -1,4 +1,4 @@
-# Greenback
+# Bookandry
 
 A local-first personal money manager. Multi-profile income and expense tracking,
 multi-currency with the rate snapshotted at save time, a virtualised transaction
@@ -165,13 +165,24 @@ viewer.
 - **Privacy between profiles.** Profiles are _organisation, not privacy_. There
   is no sign-in; everyone using the device sees everything. The onboarding says
   so in as many words.
-- **A localised install name.** The PWA name is "Greenback" in both languages.
+- **A localised install name.** The PWA name is "Bookandry" in both languages, and
+  the brand stays Latin inside Hebrew copy too.
 
 ---
 
 ## Design decisions
 
 The ones that would look like bugs without an explanation.
+
+**The database is still called `greenback`.** The app was Greenback before it
+became Bookandry (bookandry.com). Every user-visible name changed; the storage
+identifiers did not. IndexedDB finds a database by name, so renaming it would
+open an empty one on every existing install - the app would restart at the
+first-run wizard with the user's data orphaned under the old name. The
+`gb.boot` mirror and the `greenback.*` Web Lock names stay for the same
+reason. New backups say `"app": "bookandry"`; import still reads
+`"greenback"`, because a backup that stops restoring when the app changes its
+name is not a backup.
 
 **Occurrences reuse the parent's rate snapshot.** A recurring transaction stores
 one rate, and every occurrence it emits uses it. Deriving a per-occurrence rate

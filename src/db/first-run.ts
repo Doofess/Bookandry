@@ -4,7 +4,7 @@ import { writeBootMirror } from '@/i18n/boot';
 import { ALL_PROFILES } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { loadDemoData } from './demo';
 import { SETTINGS_ID } from './repos/settings';
 
@@ -37,7 +37,7 @@ export type FirstRunResult = {
  * completed - they would have to do the whole thing again to find out.
  */
 export async function completeFirstRun(
-  db: GreenbackDB,
+  db: BookandryDB,
   input: CompleteFirstRunInput,
 ): Promise<FirstRunResult> {
   const { draft, ids, today, now } = input;

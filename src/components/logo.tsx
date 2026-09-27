@@ -6,7 +6,7 @@ type LogoProps = {
 } & ({ title: string } | { decorative: true });
 
 /**
- * Greenback mark: a banknote inside a circle.
+ * Bookandry mark: a banknote inside a circle.
  *
  * Deliberately NO dollar glyph. The spec asked for "a dollar bill", but a `$`
  * is USD-specific in an app whose second locale is Hebrew and whose base

@@ -2,7 +2,7 @@ import type { KnownRate } from '@/domain/tx-rate';
 import { externalTimestampToLocalDate } from '@/lib/dates';
 import type { Currency, LocalDate } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import type { RateTableRow } from './rates-types';
 import { deriveRate, isValidRateRow } from './repos/rates';
 
@@ -32,7 +32,7 @@ import { deriveRate, isValidRateRow } from './repos/rates';
 const SCAN_LIMIT = 60;
 
 export async function findKnownRate(
-  db: GreenbackDB,
+  db: BookandryDB,
   from: Currency,
   to: Currency,
   on: LocalDate,

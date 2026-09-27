@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import { MAX_PROFILES, nextFreeColor } from '@/domain/palette';
 import { normalizeName } from '@/domain/validation';
 import { ALL_PROFILES, type AvatarKey, type Profile } from '@/types/domain';
@@ -46,7 +46,7 @@ export type ProfileDraft = {
   readonly openingBalanceDate: LocalDate;
 };
 
-export async function listProfiles(db: GreenbackDB): Promise<Profile[]> {
+export async function listProfiles(db: BookandryDB): Promise<Profile[]> {
   const rows = await db.profiles.toArray();
   return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
@@ -69,7 +69,7 @@ export function nextAvailableColor(existing: readonly Profile[]): string | undef
  * tabs both pass the cap check and both take emerald.
  */
 export async function createProfile(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   draft: ProfileDraft,
   now: IsoInstant,
@@ -101,7 +101,7 @@ export async function createProfile(
 }
 
 export async function updateProfile(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   patch: Partial<Omit<Profile, 'id' | 'createdAt' | 'updatedAt'>>,
   now: IsoInstant,
@@ -148,7 +148,7 @@ export type DeleteProfileResult = {
  * turns into a crash.
  */
 export async function deleteProfile(
-  db: GreenbackDB,
+  db: BookandryDB,
   id: string,
   options: DeleteProfileOptions,
   now: IsoInstant,

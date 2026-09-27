@@ -34,7 +34,7 @@
     "robot": "Robot"
   },
   "household": "Household",
-  "limit": "Greenback supports up to {{count}} profiles, one per colour.",
+  "limit": "Bookandry supports up to {{count}} profiles, one per colour.",
   "method": {
     "cash": "Cash",
     "credit_card": "Credit card",

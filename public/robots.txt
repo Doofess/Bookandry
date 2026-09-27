@@ -1,4 +1,4 @@
-# Greenback is a local-first personal ledger. Every route renders from the
+# Bookandry is a local-first personal ledger. Every route renders from the
 # viewer's own IndexedDB, so there is nothing here for a crawler to index -
 # and a household's spending is not something to invite indexing of.
 User-agent: *

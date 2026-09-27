@@ -153,7 +153,7 @@ describe('buildProfiles', () => {
   });
 
   it('anchors the opening balance to the start of the month, not to today', () => {
-    // "Greenback starts counting from here" is what the user reads, but
+    // "Bookandry starts counting from here" is what the user reads, but
     // anchoring on the 15th would drop the salary that arrived on the 1st and
     // the rent that left on the 2nd, so the first month shown would be missing
     // most of itself.

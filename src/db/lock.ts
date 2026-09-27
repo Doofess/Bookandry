@@ -1,7 +1,7 @@
 /**
  * Cross-tab mutual exclusion for the three operations that rewrite the world.
  *
- * Greenback is a PWA people leave open. Dexie's liveQuery keeps READS in sync
+ * Bookandry is a PWA people leave open. Dexie's liveQuery keeps READS in sync
  * across tabs, which makes it easy to assume writes are safe too - they are not:
  *
  *  - two tabs can each start a reconvert and both flip `defaultCurrency`,

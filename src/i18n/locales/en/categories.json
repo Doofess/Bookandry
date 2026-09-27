@@ -47,7 +47,7 @@
     "emptyExpense": "No expense categories yet.",
     "emptyIncome": "No income categories yet.",
     "methodsTitle": "Payment methods",
-    "methodsBody": "A label you choose, and nothing else. Greenback never asks for or stores anything from the card itself.",
+    "methodsBody": "A label you choose, and nothing else. Bookandry never asks for or stores anything from the card itself.",
     "methodsOpen": "Cards, cash and standing orders",
     "methodAdd": "Add a payment method",
     "methodNew": "New payment method",

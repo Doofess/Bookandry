@@ -177,7 +177,13 @@ const settingsSchema = z.object({
 });
 
 export const envelopeSchema = z.object({
-  app: z.literal('greenback'),
+  /**
+   * 'greenback' is the app's name before it became Bookandry. Every backup made
+   * before the rename says so, and a backup that stops restoring because the
+   * app changed its name is not a backup - so both are read, and only the new
+   * one is written.
+   */
+  app: z.enum(['bookandry', 'greenback']),
   schemaVersion: z.number().int().positive(),
   appVersion: z.string().min(1),
   exportedAt: isoInstant,

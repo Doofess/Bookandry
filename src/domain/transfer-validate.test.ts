@@ -13,7 +13,7 @@ import { validateEnvelope } from './transfer-validate';
  */
 function envelope(over: Partial<ExportEnvelope> = {}): unknown {
   const base = {
-    app: 'greenback',
+    app: 'bookandry',
     schemaVersion: 1,
     appVersion: '0.1.0',
     exportedAt: '2026-09-15T10:00:00.000Z',
@@ -94,6 +94,16 @@ describe('validateEnvelope', () => {
   it('accepts a well-formed document', () => {
     const result = validateEnvelope(envelope());
     expect(result.ok).toBe(true);
+  });
+
+  it('still accepts a backup made before the app was renamed', () => {
+    // Every file exported as Greenback says so. The rename must not turn them
+    // into files the app refuses to restore.
+    expect(validateEnvelope(envelope({ app: 'greenback' })).ok).toBe(true);
+  });
+
+  it('rejects a document from any other app', () => {
+    expect(validateEnvelope(envelope({ app: 'something-else' } as never)).ok).toBe(false);
   });
 
   it('rejects a NEWER schema version with its own reason', () => {

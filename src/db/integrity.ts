@@ -3,7 +3,7 @@ import { PROFILE_PALETTE } from '@/domain/palette';
 import type { Category, Override, Profile, Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { LOCK_REPAIR, withLock } from './lock';
 import { assertMaterialized, materialize } from './materialize';
 import { ensureSettings } from './repos/settings';
@@ -49,7 +49,7 @@ type Snapshot = {
   hasSettings: boolean;
 };
 
-async function snapshot(db: GreenbackDB): Promise<Snapshot> {
+async function snapshot(db: BookandryDB): Promise<Snapshot> {
   const [profiles, categories, methods, transactions, overrides, settings] = await Promise.all([
     db.profiles.toArray(),
     db.categories.toArray(),
@@ -69,7 +69,7 @@ async function snapshot(db: GreenbackDB): Promise<Snapshot> {
   };
 }
 
-export async function checkIntegrity(db: GreenbackDB): Promise<IntegrityIssue[]> {
+export async function checkIntegrity(db: BookandryDB): Promise<IntegrityIssue[]> {
   const state = await snapshot(db);
   const issues: IntegrityIssue[] = [];
 
@@ -147,7 +147,7 @@ export type RepairReport = {
  * reported so the first-run wizard can take over. Silently creating "Recovered"
  * would hide the only signal that something went wrong.
  */
-export async function repairIntegrity(db: GreenbackDB, now: IsoInstant): Promise<RepairReport> {
+export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise<RepairReport> {
   return withLock(LOCK_REPAIR, async () => {
     const found = await checkIntegrity(db);
     if (found.length === 0) return { found, repaired: [], unrepairable: [] };

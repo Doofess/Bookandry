@@ -25,8 +25,8 @@ export default defineConfig({
       strategies: 'generateSW',
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
-        name: 'Greenback',
-        short_name: 'Greenback',
+        name: 'Bookandry',
+        short_name: 'Bookandry',
         description: 'Local-first personal money manager',
         // The manifest is read once at install time and cannot switch locale
         // afterwards, so the installed app name stays English in both languages.

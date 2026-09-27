@@ -3,7 +3,7 @@ import { fetchRateTable, backoffDelayMs } from '@/services/rates/provider-chain'
 import { RatesError } from '@/services/rates/types';
 import type { Currency, LocalDate, RateSource, RateString } from '@/types/money';
 
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { findKnownRate } from './rate-lookup';
 import {
   activeLockouts,
@@ -75,7 +75,7 @@ export type QuoteDeps = {
  * trail of every single-currency row in the database.
  */
 export async function quoteRate(
-  db: GreenbackDB,
+  db: BookandryDB,
   from: Currency,
   to: Currency,
   on: LocalDate,
@@ -107,7 +107,7 @@ export async function quoteRate(
 }
 
 async function fromCache(
-  db: GreenbackDB,
+  db: BookandryDB,
   from: Currency,
   to: Currency,
   requested: LocalDate | 'latest',
@@ -129,7 +129,7 @@ async function fromCache(
 }
 
 async function fromNetwork(
-  db: GreenbackDB,
+  db: BookandryDB,
   from: Currency,
   to: Currency,
   requested: LocalDate | 'latest',
@@ -195,7 +195,7 @@ async function fromNetwork(
 }
 
 async function recordFailure(
-  db: GreenbackDB,
+  db: BookandryDB,
   meta: Awaited<ReturnType<typeof getRatesMeta>>,
   error: unknown,
   nowIso: string,

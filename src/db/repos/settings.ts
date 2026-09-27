@@ -1,4 +1,4 @@
-import type { GreenbackDB } from '@/db/db';
+import type { BookandryDB } from '@/db/db';
 import { writeBootMirror } from '@/i18n/boot';
 import type { Settings } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'updatedAt'> = {
  * export, so a "replace" import would restore transactions against the OLD
  * defaultCurrency and silently corrupt every displayed balance.
  */
-export async function ensureSettings(db: GreenbackDB, now: IsoInstant): Promise<Settings> {
+export async function ensureSettings(db: BookandryDB, now: IsoInstant): Promise<Settings> {
   const existing = await db.settings.get(SETTINGS_ID);
   if (existing) return existing;
 
@@ -31,7 +31,7 @@ export async function ensureSettings(db: GreenbackDB, now: IsoInstant): Promise<
   return created;
 }
 
-export async function getSettings(db: GreenbackDB): Promise<Settings | undefined> {
+export async function getSettings(db: BookandryDB): Promise<Settings | undefined> {
   return db.settings.get(SETTINGS_ID);
 }
 
@@ -45,7 +45,7 @@ export async function getSettings(db: GreenbackDB): Promise<Settings | undefined
  * frame rendered in the wrong language and theme.
  */
 export async function writeSettings(
-  db: GreenbackDB,
+  db: BookandryDB,
   patch: Partial<Omit<Settings, 'id' | 'updatedAt'>>,
   now: IsoInstant,
 ): Promise<Settings> {

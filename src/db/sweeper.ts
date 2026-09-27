@@ -1,4 +1,4 @@
-import type { GreenbackDB } from './db';
+import type { BookandryDB } from './db';
 import { sweepExpiredDeletions } from './repos/transactions';
 
 /**
@@ -45,7 +45,7 @@ export type SweeperOptions = {
 };
 
 export function startSweeper(
-  db: GreenbackDB,
+  db: BookandryDB,
   now: () => number,
   options: SweeperOptions = {},
 ): SweeperHandle {
