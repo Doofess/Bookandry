@@ -6,6 +6,9 @@ import type { IsoInstant } from '@/types/money';
 
 import type { CurrencyListRow, RatesMeta, RateTableRow } from './rates-types';
 import { buildSeedCategories, buildSeedPaymentMethods } from './seed';
+import { readOrCreateDeviceId } from './sync/device';
+import { changeTracking, markUntracked } from './sync/middleware';
+import type { OutboxRow, SyncStateRow } from './sync/tables';
 import { SCHEMA_VERSIONS } from './versions';
 
 export type MetaRow = { key: string; value: unknown };
@@ -21,6 +24,17 @@ export class BookandryDB extends Dexie {
   declare currencyLists: Table<CurrencyListRow, string>;
   declare settings: Table<Settings, string>;
   declare meta: Table<MetaRow, string>;
+  declare syncState: Table<SyncStateRow, [string, string]>;
+  declare outbox: Table<OutboxRow, [string, string]>;
+
+  /** This install's id, for rev tie-breaks. Loaded before `open()` resolves. */
+  deviceId: string | undefined = undefined;
+
+  /**
+   * The clock change tracking stamps revs with. A field rather than a
+   * constructor argument so a test can move time between two writes.
+   */
+  syncNowMs: () => number = () => systemClock.nowMs();
 
   constructor(
     name: string,
@@ -36,6 +50,16 @@ export class BookandryDB extends Dexie {
       if (v.upgrade) version.upgrade(v.upgrade);
     }
 
+    this.use(changeTracking({ nowMs: () => this.syncNowMs(), deviceId: () => this.deviceId }));
+
+    /*
+     * Before anything else can write: Dexie holds every other operation until
+     * this resolves, so no tracked write can happen without a device id.
+     */
+    this.on('ready', async () => {
+      this.deviceId = await this.transaction('rw', this.meta, () => readOrCreateDeviceId(this.meta));
+    });
+
     /**
      * Seed inside the v1 upgrade transaction, never from a React effect.
      *
@@ -48,6 +72,12 @@ export class BookandryDB extends Dexie {
      * rolls back with the upgrade if anything throws.
      */
     this.on('populate', (tx) => {
+      /*
+       * Untracked: every install writes these identical rows. Recorded as
+       * edits, a brand-new device would push pristine seeds with a newer rev
+       * than an archive or rename made on another device, and undo it.
+       */
+      markUntracked(tx.idbtrans);
       const t = tx as unknown as BookandryDB;
       void t.categories.bulkAdd(buildSeedCategories(seedNow));
       void t.paymentMethods.bulkAdd(buildSeedPaymentMethods(seedNow));
@@ -69,3 +99,21 @@ export class BookandryDB extends Dexie {
  * 'greenback.*' lock names - identifiers, not branding.
  */
 export const db = new BookandryDB('greenback');
+
+/**
+ * Run `fn` in a read-write transaction whose writes are NOT change-tracked.
+ *
+ * For writes that are not edits: rows applied FROM sync (tracking them would
+ * echo every pull straight back to the server) and rows every install creates
+ * identically. Everything else must go through the normal, tracked path.
+ */
+export function withoutTracking<T>(
+  database: BookandryDB,
+  tables: readonly Table[],
+  fn: () => Promise<T>,
+): Promise<T> {
+  return database.transaction('rw', [...tables], async (tx) => {
+    markUntracked(tx.idbtrans);
+    return fn();
+  });
+}

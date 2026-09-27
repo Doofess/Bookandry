@@ -1,5 +1,11 @@
 import type { Transaction as DexieTransaction } from 'dexie';
 
+import { revFromIso } from '@/lib/rev';
+import { isBuiltinPaymentMethod } from '@/types/domain';
+
+import { readOrCreateDeviceId } from './sync/device';
+import type { OutboxRow, SyncedTable, SyncStateRow } from './sync/tables';
+
 /**
  * Schema versions as DATA, not as calls baked into a singleton.
  *
@@ -65,4 +71,59 @@ export const SCHEMA_VERSIONS: readonly SchemaVersion[] = [
       meta: 'key',
     },
   },
+  {
+    /*
+     * Change tracking for sync (src/db/sync/middleware.ts).
+     *
+     * [tbl+id] only, and deliberately no secondary index: see the middleware.
+     */
+    version: 2,
+    stores: {
+      syncState: '[tbl+id]',
+      outbox: '[tbl+id]',
+    },
+    upgrade: seedChangeTracking,
+  },
 ];
+
+/**
+ * Give every row that existed before tracking a rev, and queue it for upload.
+ *
+ * Dated by the row's OWN `updatedAt`, not by the moment of the upgrade:
+ * otherwise a device upgrading today would stamp its months-old copies as
+ * brand new, and at first sign-in they would beat edits made elsewhere since.
+ *
+ * Two kinds of row are left at the implicit zero rev instead:
+ * - built-ins nobody has touched (updatedAt === createdAt). Every install has
+ *   identical ones; a pristine seed must never overwrite a real edit.
+ * - the settings row, whose one synced field is decided at first sign-in.
+ */
+async function seedChangeTracking(tx: DexieTransaction): Promise<void> {
+  const deviceId = await readOrCreateDeviceId(tx.table<{ key: string; value: unknown }, string>('meta'));
+  const tables: readonly Exclude<SyncedTable, 'settings'>[] = [
+    'profiles',
+    'categories',
+    'paymentMethods',
+    'transactions',
+    'overrides',
+  ];
+
+  const state: SyncStateRow[] = [];
+  for (const tbl of tables) {
+    const rows = (await tx.table(tbl).toArray()) as {
+      id: string;
+      createdAt: string;
+      updatedAt: string;
+      source?: string;
+    }[];
+    for (const row of rows) {
+      const builtin =
+        row.source === 'builtin' || (tbl === 'paymentMethods' && isBuiltinPaymentMethod(row.id));
+      if (builtin && row.updatedAt === row.createdAt) continue;
+      state.push({ tbl, id: row.id, rev: revFromIso(row.updatedAt, deviceId), deleted: 0 });
+    }
+  }
+
+  await tx.table('syncState').bulkPut(state);
+  await tx.table('outbox').bulkPut(state.map((r): OutboxRow => ({ tbl: r.tbl, id: r.id })));
+}

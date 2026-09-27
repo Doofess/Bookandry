@@ -1,4 +1,4 @@
-import type { BookandryDB } from '@/db/db';
+import { withoutTracking, type BookandryDB } from '@/db/db';
 import { writeBootMirror } from '@/i18n/boot';
 import type { Settings } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
@@ -23,12 +23,19 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'updatedAt'> = {
  * defaultCurrency and silently corrupt every displayed balance.
  */
 export async function ensureSettings(db: BookandryDB, now: IsoInstant): Promise<Settings> {
-  const existing = await db.settings.get(SETTINGS_ID);
-  if (existing) return existing;
+  /*
+   * Untracked: this is the default row every install creates, not a choice.
+   * Tracked, a brand-new device would announce "USD" to the account as though
+   * someone had picked it, and overwrite the currency the household uses.
+   */
+  return withoutTracking(db, [db.settings], async () => {
+    const existing = await db.settings.get(SETTINGS_ID);
+    if (existing) return existing;
 
-  const created: Settings = { ...DEFAULT_SETTINGS, updatedAt: now };
-  await db.settings.put(created);
-  return created;
+    const created: Settings = { ...DEFAULT_SETTINGS, updatedAt: now };
+    await db.settings.put(created);
+    return created;
+  });
 }
 
 export async function getSettings(db: BookandryDB): Promise<Settings | undefined> {
