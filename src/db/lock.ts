@@ -17,6 +17,16 @@ export const LOCK_RECONVERT = 'greenback.reconvert';
 export const LOCK_IMPORT = 'greenback.import';
 export const LOCK_SWEEP = 'greenback.sweep';
 export const LOCK_REPAIR = 'greenback.repair';
+/**
+ * Held for a whole sync cycle - push, pull, repair - so exactly one tab syncs.
+ *
+ * Reconvert and import take it too, AFTER their own lock. Both read every row,
+ * compute, then write every row; a pull landing in between would have its
+ * newer rows overwritten by values computed from the older ones. The order is
+ * always "own lock, then sync", and sync never takes theirs, so no two of them
+ * can wait on each other.
+ */
+export const LOCK_SYNC = 'greenback.sync';
 
 /** Thrown for `ifAvailable` callers, so the UI can name the other tab. */
 export class LockBusyError extends Error {

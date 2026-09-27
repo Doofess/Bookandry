@@ -176,6 +176,25 @@ const settingsSchema = z.object({
   activeProfileId: z.string().min(1),
 });
 
+/**
+ * One validator per synced table, shared with sync.
+ *
+ * A row that arrives from the server - decrypted, so authentic to the key but
+ * still written by some other device's code, possibly an older or newer
+ * version of it - is exactly as untrusted as a row in an imported file, and
+ * gets exactly the same check before it touches the database.
+ */
+export const rowSchemas = {
+  profiles: profileSchema,
+  categories: categorySchema,
+  paymentMethods: paymentMethodSchema,
+  transactions: transactionSchema,
+  overrides: overrideSchema,
+} as const;
+
+/** The settings row syncs one field; this is all a device ever sends of it. */
+export const syncedSettingsSchema = z.object({ defaultCurrency: currency });
+
 export const envelopeSchema = z.object({
   /**
    * 'greenback' is the app's name before it became Bookandry. Every backup made

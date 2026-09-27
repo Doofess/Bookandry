@@ -1,6 +1,7 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
 import { BookandryDB } from '@/db/db';
+import type { IsoInstant } from '@/types/money';
 
 /**
  * Per-test database isolation.
@@ -14,12 +15,13 @@ export type TestDb = { db: BookandryDB; dispose: () => Promise<void> };
 
 let counter = 0;
 
-export function freshDb(upTo = Infinity): TestDb {
+export function freshDb(upTo = Infinity, seedNow?: IsoInstant): TestDb {
   counter += 1;
   const db = new BookandryDB(
     `bookandry-test-${String(counter)}`,
     { indexedDB: new IDBFactory(), IDBKeyRange },
     upTo,
+    ...(seedNow === undefined ? [] : [seedNow]),
   );
   return {
     db,
