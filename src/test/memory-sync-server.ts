@@ -1,7 +1,8 @@
+import type { EncryptedPushResult, EncryptedRecord, EncryptedTransport } from '@/db/sync/codec';
 import type { PullPage, PushResult, SyncRecord, SyncTransport } from '@/db/sync/protocol';
 
 /**
- * The server's rules, in memory, for the two-device scenario suite.
+ * The server's rules, in memory, for the two-device scenario suites.
  *
  * It implements exactly what the Postgres `push_records` function will, so the
  * merge engine is tested against the contract rather than against luck:
@@ -14,11 +15,13 @@ import type { PullPage, PushResult, SyncRecord, SyncTransport } from '@/db/sync/
  *   with it arrive together.
  *
  * Plus fault switches, because the interesting bugs live in the failures.
+ * Generic over the record shape: plaintext for the merge suites, ciphertext
+ * for the encryption suite - the rules do not change.
  */
-type Held = { record: SyncRecord; seq: number; pushId: number };
+type Held<R> = { record: R; seq: number; pushId: number };
 
-export class MemorySyncServer {
-  private readonly held = new Map<string, Held>();
+class MemoryServer<R extends { readonly rev: string }> {
+  private readonly held = new Map<string, Held<R>>();
   private seq = 0;
   private pushes = 0;
 
@@ -28,39 +31,47 @@ export class MemorySyncServer {
   failNextPush = false;
   /** Serve the next pull page twice in a row: duplicate delivery. */
   duplicateNextPull = false;
-  private replay: PullPage | undefined;
+  private replay: { records: R[]; cursor: number; hasMore: boolean } | undefined;
+
+  constructor(private readonly keyOf: (record: R) => string) {}
 
   /** Everything the server holds, for assertions. */
-  snapshot(): SyncRecord[] {
+  snapshot(): R[] {
     return [...this.held.values()].map((h) => h.record);
   }
 
-  transport(): SyncTransport {
-    return {
-      push: (records) => Promise.resolve(this.push(records)),
-      pull: (cursor, limit) => Promise.resolve(this.pull(cursor, limit)),
-    };
+  /** Overwrite what the server holds for one key, as a malicious server would. */
+  tamper(key: string, change: (record: R) => R): void {
+    const held = this.held.get(key);
+    if (held === undefined) throw new Error(`nothing held for ${key}`);
+    this.seq += 1;
+    this.held.set(key, { ...held, record: change(held.record), seq: this.seq });
   }
 
-  private push(records: readonly SyncRecord[]): PushResult[] {
+  /** Forget everything: what a key rotation asks the real server to do. */
+  reset(): void {
+    this.held.clear();
+  }
+
+  protected pushRecords(records: readonly R[]): { record: R; status: 'stored' | 'stale' }[] {
     if (this.failNextPush) {
       this.failNextPush = false;
       throw new Error('network: push dropped');
     }
 
     this.pushes += 1;
-    const results = records.map((record): PushResult => {
-      const key = `${record.tbl}/${record.id}`;
+    const results = records.map((record) => {
+      const key = this.keyOf(record);
       const existing = this.held.get(key);
       if (existing !== undefined && record.rev < existing.record.rev) {
-        return { tbl: record.tbl, id: record.id, rev: record.rev, status: 'stale' };
+        return { record, status: 'stale' as const };
       }
       if (existing === undefined || record.rev > existing.record.rev) {
         this.seq += 1;
         // A deep copy: the server must never share an object with a device.
         this.held.set(key, { record: structuredClone(record), seq: this.seq, pushId: this.pushes });
       }
-      return { tbl: record.tbl, id: record.id, rev: record.rev, status: 'stored' };
+      return { record, status: 'stored' as const };
     });
 
     if (this.loseNextAck) {
@@ -70,7 +81,7 @@ export class MemorySyncServer {
     return results;
   }
 
-  private pull(cursor: number, limit: number): PullPage {
+  protected pullRecords(cursor: number, limit: number): { records: R[]; cursor: number; hasMore: boolean } {
     if (this.replay !== undefined) {
       const page = this.replay;
       this.replay = undefined;
@@ -83,7 +94,7 @@ export class MemorySyncServer {
     while (take > 0 && take < newer.length && newer[take]!.pushId === newer[take - 1]!.pushId) take += 1;
 
     const chosen = newer.slice(0, take);
-    const page: PullPage = {
+    const page = {
       records: chosen.map((h) => structuredClone(h.record)),
       cursor: chosen.at(-1)?.seq ?? cursor,
       hasMore: take < newer.length,
@@ -96,5 +107,66 @@ export class MemorySyncServer {
       return { ...page, cursor, hasMore: true };
     }
     return page;
+  }
+}
+
+/** Plaintext records, keyed by table and id: the merge engine's view. */
+export class MemorySyncServer extends MemoryServer<SyncRecord> {
+  constructor() {
+    super((r) => `${r.tbl}/${r.id}`);
+  }
+
+  transport(): SyncTransport {
+    return {
+      push: (records) =>
+        Promise.resolve(
+          this.pushRecords(records).map(({ record, status }): PushResult => ({
+            tbl: record.tbl,
+            id: record.id,
+            rev: record.rev,
+            status,
+          })),
+        ),
+      pull: (cursor, limit): Promise<PullPage> => Promise.resolve(this.pullRecords(cursor, limit)),
+    };
+  }
+}
+
+/** Ciphertext keyed by blinded id: all the real server will ever see. */
+export class MemoryCipherServer extends MemoryServer<EncryptedRecord> {
+  /**
+   * The rotation barrier: after a rotation the server refuses any push sealed
+   * under an older key version, so a device that has not yet unlocked with the
+   * new key keeps its changes queued instead of filing them where nobody can
+   * ever read them. `push_records` enforces the same.
+   */
+  private minKeyVersion = 0;
+
+  constructor() {
+    super((r) => r.rid);
+  }
+
+  /** Forget everything and refuse anything sealed below `version`: a rotation. */
+  rotateTo(version: number): void {
+    this.reset();
+    this.minKeyVersion = version;
+  }
+
+  transport(): EncryptedTransport {
+    return {
+      push: (records) => {
+        if (records.some((r) => r.keyVersion < this.minKeyVersion)) {
+          return Promise.reject(new Error('push refused: sealed under a retired key version'));
+        }
+        return Promise.resolve(
+          this.pushRecords(records).map(({ record, status }): EncryptedPushResult => ({
+            rid: record.rid,
+            rev: record.rev,
+            status,
+          })),
+        );
+      },
+      pull: (cursor, limit) => Promise.resolve(this.pullRecords(cursor, limit)),
+    };
   }
 }

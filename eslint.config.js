@@ -75,6 +75,55 @@ export default tseslint.config(
     },
   },
 
+  /*
+   * Key material stays in ONE place.
+   *
+   * Everything that touches a key, a passphrase or a PRF secret lives in
+   * src/services/crypto, where it can be read in one sitting and reviewed as a
+   * whole. A `crypto.subtle` call anywhere else is key handling that escaped
+   * that review. Same for the Argon2id binary, and for the Supabase client,
+   * which belongs behind the transport in src/services/supabase.
+   *
+   * Placed BEFORE the pure-module block: in flat config a later block's
+   * no-restricted-imports REPLACES this one for the files both match, so the
+   * pure-module block repeats these packages in its own list.
+   */
+  {
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    ignores: ['src/services/crypto/**', 'src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'crypto',
+          property: 'subtle',
+          message: 'Key handling lives in src/services/crypto, and nowhere else.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    ignores: [
+      'src/services/crypto/**',
+      'src/services/supabase/**',
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'src/test/**',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['hash-wasm'], message: 'Argon2id lives in src/services/crypto/kdf.ts.' },
+            { group: ['@supabase/*'], message: 'The Supabase client lives in src/services/supabase.' },
+          ],
+        },
+      ],
+    },
+  },
+
   {
     files: ['src/lib/**/*.ts', 'src/domain/**/*.ts'],
     rules: {
@@ -95,6 +144,8 @@ export default tseslint.config(
                 '@/store/*',
                 '@/app/*',
                 '@/components/*',
+                'hash-wasm',
+                '@supabase/*',
               ],
               message: 'Pure logic module: no framework, DB, or UI imports.',
             },
