@@ -5,11 +5,10 @@ import type { Override } from '@/types/domain';
 
 import { withoutTracking, type BookandryDB } from '../db';
 import type { SyncRecord } from './protocol';
-import type { OutboxRow } from './tables';
+import { SYNC_CURSOR_KEY as CURSOR_KEY, SYNCED_TABLES, type OutboxRow } from './tables';
 import { DEFAULT_SETTINGS } from '../repos/settings';
 
-/** Where the next pull resumes. In `meta`, written with the page it follows. */
-export const CURSOR_KEY = 'syncCursor';
+export { SYNC_CURSOR_KEY as CURSOR_KEY } from './tables';
 
 export type ApplyReport = {
   /** Newer than what this device had: written. */
@@ -40,17 +39,9 @@ export async function applyPage(
   records: readonly SyncRecord[],
   cursor: number,
 ): Promise<ApplyReport> {
-  const tables = [
-    db.profiles,
-    db.categories,
-    db.paymentMethods,
-    db.transactions,
-    db.overrides,
-    db.settings,
-    db.syncState,
-    db.outbox,
-    db.meta,
-  ];
+  // From SYNCED_TABLES, never a hand-written list: a new synced table that
+  // this list forgot would make every page containing it fail to apply.
+  const tables = [...SYNCED_TABLES.map((t) => db.table(t)), db.syncState, db.outbox, db.meta];
 
   return withoutTracking(db, tables, async () => {
     let applied = 0;
@@ -105,7 +96,16 @@ async function applyOne(db: BookandryDB, record: SyncRecord): Promise<'applied' 
     if (!won) return 'applied'; // lost the slot: recorded as a deletion instead
   }
 
-  await table.put(parsed.data);
+  /*
+   * Validated against the schema, but stored AS RECEIVED.
+   *
+   * Zod's output drops keys the schema does not know. A newer version of the
+   * app on another device may send a field this one has never heard of; if it
+   * were stripped here, this device's next edit of the row would push it back
+   * without the field and erase it everywhere. Unknown fields ride along
+   * untouched instead - found by the convergence property test.
+   */
+  await table.put(record.row);
   return settle(db, record);
 }
 

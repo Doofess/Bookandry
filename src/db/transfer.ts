@@ -6,7 +6,7 @@ import { validateEnvelope, type ValidationIssue } from '@/domain/transfer-valida
 import type { Override, Transaction } from '@/types/domain';
 import type { Currency, IsoInstant } from '@/types/money';
 
-import { LOCK_IMPORT, LockBusyError, withLock } from './lock';
+import { LOCK_IMPORT, LOCK_SYNC, LockBusyError, withLock } from './lock';
 import { SETTINGS_ID } from './repos/settings';
 
 export const APP_VERSION = '0.1.0';
@@ -173,7 +173,13 @@ export async function importDocument(
   options: ImportOptions,
 ): Promise<ImportResult> {
   try {
-    return await withLock(LOCK_IMPORT, () => runImport(db, input, options), { ifAvailable: true });
+    return await withLock(
+      LOCK_IMPORT,
+      // Then the sync lock (see LOCK_SYNC): a merge reads every row, plans,
+      // and writes back; a pull in between would be silently overwritten.
+      () => withLock(LOCK_SYNC, () => runImport(db, input, options)),
+      { ifAvailable: true },
+    );
   } catch (error) {
     if (error instanceof LockBusyError) return { ok: false, reason: 'busy' };
     throw error;

@@ -1,6 +1,15 @@
 import { FALLBACK_CATEGORY } from '@/db/seed';
 import { PROFILE_PALETTE } from '@/domain/palette';
-import type { Category, Override, Profile, Transaction } from '@/types/domain';
+import {
+  ALL_PROFILES,
+  redirectId,
+  type Category,
+  type Override,
+  type Profile,
+  type Redirect,
+  type RedirectTable,
+  type Transaction,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import type { BookandryDB } from './db';
@@ -38,7 +47,9 @@ export type IntegrityIssue =
       readonly problems: readonly string[];
     }
   | { readonly kind: 'orphan_override'; readonly overrideId: string; readonly transactionId: string }
-  | { readonly kind: 'duplicate_color'; readonly profileIds: readonly string[]; readonly color: string };
+  | { readonly kind: 'duplicate_color'; readonly profileIds: readonly string[]; readonly color: string }
+  /** The feed is filtered to a profile that no longer exists: deleted on another device. */
+  | { readonly kind: 'dangling_active_profile'; readonly activeProfileId: string };
 
 type Snapshot = {
   profiles: Profile[];
@@ -47,16 +58,19 @@ type Snapshot = {
   transactions: Transaction[];
   overrides: Override[];
   hasSettings: boolean;
+  activeProfileId: string | undefined;
+  redirects: Map<string, Redirect>;
 };
 
 async function snapshot(db: BookandryDB): Promise<Snapshot> {
-  const [profiles, categories, methods, transactions, overrides, settings] = await Promise.all([
+  const [profiles, categories, methods, transactions, overrides, settings, redirects] = await Promise.all([
     db.profiles.toArray(),
     db.categories.toArray(),
     db.paymentMethods.toArray(),
     db.transactions.toArray(),
     db.overrides.toArray(),
     db.settings.get('singleton'),
+    db.redirects.toArray(),
   ]);
 
   return {
@@ -66,7 +80,41 @@ async function snapshot(db: BookandryDB): Promise<Snapshot> {
     transactions,
     overrides,
     hasSettings: settings !== undefined,
+    activeProfileId: settings?.activeProfileId,
+    redirects: new Map(redirects.map((r) => [r.id, r])),
   };
+}
+
+/**
+ * Oldest first, and by id when two were created in the same millisecond.
+ *
+ * Every device holding the same rows must pick the same winner, or each one
+ * repairs differently and the "fix" becomes a conflict that never settles.
+ */
+function byAge(a: { createdAt: string; id: string }, b: { createdAt: string; id: string }): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+}
+
+/**
+ * Where a deleted row's references were sent, following chains (A was merged
+ * into B, which was later merged into C). Undefined when nobody said, or when
+ * the chain ends at a row that is gone too; null when they were cleared.
+ */
+function followRedirect(
+  redirects: ReadonlyMap<string, Redirect>,
+  tbl: RedirectTable,
+  from: string,
+  exists: (id: string) => boolean,
+): string | null | undefined {
+  let current = from;
+  for (let hop = 0; hop < 16; hop += 1) {
+    const redirect = redirects.get(redirectId(tbl, current));
+    if (redirect === undefined) return undefined;
+    if (redirect.to === null) return null;
+    if (exists(redirect.to)) return redirect.to;
+    current = redirect.to;
+  }
+  return undefined; // a cycle or an absurd chain: fall back
 }
 
 export async function checkIntegrity(db: BookandryDB): Promise<IntegrityIssue[]> {
@@ -120,6 +168,14 @@ export async function checkIntegrity(db: BookandryDB): Promise<IntegrityIssue[]>
     }
   }
 
+  if (
+    state.activeProfileId !== undefined &&
+    state.activeProfileId !== ALL_PROFILES &&
+    !profileIds.has(state.activeProfileId)
+  ) {
+    issues.push({ kind: 'dangling_active_profile', activeProfileId: state.activeProfileId });
+  }
+
   const byColor = new Map<string, string[]>();
   for (const p of state.profiles) {
     byColor.set(p.color, [...(byColor.get(p.color) ?? []), p.id]);
@@ -161,10 +217,19 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
       'rw',
       // settings is in scope because snapshot() reads it; Dexie refuses a table
       // the enclosing transaction did not declare.
-      [db.profiles, db.categories, db.paymentMethods, db.transactions, db.overrides, db.settings],
+      [
+        db.profiles,
+        db.categories,
+        db.paymentMethods,
+        db.transactions,
+        db.overrides,
+        db.settings,
+        db.redirects,
+      ],
       async () => {
         const state = await snapshot(db);
-        const oldestProfile = [...state.profiles].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+        const oldestProfile = [...state.profiles].sort(byAge)[0];
+        const profileIds = new Set(state.profiles.map((p) => p.id));
         const overridesByTx = new Map<string, Override[]>();
         for (const o of state.overrides) {
           overridesByTx.set(o.transactionId, [...(overridesByTx.get(o.transactionId) ?? []), o]);
@@ -182,11 +247,15 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
             case 'missing_profile': {
               const tx = state.transactions.find((t) => t.id === issue.transactionId);
               if (!tx) break;
-              if (oldestProfile === undefined) {
+              const redirected = followRedirect(state.redirects, 'profiles', issue.profileId, (id) =>
+                profileIds.has(id),
+              );
+              const target = redirected ?? oldestProfile?.id;
+              if (target === undefined) {
                 unrepairable.push(issue);
                 break;
               }
-              patched.set(tx.id, { ...touch(tx), profileId: oldestProfile.id, updatedAt: now });
+              patched.set(tx.id, { ...touch(tx), profileId: target, updatedAt: now });
               repaired.push(issue);
               break;
             }
@@ -195,7 +264,19 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
             case 'kind_mismatch': {
               const tx = state.transactions.find((t) => t.id === issue.transactionId);
               if (!tx) break;
-              patched.set(tx.id, { ...touch(tx), categoryId: FALLBACK_CATEGORY[tx.kind], updatedAt: now });
+              const redirected =
+                issue.kind === 'missing_category'
+                  ? followRedirect(state.redirects, 'categories', issue.categoryId, (id) =>
+                      state.categories.has(id),
+                    )
+                  : undefined;
+              const target =
+                redirected !== undefined &&
+                redirected !== null &&
+                state.categories.get(redirected)?.kind === tx.kind
+                  ? redirected
+                  : FALLBACK_CATEGORY[tx.kind];
+              patched.set(tx.id, { ...touch(tx), categoryId: target, updatedAt: now });
               repaired.push(issue);
               break;
             }
@@ -203,7 +284,13 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
             case 'missing_payment_method': {
               const tx = state.transactions.find((t) => t.id === issue.transactionId);
               if (!tx) break;
-              patched.set(tx.id, { ...touch(tx), paymentMethodId: undefined, updatedAt: now });
+              const redirected = followRedirect(
+                state.redirects,
+                'paymentMethods',
+                issue.paymentMethodId,
+                (id) => state.methods.has(id),
+              );
+              patched.set(tx.id, { ...touch(tx), paymentMethodId: redirected ?? undefined, updatedAt: now });
               repaired.push(issue);
               break;
             }
@@ -212,6 +299,14 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
               const tx = state.transactions.find((t) => t.id === issue.transactionId);
               if (!tx) break;
               patched.set(tx.id, materialize(touch(tx), overridesByTx.get(tx.id) ?? []));
+              repaired.push(issue);
+              break;
+            }
+
+            case 'dangling_active_profile': {
+              const settings = await db.settings.get('singleton');
+              if (settings !== undefined)
+                await db.settings.put({ ...settings, activeProfileId: ALL_PROFILES, updatedAt: now });
               repaired.push(issue);
               break;
             }
@@ -230,7 +325,7 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
               const clashing = issue.profileIds
                 .map((id) => state.profiles.find((p) => p.id === id))
                 .filter((p): p is Profile => p !== undefined)
-                .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+                .sort(byAge)
                 .slice(1);
 
               let fixedAll = true;

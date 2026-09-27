@@ -1,7 +1,7 @@
 import type { BookandryDB } from '@/db/db';
 import { FALLBACK_CATEGORY } from '@/db/seed';
 import { normalizeName } from '@/domain/validation';
-import type { Category } from '@/types/domain';
+import { redirectId, type Category } from '@/types/domain';
 import type { IsoInstant, Kind } from '@/types/money';
 
 /**
@@ -104,7 +104,7 @@ export async function deleteCategory(
   options: { reassignTo?: string },
   now: IsoInstant,
 ): Promise<{ transactionsMoved: number; overridesMoved: number }> {
-  return db.transaction('rw', [db.categories, db.transactions, db.overrides], async () => {
+  return db.transaction('rw', [db.categories, db.transactions, db.overrides, db.redirects], async () => {
     const current = await db.categories.get(id);
     if (!current) throw new Error(`No such category: ${id}`);
     if (current.source === 'builtin') throw new BuiltinCategoryError(id, 'delete');
@@ -133,6 +133,16 @@ export async function deleteCategory(
     }
 
     await db.categories.delete(id);
+    // Where references went, for a device that kept using this row while it
+    // was offline: it follows the choice made here, not the fallback.
+    await db.redirects.put({
+      id: redirectId('categories', id),
+      tbl: 'categories',
+      from: id,
+      to: target,
+      createdAt: now,
+      updatedAt: now,
+    });
     return { transactionsMoved: affected.length, overridesMoved: overrides.length };
   });
 }

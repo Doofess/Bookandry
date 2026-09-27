@@ -1,7 +1,7 @@
 import type { BookandryDB } from '@/db/db';
 import { MAX_PROFILES, nextFreeColor } from '@/domain/palette';
 import { normalizeName } from '@/domain/validation';
-import { ALL_PROFILES, type AvatarKey, type Profile } from '@/types/domain';
+import { ALL_PROFILES, redirectId, type AvatarKey, type Profile } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
 import { SETTINGS_ID } from './settings';
@@ -153,55 +153,71 @@ export async function deleteProfile(
   options: DeleteProfileOptions,
   now: IsoInstant,
 ): Promise<DeleteProfileResult> {
-  return db.transaction('rw', [db.profiles, db.transactions, db.paymentMethods, db.settings], async () => {
-    const profile = await db.profiles.get(id);
-    if (!profile) throw new Error(`No such profile: ${id}`);
+  return db.transaction(
+    'rw',
+    [db.profiles, db.transactions, db.paymentMethods, db.settings, db.redirects],
+    async () => {
+      const profile = await db.profiles.get(id);
+      if (!profile) throw new Error(`No such profile: ${id}`);
 
-    const owned = await db.transactions.where('profileId').equals(id).toArray();
-    const { reassignTo } = options;
+      const owned = await db.transactions.where('profileId').equals(id).toArray();
+      const { reassignTo } = options;
 
-    if (owned.length > 0 && reassignTo === undefined) {
-      throw new ProfileNotEmptyError(id, owned.length);
-    }
-    if (reassignTo !== undefined) {
-      if (reassignTo === id) throw new Error('Cannot reassign a profile to itself');
-      const target = await db.profiles.get(reassignTo);
-      if (!target) throw new Error(`No such profile: ${reassignTo}`);
-    }
+      if (owned.length > 0 && reassignTo === undefined) {
+        throw new ProfileNotEmptyError(id, owned.length);
+      }
+      if (reassignTo !== undefined) {
+        if (reassignTo === id) throw new Error('Cannot reassign a profile to itself');
+        const target = await db.profiles.get(reassignTo);
+        if (!target) throw new Error(`No such profile: ${reassignTo}`);
+      }
 
-    if (owned.length > 0 && reassignTo !== undefined) {
-      await db.transactions.bulkPut(owned.map((t) => ({ ...t, profileId: reassignTo, updatedAt: now })));
-    }
+      if (owned.length > 0 && reassignTo !== undefined) {
+        await db.transactions.bulkPut(owned.map((t) => ({ ...t, profileId: reassignTo, updatedAt: now })));
+      }
 
-    // Shared methods (SHARED_OWNER) belong to nobody and are untouched.
-    const methods = await db.paymentMethods.where('profileId').equals(id).toArray();
-    let moved = 0;
-    let removed = 0;
-    if (reassignTo === undefined) {
-      await db.paymentMethods.bulkDelete(methods.map((m) => m.id));
-      removed = methods.length;
-    } else {
-      await db.paymentMethods.bulkPut(methods.map((m) => ({ ...m, profileId: reassignTo, updatedAt: now })));
-      moved = methods.length;
-    }
+      // Shared methods (SHARED_OWNER) belong to nobody and are untouched.
+      const methods = await db.paymentMethods.where('profileId').equals(id).toArray();
+      let moved = 0;
+      let removed = 0;
+      if (reassignTo === undefined) {
+        await db.paymentMethods.bulkDelete(methods.map((m) => m.id));
+        removed = methods.length;
+      } else {
+        await db.paymentMethods.bulkPut(
+          methods.map((m) => ({ ...m, profileId: reassignTo, updatedAt: now })),
+        );
+        moved = methods.length;
+      }
 
-    await db.profiles.delete(id);
-
-    // A dangling activeProfileId renders an empty feed with no explanation.
-    const settings = await db.settings.get(SETTINGS_ID);
-    if (settings?.activeProfileId === id) {
-      const remaining = await db.profiles.toCollection().first();
-      await db.settings.put({
-        ...settings,
-        activeProfileId: reassignTo ?? remaining?.id ?? ALL_PROFILES,
+      await db.profiles.delete(id);
+      // Where references went, for a device that kept using this row while it
+      // was offline: it follows the choice made here, not the fallback.
+      await db.redirects.put({
+        id: redirectId('profiles', id),
+        tbl: 'profiles',
+        from: id,
+        to: reassignTo ?? null,
+        createdAt: now,
         updatedAt: now,
       });
-    }
 
-    return {
-      transactionsMoved: reassignTo === undefined ? 0 : owned.length,
-      paymentMethodsMoved: moved,
-      paymentMethodsDeleted: removed,
-    };
-  });
+      // A dangling activeProfileId renders an empty feed with no explanation.
+      const settings = await db.settings.get(SETTINGS_ID);
+      if (settings?.activeProfileId === id) {
+        const remaining = await db.profiles.toCollection().first();
+        await db.settings.put({
+          ...settings,
+          activeProfileId: reassignTo ?? remaining?.id ?? ALL_PROFILES,
+          updatedAt: now,
+        });
+      }
+
+      return {
+        transactionsMoved: reassignTo === undefined ? 0 : owned.length,
+        paymentMethodsMoved: moved,
+        paymentMethodsDeleted: removed,
+      };
+    },
+  );
 }

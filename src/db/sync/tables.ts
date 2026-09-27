@@ -15,6 +15,7 @@ export const SYNCED_TABLES = [
   'transactions',
   'overrides',
   'settings',
+  'redirects',
 ] as const;
 
 /**
@@ -48,6 +49,14 @@ export function isSyncedTable(name: string): name is SyncedTable {
  * carry a stale currency along and undo a currency change made on the laptop.
  */
 export const SYNCED_SETTINGS_FIELDS = ['defaultCurrency'] as const;
+
+/**
+ * Where the next pull resumes, in `meta`. Written with the page it follows.
+ *
+ * Its presence also means "this device syncs", which is what the sweeper asks
+ * before purging anything on its own.
+ */
+export const SYNC_CURSOR_KEY = 'syncCursor';
 
 /** Side-table row: the newest rev this device knows for a synced row. */
 export type SyncStateRow = {

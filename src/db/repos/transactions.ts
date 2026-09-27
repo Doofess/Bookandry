@@ -1,6 +1,7 @@
 import type { BookandryDB } from '@/db/db';
 import { LOCK_SWEEP, withLock } from '@/db/lock';
 import { materialize, type TransactionDraft } from '@/db/materialize';
+import { SYNC_CURSOR_KEY } from '@/db/sync/tables';
 import { compareLocal, instantFromMs } from '@/lib/dates';
 import type { Override, Transaction } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
@@ -144,7 +145,17 @@ export async function sweepExpiredDeletions(
   nowMs: number,
   windowMs = RECOVERY_WINDOW_MS,
 ): Promise<{ purged: number; overridesRemoved: number }> {
-  return withLock(LOCK_SWEEP, () => purgeExpiredDeletions(db, nowMs, windowMs));
+  return withLock(LOCK_SWEEP, async () => {
+    /*
+     * A device that syncs purges only inside a sync, right after pulling to
+     * the head (see syncOnce). Purging here, on a timer, could hard-delete a
+     * row that another device has since RESTORED: this device would not have
+     * seen the restore yet, and its purge would then be the newest word on a
+     * row somebody deliberately brought back.
+     */
+    if ((await db.meta.get(SYNC_CURSOR_KEY)) !== undefined) return { purged: 0, overridesRemoved: 0 };
+    return purgeExpiredDeletions(db, nowMs, windowMs);
+  });
 }
 
 /**

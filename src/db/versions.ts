@@ -84,6 +84,11 @@ export const SCHEMA_VERSIONS: readonly SchemaVersion[] = [
     },
     upgrade: seedChangeTracking,
   },
+  {
+    /* Where deleted rows' references went, for devices that kept using them. */
+    version: 3,
+    stores: { redirects: 'id' },
+  },
 ];
 
 /**

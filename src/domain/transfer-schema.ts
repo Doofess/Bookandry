@@ -184,7 +184,17 @@ const settingsSchema = z.object({
  * version of it - is exactly as untrusted as a row in an imported file, and
  * gets exactly the same check before it touches the database.
  */
+const redirectSchema = z.object({
+  id: z.string().min(1),
+  tbl: z.enum(['categories', 'paymentMethods', 'profiles']),
+  from: z.string().min(1),
+  to: z.string().min(1).nullable(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+});
+
 export const rowSchemas = {
+  redirects: redirectSchema,
   profiles: profileSchema,
   categories: categorySchema,
   paymentMethods: paymentMethodSchema,

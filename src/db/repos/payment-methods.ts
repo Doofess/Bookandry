@@ -3,6 +3,7 @@ import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
 import {
   isBuiltinPaymentMethod,
+  redirectId,
   SHARED_OWNER,
   type PaymentMethod,
   type PaymentMethodType,
@@ -169,7 +170,7 @@ export async function deletePaymentMethod(
     throw new Error(`${id} is built in and cannot be deleted; archive it instead`);
   }
 
-  return db.transaction('rw', [db.paymentMethods, db.transactions, db.overrides], async () => {
+  return db.transaction('rw', [db.paymentMethods, db.transactions, db.overrides, db.redirects], async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);
 
@@ -202,6 +203,16 @@ export async function deletePaymentMethod(
     }
 
     await db.paymentMethods.delete(id);
+    // Where references went, for a device that kept using this row while it
+    // was offline: it follows the choice made here, not the fallback.
+    await db.redirects.put({
+      id: redirectId('paymentMethods', id),
+      tbl: 'paymentMethods',
+      from: id,
+      to: target ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
     return { transactionsUpdated: affected.length, overridesUpdated: overrides.length };
   });
 }

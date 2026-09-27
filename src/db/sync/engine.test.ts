@@ -459,3 +459,164 @@ describe('pages', () => {
     expect(withPlan).toContain('first-payment');
   });
 });
+
+describe('a deletion that chose where things go', () => {
+  it('sends a row the other device filed under it to the chosen replacement, not the fallback', async () => {
+    await addProfile(a.db, 'p1');
+    await createCategory(a.db, 'c.gym', { name: 'Gym', kind: 'expense', icon: 'tag' }, now());
+    await createCategory(a.db, 'c.sport', { name: 'Sport', kind: 'expense', icon: 'tag' }, now());
+    await converge();
+
+    tick();
+    await deleteCategory(a.db, 'c.gym', { reassignTo: 'c.sport' }, now());
+    tick();
+    await b.db.transactions.put(tx('t.gym', { categoryId: 'c.gym' })); // offline, still using it
+
+    await converge();
+    expect((await a.db.transactions.get('t.gym'))?.categoryId).toBe('c.sport');
+  });
+
+  it('clears a payment method whose deletion cleared its references', async () => {
+    await addProfile(a.db, 'p1');
+    await a.db.paymentMethods.put({
+      id: 'pm.old',
+      profileId: 'p1',
+      type: 'credit_card',
+      label: 'Old card',
+      isArchived: 0,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    await converge();
+
+    tick();
+    const { deletePaymentMethod } = await import('@/db/repos/payment-methods');
+    await deletePaymentMethod(a.db, 'pm.old', {}, now());
+    tick();
+    await b.db.transactions.put(tx('t.card', { paymentMethodId: 'pm.old' }));
+
+    await converge();
+    expect((await b.db.transactions.get('t.card'))?.paymentMethodId).toBeUndefined();
+  });
+});
+
+describe('the profile a device was looking at', () => {
+  it('falls back to everyone when another device deleted it', async () => {
+    await addProfile(a.db, 'p1');
+    await addProfile(a.db, 'p2');
+    await converge();
+    await writeSettings(b.db, { activeProfileId: 'p2' }, now());
+
+    tick();
+    const { deleteProfile } = await import('@/db/repos/profiles');
+    await deleteProfile(a.db, 'p2', { reassignTo: 'p1' }, now());
+    await converge();
+    // Otherwise B's feed would be filtered to nobody, silently empty.
+    expect((await b.db.settings.get('singleton'))?.activeProfileId).toBe('all');
+  });
+});
+
+describe('a base currency change while the other device was offline', () => {
+  const quote = (rate: string) => ({ rate, rateDate: d('2026-09-01'), source: 'manual' as const });
+
+  beforeEach(async () => {
+    await addProfile(a.db, 'p1');
+    await converge();
+    // B goes offline and records an expense, in the USD base it knows.
+    tick();
+    await b.db.transactions.put(tx('t.offline'));
+    // Meanwhile A moves the household to ILS.
+    tick();
+    const { reconvertDefaultCurrency } = await import('@/db/reconvert');
+    const result = await reconvertDefaultCurrency(a.db, 'USD', 'ILS', {
+      fetchQuote: () => Promise.resolve(quote('3.7')),
+      now: now(),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('converts the stale row on arrival, when there is a rate source', async () => {
+    const rebase = { fetchQuote: () => Promise.resolve(quote('3.7')) };
+    await a.sync();
+    await syncOnce(b.db, server.transport(), { now: now(), rebase });
+    await syncOnce(a.db, server.transport(), { now: now(), rebase });
+    await syncOnce(b.db, server.transport(), { now: now(), rebase });
+
+    for (const db of [a.db, b.db]) {
+      const row = await db.transactions.get('t.offline');
+      expect(row?.money.baseCurrency).toBe('ILS');
+      expect(row?.money.baseAmountMinor).toBe(16_650); // 45.00 USD at 3.7
+    }
+    const { findStaleRows } = await import('./rebase');
+    expect(await findStaleRows(a.db)).toEqual([]);
+  });
+
+  it('finds and reports the stale row, rather than hiding it, when there is not', async () => {
+    await converge();
+    const { findStaleRows } = await import('./rebase');
+    const stale = await findStaleRows(a.db);
+    expect(stale.map((g) => [g.base, g.transactions.map((t) => t.id)])).toEqual([['USD', ['t.offline']]]);
+  });
+});
+
+describe('purging soft-deleted rows on a device that syncs', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('never happens on the sweeper timer, only inside a sync', async () => {
+    await addProfile(a.db, 'p1');
+    await a.db.transactions.put(tx('t1', { isDeleted: 1, deletedAt: now() }));
+    await converge();
+    tick(2 * DAY);
+
+    const { sweepExpiredDeletions } = await import('@/db/repos/transactions');
+    expect((await sweepExpiredDeletions(a.db, clock)).purged).toBe(0);
+
+    const report = await a.sync();
+    expect(report.purged).toBe(1);
+  });
+
+  it('cannot undo a restore it had not seen yet', async () => {
+    await addProfile(a.db, 'p1');
+    await a.db.transactions.put(tx('t1'));
+    await converge();
+
+    tick();
+    await a.db.transactions.update('t1', { isDeleted: 1, deletedAt: now() });
+    await converge();
+    tick(DAY / 2);
+    // B restores it inside the recovery window...
+    await b.db.transactions.update('t1', { isDeleted: 0, deletedAt: undefined });
+    await b.sync();
+    // ...and A, a day and a half after the delete, syncs. It sees the restore
+    // before it purges, so the row survives.
+    tick(DAY);
+    await converge();
+    expect((await a.db.transactions.get('t1'))?.isDeleted).toBe(0);
+  });
+});
+
+describe('repairs every device makes on its own', () => {
+  it('agree, so they settle instead of fighting', async () => {
+    // Two profiles given the same colour on two devices, same millisecond.
+    const color = '#16794a';
+    const profile = (id: string) => ({
+      id,
+      name: id,
+      avatar: 'fox',
+      color,
+      openingBalanceMinor: 0,
+      openingBalanceCurrency: 'USD',
+      openingBalanceDate: d('2026-01-01'),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    await a.db.profiles.put(profile('p-b') as never);
+    await b.db.profiles.put(profile('p-a') as never);
+
+    await converge();
+    const colors = async (db: BookandryDB) => (await db.profiles.toArray()).map((p) => [p.id, p.color]);
+    expect(await colors(a.db)).toEqual(await colors(b.db));
+    // The older - and on a tie, the lower id - keeps the colour.
+    expect((await a.db.profiles.get('p-a'))?.color).toBe(color);
+  });
+});

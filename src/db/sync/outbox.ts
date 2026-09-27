@@ -2,7 +2,7 @@ import type { Rev } from '@/lib/rev';
 
 import type { BookandryDB } from '../db';
 import type { PushResult, SyncRecord } from './protocol';
-import type { SyncedTable } from './tables';
+import { SYNCED_TABLES, type SyncedTable } from './tables';
 
 /**
  * The next batch of local changes to push.
@@ -13,16 +13,8 @@ import type { SyncedTable } from './tables';
  * device would store the new content under a rev that later loses to itself.
  */
 export async function collectOutgoing(db: BookandryDB, limit: number): Promise<SyncRecord[]> {
-  const tables = [
-    db.outbox,
-    db.syncState,
-    db.profiles,
-    db.categories,
-    db.paymentMethods,
-    db.transactions,
-    db.overrides,
-    db.settings,
-  ];
+  // From SYNCED_TABLES, never a hand-written list (see applyPage).
+  const tables = [db.outbox, db.syncState, ...SYNCED_TABLES.map((t) => db.table(t))];
   return db.transaction('rw', tables, async () => {
     const queued = await db.outbox.limit(limit).toArray();
     const records: SyncRecord[] = [];

@@ -1,7 +1,15 @@
 import Dexie, { type Table } from 'dexie';
 
 import { systemClock } from '@/lib/clock';
-import type { Category, Override, PaymentMethod, Profile, Settings, Transaction } from '@/types/domain';
+import type {
+  Category,
+  Override,
+  PaymentMethod,
+  Profile,
+  Redirect,
+  Settings,
+  Transaction,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import type { CurrencyListRow, RatesMeta, RateTableRow } from './rates-types';
@@ -24,6 +32,7 @@ export class BookandryDB extends Dexie {
   declare currencyLists: Table<CurrencyListRow, string>;
   declare settings: Table<Settings, string>;
   declare meta: Table<MetaRow, string>;
+  declare redirects: Table<Redirect, string>;
   declare syncState: Table<SyncStateRow, [string, string]>;
   declare outbox: Table<OutboxRow, [string, string]>;
 

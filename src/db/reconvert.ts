@@ -10,7 +10,7 @@ import {
 } from '@/domain/reconvert';
 import type { Currency, IsoInstant, LocalDate } from '@/types/money';
 
-import { LOCK_RECONVERT, LockBusyError, withLock } from './lock';
+import { LOCK_RECONVERT, LOCK_SYNC, LockBusyError, withLock } from './lock';
 import { SETTINGS_ID } from './repos/settings';
 
 /**
@@ -167,9 +167,13 @@ export async function reconvertDefaultCurrency(
   }
 
   try {
-    return await withLock(LOCK_RECONVERT, () => runReconvert(db, oldBase, newBase, deps), {
-      ifAvailable: true,
-    });
+    return await withLock(
+      LOCK_RECONVERT,
+      // Then the sync lock (see LOCK_SYNC): a pull landing between reading the
+      // rows and writing them back would be overwritten with stale values.
+      () => withLock(LOCK_SYNC, () => runReconvert(db, oldBase, newBase, deps)),
+      { ifAvailable: true },
+    );
   } catch (error) {
     if (error instanceof LockBusyError) return { ok: false, reason: 'busy' };
     throw error;

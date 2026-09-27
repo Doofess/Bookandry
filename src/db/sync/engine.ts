@@ -6,6 +6,8 @@ import { LOCK_SYNC, withLock } from '../lock';
 import { applyPage, CURSOR_KEY } from './apply';
 import { acknowledge, collectOutgoing } from './outbox';
 import type { SyncTransport } from './protocol';
+import { rebaseStaleRows, type RebaseDeps, type RebaseReport } from './rebase';
+import { purgeExpiredDeletions } from '../repos/transactions';
 
 /** When this device last saw everything the server had. */
 export const PULLED_TO_HEAD_KEY = 'syncPulledToHeadAt';
@@ -14,6 +16,11 @@ export type SyncOptions = {
   readonly now: IsoInstant;
   /** Rows per push and per pull page. */
   readonly batchSize?: number;
+  /**
+   * How to price rows that arrive in a base currency the household has since
+   * left. Without it they are still found and reported, just not fixed.
+   */
+  readonly rebase?: Omit<RebaseDeps, 'now'>;
 };
 
 export type SyncReport = {
@@ -23,6 +30,9 @@ export type SyncReport = {
   readonly applied: number;
   readonly skipped: number;
   readonly rejected: number;
+  /** Undefined when no rate source was given. */
+  readonly rebase: RebaseReport | undefined;
+  readonly purged: number;
   readonly repair: RepairReport;
 };
 
@@ -73,6 +83,15 @@ export function syncOnce(
     }
     await db.meta.put({ key: PULLED_TO_HEAD_KEY, value: options.now });
 
+    // At the head, and still holding the sync lock: this device has now seen
+    // every restore any other device made, so purging cannot undo one.
+    const { purged } = await purgeExpiredDeletions(db, Date.parse(options.now));
+
+    const rebase =
+      options.rebase === undefined
+        ? undefined
+        : await rebaseStaleRows(db, { ...options.rebase, now: options.now });
+
     const repair = await repairIntegrity(db, options.now);
     // Repairs, and deletions decided while applying, are ordinary queued edits.
     const second = await pushAll(db, transport, batch);
@@ -83,6 +102,8 @@ export function syncOnce(
       applied,
       skipped,
       rejected,
+      rebase,
+      purged,
       repair,
     };
   });

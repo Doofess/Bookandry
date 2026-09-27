@@ -284,6 +284,31 @@ export type Occurrence = {
   readonly isProjected: boolean;
 };
 
+/**
+ * "This row was deleted, and whatever pointed at it now points at `to`."
+ *
+ * Written by the deletes that move dependent rows somewhere, and synced. A
+ * device that went on USING the row while it was apart - a new expense filed
+ * under a category someone else deleted - would otherwise be repaired to the
+ * fallback, not to the replacement the person who deleted it chose.
+ */
+export type RedirectTable = 'categories' | 'paymentMethods' | 'profiles';
+
+export type Redirect = {
+  /** `${tbl}:${from}`: one redirect per deleted row. */
+  readonly id: string;
+  readonly tbl: RedirectTable;
+  readonly from: string;
+  /** null: references were cleared rather than moved. */
+  readonly to: string | null;
+  readonly createdAt: IsoInstant;
+  readonly updatedAt: IsoInstant;
+};
+
+export function redirectId(tbl: RedirectTable, from: string): string {
+  return `${tbl}:${from}`;
+}
+
 export type Settings = {
   readonly id: 'singleton';
   readonly defaultCurrency: Currency;
