@@ -5,7 +5,7 @@ import { completeFirstRun } from './support/seed';
 
 /**
  * The app, served with the exact Content-Security-Policy the build writes for
- * Cloudflare Pages (dist/_headers), must not trip it anywhere.
+ * Cloudflare (dist/_headers), must not trip it anywhere.
  *
  * `vite preview` does not read _headers, so the policy is attached here to
  * every page this origin serves. A policy that is correct on paper but blocks

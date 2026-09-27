@@ -1,0 +1,24 @@
+// Hosting: bookandry.com, as a static-assets-only Cloudflare Worker.
+//
+// No server code runs here - the whole app is the files in dist/. Cloudflare
+// reads dist/_headers (the Content-Security-Policy and friends, written by the
+// build: src/lib/security-headers.ts) and serves index.html for any route that
+// is not a file, so /settings and /chart work on a cold load.
+//
+// Deploy: `pnpm release` (verifies and builds, then `wrangler deploy`). Wrangler is run with
+// npx rather than installed: it is only ever needed at deploy time.
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "bookandry",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+  },
+  // Only the apex. OAuth and email links return to https://bookandry.com and
+  // the sign-in's PKCE verifier lives in that origin's storage; serving the
+  // same app on a second hostname would strand anyone who arrived there.
+  "routes": [{ "pattern": "bookandry.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+}

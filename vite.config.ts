@@ -26,7 +26,7 @@ const RATE_PROVIDER_HOSTS = /^https:\/\/(api\.frankfurter\.dev|open\.er-api\.com
 const SUPABASE_HOSTS = /^https:\/\/[a-z0-9-]+\.supabase\.co\//;
 
 /**
- * Writes dist/_headers - the CSP and friends - for Cloudflare Pages, hashing
+ * Writes dist/_headers - the CSP and friends - for Cloudflare, hashing
  * the inline scripts of the index.html actually being shipped. See
  * src/lib/security-headers.ts.
  */

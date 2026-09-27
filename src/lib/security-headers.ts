@@ -1,5 +1,5 @@
 /**
- * The HTTP security headers, as a Cloudflare Pages `_headers` file.
+ * The HTTP security headers, as a Cloudflare `_headers` file (see wrangler.jsonc).
  *
  * Built at build time (vite.config.ts) from the final index.html, so the hash
  * of the inline boot script is always the hash of the script actually
