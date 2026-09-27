@@ -31,15 +31,22 @@ export function DataCard({
   lastExportedAt,
   today,
   persisted,
+  signedIn = false,
 }: {
   readonly lastExportedAt: IsoInstant | undefined;
   readonly today: LocalDate;
   /** From `navigator.storage.persisted()`, or undefined while unknown. */
   readonly persisted: boolean | undefined;
+  /**
+   * Replace is off while signed in: wiping this device would sync as a delete
+   * of every row, on every device on the account.
+   */
+  readonly signedIn?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<ImportMode>('merge');
+  const [chosen, setMode] = useState<ImportMode>('merge');
+  const mode: ImportMode = signedIn ? 'merge' : chosen;
   const fileRef = useRef<HTMLInputElement>(null);
 
   const age = ageInDays(lastExportedAt, today);
@@ -151,11 +158,15 @@ export function DataCard({
               label={t('settings.importReplace')}
               hint={t('settings.importReplaceHint')}
               destructive
+              disabled={signedIn}
               onSelect={() => {
                 setMode('replace');
               }}
             />
           </div>
+          {signedIn ? (
+            <p className="text-xs text-muted-foreground">{t('settings.importReplaceSignedIn')}</p>
+          ) : null}
 
           {/*
             `sr-only`, not `hidden` - a hidden input cannot be opened by
@@ -212,12 +223,14 @@ function ModeOption({
   label,
   hint,
   destructive = false,
+  disabled = false,
   onSelect,
 }: {
   readonly selected: boolean;
   readonly label: string;
   readonly hint: string;
   readonly destructive?: boolean;
+  readonly disabled?: boolean;
   readonly onSelect: () => void;
 }) {
   return (
@@ -225,9 +238,10 @@ function ModeOption({
       type="button"
       role="radio"
       aria-checked={selected}
+      disabled={disabled}
       onClick={onSelect}
       className={
-        'rounded-xl border p-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ' +
+        'rounded-xl border p-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 ' +
         (selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted')
       }
     >

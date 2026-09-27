@@ -2,9 +2,13 @@
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { loadEnv, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
+
+import { headersFile, inlineScripts } from './src/lib/security-headers';
 
 /**
  * Rate providers are deliberately NOT cached by the service worker.
@@ -13,13 +17,50 @@ import { defineConfig } from 'vitest/config';
  */
 const RATE_PROVIDER_HOSTS = /^https:\/\/(api\.frankfurter\.dev|open\.er-api\.com)\//;
 
-export default defineConfig({
+/**
+ * Supabase is never cached either, and for a sharper reason: its responses
+ * carry session tokens and account data. A cached auth or RPC response would
+ * outlive a sign-out, and could serve one account's answer to the next person
+ * on a shared device.
+ */
+const SUPABASE_HOSTS = /^https:\/\/[a-z0-9-]+\.supabase\.co\//;
+
+/**
+ * Writes dist/_headers - the CSP and friends - for Cloudflare Pages, hashing
+ * the inline scripts of the index.html actually being shipped. See
+ * src/lib/security-headers.ts.
+ */
+function securityHeaders(supabaseUrl: string | undefined): Plugin {
+  return {
+    name: 'bookandry:security-headers',
+    apply: 'build',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      const index = bundle['index.html'];
+      if (index?.type !== 'asset') throw new Error('security-headers: index.html is not in the bundle');
+      const html = typeof index.source === 'string' ? index.source : new TextDecoder().decode(index.source);
+      const scriptHashes = inlineScripts(html).map((script) =>
+        createHash('sha256').update(script, 'utf8').digest('base64'),
+      );
+      const supabaseOrigin =
+        supabaseUrl?.startsWith('https://') === true ? new URL(supabaseUrl).origin : undefined;
+      this.emitFile({
+        type: 'asset',
+        fileName: '_headers',
+        source: headersFile({ scriptHashes, supabaseOrigin }),
+      });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
   plugins: [
     react(),
     tailwindcss(),
+    securityHeaders(loadEnv(mode, process.cwd(), 'VITE_')['VITE_SUPABASE_URL']),
     VitePWA({
       registerType: 'prompt',
       strategies: 'generateSW',
@@ -50,7 +91,10 @@ export default defineConfig({
         skipWaiting: false,
         clientsClaim: false,
         navigateFallback: '/index.html',
-        runtimeCaching: [{ urlPattern: RATE_PROVIDER_HOSTS, handler: 'NetworkOnly' }],
+        runtimeCaching: [
+          { urlPattern: RATE_PROVIDER_HOSTS, handler: 'NetworkOnly' },
+          { urlPattern: SUPABASE_HOSTS, handler: 'NetworkOnly' },
+        ],
       },
       devOptions: {
         enabled: process.env['VITE_PWA_DEV'] === '1',
@@ -88,7 +132,7 @@ export default defineConfig({
         test: {
           name: 'dom',
           environment: 'jsdom',
-          include: ['src/**/*.test.tsx'],
+          include: ['src/**/*.test.tsx', 'src/app/**/*.test.ts'],
           setupFiles: ['./src/test/setup.db.ts', './src/test/setup.dom.ts'],
         },
       },
@@ -129,4 +173,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

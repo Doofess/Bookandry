@@ -1,5 +1,3 @@
-import { argon2id } from 'hash-wasm';
-
 import { utf8, type Bytes } from './bytes';
 
 /**
@@ -57,6 +55,9 @@ export async function stretchPassphrase(
   salt: Bytes,
   params: ArgonParams,
 ): Promise<Bytes> {
+  // Loaded on first use: only typing a sync passphrase needs Argon2id, and
+  // its WebAssembly has no business in every cold start.
+  const { argon2id } = await import('hash-wasm');
   const out = await argon2id({
     password: utf8(normalizePassphrase(passphrase)),
     salt,

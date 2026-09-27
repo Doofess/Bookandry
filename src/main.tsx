@@ -1,3 +1,6 @@
+// First, before any module that builds a schema: see the file.
+import '@/lib/zod-jitless';
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
@@ -7,6 +10,7 @@ import '@fontsource-variable/inter';
 import '@fontsource-variable/heebo';
 import './index.css';
 
+import { initAccount } from '@/app/account';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
@@ -65,6 +69,13 @@ async function bootstrap(): Promise<void> {
    * first paint.
    */
   startSweeper(db, () => systemClock.nowMs());
+
+  /*
+   * Accounts are optional. This loads nothing unless there is a session to
+   * resume or a sign-in redirect to finish; signed-out people never download
+   * the Supabase client at all.
+   */
+  initAccount(db).start();
 
   await initI18n();
 

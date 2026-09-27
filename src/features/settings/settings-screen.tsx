@@ -3,6 +3,7 @@ import { useEffect, useId, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { LINKED_ROUTES } from '@/app/routes';
 import { CurrencyBadge } from '@/components/currency-select';
@@ -12,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
+import { AccountCard } from '@/features/account/account-card';
 import { changeLanguage } from '@/i18n';
 import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
@@ -30,6 +32,7 @@ export function SettingsScreen() {
   const themeId = useId();
 
   const persisted = usePersisted();
+  const signedIn = useAccount().status === 'signed_in';
   const [reconverting, setReconverting] = useState(false);
 
   /*
@@ -136,7 +139,14 @@ export function SettingsScreen() {
         />
       </div>
 
-      <DataCard lastExportedAt={settings.lastExportedAt} today={today} persisted={persisted} />
+      <AccountCard />
+
+      <DataCard
+        lastExportedAt={settings.lastExportedAt}
+        today={today}
+        persisted={persisted}
+        signedIn={signedIn}
+      />
 
       <RecentlyDeleted />
 

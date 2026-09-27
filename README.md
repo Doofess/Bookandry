@@ -4,7 +4,10 @@ A local-first personal money manager. Multi-profile income and expense tracking,
 multi-currency with the rate snapshotted at save time, a virtualised transaction
 feed, a scatter chart, English and Hebrew with full RTL.
 
-Everything stays in the browser. There is no server, no account and no sync.
+Local-first: everything lives in the browser, and the app works fully with no
+account. An optional account adds end-to-end encrypted backup and sync across
+devices — the server stores only ciphertext it cannot read. See
+[Accounts and sync](#accounts-and-sync).
 
 ---
 
@@ -154,8 +157,10 @@ viewer.
   plus a shared payment method, offered during onboarding. "I paid you back" is
   an expense on A and an income on B, which nets correctly in "All" — at the
   cost of inflating both stat cards.
-- **Sync, accounts, multi-device.** Export is the only durability story, which
-  is why the Data card nags after a month without one.
+- **Sync without encryption.** Accounts are optional and end-to-end encrypted,
+  or they do not exist. There is no "we can read it to help you" mode, and no
+  way for anyone - including whoever runs the server - to reset a forgotten
+  sync passphrase.
 - **CSV.** JSON export only; it round-trips, and a CSV of a recurring series is
   a lie about the data model.
 - **Rate backfill.** A transaction's rate is snapshotted when it is saved and
@@ -266,6 +271,78 @@ string — pinning `"$1,234.50"` breaks the next time ICU moves a separator.
 — fallback is per-glyph, so digits resolve to Inter (which ships tabular
 figures) while Hebrew falls through to Heebo (which does not). Putting Heebo
 first silently breaks every amount column in Hebrew.
+
+## Accounts and sync
+
+Optional. Signed out, the app is exactly what it always was. Signed in, every
+device holds the full data locally and syncs through Supabase.
+
+**Signing in** (email and password, or Google) proves who you are to the
+server. **Unlocking** gives a device the household's data key, which the server
+never has. The key is random, made on the first device, and stored on the
+server only _wrapped_: once under the **sync passphrase** (Argon2id, 64 MiB),
+and once under the **recovery key** (128 random bits the person saves). Either
+unlocks a new device. Forget both and the server's copy cannot be read — by
+anyone. Any device that still has the data can set up a new lock.
+
+What the server holds, per row: a blinded id (an HMAC of table and id), a
+revision, a key version, and AES-256-GCM ciphertext of the table, the id, the
+row and whether it was deleted. Rev, key version, id and user are bound into
+the ciphertext as authenticated data.
+
+### Threat model
+
+- **The server operator, or a breach of the database**, sees ciphertext, the
+  number of rows, their sizes and when they changed. Not amounts, notes, names,
+  categories, tables, or which rows are deleted. A passphrase is only as strong
+  as it is long; Argon2id makes each guess expensive, not impossible.
+- **A malicious server** cannot alter, move, forge, or roll back a row a device
+  has seen: every one of those fails authentication or is older than what the
+  device holds. It **can withhold** rows, undetectably. Accepted.
+- **A lost device** keeps whatever it already had in plaintext. "I lost a
+  device" makes a new data key and a new recovery key, re-uploads everything,
+  and signs out every other session; the lost device cannot read anything
+  written afterwards.
+- **Script running in this page** (XSS) can read the local data and use the
+  keys while it runs. The keys are non-extractable, so it cannot carry them
+  off, and the Content-Security-Policy (`dist/_headers`, built by
+  `src/lib/security-headers.ts`, run under in `e2e/11-csp.spec.ts`) exists to
+  stop such a script from running at all. The Supabase session lives in
+  `localStorage`, readable by such a script — accepted, for the same reason.
+- **Local data is not encrypted at rest.** Anyone with the unlocked device has
+  it, account or not, as before.
+
+### Code map
+
+| Where                                            | What                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------- |
+| `src/db/sync/middleware.ts`                      | every write records itself for sync, in the same transaction      |
+| `src/db/sync/engine.ts`, `apply.ts`, `outbox.ts` | push, pull, last-write-wins merge, repair                         |
+| `src/services/crypto/`                           | AES-GCM, HKDF, Argon2id, key wrapping, recovery keys, passkey PRF |
+| `src/db/sync/codec.ts`                           | seals and opens records between the engine and the server         |
+| `src/db/sync/account.ts`                         | set up, unlock, new recovery key, change passphrase, rotate       |
+| `supabase/migrations/`                           | tables, row-level security, and the only write path               |
+| `src/app/account.ts`, `sync-runner.ts`           | session, key state, when to sync                                  |
+| `src/features/account/`                          | the screens                                                       |
+
+The SQL is tested on real Postgres in-process (PGlite, `src/test/pg-harness.ts`)
+— rules, grants and row-level security, and the full two-device path from
+Dexie through the codec to the SQL. No Docker needed.
+
+### Supabase project checklist
+
+Configuration that lives in the dashboard, not in this repo:
+
+- Run `supabase/migrations/*.sql` (SQL editor, or `supabase db push`).
+- **Authentication → Providers → Email**: confirm email ON; secure password
+  change ON; leaked-password protection ON (Pro plan).
+- **Authentication → Providers → Google**: client id and secret — the secret
+  lives only here, never in this repo or `.env.local`.
+- **Authentication → URL Configuration**: Site URL `https://bookandry.com`;
+  redirect URLs `https://bookandry.com/settings` (plus a localhost one for
+  development only).
+- `.env.local` holds only public values: `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_PUBLISHABLE_KEY`. Never the service-role key.
 
 ### Known limitations
 
