@@ -50,12 +50,12 @@
     "next": "Continue",
     "finish": "Start tracking",
     "welcomeTitle": "Welcome to Bookandry",
-    "welcomeBody": "Three quick questions, then you are done. Everything stays on this device.",
+    "welcomeBody": "Three quick questions and your account is ready.",
     "localeTitle": "Language and currency",
     "localeLanguageHelp": "You can change this later in Settings.",
     "localeCurrencyHelp": "Everything is converted into this currency. Changing it later rewrites every amount you have saved, so it is worth getting right now.",
     "peopleTitle": "Who is tracking money here?",
-    "peoplePrivacy": "Profiles organise your money; they do not hide it. There is no sign-in, so anyone using this device sees everything.",
+    "peoplePrivacy": "Profiles organise your money; they do not hide it. Anyone signed in to this account sees every profile.",
     "peopleName": "Name",
     "peopleNamePlaceholder": "Dana",
     "peopleAdd": "Add another person",
@@ -323,7 +323,7 @@
     "title": "Settings",
     "appearance": "Appearance",
     "dataTitle": "Your data",
-    "dataBody": "Stored on this device. Sign in above to keep it in your account, or export a backup file.",
+    "dataBody": "Kept on this device and in your account. Export a backup file to keep a copy of your own.",
     "export": "Export a backup",
     "exporting": "Preparing…",
     "exported": "Backup saved",
@@ -453,12 +453,8 @@
       }
     },
     "downgrade": "Something is wrong with your account on the server, so nothing is saved to it for now. Everything on this device is safe.",
-    "firstRunHave": "I already have an account",
-    "firstRunBack": "Set up this device instead",
-    "firstRunJoinBody": "Sign in, and your data arrives on this device.",
     "signOutOthers": "Sign out all other devices",
     "signedOutOthers": "Every other device is signed out.",
-    "firstRunEmpty": "Your account has nothing in it yet. Set up this device, and everything you add is kept in your account.",
     "signOutChecking": "Saving your latest changes…",
     "signOutUnsaved_one": "1 change hasn't reached your account yet - you're offline. Signing out now loses it.",
     "signOutUnsaved_other": "{{count}} changes haven't reached your account yet - you're offline. Signing out now loses them.",
@@ -517,6 +513,15 @@
       "addedOn": "Added {{date}}",
       "signIn": "Sign in with a passkey",
       "unavailable": "Passkeys aren't available right now."
+    },
+    "welcome": {
+      "tagline": "Income, expenses and every currency, for everyone in your household. Sign in, or create an account to get started.",
+      "localData": "This device already has data. Sign in and it's added to your account."
+    },
+    "arriving": {
+      "body": "Bringing your data to this device…",
+      "offline": "You're offline. Connect to the internet to bring your data to this device.",
+      "error": "Couldn't reach your account."
     }
   }
 }

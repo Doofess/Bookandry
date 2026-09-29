@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useAccount } from '@/app/account';
 import { useToday } from '@/app/app-context';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
@@ -12,7 +11,6 @@ import { completeFirstRun } from '@/db/first-run';
 import { isDemoSupported } from '@/domain/demo';
 import { initialDraft, isDraftValid, type FirstRunDraft } from '@/domain/first-run';
 import { detectLocaleDefaults, type Language } from '@/domain/locale-defaults';
-import { AccountCard } from '@/features/account/account-card';
 import i18n from '@/i18n';
 import { applyLanguage, readStoredBootMirror } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
@@ -43,6 +41,10 @@ type Step = (typeof STEPS)[number];
  * animated a meaningless $0.00, and the Add form could not be submitted because
  * the profile field had no options. This screen is what makes the app usable at
  * all, which is why it is gated ahead of every route rather than offered.
+ *
+ * With accounts, it is the setup of a NEW account: the account gate shows it
+ * only once someone is signed in and the account has been fetched and found
+ * empty. An account that already has data opens straight into the app.
  */
 export function FirstRun({ languages }: { languages?: readonly string[] } = {}) {
   const { t } = useTranslation();
@@ -76,9 +78,6 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
   const [showErrors, setShowErrors] = useState(false);
   const [loadDemo, setLoadDemo] = useState(false);
   const [saving, setSaving] = useState(false);
-  const accounts = useAccount();
-  const [joining, setJoining] = useState(false);
-  const [setUpHere, setSetUpHere] = useState(false);
 
   const index = STEPS.indexOf(step);
   const peopleValid = isDraftValid(draft);
@@ -132,39 +131,6 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
     });
   };
 
-  /*
-   * A second device joins an account instead of starting over. Signing in is
-   * all it takes: the account card fetches the key and syncs, and once the
-   * first profile arrives the boot gate swaps this screen for the app on its
-   * own. Coming back signed in (after "remove it from this device") lands here
-   * too. An account with nothing in it yet has nothing to bring down - it says
-   * so, and this device is set up the ordinary way, then syncs up.
-   */
-  const signedIn = accounts.status === 'signed_in' || accounts.status === 'second_step';
-  const emptyAccount =
-    accounts.status === 'signed_in' && accounts.keys.kind === 'ready' && accounts.sync?.kind === 'idle';
-  if (!setUpHere && (joining || signedIn)) {
-    return (
-      <main className="mx-auto flex min-h-dvh max-w-lg flex-col gap-6 px-4 py-6">
-        <Logo size={32} title={t('app.name')} />
-        <p className="text-sm text-muted-foreground">
-          {emptyAccount ? t('account.firstRunEmpty') : t('account.firstRunJoinBody')}
-        </p>
-        <AccountCard />
-        <Button
-          type="button"
-          variant={emptyAccount ? 'default' : 'ghost'}
-          onClick={() => {
-            setJoining(false);
-            setSetUpHere(true);
-          }}
-        >
-          {t('account.firstRunBack')}
-        </Button>
-      </main>
-    );
-  }
-
   const title =
     step === 'locale'
       ? t('firstRun.localeTitle')
@@ -185,19 +151,6 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {step === 'locale' ? (
           <p className="text-sm text-muted-foreground">{t('firstRun.welcomeBody')}</p>
-        ) : null}
-        {step === 'locale' && accounts.status !== 'unavailable' ? (
-          <Button
-            type="button"
-            variant="link"
-            className="h-auto px-0"
-            onClick={() => {
-              setJoining(true);
-              setSetUpHere(false);
-            }}
-          >
-            {t('account.firstRunHave')}
-          </Button>
         ) : null}
       </header>
 

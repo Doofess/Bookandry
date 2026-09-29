@@ -69,7 +69,7 @@ async function reachable(timeoutMs = 2_000): Promise<boolean> {
 }
 
 /**
- * Serves the SAME `dist/` the suite's own preview server does.
+ * Serves the SAME `dist-local/` the suite's own preview server on 4173 does.
  *
  * The global `webServer` already ran `pnpm build`, so this costs a process, not
  * a build - and spawning vite's JS entry directly avoids the `.cmd` shim, which
@@ -81,6 +81,8 @@ function startPreview(log: (text: string) => void): ChildProcess {
     [
       path.join(ROOT, 'node_modules/vite/bin/vite.js'),
       'preview',
+      '--outDir',
+      'dist-local',
       '--port',
       String(PORT),
       '--strictPort',

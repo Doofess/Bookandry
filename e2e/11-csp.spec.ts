@@ -51,10 +51,6 @@ test('@csp the app runs under its own content security policy', async ({ page },
     await expect(page.locator('main')).toBeVisible();
   }
 
-  // The account card and its sheet: the only UI that exists only with accounts.
-  await page.getByRole('button', { name: 'Create an account' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-
   // The app never tripped the policy...
   expect(violations).toEqual([]);
 
@@ -74,4 +70,28 @@ test('@csp the app runs under its own content security policy', async ({ page },
   expect(ran).toBe(false);
   await expect.poll(() => violations.length).toBeGreaterThan(0);
   expect(violations.join(' ')).toMatch(/script-src/);
+});
+
+test('@csp the sign-in screen runs under it too, on the production build', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'en', 'About the policy, not the locale.');
+  const csp = builtPolicy();
+  // The screens that exist only with accounts - the front door and its
+  // sign-in form - on the build that is deployed.
+  await page.route('http://localhost:4174/**', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), 'content-security-policy': csp },
+    });
+  });
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (/content security policy/i.test(message.text())) violations.push(message.text());
+  });
+
+  await page.goto('http://localhost:4174/');
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+  await page.getByRole('button', { name: /new here\? create an account/i }).click();
+  await expect(page.getByRole('button', { name: 'Create an account' })).toBeVisible();
+  expect(violations).toEqual([]);
 });

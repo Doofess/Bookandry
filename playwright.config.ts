@@ -34,10 +34,25 @@ export default defineConfig({
     { name: 'he', use: { ...devices['Desktop Chrome'], locale: 'he-IL' } },
     { name: 'mobile', use: { ...devices['Pixel 7'], locale: 'en-US' } },
   ],
-  webServer: {
-    command: 'pnpm build && pnpm preview',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env['CI'],
-    timeout: 180_000,
-  },
+  /*
+   * Two builds of the same code. With accounts, nothing of the app is reachable
+   * before a real sign-in, which a test cannot do - so the specs that exercise
+   * the app run against a build with no Supabase configuration (4173): the
+   * local-only app, which is what a build without accounts is. The account
+   * specs run against the production build (4174), the one that is deployed.
+   */
+  webServer: [
+    {
+      command: 'pnpm build:local && pnpm preview:local',
+      url: 'http://localhost:4173',
+      reuseExistingServer: !process.env['CI'],
+      timeout: 180_000,
+    },
+    {
+      command: 'pnpm build && pnpm preview',
+      url: 'http://localhost:4174',
+      reuseExistingServer: !process.env['CI'],
+      timeout: 180_000,
+    },
+  ],
 });

@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm typecheck && vite build",
-    "preview": "vite preview --port 4173 --strictPort",
+    "preview": "vite preview --port 4174 --strictPort",
+    "build:local": "cross-env VITE_SUPABASE_URL= VITE_SUPABASE_PUBLISHABLE_KEY= vite build --outDir dist-local",
+    "preview:local": "vite preview --outDir dist-local --port 4173 --strictPort",
     "release": "pnpm verify && npx --yes wrangler@4 deploy",
     "typecheck": "tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "lint": "eslint . --max-warnings 0",

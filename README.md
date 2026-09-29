@@ -4,9 +4,10 @@ A local-first personal money manager. Multi-profile income and expense tracking,
 multi-currency with the rate snapshotted at save time, a virtualised transaction
 feed, a scatter chart, English and Hebrew with full RTL.
 
-Local-first: everything lives in the browser, and the app works fully with no
-account. An optional account keeps the data safe beyond one device, and brings
-it to every device you sign in on. See [Accounts](#accounts).
+Account first, local underneath: you sign in (or create an account) before
+anything else, and your data is your account - on every device you sign in on,
+safe when one is lost. Each device keeps a full copy in the browser, so the app
+is fast and works offline once signed in. See [Accounts](#accounts).
 
 ---
 
@@ -26,7 +27,7 @@ pnpm dev             # http://localhost:5173
 | `pnpm verify`            | typecheck, lint, format, the three gates, tests + coverage, build          |
 | `pnpm verify:full`       | the above plus a hostile-timezone run, knip, and the full Playwright suite |
 | `pnpm test`              | unit, db and dom projects                                                  |
-| `pnpm test:e2e`          | Playwright, against a real `build` + `preview`                             |
+| `pnpm test:e2e`          | Playwright, against real builds: local-only (4173) and production (4174)   |
 | `pnpm exec lhci autorun` | Lighthouse, four routes, median of three runs                              |
 
 `pnpm verify` is the gate at every phase boundary. `verify:full` is slower and
@@ -274,11 +275,23 @@ first silently breaks every amount column in Hebrew.
 
 ## Accounts
 
-Optional. Without one, the app is exactly what it always was. With one, it
-works the way a bank's app does: **your data is your account**. Sign in on any
-device and it is there; there is no "sync" to turn on, watch or press. Each
-device still keeps a full local copy — the app stays fast and works offline —
-and keeps it in step with the account in the background.
+Required. The app works the way a bank's app does: **your data is your
+account**. The first screen is the sign-in; nothing of the app is shown before
+it. Signing in to an account that has data opens the app with it; creating an
+account (or signing in to an empty one) leads to the setup wizard. There is no
+"sync" to turn on, watch or press. Each device still keeps a full local copy —
+the app stays fast and works offline — and keeps it in step with the account in
+the background.
+
+- **A new device** fetches the account's data before deciding anything, so a
+  returning person is never offered the setup wizard while their data is on
+  its way.
+- **Data from before accounts** (a device used signed out) is added to the
+  account it signs in to; the sign-in screen says so.
+- **A build without Supabase configured** (a fork; the e2e suite's local build,
+  `pnpm build:local`) has no accounts at all and is the local-only app. The
+  e2e suite drives the app screens through it, since a test cannot sign in to
+  a real account, and the account screens through the production build.
 
 - **Signing out takes the data off the device.** The account keeps it. If some
   changes have not reached the account yet (offline), signing out says so

@@ -46,7 +46,7 @@
   },
   "screen": {
     "title": "Profiles",
-    "body": "Profiles organise your money; they do not hide it. There is no sign-in, so anyone using this device sees everything.",
+    "body": "Profiles organise your money; they do not hide it. Anyone signed in to this account sees every profile.",
     "add": "Add a person",
     "addDisabled": "All {{count}} colours are in use.",
     "editTitle": "Edit profile",

@@ -12,6 +12,7 @@ export default tseslint.config(
   {
     ignores: [
       'dist',
+      'dist-local',
       'dev-dist',
       'coverage',
       'playwright-report',
