@@ -78,6 +78,7 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
   const [saving, setSaving] = useState(false);
   const accounts = useAccount();
   const [joining, setJoining] = useState(false);
+  const [setUpHere, setSetUpHere] = useState(false);
 
   const index = STEPS.indexOf(step);
   const peopleValid = isDraftValid(draft);
@@ -132,31 +133,33 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
   };
 
   /*
-   * A second device joins an account instead of starting over. The account
-   * card does the rest; once the first sync brings a profile down, the boot
-   * gate swaps this screen for the app on its own. Coming back from "start
-   * fresh" (still signed in) lands here too.
+   * A second device joins an account instead of starting over. Signing in is
+   * all it takes: the account card fetches the key and syncs, and once the
+   * first profile arrives the boot gate swaps this screen for the app on its
+   * own. Coming back signed in (after "remove it from this device") lands here
+   * too. An account with nothing in it yet has nothing to bring down - it says
+   * so, and this device is set up the ordinary way, then syncs up.
    */
-  if (
-    joining ||
-    (accounts.status === 'signed_in' && accounts.keys !== 'not_set_up' && accounts.keys !== 'checking')
-  ) {
+  const signedIn = accounts.status === 'signed_in';
+  const emptyAccount = signedIn && accounts.keys.kind === 'ready' && accounts.sync?.kind === 'idle';
+  if (!setUpHere && (joining || signedIn)) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-lg flex-col gap-6 px-4 py-6">
         <Logo size={32} title={t('app.name')} />
-        <p className="text-sm text-muted-foreground">{t('account.firstRunJoinBody')}</p>
+        <p className="text-sm text-muted-foreground">
+          {emptyAccount ? t('account.firstRunEmpty') : t('account.firstRunJoinBody')}
+        </p>
         <AccountCard />
-        {accounts.status === 'signed_in' ? null : (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setJoining(false);
-            }}
-          >
-            {t('account.firstRunBack')}
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant={emptyAccount ? 'default' : 'ghost'}
+          onClick={() => {
+            setJoining(false);
+            setSetUpHere(true);
+          }}
+        >
+          {t('account.firstRunBack')}
+        </Button>
       </main>
     );
   }
@@ -189,6 +192,7 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
             className="h-auto px-0"
             onClick={() => {
               setJoining(true);
+              setSetUpHere(false);
             }}
           >
             {t('account.firstRunHave')}

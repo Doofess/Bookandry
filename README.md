@@ -5,9 +5,8 @@ multi-currency with the rate snapshotted at save time, a virtualised transaction
 feed, a scatter chart, English and Hebrew with full RTL.
 
 Local-first: everything lives in the browser, and the app works fully with no
-account. An optional account adds end-to-end encrypted backup and sync across
-devices — the server stores only ciphertext it cannot read. See
-[Accounts and sync](#accounts-and-sync).
+account. An optional account adds backup and sync across devices: sign in on
+each one and it syncs by itself. See [Accounts and sync](#accounts-and-sync).
 
 ---
 
@@ -157,10 +156,11 @@ viewer.
   plus a shared payment method, offered during onboarding. "I paid you back" is
   an expense on A and an income on B, which nets correctly in "All" — at the
   cost of inflating both stat cards.
-- **Sync without encryption.** Accounts are optional and end-to-end encrypted,
-  or they do not exist. There is no "we can read it to help you" mode, and no
-  way for anyone - including whoever runs the server - to reset a forgotten
-  sync passphrase.
+- **End-to-end encryption.** It was built (a sync passphrase and a recovery
+  key, 2026-09-27) and taken out again two days later: a key to type on every
+  new device asked too much of people for a household ledger. Signing in, with
+  a second factor on the account, is the protection. The machinery for secret-
+  held keys is still in `src/services/crypto` if it is ever wanted back.
 - **CSV.** JSON export only; it round-trips, and a CSV of a recurring series is
   a lie about the data model.
 - **Rate backfill.** A transaction's rate is snapshotted when it is saved and
@@ -275,15 +275,9 @@ first silently breaks every amount column in Hebrew.
 ## Accounts and sync
 
 Optional. Signed out, the app is exactly what it always was. Signed in, every
-device holds the full data locally and syncs through Supabase.
-
-**Signing in** (email and password, or Google) proves who you are to the
-server. **Unlocking** gives a device the household's data key, which the server
-never has. The key is random, made on the first device, and stored on the
-server only _wrapped_: once under the **sync passphrase** (Argon2id, 64 MiB),
-and once under the **recovery key** (128 random bits the person saves). Either
-unlocks a new device. Forget both and the server's copy cannot be read — by
-anyone. Any device that still has the data can set up a new lock.
+device holds the full data locally and syncs through Supabase — with nothing to
+set up: **signing in is enough**. The first device makes the household's data
+key and the account keeps it; every other device fetches it on sign-in.
 
 What the server holds, per row: a blinded id (an HMAC of table and id), a
 revision, a key version, and AES-256-GCM ciphertext of the table, the id, the
@@ -292,32 +286,38 @@ the ciphertext as authenticated data.
 
 ### Threat model
 
-- **The server operator, or a breach of the database**, sees ciphertext, the
-  number of rows, their sizes and when they changed. Not amounts, notes, names,
-  categories, tables, or which rows are deleted. A passphrase is only as strong
-  as it is long; Argon2id makes each guess expensive, not impossible.
+- **The account is the lock.** The data key lives in the account (an
+  `account` row in `user_keys`), readable only by its signed-in owner.
+  Whoever can sign in as the person gets everything — use a strong password,
+  and turn on a second factor. Google accounts inherit Google's.
+- **The server operator, or a breach of the database, can read the data.**
+  The key sits in the same database as the ciphertext. The encryption still
+  keeps rows unreadable to anything that sees only the records table (a leaked
+  export of it, a log), and keeps the integrity guarantees below, but it is not
+  end-to-end.
 - **A malicious server** cannot alter, move, forge, or roll back a row a device
   has seen: every one of those fails authentication or is older than what the
-  device holds. It **can withhold** rows, undetectably. Accepted.
-- **A lost device** keeps whatever it already had in plaintext. "I lost a
-  device" makes a new data key and a new recovery key, re-uploads everything,
-  and signs out every other session; the lost device cannot read anything
-  written afterwards. A malicious server could try to hand a device the
-  _retired_ key back (it opens with the old passphrase). A device that has held
-  a newer key refuses; a brand-new device has nothing to compare with and
-  would accept it. Accepted, as a server-compromise-plus-stolen-device case.
+  device holds. It **can withhold** rows, undetectably. A device that has held
+  a newer key refuses an older one, so a retired key cannot be handed back.
+- **A lost device** keeps whatever it already had. "Sign out all other
+  devices" ends every other session, so it can fetch nothing more; getting
+  back in needs the password (and the second factor). Supabase access tokens
+  already issued stay valid until they expire, up to an hour.
 - **A shared device.** Data kept after signing out remembers the account it
   synced with. Signing in to a different account will not upload it unless the
   person joining explicitly chooses to add it; the alternative offered is to
   remove it first.
 - **Script running in this page** (XSS) can read the local data and use the
-  keys while it runs. The keys are non-extractable, so it cannot carry them
-  off, and the Content-Security-Policy (`dist/_headers`, built by
+  keys while it runs. The Content-Security-Policy (`dist/_headers`, built by
   `src/lib/security-headers.ts`, run under in `e2e/11-csp.spec.ts`) exists to
   stop such a script from running at all. The Supabase session lives in
   `localStorage`, readable by such a script — accepted, for the same reason.
 - **Local data is not encrypted at rest.** Anyone with the unlocked device has
   it, account or not, as before.
+
+Accounts set up in the two days of passphrase-held keys move over by
+themselves: the device that holds the key, after its first full sync, makes a
+new account-held key and re-uploads everything under it.
 
 ### Code map
 
@@ -327,7 +327,7 @@ the ciphertext as authenticated data.
 | `src/db/sync/engine.ts`, `apply.ts`, `outbox.ts` | push, pull, last-write-wins merge, repair                         |
 | `src/services/crypto/`                           | AES-GCM, HKDF, Argon2id, key wrapping, recovery keys, passkey PRF |
 | `src/db/sync/codec.ts`                           | seals and opens records between the engine and the server         |
-| `src/db/sync/account.ts`                         | set up, unlock, new recovery key, change passphrase, rotate       |
+| `src/db/sync/account.ts`                         | getting a device the account's key; moving it to a new one        |
 | `supabase/migrations/`                           | tables, row-level security, and the only write path               |
 | `src/app/account.ts`, `sync-runner.ts`           | session, key state, when to sync                                  |
 | `src/features/account/`                          | the screens                                                       |

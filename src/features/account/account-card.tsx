@@ -1,4 +1,4 @@
-import { Cloud, CloudOff, KeyRound, Lock, RefreshCw } from 'lucide-react';
+import { Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -17,6 +17,11 @@ import { AccountSheet, type Flow } from './account-sheet';
  * whether or not it just synced, and a status that is always on screen trains
  * people to worry about it. The card says what is true, in words, and is
  * announced politely when it changes.
+ *
+ * Signed in means syncing. There is no key to set up or type: the account
+ * hands each device its key. The only questions this card ever asks are the
+ * ones only a person can answer - whose data this device holds, and whether
+ * to start a synced copy over.
  */
 export function AccountCard() {
   const { t } = useTranslation();
@@ -79,32 +84,69 @@ function SignedIn({
   readonly open: (flow: Flow) => () => void;
 }) {
   const { t } = useTranslation();
+  const { keys } = view;
+  const [busy, setBusy] = useState(false);
 
   return (
     <>
-      {view.keys === 'checking' ? (
+      {keys.kind === 'checking' ? (
         <p className="text-sm text-muted-foreground">{t('account.status.checking')}</p>
-      ) : view.keys === 'not_set_up' ? (
+      ) : keys.kind === 'foreign' ? (
+        /*
+         * The one question sync asks: this device holds data that last synced
+         * with a DIFFERENT account - on a shared device, the previous person's.
+         * Nothing is uploaded until the person answers, and neither answer is
+         * preselected.
+         */
+        <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-3">
+          <p role="alert" className="text-sm">
+            {t('account.foreignBody')}
+          </p>
+          <p className="text-sm font-medium">
+            {t('account.foreignCounts', { profiles: keys.profiles, transactions: keys.transactions })}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void accountController().eraseDevice();
+              }}
+            >
+              {t('account.foreignErase')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void accountController()
+                  .addExistingData()
+                  .finally(() => {
+                    setBusy(false);
+                  });
+              }}
+            >
+              {t('account.foreignAdd')}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">{t('account.foreignEraseHint')}</p>
+        </div>
+      ) : keys.kind === 'legacy_locked' ? (
         <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-3">
-          <p className="text-sm">{t('account.setUpBody')}</p>
-          <Button type="button" className="w-full" onClick={open({ kind: 'setup' })}>
-            <KeyRound className="size-4" aria-hidden="true" />
-            {t('account.setUpStart')}
+          <p className="text-sm">{t('account.legacyBody')}</p>
+          <Button type="button" variant="outline" className="w-full" onClick={open({ kind: 'startFresh' })}>
+            {t('account.startFresh')}
           </Button>
         </div>
-      ) : view.keys === 'locked' ? (
-        <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-3">
-          <p className="text-sm">{t('account.status.locked')}</p>
-          <Button type="button" className="w-full" onClick={open({ kind: 'unlock' })}>
-            <Lock className="size-4" aria-hidden="true" />
-            {t('account.unlock')}
-          </Button>
-        </div>
-      ) : view.keys === 'rolled_back' ? (
+      ) : keys.kind === 'rolled_back' ? (
         <p role="alert" className="text-sm text-destructive">
           {t('account.downgrade')}
         </p>
-      ) : view.keys === 'unknown' ? (
+      ) : keys.kind === 'unknown' ? (
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('account.status.unknown')}</p>
           <Button
@@ -120,35 +162,19 @@ function SignedIn({
         <SyncStatus sync={view.sync} />
       )}
 
-      {view.keys === 'unlocked' ? (
-        <div className="grid gap-1.5 border-t border-border pt-3">
-          <Button
-            type="button"
-            variant="ghost"
-            className="justify-start"
-            onClick={open({ kind: 'recovery' })}
-          >
-            {t('account.newRecovery')}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="justify-start"
-            onClick={open({ kind: 'passphrase' })}
-          >
-            {t('account.changePassphrase')}
-          </Button>
-          <Button type="button" variant="ghost" className="justify-start" onClick={open({ kind: 'lost' })}>
-            {t('account.lost')}
-          </Button>
-        </div>
-      ) : null}
-
       <div className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
         <Button type="button" variant="outline" onClick={open({ kind: 'signout' })}>
           {t('account.signOut')}
         </Button>
-        <Button type="button" variant="ghost" className="text-destructive" onClick={open({ kind: 'delete' })}>
+        <Button type="button" variant="ghost" onClick={open({ kind: 'signOutOthers' })}>
+          {t('account.signOutOthers')}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-destructive sm:col-span-2"
+          onClick={open({ kind: 'delete' })}
+        >
           {t('account.delete')}
         </Button>
       </div>
@@ -165,7 +191,7 @@ function SyncStatus({ sync }: { readonly sync: SyncState | undefined }) {
       : undefined;
 
   const text =
-    kind === 'syncing'
+    kind === 'syncing' || kind === 'locked'
       ? t('account.status.syncing')
       : kind === 'offline'
         ? t('account.status.offline')

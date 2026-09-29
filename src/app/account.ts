@@ -1,22 +1,10 @@
 import { useSyncExternalStore } from 'react';
 
 import type { BookandryDB } from '@/db/db';
-import {
-  changePassphrase,
-  joinCheck,
-  keyStatus,
-  type JoinCheck,
-  replaceRecoveryKey,
-  rotateDataKey,
-  setUpSync,
-  unlock,
-  type KeyServer,
-  type Secret,
-  type SyncKeyStatus,
-  type UnlockResult,
-} from '@/db/sync/account';
+import { connectDevice, rotateAccountKey, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
 import { forgetSyncIdentity, loadKeys } from '@/db/sync/keystore';
+import { systemClock } from '@/lib/clock';
 import type { AuthResult } from '@/services/supabase/auth';
 import {
   accountsAvailable,
@@ -28,7 +16,6 @@ import {
 import {
   deleteMyAccount,
   getKeyState,
-  putWrap,
   rotateKeys,
   rpcTransport,
   setupKeys,
@@ -51,7 +38,19 @@ export type AccountUser = {
   readonly provider: string;
 };
 
-export type KeysView = 'checking' | SyncKeyStatus | 'unknown';
+/** Where this device stands with the account's key. */
+export type KeysView =
+  | { readonly kind: 'checking' }
+  /** Holds the account's current key; syncing. */
+  | { readonly kind: 'ready' }
+  /** Holds another account's data: the person chooses (add it, or remove it). */
+  | { readonly kind: 'foreign'; readonly profiles: number; readonly transactions: number }
+  /** The account was set up behind a passphrase and this device never held that key. */
+  | { readonly kind: 'legacy_locked' }
+  /** The server offered an older key than this device holds. Sync stops. */
+  | { readonly kind: 'rolled_back' }
+  /** Could not reach the server to find out. */
+  | { readonly kind: 'unknown' };
 
 export type AccountView =
   | { readonly status: 'unavailable' }
@@ -152,27 +151,55 @@ export class AccountController {
       return;
     }
     this.stopRunner();
-    this.set({ status: 'signed_in', user, keys: 'checking', sync: undefined, passwordRecovery: recovery });
+    this.set({
+      status: 'signed_in',
+      user,
+      keys: { kind: 'checking' },
+      sync: undefined,
+      passwordRecovery: recovery,
+    });
     await this.refreshKeys();
   }
 
-  /** Where this device stands with the account's key; starts syncing if it can. */
-  async refreshKeys(): Promise<void> {
+  /**
+   * Get this device the account's key - there is nothing for the person to
+   * type; signing in is enough - and start syncing. Run on every sign-in and
+   * whenever the account's key has moved on.
+   */
+  async refreshKeys(addExistingData = false): Promise<void> {
     if (this.view.status !== 'signed_in') return;
     const { id } = this.view.user;
-    const local = await loadKeys(this.db);
     let keys: KeysView;
     try {
-      keys = await keyStatus(this.db, this.server(), id);
+      const result = await connectDevice(this.db, this.server(), id, { addExistingData });
+      if (result.ok) {
+        this.moveToAccountKey = result.needsAccountKey;
+        keys = { kind: 'ready' };
+      } else if (result.reason === 'foreign_data') {
+        keys = { kind: 'foreign', profiles: result.profiles, transactions: result.transactions };
+      } else if (result.reason === 'downgrade') {
+        keys = { kind: 'rolled_back' };
+      } else {
+        keys = { kind: 'legacy_locked' };
+      }
     } catch {
       // Offline, most likely. Keys already here are good enough to start; the
       // runner finds out soon enough if the account has moved on.
-      keys = local?.userId === id ? 'unlocked' : 'unknown';
+      const local = await loadKeys(this.db);
+      keys = local?.userId === id ? { kind: 'ready' } : { kind: 'unknown' };
     }
     this.patch({ keys });
-    if (keys === 'unlocked') this.startRunner(id);
+    if (keys.kind === 'ready') this.startRunner(id);
     else this.stopRunner();
   }
+
+  /**
+   * Set on a device holding the key of an account set up behind a sync
+   * passphrase. After its first complete sync - so it holds everything the
+   * account had - it moves the account to a key the account holds itself.
+   */
+  private moveToAccountKey = false;
+  private lastReconnect = 0;
 
   private server(): KeyServer {
     const rpc = this.rpc;
@@ -180,7 +207,6 @@ export class AccountController {
     return {
       getKeyState: () => getKeyState(rpc),
       setupKeys: (wraps) => setupKeys(rpc, wraps),
-      putWrap: (wrap) => putWrap(rpc, wrap),
       rotateKeys: (from, wraps) => rotateKeys(rpc, from, wraps),
     };
   }
@@ -204,8 +230,25 @@ export class AccountController {
         return encryptingTransport(rpcTransport(rpc), { userId, keys: () => keys });
       },
       onState: (sync) => {
-        this.patch(sync.kind === 'locked' ? { sync, keys: 'locked' } : { sync });
-        if (sync.kind === 'locked') this.stopRunner();
+        this.patch({ sync });
+        if (sync.kind === 'locked') {
+          // The account's key moved on (another device signed the others out,
+          // or moved the account over). Fetch the new one - at most twice a
+          // minute, so a server that keeps saying so cannot spin this.
+          this.stopRunner();
+          const now = systemClock.nowMs();
+          if (now - this.lastReconnect > 30_000) {
+            this.lastReconnect = now;
+            void this.refreshKeys();
+          } else {
+            this.patch({ keys: { kind: 'unknown' } });
+          }
+        } else if (sync.kind === 'idle' && this.moveToAccountKey) {
+          this.moveToAccountKey = false;
+          void this.rotate().catch(() => {
+            this.moveToAccountKey = true; // try again after the next sync
+          });
+        }
       },
     });
   }
@@ -255,15 +298,14 @@ export class AccountController {
 
   // -- the key -----------------------------------------------------------------
 
-  /** Whether joining would take another account's data along: ask first. */
-  async joinCheck(): Promise<JoinCheck> {
-    return joinCheck(this.db, this.userId());
+  /** The person chose to add this device's other-account data to this account. */
+  async addExistingData(): Promise<void> {
+    await this.refreshKeys(true);
   }
 
   /**
    * Remove everything from this device and start the app over, still signed
-   * in - the "start fresh" answer to joinCheck. The first-run screen then
-   * offers to unlock the account.
+   * in - the other answer to "this device holds another account's data".
    */
   async eraseDevice(): Promise<void> {
     this.stopRunner();
@@ -271,43 +313,36 @@ export class AccountController {
     window.location.assign('/');
   }
 
-  async setUp(passphrase: string, addExistingData = false): Promise<{ readonly recoveryKey: string }> {
-    const result = await setUpSync(this.db, this.server(), this.userId(), passphrase, { addExistingData });
-    // Not refreshed yet: the recovery key screen comes first, and syncing
-    // starts when the person has saved it (finishSetUp).
-    return result;
-  }
-
-  async finishSetUp(): Promise<void> {
-    await this.refreshKeys();
-  }
-
-  async unlock(secret: Secret, addExistingData = false): Promise<UnlockResult> {
-    const result = await unlock(this.db, this.server(), this.userId(), secret, { addExistingData });
-    if (result.ok) await this.refreshKeys();
-    return result;
-  }
-
-  replaceRecoveryKey(secret: Secret): ReturnType<typeof replaceRecoveryKey> {
-    return replaceRecoveryKey(this.server(), this.userId(), secret);
-  }
-
-  changePassphrase(secret: Secret, next: string): Promise<UnlockResult> {
-    return changePassphrase(this.server(), this.userId(), secret, next);
+  private async rotate(): Promise<void> {
+    this.stopRunner();
+    try {
+      await rotateAccountKey(this.db, this.server(), this.userId());
+    } finally {
+      await this.refreshKeys();
+    }
   }
 
   /**
-   * "I lost a device": new key, and every other session signed out. The new
-   * recovery key is returned for the person to save.
+   * An account set up behind a passphrase that no device here can open: start
+   * the synced copy over from what this device holds.
    */
-  async lostDevice(secret: Secret, passphrase: string): ReturnType<typeof rotateDataKey> {
-    const result = await rotateDataKey(this.db, this.server(), this.userId(), secret, passphrase);
-    if (result.ok) {
-      const { signOut } = await import('@/services/supabase/auth');
-      await this.auth((s) => signOut(s, 'others'));
-      this.syncNow();
-    }
-    return result;
+  startFresh(): Promise<void> {
+    return this.rotate();
+  }
+
+  /**
+   * "Sign out all other devices" - for a lost or stolen one. Every other
+   * session ends, so it can fetch nothing more from the account; signing back
+   * in needs the password (and the second factor, where there is one).
+   *
+   * No new key: the account holds its key, so a device able to sign in again
+   * could fetch a new one just as well. What it already has on it, it keeps -
+   * the README says so.
+   */
+  async signOutOthers(): Promise<void> {
+    const { signOut } = await import('@/services/supabase/auth');
+    const result = await this.auth((s) => signOut(s, 'others'));
+    if (!result.ok) throw new Error(result.reason);
   }
 
   // -- leaving -----------------------------------------------------------------

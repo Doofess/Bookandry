@@ -184,7 +184,14 @@ function wrapForServer(w: WrappedKey): Record<string, unknown> {
 function parseWrap(value: unknown): WrappedKey | undefined {
   if (value === null || typeof value !== 'object') return undefined;
   const v = value as Record<string, unknown>;
-  if (v['kind'] !== 'passkey' && v['kind'] !== 'recovery' && v['kind'] !== 'passphrase') return undefined;
+  if (
+    v['kind'] !== 'passkey' &&
+    v['kind'] !== 'recovery' &&
+    v['kind'] !== 'passphrase' &&
+    v['kind'] !== 'account'
+  ) {
+    return undefined;
+  }
   const kind: WrappedKey['kind'] = v['kind'];
   const { id, keyVersion, salt, iv, ct } = v;
   if (
@@ -192,9 +199,9 @@ function parseWrap(value: unknown): WrappedKey | undefined {
     typeof keyVersion !== 'number' ||
     !Number.isSafeInteger(keyVersion) ||
     typeof salt !== 'string' ||
-    !B64URL.test(salt) ||
     typeof iv !== 'string' ||
-    !B64URL.test(iv) ||
+    // The account's own entry has no salt and no IV; every real wrap has both.
+    (kind === 'account' ? salt !== '' || iv !== '' : !B64URL.test(salt) || !B64URL.test(iv)) ||
     typeof ct !== 'string' ||
     !B64URL.test(ct)
   ) {

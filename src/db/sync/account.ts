@@ -1,10 +1,7 @@
 import { DEMO_PREFIX } from '@/domain/demo';
-import { DecryptError } from '@/services/crypto/aead';
 import type { Bytes } from '@/services/crypto/bytes';
-import { DEFAULT_ARGON, type ArgonParams } from '@/services/crypto/kdf';
 import { deriveKeyring, newDataKey } from '@/services/crypto/keys';
-import { newRecoveryKey, parseRecoveryKey, type RecoveryKeyError } from '@/services/crypto/recovery-key';
-import { unwrapDataKey, wrapDataKey, type Factor, type WrappedKey } from '@/services/crypto/wrap';
+import { accountEntry, keyFromAccountEntry, type WrappedKey } from '@/services/crypto/wrap';
 import type { KeyState } from '@/services/supabase/transport';
 
 import type { BookandryDB } from '../db';
@@ -13,84 +10,64 @@ import { adoptKeyring, forgetSyncIdentity, loadKeys } from './keystore';
 import { requeueEverything } from './rotate';
 
 /**
- * Setting up, unlocking and re-keying sync: the steps behind the account
- * screens, with the screens left out.
+ * Getting a device the account's data key: signing in is enough.
  *
- * Two secrets, in the words the UI uses:
+ * The account holds its key itself (an 'account' entry in user_keys, readable
+ * only by its signed-in owner), so there is nothing for a person to type or
+ * keep: the first device makes the key, every other device fetches it. Records
+ * are still sealed with it, ids still blinded, revs still authenticated - but
+ * the key's protection is the account's sign-in, not a secret only the person
+ * knows. The README's threat model says what that means.
  *
- *  - the SYNC PASSPHRASE, chosen by the person, stretched with Argon2id;
- *  - the RECOVERY KEY, 128 random bits the app makes and the person saves.
- *
- * Either one unlocks the data key on a new device. The raw data key exists in
- * memory only inside these functions - long enough to wrap or to derive the
- * non-extractable working keys - and is zeroed on the way out.
+ * The raw key exists in memory only inside these functions, long enough to
+ * derive the non-extractable working keys, and is zeroed on the way out.
  *
  * The server is passed in, so the tests drive these against the real SQL.
  */
 export type KeyServer = {
   getKeyState(): Promise<KeyState>;
   setupKeys(wraps: readonly WrappedKey[]): Promise<number>;
-  putWrap(wrap: WrappedKey): Promise<void>;
   rotateKeys(from: number, wraps: readonly WrappedKey[]): Promise<number>;
 };
 
-export type AccountOptions = {
+export type ConnectOptions = {
   /**
    * The person has seen that this device holds data from ANOTHER account and
-   * chose to add it to this one. Without it, joining refuses: see joinCheck.
+   * chose to add it to this one. Without it, connecting refuses: see joinCheck.
    */
   readonly addExistingData?: boolean;
-  /** Tests only: fast, weak stretching. Production never passes these. */
-  readonly argon?: ArgonParams;
-  readonly allowWeakKdf?: boolean;
 };
 
-/** What the person types to unlock: their passphrase, or their recovery key. */
-export type Secret =
-  | { readonly kind: 'passphrase'; readonly passphrase: string }
-  | { readonly kind: 'recovery'; readonly text: string };
-
-export type UnlockResult =
-  | { readonly ok: true }
+export type ConnectResult =
+  | {
+      readonly ok: true;
+      /**
+       * The account was set up before it held its own key - behind a sync
+       * passphrase - and this device holds that key. Once it has synced
+       * everything down, it moves the account over (rotateAccountKey).
+       */
+      readonly needsAccountKey: boolean;
+    }
+  /** This device holds another account's data; the person must choose. */
   | {
       readonly ok: false;
-      readonly reason:
-        | 'wrong'
-        | 'no_passphrase'
-        | 'not_set_up'
-        /** This device holds another account's data; the person must choose. */
-        | 'foreign_data'
-        /** The server offered an OLDER key than this device already holds. */
-        | 'downgrade';
+      readonly reason: 'foreign_data';
+      readonly profiles: number;
+      readonly transactions: number;
     }
-  | { readonly ok: false; readonly reason: 'malformed'; readonly detail: RecoveryKeyError };
-
-export type SyncKeyStatus =
-  /** The account has never set up sync: this device can be the first. */
-  | 'not_set_up'
-  /** Set up, but this device does not hold the current key. */
-  | 'locked'
-  | 'unlocked'
+  /** The server offered an OLDER key than this device already holds. */
+  | { readonly ok: false; readonly reason: 'downgrade' }
   /**
-   * The server says the account's key is OLDER than one this device holds.
-   * Keys only ever move forward, so this is a server replaying a retired key
-   * - after a rotation, the one a lost device still has. Sync stops.
+   * Set up behind a sync passphrase, and this device never held that key.
+   * Another device that does can move the account over; or this one can start
+   * the synced copy over from what it has.
    */
-  | 'rolled_back';
+  | { readonly ok: false; readonly reason: 'legacy_locked' };
 
 /** The newest key version this device holds for the account, or 0. */
 async function keyFloor(db: BookandryDB, userId: string): Promise<number> {
   const local = await loadKeys(db);
   return local?.userId === userId ? Math.max(0, ...local.byVersion.keys()) : 0;
-}
-
-export async function keyStatus(db: BookandryDB, server: KeyServer, userId: string): Promise<SyncKeyStatus> {
-  const state = await server.getKeyState();
-  const floor = await keyFloor(db, userId);
-  if (state.keyVersion < floor) return 'rolled_back';
-  if (state.keyVersion === 0) return 'not_set_up';
-  const local = await loadKeys(db);
-  return local?.userId === userId && local.byVersion.has(state.keyVersion) ? 'unlocked' : 'locked';
 }
 
 /**
@@ -129,18 +106,6 @@ export async function joinCheck(db: BookandryDB, userId: string): Promise<JoinCh
   return profiles + transactions === 0 ? { kind: 'fresh' } : { kind: 'foreign', profiles, transactions };
 }
 
-/** Thrown by setUpSync where unlock returns 'foreign_data'. */
-export class ForeignDataError extends Error {
-  constructor() {
-    super('This device holds data from another account');
-    this.name = 'ForeignDataError';
-  }
-}
-
-async function mayJoin(db: BookandryDB, userId: string, options: AccountOptions): Promise<boolean> {
-  return options.addExistingData === true || (await joinCheck(db, userId)).kind !== 'foreign';
-}
-
 /**
  * Before this device first syncs with an account - fresh, or switching from
  * another account it was signed in to before.
@@ -151,8 +116,7 @@ async function mayJoin(db: BookandryDB, userId: string, options: AccountOptions)
  * account has seen none of it. Merging, not replacing: nothing on this device
  * is lost, and rows the account already has at a newer rev win as always.
  *
- * Sample data never joins an account; it is removed first, and the join
- * screen says so.
+ * Sample data never joins an account; it is removed first.
  */
 async function prepareToJoin(db: BookandryDB, userId: string): Promise<void> {
   const existing = await loadKeys(db);
@@ -163,200 +127,107 @@ async function prepareToJoin(db: BookandryDB, userId: string): Promise<void> {
   await db.meta.put({ key: DATA_OWNER_KEY, value: userId });
 }
 
-function passphraseFactor(passphrase: string, options: AccountOptions): Factor {
-  return { kind: 'passphrase', passphrase, params: options.argon ?? DEFAULT_ARGON };
-}
-
-/**
- * First device on the account: make the data key and both ways in.
- *
- * Returns the recovery key for the person to save - the ONLY time it exists
- * in the clear. Throws the server's `already_set_up` if another device got
- * there first; that device's key is the account's, and this one unlocks.
- */
-export async function setUpSync(
-  db: BookandryDB,
-  server: KeyServer,
-  userId: string,
-  passphrase: string,
-  options: AccountOptions = {},
-): Promise<{ readonly recoveryKey: string }> {
-  if (!(await mayJoin(db, userId, options))) throw new ForeignDataError();
-  const dataKey = newDataKey();
-  const recovery = newRecoveryKey();
+async function adopt(db: BookandryDB, userId: string, dataKey: Bytes, version: number): Promise<void> {
   try {
-    const ctx = { userId };
-    const wraps = [
-      await wrapDataKey(dataKey, 1, { kind: 'recovery', bytes: recovery.bytes }, ctx),
-      await wrapDataKey(dataKey, 1, passphraseFactor(passphrase, options), ctx),
-    ];
-    const version = await server.setupKeys(wraps);
     await prepareToJoin(db, userId);
     await adoptKeyring(db, userId, await deriveKeyring(dataKey, version));
-    return { recoveryKey: recovery.display };
   } finally {
     dataKey.fill(0);
-    recovery.bytes.fill(0);
   }
 }
 
-type Opened = { readonly dataKey: Bytes; readonly state: KeyState };
+const isAlreadySetUp = (error: unknown): boolean =>
+  error instanceof Error && 'code' in error && (error as { code: unknown }).code === 'already_set_up';
 
-/** The raw data key for the CURRENT version, from a secret - or why not. */
-async function openWith(
+/**
+ * Get this device the account's current key, making it if the account has
+ * none yet. Called on every sign-in and whenever the account's key moves on;
+ * safe to call again at any time.
+ */
+export async function connectDevice(
+  db: BookandryDB,
   server: KeyServer,
   userId: string,
-  secret: Secret,
-  options: AccountOptions,
-  floor = 0,
-): Promise<Opened | Exclude<UnlockResult, { ok: true }>> {
+  options: ConnectOptions = {},
+): Promise<ConnectResult> {
+  const floor = await keyFloor(db, userId);
   const state = await server.getKeyState();
-  // Checked before the secret is spent on it: an older key than this device
-  // has held is a replay, and unlocking it would hand a retired key back in.
+  // Keys only move forward. An older one than this device has held is a
+  // server replaying a retired key - the one "sign out other devices" retired.
   if (state.keyVersion < floor) return { ok: false, reason: 'downgrade' };
-  if (state.keyVersion === 0) return { ok: false, reason: 'not_set_up' };
-  const current = (kind: WrappedKey['kind']) =>
-    state.wraps.find((w) => w.kind === kind && w.keyVersion === state.keyVersion);
 
-  let factor: Factor;
-  let wrapped: WrappedKey | undefined;
-  if (secret.kind === 'recovery') {
-    const parsed = parseRecoveryKey(secret.text);
-    if (!parsed.ok) return { ok: false, reason: 'malformed', detail: parsed.error };
-    factor = { kind: 'recovery', bytes: parsed.bytes };
-    wrapped = current('recovery');
-  } else {
-    wrapped = current('passphrase');
-    if (wrapped === undefined) return { ok: false, reason: 'no_passphrase' };
-    factor = passphraseFactor(secret.passphrase, options);
+  const entry = state.wraps.find((w) => w.kind === 'account' && w.keyVersion === state.keyVersion);
+  const local = await loadKeys(db);
+  if (state.keyVersion > 0 && local?.userId === userId && local.byVersion.has(state.keyVersion)) {
+    return { ok: true, needsAccountKey: entry === undefined };
   }
-  if (wrapped === undefined) return { ok: false, reason: 'wrong' };
 
-  try {
-    const dataKey = await unwrapDataKey(wrapped, factor, { userId }, { allowWeakKdf: options.allowWeakKdf });
-    return { dataKey, state };
-  } catch (error) {
-    // A wrong secret and a tampered wrap look the same, on purpose.
-    if (error instanceof DecryptError) return { ok: false, reason: 'wrong' };
-    throw error;
-  } finally {
-    if (factor.kind === 'recovery') factor.bytes.fill(0);
+  if (options.addExistingData !== true) {
+    const check = await joinCheck(db, userId);
+    if (check.kind === 'foreign') {
+      return {
+        ok: false,
+        reason: 'foreign_data',
+        profiles: check.profiles,
+        transactions: check.transactions,
+      };
+    }
   }
-}
 
-/** A new device (or one left behind by a rotation) takes the account's key. */
-export async function unlock(
-  db: BookandryDB,
-  server: KeyServer,
-  userId: string,
-  secret: Secret,
-  options: AccountOptions = {},
-): Promise<UnlockResult> {
-  if (!(await mayJoin(db, userId, options))) return { ok: false, reason: 'foreign_data' };
-  const opened = await openWith(server, userId, secret, options, await keyFloor(db, userId));
-  if ('ok' in opened) return opened;
-  try {
-    await prepareToJoin(db, userId);
-    await adoptKeyring(db, userId, await deriveKeyring(opened.dataKey, opened.state.keyVersion));
-    return { ok: true };
-  } finally {
-    opened.dataKey.fill(0);
+  if (state.keyVersion === 0) {
+    const dataKey = newDataKey();
+    let version: number;
+    try {
+      version = await server.setupKeys([accountEntry(dataKey, 1)]);
+    } catch (error) {
+      dataKey.fill(0);
+      // Another device got there first: its key is the account's. Fetch it.
+      if (isAlreadySetUp(error))
+        return connectDevice(db, server, userId, { ...options, addExistingData: true });
+      throw error;
+    }
+    await adopt(db, userId, dataKey, version);
+    return { ok: true, needsAccountKey: false };
   }
+
+  if (entry !== undefined) {
+    await adopt(db, userId, keyFromAccountEntry(entry), state.keyVersion);
+    return { ok: true, needsAccountKey: false };
+  }
+  return { ok: false, reason: 'legacy_locked' };
 }
 
 /**
- * A fresh recovery key, replacing the old one - which stops working the
- * moment this returns. Proven with the passphrase or the current recovery key.
- */
-export async function replaceRecoveryKey(
-  server: KeyServer,
-  userId: string,
-  secret: Secret,
-  options: AccountOptions = {},
-): Promise<UnlockResult | { readonly ok: true; readonly recoveryKey: string }> {
-  const opened = await openWith(server, userId, secret, options);
-  if ('ok' in opened) return opened;
-  const recovery = newRecoveryKey();
-  try {
-    await server.putWrap(
-      await wrapDataKey(
-        opened.dataKey,
-        opened.state.keyVersion,
-        { kind: 'recovery', bytes: recovery.bytes },
-        { userId },
-      ),
-    );
-    return { ok: true, recoveryKey: recovery.display };
-  } finally {
-    opened.dataKey.fill(0);
-    recovery.bytes.fill(0);
-  }
-}
-
-/**
- * A new sync passphrase. The old one stops unlocking new devices - but a
- * device that already unlocked keeps its keys, which is why "I lost a
- * device" is rotation, not this. The UI says so.
- */
-export async function changePassphrase(
-  server: KeyServer,
-  userId: string,
-  secret: Secret,
-  next: string,
-  options: AccountOptions = {},
-): Promise<UnlockResult> {
-  const opened = await openWith(server, userId, secret, options);
-  if ('ok' in opened) return opened;
-  try {
-    await server.putWrap(
-      await wrapDataKey(opened.dataKey, opened.state.keyVersion, passphraseFactor(next, options), { userId }),
-    );
-    return { ok: true };
-  } finally {
-    opened.dataKey.fill(0);
-  }
-}
-
-/**
- * "I lost a device": a brand-new data key, so nothing written from now on can
- * be read with anything the lost device holds.
+ * A brand-new data key, held by the account, replacing the current one.
  *
- * Proven with a current secret. Makes a new recovery key (the old one opened
- * the old key, and may be written down next to the lost device) and wraps the
- * new key under `passphrase` - the current one again, or a new one. The server
- * drops every record; this device queues everything to be sealed again, and
- * the next sync re-uploads it. Other devices stop at the barrier until they
- * unlock with the new key.
+ * - "Sign out other devices": nothing written from now on can be read with a
+ *   key a lost device still holds (the caller revokes their sessions too).
+ * - Moving an account that was set up behind a passphrase over to an
+ *   account-held key, from a device that has synced everything down first.
+ * - Starting the synced copy over from this device, when the old key is out
+ *   of reach.
  *
- * Signing the lost device out of the account is the caller's other half.
+ * The server drops every record sealed under the old key; this device queues
+ * everything it has to be sealed again, and the next sync re-uploads it.
+ * Other devices meet the new key at their next sync and fetch it themselves.
  */
-export async function rotateDataKey(
-  db: BookandryDB,
-  server: KeyServer,
-  userId: string,
-  secret: Secret,
-  passphrase: string,
-  options: AccountOptions = {},
-): Promise<UnlockResult | { readonly ok: true; readonly recoveryKey: string }> {
-  const opened = await openWith(server, userId, secret, options);
-  if ('ok' in opened) return opened;
-  opened.dataKey.fill(0); // proof only; the old key is not needed again
+export async function rotateAccountKey(db: BookandryDB, server: KeyServer, userId: string): Promise<void> {
+  const floor = await keyFloor(db, userId);
+  const state = await server.getKeyState();
+  if (state.keyVersion < floor)
+    throw new RangeError('refusing to rotate from a key older than this device holds');
 
-  const from = opened.state.keyVersion;
   const dataKey = newDataKey();
-  const recovery = newRecoveryKey();
+  const next = state.keyVersion + 1;
   try {
-    const ctx = { userId };
-    const wraps = [
-      await wrapDataKey(dataKey, from + 1, { kind: 'recovery', bytes: recovery.bytes }, ctx),
-      await wrapDataKey(dataKey, from + 1, passphraseFactor(passphrase, options), ctx),
-    ];
-    const version = await server.rotateKeys(from, wraps);
+    const version =
+      state.keyVersion === 0
+        ? await server.setupKeys([accountEntry(dataKey, 1)])
+        : await server.rotateKeys(state.keyVersion, [accountEntry(dataKey, next)]);
+    await prepareToJoin(db, userId);
     await adoptKeyring(db, userId, await deriveKeyring(dataKey, version));
     await requeueEverything(db);
-    return { ok: true, recoveryKey: recovery.display };
   } finally {
     dataKey.fill(0);
-    recovery.bytes.fill(0);
   }
 }

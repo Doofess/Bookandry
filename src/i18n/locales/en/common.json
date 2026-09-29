@@ -323,7 +323,7 @@
     "title": "Settings",
     "appearance": "Appearance",
     "dataTitle": "Your data",
-    "dataBody": "Stored on this device. Turn on sync above to keep a locked copy in your account, or export a backup file.",
+    "dataBody": "Stored on this device. Sign in above to keep a copy in your account, or export a backup file.",
     "export": "Export a backup",
     "exporting": "Preparing…",
     "exported": "Backup saved",
@@ -374,7 +374,7 @@
   },
   "account": {
     "title": "Account & sync",
-    "signedOutBody": "Keep your data safe if this device is lost, and use it on your phone and computer together. It is locked on this device before it is uploaded, so nobody else can read it - not even us.",
+    "signedOutBody": "Keep your data safe if this device is lost or wiped, and use it on your phone and computer together. Sign in on each device and it syncs by itself.",
     "signedInAs": "Signed in as {{email}}",
     "create": "Create an account",
     "signIn": "Sign in",
@@ -409,57 +409,9 @@
       "offline": "Offline. Changes will sync when you're back online.",
       "error": "Couldn't sync.",
       "rebasing": "Some amounts arrived in an old base currency and are waiting for exchange rates. Totals may be off until then.",
-      "locked": "Sync is locked on this device. Unlock it to keep syncing.",
       "unknown": "Can't reach the server right now."
     },
     "syncNow": "Sync now",
-    "setUpBody": "Your account is ready. Turn on sync to back up this device and share it with your others.",
-    "setUpStart": "Turn on sync",
-    "setUpNote": "It is not your account password, and nobody can reset it for you. If you forget it, your recovery key is the only other way in.",
-    "joinNote": "Everything already on this device is added to your account. Sample data is removed first.",
-    "locking": "Locking…",
-    "unlocking": "Unlocking…",
-    "unlock": "Unlock",
-    "unlockWith": "Unlock with",
-    "prove": "First, show it's you",
-    "passphrase": "Sync passphrase",
-    "newPassphrase": "Sync passphrase",
-    "passphraseConfirm": "Type it again",
-    "passphraseHint": "At least 10 characters. A few unrelated words work well.",
-    "passphraseShort": "Use at least 10 characters.",
-    "passphraseMismatch": "The two don't match.",
-    "passphraseChanged": "Sync passphrase changed.",
-    "recoveryKey": "Recovery key",
-    "recoveryKeyHint": "Dashes and spaces are optional.",
-    "recoveryBody": "If you forget your sync passphrase, this key is the only way to unlock your data. Save it somewhere safe, away from this device. It is shown only this once.",
-    "copy": "Copy",
-    "copied": "Copied",
-    "copyFailed": "Couldn't copy. Download it instead.",
-    "download": "Download",
-    "recoverySaved": "I've saved it",
-    "recoveryMustSave": "Copy or download it first.",
-    "recoveryFile": {
-      "title": "Bookandry recovery key",
-      "for": "Account: {{email}}",
-      "made": "Made on {{date}}",
-      "keep": "Keep this somewhere safe. Anyone with this key and access to your account can read your data."
-    },
-    "wrongSecret": "That doesn't unlock it. Check it and try again.",
-    "noPassphrase": "This account has no sync passphrase. Use your recovery key.",
-    "notSetUp": "Sync is not turned on for this account yet.",
-    "alreadySetUp": "Another device turned on sync first. Close this and unlock with its sync passphrase instead.",
-    "keyChanged": "Another device changed the lock just now. Unlock with the new one, then try again.",
-    "malformed": {
-      "length": "A recovery key has 27 letters and digits.",
-      "characters": "That has a character a recovery key doesn't use.",
-      "checksum": "There's a typo in that key. Check each character."
-    },
-    "newRecovery": "Get a new recovery key",
-    "changePassphrase": "Change sync passphrase",
-    "lost": "I lost a device",
-    "lostLimits": "This makes a new lock for your data and signs every other device out. A lost device keeps what it already had, but can't read anything new. Your other devices will need to unlock again.",
-    "lostNewPassphrase": "A sync passphrase for the new lock. It can be the same as before.",
-    "lostConfirm": "Change the lock",
     "signOutQuestion": "What should happen to the data on this device?",
     "signOutKeep": "Keep it here",
     "signOutKeepHint": "Keep using the app on this device. It just stops syncing.",
@@ -477,27 +429,7 @@
       },
       "signup": {
         "title": "Create an account",
-        "body": "Your account keeps a locked copy of your data. Only your devices hold the key."
-      },
-      "setup": {
-        "title": "Turn on sync",
-        "body": "Choose a sync passphrase. It locks your data before it leaves this device, and unlocks it on your other devices."
-      },
-      "unlock": {
-        "title": "Unlock sync",
-        "body": "Enter your sync passphrase or your recovery key."
-      },
-      "recovery": {
-        "title": "New recovery key",
-        "body": "The old recovery key stops working as soon as the new one is made."
-      },
-      "passphrase": {
-        "title": "Change sync passphrase",
-        "body": "Devices already unlocked stay unlocked. If a device was lost or stolen, use \"I lost a device\" instead."
-      },
-      "lost": {
-        "title": "I lost a device",
-        "body": "Lock the lost device out of anything new."
+        "body": "Your account keeps a copy of your data, so it survives a lost or broken device."
       },
       "signout": {
         "title": "Sign out",
@@ -510,6 +442,14 @@
       "newPassword": {
         "title": "Choose a new password",
         "body": "For signing in to your account."
+      },
+      "signOutOthers": {
+        "title": "Sign out all other devices?",
+        "body": "For a lost or stolen device. Every other device is signed out and can get nothing more from your account; signing back in needs your password. What a device already has on it, it keeps."
+      },
+      "startFresh": {
+        "title": "Start the synced copy over?",
+        "body": "The synced copy is replaced with what's on this device, and your other devices pick it up from here. Anything that was only in the old copy is lost."
       }
     },
     "foreignBody": "This device still holds data from a different account. It is not added to yours unless you choose to.",
@@ -517,10 +457,15 @@
     "foreignErase": "Remove it from this device",
     "foreignEraseHint": "The app starts over, still signed in. Then unlock your account.",
     "foreignAdd": "Add it to my account",
-    "foreignRefused": "This device holds another account's data. Choose what to do with it first.",
     "downgrade": "The server offered an older lock than this device already has. Sync is paused to protect your data.",
     "firstRunHave": "I already have an account",
     "firstRunBack": "Set up this device instead",
-    "firstRunJoinBody": "Sign in and unlock sync, and your data arrives on this device."
+    "firstRunJoinBody": "Sign in and unlock sync, and your data arrives on this device.",
+    "signOutOthers": "Sign out all other devices",
+    "signedOutOthers": "Every other device is signed out.",
+    "startFresh": "Start the synced copy over from this device",
+    "startedFresh": "Your account now syncs from this device.",
+    "legacyBody": "This account was set up with a sync passphrase, which is no longer used. Open Bookandry on the device where you set it up and it switches over by itself. Or start the synced copy over from this device - anything only in the old copy is lost.",
+    "firstRunEmpty": "Your account has nothing in it yet. Set up this device, and it will sync from here on."
   }
 }

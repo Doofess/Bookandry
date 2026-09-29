@@ -1,28 +1,24 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { initAccount } from '@/app/account';
+import { initAccount, type AccountView } from '@/app/account';
 import { freshDb } from '@/test/db-harness';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
+import { AccountCard } from './account-card';
 import { AccountSheet, type Flow } from './account-sheet';
 
 /*
- * The flows' rules, not their styling: what stays disabled until the person
- * has done the thing that matters, and what each answer from the controller
- * turns into on screen. The controller's own logic is tested against real
- * Postgres in src/db/sync/account.test.ts.
+ * The screens' rules, not their styling: what each answer does, what is never
+ * chosen for the person, and what stays disabled until they have chosen. The
+ * logic behind them is tested against real Postgres in src/db/sync.
  */
 
 const controller = initAccount(freshDb().db);
 
 beforeAll(async () => {
   await initTestI18n();
-});
-beforeEach(() => {
-  // A device with nothing of anyone else's on it, unless a test says otherwise.
-  vi.spyOn(controller, 'joinCheck').mockResolvedValue({ kind: 'fresh' });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -34,7 +30,21 @@ function open(flow: Flow) {
   return { onClose, user: userEvent.setup() };
 }
 
-const KEY = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-23*';
+function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys']): AccountView {
+  return {
+    status: 'signed_in',
+    user: { id: 'u1', email: 'dana@example.com', provider: 'google' },
+    keys,
+    sync: undefined,
+    passwordRecovery: false,
+  };
+}
+
+function showCard(view: AccountView) {
+  vi.spyOn(controller, 'getView').mockReturnValue(view);
+  renderWithProviders(<AccountCard />);
+  return userEvent.setup();
+}
 
 describe('signing out', () => {
   it('chooses nothing for the person, and does what they chose', async () => {
@@ -50,126 +60,73 @@ describe('signing out', () => {
     expect(signOut).toHaveBeenCalledWith(true);
     expect(onClose).toHaveBeenCalled();
   });
-});
 
-describe('turning on sync', () => {
-  it('needs a long enough passphrase, typed the same twice', async () => {
-    const { user } = open({ kind: 'setup' });
-    const [first, second] = await screen.findAllByLabelText(/sync passphrase|type it again/i);
-    const submit = screen.getByRole('button', { name: 'Turn on sync' });
-
-    await user.type(first!, 'short');
-    expect(screen.getByText('Use at least 10 characters.')).toBeInTheDocument();
-    expect(submit).toBeDisabled();
-
-    await user.clear(first!);
-    await user.type(first!, 'a long passphrase');
-    await user.type(second!, 'a long passphrasE');
-    expect(screen.getByText("The two don't match.")).toBeInTheDocument();
-    expect(submit).toBeDisabled();
-
-    await user.clear(second!);
-    await user.type(second!, 'a long passphrase');
-    expect(submit).toBeEnabled();
-  });
-
-  it('shows the recovery key once, and will not finish until it has been kept', async () => {
-    const setUp = vi.spyOn(controller, 'setUp').mockResolvedValue({ recoveryKey: KEY });
-    const finish = vi.spyOn(controller, 'finishSetUp').mockResolvedValue();
-    const { onClose, user } = open({ kind: 'setup' });
-
-    const [first, second] = await screen.findAllByLabelText(/sync passphrase|type it again/i);
-    await user.type(first!, 'a long passphrase');
-    await user.type(second!, 'a long passphrase');
-    await user.click(screen.getByRole('button', { name: 'Turn on sync' }));
-
-    expect(setUp).toHaveBeenCalledWith('a long passphrase', false);
-    const shown = await screen.findByLabelText('Recovery key');
-    expect(shown).toHaveTextContent(KEY);
-    expect(shown).toHaveAttribute('dir', 'ltr');
-
-    const done = screen.getByRole('button', { name: "I've saved it" });
-    expect(done).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'Copy' }));
-    // user-event installs its own clipboard; what landed there is what matters.
-    expect(await navigator.clipboard.readText()).toBe(KEY);
-    expect(done).toBeEnabled();
-
-    await user.click(done);
-    expect(finish).toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  it('says so when another device got there first', async () => {
-    const { ServerError } = await import('@/services/supabase/transport');
-    vi.spyOn(controller, 'setUp').mockRejectedValue(new ServerError('already_set_up'));
-    const { user } = open({ kind: 'setup' });
-    const [first, second] = await screen.findAllByLabelText(/sync passphrase|type it again/i);
-    await user.type(first!, 'a long passphrase');
-    await user.type(second!, 'a long passphrase');
-    await user.click(screen.getByRole('button', { name: 'Turn on sync' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/another device turned on sync first/i);
-  });
-});
-
-describe("another account's data on this device", () => {
-  it('stops before unlocking, and adds it only when asked to', async () => {
-    vi.spyOn(controller, 'joinCheck').mockResolvedValue({ kind: 'foreign', profiles: 2, transactions: 40 });
-    const unlock = vi.spyOn(controller, 'unlock').mockResolvedValue({ ok: true });
-    const { user } = open({ kind: 'unlock' });
-
-    expect(await screen.findByText(/2 people, 40 transactions/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Sync passphrase', { selector: 'input' })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Add it to my account' }));
-    await user.type(screen.getByLabelText('Sync passphrase', { selector: 'input' }), 'pass');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
-    expect(unlock).toHaveBeenCalledWith({ kind: 'passphrase', passphrase: 'pass' }, true);
-  });
-
-  it('offers to remove it instead', async () => {
-    vi.spyOn(controller, 'joinCheck').mockResolvedValue({ kind: 'foreign', profiles: 1, transactions: 0 });
-    const erase = vi.spyOn(controller, 'eraseDevice').mockResolvedValue();
-    const { user } = open({ kind: 'setup' });
-    await user.click(await screen.findByRole('button', { name: 'Remove it from this device' }));
-    expect(erase).toHaveBeenCalled();
-  });
-
-  it('never adds it by default', async () => {
-    const unlock = vi.spyOn(controller, 'unlock').mockResolvedValue({ ok: true });
-    const { user } = open({ kind: 'unlock' });
-    await user.type(await screen.findByLabelText('Sync passphrase', { selector: 'input' }), 'pass');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
-    expect(unlock).toHaveBeenCalledWith({ kind: 'passphrase', passphrase: 'pass' }, false);
-  });
-});
-
-describe('unlocking', () => {
-  it('turns each refusal into its own sentence', async () => {
-    const unlock = vi.spyOn(controller, 'unlock');
-    const { onClose, user } = open({ kind: 'unlock' });
-    const passphrase = await screen.findByLabelText('Sync passphrase', { selector: 'input' });
-
-    unlock.mockResolvedValueOnce({ ok: false, reason: 'wrong' });
-    await user.type(passphrase, 'nope');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent("That doesn't unlock it.");
-
-    await user.click(screen.getByRole('radio', { name: 'Recovery key' }));
-    const key = screen.getByLabelText('Recovery key', { selector: 'input' });
-    expect(key).toHaveAttribute('dir', 'ltr');
-    unlock.mockResolvedValueOnce({ ok: false, reason: 'malformed', detail: 'checksum' });
-    await user.type(key, 'abcd');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/typo/i);
-    });
-
-    unlock.mockResolvedValueOnce({ ok: true });
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+  it('signs out the other devices only when confirmed', async () => {
+    const others = vi.spyOn(controller, 'signOutOthers').mockResolvedValue();
+    const { onClose, user } = open({ kind: 'signOutOthers' });
+    expect(others).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Sign out all other devices' }));
+    expect(others).toHaveBeenCalled();
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
     });
-    expect(unlock).toHaveBeenLastCalledWith({ kind: 'recovery', text: 'abcd' }, false);
+  });
+
+  it('says so, and stays open, when it does not work', async () => {
+    vi.spyOn(controller, 'signOutOthers').mockRejectedValue(new Error('offline'));
+    const { onClose, user } = open({ kind: 'signOutOthers' });
+    await user.click(screen.getByRole('button', { name: 'Sign out all other devices' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('the account card', () => {
+  it('asks nothing of a signed-in device but shows it syncing', () => {
+    showCard(signedIn({ kind: 'ready' }));
+    expect(screen.getByText('Syncing…')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByText(/passphrase|recovery key/i)).not.toBeInTheDocument();
+  });
+
+  it("stops at another account's data, and adds it only when asked", async () => {
+    const add = vi.spyOn(controller, 'addExistingData').mockResolvedValue();
+    const erase = vi.spyOn(controller, 'eraseDevice').mockResolvedValue();
+    const user = showCard(signedIn({ kind: 'foreign', profiles: 2, transactions: 40 }));
+
+    expect(screen.getByText(/2 people, 40 transactions/)).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+    expect(erase).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Add it to my account' }));
+    expect(add).toHaveBeenCalled();
+    expect(erase).not.toHaveBeenCalled();
+  });
+
+  it('offers to remove it instead', async () => {
+    const erase = vi.spyOn(controller, 'eraseDevice').mockResolvedValue();
+    const user = showCard(signedIn({ kind: 'foreign', profiles: 1, transactions: 0 }));
+    await user.click(screen.getByRole('button', { name: 'Remove it from this device' }));
+    expect(erase).toHaveBeenCalled();
+  });
+
+  it('starts an old passphrase account over only after a confirmation', async () => {
+    const fresh = vi.spyOn(controller, 'startFresh').mockResolvedValue();
+    const user = showCard(signedIn({ kind: 'legacy_locked' }));
+    await user.click(screen.getByRole('button', { name: /start the synced copy over/i }));
+    expect(fresh).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole('dialog');
+    const confirm = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      /start the synced copy over/i.test(b.textContent),
+    );
+    if (confirm === undefined) throw new Error('no confirm button in the dialog');
+    await user.click(confirm);
+    expect(fresh).toHaveBeenCalled();
+  });
+
+  it('pauses, and says why, when the server offers an older key', () => {
+    showCard(signedIn({ kind: 'rolled_back' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/older lock/i);
   });
 });

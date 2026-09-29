@@ -13,11 +13,11 @@ import { isAcceptableArgon, stretchPassphrase, type ArgonParams } from './kdf';
  * by authenticated context: a wrap copied onto another account, or presented
  * as a different kind of factor, fails to open rather than opening wrong.
  */
-export type WrapKind = 'passkey' | 'recovery' | 'passphrase';
+export type WrapKind = 'passkey' | 'recovery' | 'passphrase' | 'account';
 
 export type WrappedKey = {
   readonly kind: WrapKind;
-  /** The passkey's credential id; 'recovery' / 'passphrase' for the others. */
+  /** The passkey's credential id; 'recovery' / 'passphrase' / 'account' for the others. */
   readonly id: string;
   readonly keyVersion: number;
   /** base64url. For KDF input; public. */
@@ -139,3 +139,28 @@ export async function unwrapDataKey(
     wrapAad(ctx, wrapped.kind, wrapped.id, wrapped.keyVersion),
   );
 }
+
+/**
+ * The account's own copy of the data key - not a wrap at all.
+ *
+ * Sync no longer asks people for a passphrase or a recovery key: signing in is
+ * enough, so the account itself holds the key, readable only by its signed-in
+ * owner (row-level security on user_keys). The key travels as plain base64url
+ * because there is nothing to wrap it with that the server does not also
+ * hold; dressing it in a wrap would only pretend otherwise.
+ */
+export const ACCOUNT_ENTRY_ID = 'account';
+
+export function accountEntry(dataKey: Bytes, keyVersion: number): WrappedKey {
+  if (dataKey.length !== DATA_KEY_LENGTH) throw new RangeError('data key must be 32 bytes');
+  return { kind: 'account', id: ACCOUNT_ENTRY_ID, keyVersion, salt: '', iv: '', ct: toBase64Url(dataKey) };
+}
+
+export function keyFromAccountEntry(entry: WrappedKey): Bytes {
+  if (entry.kind !== 'account') throw new RangeError('not an account key entry');
+  const key = fromBase64Url(entry.ct);
+  if (key.length !== DATA_KEY_LENGTH) throw new RangeError('account key entry is not 32 bytes');
+  return key;
+}
+
+const DATA_KEY_LENGTH = 32;
