@@ -48,6 +48,20 @@ const router = createBrowserRouter([
 ]);
 
 async function bootstrap(): Promise<void> {
+  // index.html's boot script is sending this visit to https://bookandry.com
+  // (it came over http, or on www). Start nothing here - no database, no
+  // service worker, no session - on a page that is already leaving.
+  if (document.documentElement.hasAttribute('data-leaving')) return;
+
+  // The service worker, exactly as vite-plugin-pwa's own registerSW.js did it
+  // (injectRegister is off so that this check comes first). Synchronous here,
+  // before the first await, so it is always listening before `load` fires.
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);
+    });
+  }
+
   // Ask for durable storage before anything writes. If denied, Settings > Data
   // surfaces a note (Phase 2) — export is the only backup story for a
   // local-first app with no sync.

@@ -63,6 +63,9 @@ export default defineConfig(({ mode }) => ({
     securityHeaders(loadEnv(mode, process.cwd(), 'VITE_')['VITE_SUPABASE_URL']),
     VitePWA({
       registerType: 'prompt',
+      // Registered by main.tsx, after its check that this page is not already
+      // leaving for https://bookandry.com - never on http or www.
+      injectRegister: false,
       strategies: 'generateSW',
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {

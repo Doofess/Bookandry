@@ -32,6 +32,16 @@ test('sends an http visit to https, keeping the path and query', async ({ page }
   expect((await upgraded).url()).toBe(`https://${HOST}/settings?from=phone`);
 });
 
+test('sends www to the one hostname the app lives on', async ({ page }) => {
+  const html = readFileSync(join(import.meta.dirname, '..', 'dist', 'index.html'), 'utf8');
+  await page.route(`https://www.${HOST}/**`, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: html }),
+  );
+  const forwarded = page.waitForRequest((r) => r.url().startsWith(`https://${HOST}/`));
+  await page.goto(`https://www.${HOST}/chart#top`).catch(() => undefined);
+  expect((await forwarded).url()).toBe(`https://${HOST}/chart`);
+});
+
 test('leaves local development alone', async ({ page }) => {
   await page.goto('/');
   expect(page.url()).toMatch(/^http:\/\/localhost:4173\//);

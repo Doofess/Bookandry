@@ -26,16 +26,17 @@
            passkeys from an insecure page, and the app cannot start without
            them - it showed an empty screen. The server should redirect first
            (Cloudflare: Always Use HTTPS; and HSTS in dist/_headers), but this
-           catches a visit that got through. Local development is exempt. */
+           catches a visit that got through. Local development is exempt.
+           And never run on www: sign-in keeps its state per hostname, so the
+           app lives on one - www.bookandry.com only forwards here. */
         var h = location.hostname;
-        if (
-          location.protocol === 'http:' &&
-          h !== 'localhost' &&
-          h !== '127.0.0.1' &&
-          h !== '[::1]' &&
-          !/\.(localhost|test)$/.test(h)
-        ) {
-          location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+        var local = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || /\.(localhost|test)$/.test(h);
+        var host = location.host.replace(/^www\./, '');
+        if (!local && (location.protocol === 'http:' || host !== location.host)) {
+          /* The app's module still loads while the browser navigates away; this
+             tells it to stand down (main.tsx). */
+          document.documentElement.setAttribute('data-leaving', '');
+          location.replace('https://' + host + location.pathname + location.search + location.hash);
           return;
         }
         var d = document.documentElement;
