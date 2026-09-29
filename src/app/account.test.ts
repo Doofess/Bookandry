@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ensureSettings } from '@/db/repos/settings';
+import { DATA_OWNER_KEY } from '@/db/sync/account';
 import { adoptKeyring, loadKeys } from '@/db/sync/keystore';
 import { instantFromMs } from '@/lib/dates';
 import { deriveKeyring, newDataKey } from '@/services/crypto/keys';
@@ -8,31 +9,45 @@ import { getKeyState, setupKeys, type Rpc } from '@/services/supabase/transport'
 import { freshDb, type TestDb } from '@/test/db-harness';
 import { freshPg, type TestPg } from '@/test/pg-harness';
 
+import { LAST_ACTIVE_KEY, LOCK_AFTER_KEY } from './idle-lock';
+
 /*
- * The controller, end to end: a signed-in session, the real sync runner, and
- * the migration running on real Postgres. Only supabase-js is replaced - by a
- * session that is simply there, and an rpc that goes straight to the SQL.
+ * The controller, end to end: a session, the real runner, and the SQL on real
+ * Postgres. Only supabase-js is replaced - by a session that is there or not,
+ * and an rpc that goes straight to the database.
  */
 
 const USER = '00000000-0000-4000-8000-0000000000ee';
+const OTHER = '00000000-0000-4000-8000-0000000000ff';
 
-const fake = vi.hoisted(() => ({ rpc: undefined as Rpc | undefined }));
+type FakeUser = { id: string; email: string; app_metadata: { provider: string } };
+const userFor = (id: string): FakeUser => ({
+  id,
+  email: id === USER ? 'dana@example.com' : 'noa@example.com',
+  app_metadata: { provider: 'google' },
+});
+
+const fake = vi.hoisted(() => ({
+  rpc: undefined as Rpc | undefined,
+  session: undefined as { user: unknown } | null | undefined,
+  sessionError: undefined as Error | undefined,
+  signOut: vi.fn<(options: unknown) => Promise<{ error: null }>>(),
+}));
 
 vi.mock('@/services/supabase/client', () => ({
   accountsAvailable: () => true,
-  shouldLoadAtBoot: () => false,
+  shouldLoadAtBoot: () => fake.session !== null,
+  storedSessionUser: () => {
+    const raw = localStorage.getItem('bookandry.auth');
+    return raw === null ? undefined : (JSON.parse(raw) as { user: unknown }).user;
+  },
   getSupabase: () =>
     Promise.resolve({
       auth: {
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => undefined } } }),
         getSession: () =>
-          Promise.resolve({
-            data: {
-              session: {
-                user: { id: USER, email: 'dana@example.com', app_metadata: { provider: 'google' } },
-              },
-            },
-          }),
+          Promise.resolve({ data: { session: fake.session ?? null }, error: fake.sessionError ?? null }),
+        signOut: fake.signOut,
       },
     }),
   rpcFor: () => (fn: string, args: Record<string, unknown>) => {
@@ -46,42 +61,60 @@ const { AccountController } = await import('./account');
 let pg: TestPg;
 let device: TestDb;
 let controller: InstanceType<typeof AccountController> | undefined;
+let restarted: ReturnType<typeof vi.fn<() => void>>;
 
 beforeEach(async () => {
   pg = await freshPg();
   fake.rpc = pg.as(USER).rpc;
+  fake.session = { user: userFor(USER) };
+  fake.sessionError = undefined;
+  fake.signOut.mockReset().mockImplementation(() => {
+    fake.session = null;
+    return Promise.resolve({ error: null });
+  });
+  restarted = vi.fn<() => void>();
   device = freshDb();
   await device.db.open();
   await ensureSettings(device.db, instantFromMs(Date.parse('2026-09-29T10:00:00.000Z')));
 });
 afterEach(async () => {
-  // Signed out without touching the network: stops the runner.
-  (controller as unknown as { stopRunner(): void } | undefined)?.stopRunner();
+  (controller as unknown as { stop(): void } | undefined)?.stop();
   controller = undefined;
+  localStorage.clear();
   await device.dispose();
   await pg.close();
 });
 
-function keysKind(): string | undefined {
+function make(): InstanceType<typeof AccountController> {
+  controller = new AccountController(device.db, restarted);
+  return controller;
+}
+
+function status(): string | undefined {
   const view = controller?.getView();
   return view?.status === 'signed_in' ? view.keys.kind : view?.status;
 }
 
-describe('the account controller', () => {
-  it('signs in and syncs with nothing asked: the first device makes the key', async () => {
-    controller = new AccountController(device.db);
-    await controller.connect();
+/** This device already holds USER's data, as after an earlier sign-in. */
+async function ownedBy(userId: string): Promise<void> {
+  await device.db.meta.put({ key: DATA_OWNER_KEY, value: userId });
+  await device.db.meta.put({ key: 'accountEmail', value: 'dana@example.com' });
+  await device.db.profiles.put({ id: 'p1' } as never);
+}
+
+describe('signing in', () => {
+  it('asks nothing: the first device makes the key and the account holds it', async () => {
+    await make().connect();
     await vi.waitFor(() => {
-      expect(keysKind()).toBe('ready');
+      expect(status()).toBe('ready');
     });
     const state = await getKeyState(pg.as(USER).rpc);
     expect(state.keyVersion).toBe(1);
     expect(state.wraps.map((w) => w.kind)).toEqual(['account']);
+    expect((await device.db.meta.get(DATA_OWNER_KEY))?.value).toBe(USER);
   });
 
-  it('moves an account set up behind a passphrase over, once this device has synced it down', async () => {
-    // The account as the first release left it: only secret-held ways in,
-    // and this device holding version 1 of the key.
+  it('moves an account set up behind a passphrase over by itself', async () => {
     await setupKeys(pg.as(USER).rpc, [
       {
         kind: 'recovery',
@@ -93,25 +126,16 @@ describe('the account controller', () => {
       },
     ]);
     await adoptKeyring(device.db, USER, await deriveKeyring(newDataKey(), 1));
-    await device.db.profiles.put({ id: 'p1' } as never);
+    await ownedBy(USER);
 
-    controller = new AccountController(device.db);
-    await controller.connect();
-
-    await vi.waitFor(
-      async () => {
-        const state = await getKeyState(pg.as(USER).rpc);
-        expect(state.keyVersion).toBe(2);
-        expect(state.wraps.map((w) => w.kind)).toEqual(['account']);
-      },
-      { timeout: 10_000 },
-    );
-    // The server moves first; this device adopts the new key a moment later.
+    await make().connect();
     await vi.waitFor(async () => {
       expect((await loadKeys(device.db))?.current.version).toBe(2);
     });
+    const state = await getKeyState(pg.as(USER).rpc);
+    expect(state.wraps.map((w) => w.kind)).toEqual(['account']);
 
-    // ...and everything this device holds is back on the server, under the new key.
+    // ...and everything this device holds goes back up under the new key.
     await vi.waitFor(
       async () => {
         const held = await pg.pg.query<{ n: number }>(
@@ -121,6 +145,118 @@ describe('the account controller', () => {
       },
       { timeout: 10_000 },
     );
-    expect(keysKind()).toBe('ready');
+  });
+
+  it('keeps going offline on a session whose access token ran out', async () => {
+    await ownedBy(USER);
+    localStorage.setItem('bookandry.auth', JSON.stringify({ user: userFor(USER) }));
+    fake.session = undefined; // supabase-js: no session...
+    const offline = new Error('fetch failed');
+    offline.name = 'AuthRetryableFetchError';
+    fake.sessionError = offline; // ...because it could not refresh it
+
+    make().start();
+    await vi.waitFor(() => {
+      expect(controller?.getView().status).toBe('signed_in');
+    });
+    // Let the key check finish before the database goes away.
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+  });
+
+  it('opens straight away on a stored session for this device, before supabase-js answers', async () => {
+    await ownedBy(USER);
+    localStorage.setItem('bookandry.auth', JSON.stringify({ user: userFor(USER) }));
+    make().start();
+    await vi.waitFor(() => {
+      expect(controller?.getView().status).toBe('signed_in');
+    });
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+  });
+});
+
+describe('the data is shown only while the account is signed in', () => {
+  it('shows the sign-in screen, not the data, when the session has ended', async () => {
+    await ownedBy(USER);
+    fake.session = null;
+    make().start();
+    await vi.waitFor(() => {
+      expect(controller?.getView()).toEqual({ status: 'locked', email: 'dana@example.com', idle: false });
+    });
+    expect(await device.db.profiles.count()).toBe(1); // still here, out of sight
+  });
+
+  it('is plainly signed out on a device that never held an account', async () => {
+    fake.session = null;
+    make().start();
+    await vi.waitFor(() => {
+      expect(controller?.getView()).toEqual({ status: 'signed_out' });
+    });
+  });
+
+  it('locks a session restored after sitting idle past the limit, before showing anything', async () => {
+    await ownedBy(USER);
+    localStorage.setItem('bookandry.auth', JSON.stringify({ user: userFor(USER) }));
+    localStorage.setItem(LOCK_AFTER_KEY, '5');
+    localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now() - 6 * 60_000));
+    const seen: string[] = [];
+    const c = make();
+    c.subscribe(() => seen.push(c.getView().status));
+
+    c.start();
+    await vi.waitFor(() => {
+      expect(c.getView()).toMatchObject({ status: 'locked', idle: true });
+    });
+    expect(seen).not.toContain('signed_in');
+    expect(fake.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
+  it('never locks with "Never" chosen', async () => {
+    await ownedBy(USER);
+    localStorage.setItem(LOCK_AFTER_KEY, '0');
+    localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now() - 30 * 86_400_000));
+    await make().connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+  });
+
+  it('clears the device when a different account signs in on it', async () => {
+    await ownedBy(OTHER);
+    await make().connect();
+    await vi.waitFor(() => {
+      expect(restarted).toHaveBeenCalled();
+    });
+    expect(controller?.getView().status).not.toBe('signed_in');
+  });
+});
+
+describe('signing out', () => {
+  it('takes the data off the device', async () => {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    await c.signOut();
+    expect(fake.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(restarted).toHaveBeenCalled();
+  });
+
+  it('says how many changes have not reached the account', async () => {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    await vi.waitFor(async () => {
+      expect(await c.unsavedChanges()).toBe(0);
+    });
+    await device.db.outbox.put({ tbl: 'profiles', id: 'p-late' });
+    fake.rpc = () => Promise.reject(new Error('offline'));
+    expect(await c.unsavedChanges(200)).toBeGreaterThan(0);
   });
 });

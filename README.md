@@ -5,8 +5,8 @@ multi-currency with the rate snapshotted at save time, a virtualised transaction
 feed, a scatter chart, English and Hebrew with full RTL.
 
 Local-first: everything lives in the browser, and the app works fully with no
-account. An optional account adds backup and sync across devices: sign in on
-each one and it syncs by itself. See [Accounts and sync](#accounts-and-sync).
+account. An optional account keeps the data safe beyond one device, and brings
+it to every device you sign in on. See [Accounts](#accounts).
 
 ---
 
@@ -156,7 +156,7 @@ viewer.
   plus a shared payment method, offered during onboarding. "I paid you back" is
   an expense on A and an income on B, which nets correctly in "All" — at the
   cost of inflating both stat cards.
-- **End-to-end encryption.** It was built (a sync passphrase and a recovery
+- **End-to-end encryption.** It was built (a passphrase and a recovery
   key, 2026-09-27) and taken out again two days later: a key to type on every
   new device asked too much of people for a household ledger. Signing in, with
   a second factor on the account, is the protection. The machinery for secret-
@@ -272,52 +272,58 @@ string — pinning `"$1,234.50"` breaks the next time ICU moves a separator.
 figures) while Hebrew falls through to Heebo (which does not). Putting Heebo
 first silently breaks every amount column in Hebrew.
 
-## Accounts and sync
+## Accounts
 
-Optional. Signed out, the app is exactly what it always was. Signed in, every
-device holds the full data locally and syncs through Supabase — with nothing to
-set up: **signing in is enough**. The first device makes the household's data
-key and the account keeps it; every other device fetches it on sign-in.
+Optional. Without one, the app is exactly what it always was. With one, it
+works the way a bank's app does: **your data is your account**. Sign in on any
+device and it is there; there is no "sync" to turn on, watch or press. Each
+device still keeps a full local copy — the app stays fast and works offline —
+and keeps it in step with the account in the background.
+
+- **Signing out takes the data off the device.** The account keeps it. If some
+  changes have not reached the account yet (offline), signing out says so
+  first.
+- **A device whose session ends any other way** — locked after inactivity, or
+  signed out from another device — keeps the data but shows only a sign-in
+  screen until the same account signs in again. From there it can also remove
+  the data. Signing in with a different account removes it first.
+- **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
+  a day, or never. The session ends on the server too, not just on screen.
+- **Deleting the account** deletes everything it holds, and this device's copy.
 
 What the server holds, per row: a blinded id (an HMAC of table and id), a
 revision, a key version, and AES-256-GCM ciphertext of the table, the id, the
-row and whether it was deleted. Rev, key version, id and user are bound into
-the ciphertext as authenticated data.
+row and whether it was deleted. The first device makes the data key and the
+account keeps it; every other device fetches it on sign-in.
 
 ### Threat model
 
-- **The account is the lock.** The data key lives in the account (an
-  `account` row in `user_keys`), readable only by its signed-in owner.
-  Whoever can sign in as the person gets everything — use a strong password,
-  and turn on a second factor. Google accounts inherit Google's.
-- **The server operator, or a breach of the database, can read the data.**
-  The key sits in the same database as the ciphertext. The encryption still
-  keeps rows unreadable to anything that sees only the records table (a leaked
-  export of it, a log), and keeps the integrity guarantees below, but it is not
-  end-to-end.
-- **A malicious server** cannot alter, move, forge, or roll back a row a device
-  has seen: every one of those fails authentication or is older than what the
-  device holds. It **can withhold** rows, undetectably. A device that has held
-  a newer key refuses an older one, so a retired key cannot be handed back.
-- **A lost device** keeps whatever it already had. "Sign out all other
-  devices" ends every other session, so it can fetch nothing more; getting
-  back in needs the password (and the second factor). Supabase access tokens
-  already issued stay valid until they expire, up to an hour.
-- **A shared device.** Data kept after signing out remembers the account it
-  synced with. Signing in to a different account will not upload it unless the
-  person joining explicitly chooses to add it; the alternative offered is to
-  remove it first.
+- **The account is the lock.** Whoever can sign in as the person gets
+  everything. Use a strong password, and a second factor. Google accounts
+  inherit Google's.
+- **The server operator, or a breach of the database, can read and change the
+  data.** The data key sits in the same database as the ciphertext. The
+  encryption keeps rows unreadable to anything that sees only the records
+  table (a leaked export of it, a log), and it catches a server replaying a
+  row older than one a device has already seen; it is not end-to-end, and it
+  does not protect against whoever holds the database.
+- **A lost device.** "Sign out all other devices" ends every other session;
+  the lost one shows its sign-in screen from then on, and getting past it
+  needs the password (and the second factor). Supabase access tokens already
+  issued stay valid until they expire, up to an hour. The data on it is not
+  encrypted at rest, so someone who takes the storage apart can read it.
+- **A shared device.** Signing out removes the data; a different account
+  signing in removes the previous one's first. One person's data never reaches
+  another's account.
 - **Script running in this page** (XSS) can read the local data and use the
   keys while it runs. The Content-Security-Policy (`dist/_headers`, built by
   `src/lib/security-headers.ts`, run under in `e2e/11-csp.spec.ts`) exists to
   stop such a script from running at all. The Supabase session lives in
   `localStorage`, readable by such a script — accepted, for the same reason.
-- **Local data is not encrypted at rest.** Anyone with the unlocked device has
-  it, account or not, as before.
 
 Accounts set up in the two days of passphrase-held keys move over by
-themselves: the device that holds the key, after its first full sync, makes a
-new account-held key and re-uploads everything under it.
+themselves, on whichever device signs in first: it makes a new key the account
+holds, and every device re-sends what it has.
 
 ### Code map
 
@@ -328,8 +334,9 @@ new account-held key and re-uploads everything under it.
 | `src/services/crypto/`                           | AES-GCM, HKDF, Argon2id, key wrapping, recovery keys, passkey PRF |
 | `src/db/sync/codec.ts`                           | seals and opens records between the engine and the server         |
 | `src/db/sync/account.ts`                         | getting a device the account's key; moving it to a new one        |
+| `src/app/idle-lock.ts`, `account-gate.tsx`       | locking after inactivity; the sign-in screen in front of the data |
 | `supabase/migrations/`                           | tables, row-level security, and the only write path               |
-| `src/app/account.ts`, `sync-runner.ts`           | session, key state, when to sync                                  |
+| `src/app/account.ts`, `sync-runner.ts`           | session, key state, when to keep in step                          |
 | `src/features/account/`                          | the screens                                                       |
 
 The SQL is tested on real Postgres in-process (PGlite, `src/test/pg-harness.ts`)

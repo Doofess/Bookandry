@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from 'react';
 
 import type { BookandryDB } from '@/db/db';
-import { connectDevice, rotateAccountKey, type KeyServer } from '@/db/sync/account';
+import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
-import { forgetSyncIdentity, loadKeys } from '@/db/sync/keystore';
+import { loadKeys } from '@/db/sync/keystore';
 import { systemClock } from '@/lib/clock';
 import type { AuthResult } from '@/services/supabase/auth';
 import {
@@ -11,6 +11,7 @@ import {
   getSupabase,
   rpcFor,
   shouldLoadAtBoot,
+  storedSessionUser,
   type Session,
 } from '@/services/supabase/client';
 import {
@@ -22,10 +23,19 @@ import {
   type Rpc,
 } from '@/services/supabase/transport';
 
+import { idleExpired, touch, watchIdle, type IdleWatch } from './idle-lock';
 import { startSyncRunner, type SyncRunner, type SyncState } from './sync-runner';
 
 /**
  * The account, as the screens see it: one store, one source of truth.
+ *
+ * The model is a bank's, not a sync product's. A device either has nothing to
+ * do with an account (the app as it always was, local-only), or it holds an
+ * account's data - and then that data is shown only while the account is
+ * signed in. Signing out takes the data off the device; a session that ends
+ * any other way (signed out from another device, or locked after inactivity)
+ * leaves it behind the sign-in screen. Keeping the device and the account in
+ * step is the app's business, never a thing the person manages.
  *
  * Signed out is the normal state of this app, not an error one. Nothing here
  * runs, and supabase-js is not even downloaded, until someone signs in or
@@ -41,13 +51,9 @@ export type AccountUser = {
 /** Where this device stands with the account's key. */
 export type KeysView =
   | { readonly kind: 'checking' }
-  /** Holds the account's current key; syncing. */
+  /** Holds the account's current key; keeping in step. */
   | { readonly kind: 'ready' }
-  /** Holds another account's data: the person chooses (add it, or remove it). */
-  | { readonly kind: 'foreign'; readonly profiles: number; readonly transactions: number }
-  /** The account was set up behind a passphrase and this device never held that key. */
-  | { readonly kind: 'legacy_locked' }
-  /** The server offered an older key than this device holds. Sync stops. */
+  /** The server offered an older key than this device holds. Everything pauses. */
   | { readonly kind: 'rolled_back' }
   /** Could not reach the server to find out. */
   | { readonly kind: 'unknown' };
@@ -55,7 +61,13 @@ export type KeysView =
 export type AccountView =
   | { readonly status: 'unavailable' }
   | { readonly status: 'loading' }
+  /** No account on this device. */
   | { readonly status: 'signed_out' }
+  /**
+   * This device holds an account's data, and the account is not signed in
+   * here: the data stays hidden until it is.
+   */
+  | { readonly status: 'locked'; readonly email: string | undefined; readonly idle: boolean }
   | {
       readonly status: 'signed_in';
       readonly user: AccountUser;
@@ -67,7 +79,10 @@ export type AccountView =
 
 type SignedIn = Extract<AccountView, { status: 'signed_in' }>;
 
-function userOf(session: Session): AccountUser {
+/** The email of the account whose data this device holds, for the sign-in screen. */
+const OWNER_EMAIL_KEY = 'accountEmail';
+
+function userOf(session: Pick<Session, 'user'>): AccountUser {
   const provider = session.user.app_metadata.provider;
   return {
     id: session.user.id,
@@ -76,15 +91,32 @@ function userOf(session: Session): AccountUser {
   };
 }
 
+const isRetryable = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'AuthRetryableFetchError';
+
 export class AccountController {
   private view: AccountView;
   private readonly listeners = new Set<() => void>();
   private runner: SyncRunner | undefined;
+  private idle: IdleWatch | undefined;
   private connecting: Promise<Rpc> | undefined;
   private rpc: Rpc | undefined;
+  private lastReconnect = 0;
+  private lockedForIdle = false;
+  /** Shown from the stored session at boot, before supabase-js confirmed it. */
+  private provisional = false;
+  /** Clearing the device: the page is about to start over; ignore everything. */
+  private leaving = false;
+  private readonly settled = new Set<(state: SyncState) => void>();
 
-  constructor(private readonly db: BookandryDB) {
-    this.view = accountsAvailable() ? { status: 'signed_out' } : { status: 'unavailable' };
+  constructor(
+    private readonly db: BookandryDB,
+    /** Starts the app over from nothing. Tests watch it instead of navigating. */
+    private readonly restart: () => void = () => {
+      window.location.assign('/');
+    },
+  ) {
+    this.view = accountsAvailable() ? { status: 'loading' } : { status: 'unavailable' };
   }
 
   // -- store -----------------------------------------------------------------
@@ -107,15 +139,39 @@ export class AccountController {
 
   // -- lifecycle ---------------------------------------------------------------
 
-  /** At boot: connect only if there is a session (or a sign-in redirect) to pick up. */
+  /**
+   * At boot. Connects only if there is a session (or a sign-in redirect) to
+   * pick up; a session left idle past the limit is ended before anything of
+   * the account's is shown.
+   */
   start(): void {
     if (this.view.status === 'unavailable') return;
-    if (shouldLoadAtBoot()) {
-      this.set({ status: 'loading' });
-      void this.connect().catch(() => {
-        this.set({ status: 'signed_out' });
-      });
-    }
+    void (async () => {
+      if (!shouldLoadAtBoot()) {
+        await this.onSession(null);
+        return;
+      }
+      // A local-first app opens straight away, like a banking app opening on
+      // its last view: a stored session for the account this device already
+      // holds shows the app at once, while supabase-js loads and checks it.
+      // If it turns out to have ended, the sign-in screen replaces the app.
+      const stored = storedSessionUser();
+      if (
+        stored !== undefined &&
+        stored.id === (await dataOwner(this.db)) &&
+        !idleExpired(systemClock.nowMs())
+      ) {
+        this.provisional = true;
+        this.set({
+          status: 'signed_in',
+          user: userOf({ user: stored }),
+          keys: { kind: 'checking' },
+          sync: undefined,
+          passwordRecovery: false,
+        });
+      }
+      await this.connect();
+    })().catch(() => this.onSession(null));
   }
 
   /** Load supabase-js and follow the session from here on. Idempotent. */
@@ -125,32 +181,74 @@ export class AccountController {
       const rpc = rpcFor(supabase);
       this.rpc = rpc;
       supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'INITIAL_SESSION') return; // getSession below covers it
         // Deferred: supabase-js holds a lock while it calls this, and awaiting
         // another auth call from inside it deadlocks.
         setTimeout(() => {
           void this.onSession(session, event === 'PASSWORD_RECOVERY');
         }, 0);
       });
-      const { data } = await supabase.auth.getSession();
-      await this.onSession(data.session, false);
+      const { data, error } = await supabase.auth.getSession();
+      if (data.session === null && isRetryable(error)) {
+        // Offline with an access token past its hour. The session is still
+        // stored and still good; the data is this person's. Carry on offline -
+        // supabase-js refreshes when the network is back, and reports a
+        // session that really has ended as SIGNED_OUT.
+        const user = storedSessionUser();
+        await this.onSession(user === undefined ? null : { user }, false);
+      } else {
+        await this.onSession(data.session, false);
+      }
       return rpc;
     })();
     return this.connecting;
   }
 
-  private async onSession(session: Session | null, recovery: boolean): Promise<void> {
+  private async onSession(session: Pick<Session, 'user'> | null, recovery = false): Promise<void> {
+    if (this.leaving) return;
+    const owner = await dataOwner(this.db);
     if (session === null) {
-      this.stopRunner();
-      if (this.view.status !== 'unavailable') this.set({ status: 'signed_out' });
+      this.provisional = false;
+      this.stop();
+      if (this.view.status === 'unavailable') return;
+      if (owner === undefined) {
+        this.set({ status: 'signed_out' });
+      } else {
+        const email = (await this.db.meta.get(OWNER_EMAIL_KEY))?.value;
+        this.set({
+          status: 'locked',
+          email: typeof email === 'string' ? email : undefined,
+          idle: this.lockedForIdle,
+        });
+      }
       return;
     }
+
     const user = userOf(session);
+    if (owner !== undefined && owner !== user.id) {
+      // Someone else signed in on a device holding another account's data.
+      // That data is safe in its own account; it leaves this device before
+      // anything of the new account arrives.
+      await this.clearDevice();
+      return;
+    }
+
     const current = this.view;
-    if (current.status === 'signed_in' && current.user.id === user.id) {
+    if (current.status === 'signed_in' && current.user.id === user.id && !this.provisional) {
       if (recovery) this.patch({ passwordRecovery: true });
       return;
     }
-    this.stopRunner();
+    // A session restored after sitting idle past the limit ends here, before
+    // anything of the account's is shown. A fresh sign-in has just reset the
+    // clock (see auth()), so this never catches one.
+    if (idleExpired(systemClock.nowMs())) {
+      await this.lock();
+      return;
+    }
+    this.stop();
+    this.lockedForIdle = false;
+    this.provisional = false;
+    if (user.email !== undefined) await this.db.meta.put({ key: OWNER_EMAIL_KEY, value: user.email });
     this.set({
       status: 'signed_in',
       user,
@@ -158,30 +256,22 @@ export class AccountController {
       sync: undefined,
       passwordRecovery: recovery,
     });
+    this.idle = watchIdle({ onIdle: () => void this.lock(), nowMs: () => systemClock.nowMs() });
     await this.refreshKeys();
   }
 
   /**
    * Get this device the account's key - there is nothing for the person to
-   * type; signing in is enough - and start syncing. Run on every sign-in and
-   * whenever the account's key has moved on.
+   * type; signing in is enough - and start keeping in step. Run on every
+   * sign-in and whenever the account's key has moved on.
    */
-  async refreshKeys(addExistingData = false): Promise<void> {
+  async refreshKeys(): Promise<void> {
     if (this.view.status !== 'signed_in') return;
     const { id } = this.view.user;
     let keys: KeysView;
     try {
-      const result = await connectDevice(this.db, this.server(), id, { addExistingData });
-      if (result.ok) {
-        this.moveToAccountKey = result.needsAccountKey;
-        keys = { kind: 'ready' };
-      } else if (result.reason === 'foreign_data') {
-        keys = { kind: 'foreign', profiles: result.profiles, transactions: result.transactions };
-      } else if (result.reason === 'downgrade') {
-        keys = { kind: 'rolled_back' };
-      } else {
-        keys = { kind: 'legacy_locked' };
-      }
+      const result = await connectDevice(this.db, this.server(), id);
+      keys = result.ok ? { kind: 'ready' } : { kind: 'rolled_back' };
     } catch {
       // Offline, most likely. Keys already here are good enough to start; the
       // runner finds out soon enough if the account has moved on.
@@ -193,14 +283,6 @@ export class AccountController {
     else this.stopRunner();
   }
 
-  /**
-   * Set on a device holding the key of an account set up behind a sync
-   * passphrase. After its first complete sync - so it holds everything the
-   * account had - it moves the account to a key the account holds itself.
-   */
-  private moveToAccountKey = false;
-  private lastReconnect = 0;
-
   private server(): KeyServer {
     const rpc = this.rpc;
     if (rpc === undefined) throw new Error('not connected');
@@ -211,12 +293,7 @@ export class AccountController {
     };
   }
 
-  private userId(): string {
-    if (this.view.status !== 'signed_in') throw new Error('not signed in');
-    return this.view.user.id;
-  }
-
-  // -- syncing -----------------------------------------------------------------
+  // -- keeping in step -----------------------------------------------------------
 
   private startRunner(userId: string): void {
     if (this.runner !== undefined) return;
@@ -231,9 +308,12 @@ export class AccountController {
       },
       onState: (sync) => {
         this.patch({ sync });
+        if (sync.kind !== 'syncing') {
+          for (const resolve of this.settled) resolve(sync);
+          this.settled.clear();
+        }
         if (sync.kind === 'locked') {
-          // The account's key moved on (another device signed the others out,
-          // or moved the account over). Fetch the new one - at most twice a
+          // The account's key moved on. Fetch the new one - at most twice a
           // minute, so a server that keeps saying so cannot spin this.
           this.stopRunner();
           const now = systemClock.nowMs();
@@ -243,11 +323,6 @@ export class AccountController {
           } else {
             this.patch({ keys: { kind: 'unknown' } });
           }
-        } else if (sync.kind === 'idle' && this.moveToAccountKey) {
-          this.moveToAccountKey = false;
-          void this.rotate().catch(() => {
-            this.moveToAccountKey = true; // try again after the next sync
-          });
         }
       },
     });
@@ -258,13 +333,43 @@ export class AccountController {
     this.runner = undefined;
   }
 
-  syncNow(): void {
+  private stop(): void {
+    this.stopRunner();
+    this.idle?.stop();
+    this.idle = undefined;
+  }
+
+  /** Try again now, after "Couldn't reach your account". */
+  retry(): void {
     this.runner?.now();
+  }
+
+  /**
+   * Send what is waiting, as far as the network allows, and say how many
+   * changes still have not reached the account. Signing out asks this first:
+   * the only thing signing out can lose is what never left the device.
+   */
+  async unsavedChanges(timeoutMs = 15_000): Promise<number> {
+    const runner = this.runner;
+    if (runner !== undefined && navigator.onLine) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(done, timeoutMs);
+        function done(): void {
+          clearTimeout(timer);
+          resolve();
+        }
+        this.settled.add(done);
+        runner.now();
+      });
+    }
+    return this.db.outbox.count();
   }
 
   // -- signing in --------------------------------------------------------------
 
+  /** Every sign-in starts the inactivity clock afresh. */
   private async auth<T>(fn: (supabase: Awaited<ReturnType<typeof getSupabase>>) => Promise<T>): Promise<T> {
+    touch(systemClock.nowMs());
     await this.connect();
     return fn(await getSupabase());
   }
@@ -296,48 +401,11 @@ export class AccountController {
     return result;
   }
 
-  // -- the key -----------------------------------------------------------------
-
-  /** The person chose to add this device's other-account data to this account. */
-  async addExistingData(): Promise<void> {
-    await this.refreshKeys(true);
-  }
-
-  /**
-   * Remove everything from this device and start the app over, still signed
-   * in - the other answer to "this device holds another account's data".
-   */
-  async eraseDevice(): Promise<void> {
-    this.stopRunner();
-    await this.db.delete();
-    window.location.assign('/');
-  }
-
-  private async rotate(): Promise<void> {
-    this.stopRunner();
-    try {
-      await rotateAccountKey(this.db, this.server(), this.userId());
-    } finally {
-      await this.refreshKeys();
-    }
-  }
-
-  /**
-   * An account set up behind a passphrase that no device here can open: start
-   * the synced copy over from what this device holds.
-   */
-  startFresh(): Promise<void> {
-    return this.rotate();
-  }
-
   /**
    * "Sign out all other devices" - for a lost or stolen one. Every other
    * session ends, so it can fetch nothing more from the account; signing back
-   * in needs the password (and the second factor, where there is one).
-   *
-   * No new key: the account holds its key, so a device able to sign in again
-   * could fetch a new one just as well. What it already has on it, it keeps -
-   * the README says so.
+   * in needs the password (and the second step, where there is one). What a
+   * device already had on it stays behind its sign-in screen.
    */
   async signOutOthers(): Promise<void> {
     const { signOut } = await import('@/services/supabase/auth');
@@ -348,31 +416,60 @@ export class AccountController {
   // -- leaving -----------------------------------------------------------------
 
   /**
-   * Sign this device out. Its keys and cursor are forgotten either way; its
-   * data stays unless the person chose to remove it, in which case the whole
-   * database goes and the app starts over.
+   * Locked after inactivity: the session ends - on the server too, where the
+   * network allows - and the data waits behind the sign-in screen, changes not
+   * yet sent included. Signing back in to the same account picks up exactly
+   * where it stopped.
    */
-  async signOut(removeData: boolean): Promise<void> {
-    this.stopRunner();
+  async lock(): Promise<void> {
+    this.stop();
+    this.lockedForIdle = true;
+    // Not through auth(): locking is not activity, and must not reset the clock.
+    // signOut('local') forgets the session here even when the server cannot
+    // be told; the SIGNED_OUT that follows lands in onSession(null) as well.
     const { signOut } = await import('@/services/supabase/auth');
-    await this.auth((s) => signOut(s, 'local'));
-    await forgetSyncIdentity(this.db);
-    this.set({ status: 'signed_out' });
-    if (removeData) {
-      await this.db.delete();
-      window.location.assign('/');
-    }
+    await signOut(await getSupabase(), 'local').catch(() => undefined);
+    await this.onSession(null);
   }
 
-  /** Delete the account and everything the server holds. This device keeps its copy. */
+  /**
+   * Sign out, and take the account's data off this device. The account keeps
+   * it; the next sign-in, here or anywhere, brings it back. The caller has
+   * already asked about changes that have not reached the account.
+   */
+  async signOut(): Promise<void> {
+    this.stop();
+    const { signOut } = await import('@/services/supabase/auth');
+    await this.auth((s) => signOut(s, 'local')).catch(() => undefined);
+    await this.clearDevice();
+  }
+
+  /**
+   * From the sign-in screen: remove the account's data from this device
+   * without signing in - a device being handed on, or someone who is not
+   * the account holder.
+   */
+  async removeFromDevice(): Promise<void> {
+    this.stop();
+    await this.clearDevice();
+  }
+
+  /** Delete the account and everything the server holds, and this device's copy. */
   async deleteAccount(): Promise<void> {
-    this.stopRunner();
+    this.stop();
     await deleteMyAccount(await this.connect());
-    await forgetSyncIdentity(this.db);
     const { signOut } = await import('@/services/supabase/auth');
     // The account is gone, so the server may refuse; the local session goes regardless.
     await this.auth((s) => signOut(s, 'local')).catch(() => undefined);
-    this.set({ status: 'signed_out' });
+    await this.clearDevice();
+  }
+
+  /** Everything off this device; the app starts over from the beginning. */
+  private async clearDevice(): Promise<void> {
+    this.leaving = true;
+    this.stop();
+    await this.db.delete();
+    this.restart();
   }
 }
 

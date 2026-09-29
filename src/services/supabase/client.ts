@@ -85,3 +85,20 @@ export function rpcFor(supabase: SupabaseClient): Rpc {
 }
 
 export type { Session };
+
+/**
+ * The user of the stored session, read straight from storage. For the one
+ * case supabase-js answers "no session" about a session that is still there:
+ * offline, with the access token past its hour.
+ */
+export function storedSessionUser(): Session['user'] | undefined {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (raw === null) return undefined;
+    const parsed: unknown = JSON.parse(raw);
+    const user = (parsed as { user?: unknown } | null)?.user as Session['user'] | undefined;
+    return typeof user?.id === 'string' && typeof user.app_metadata === 'object' ? user : undefined;
+  } catch {
+    return undefined;
+  }
+}

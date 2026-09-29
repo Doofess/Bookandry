@@ -323,7 +323,7 @@
     "title": "Settings",
     "appearance": "Appearance",
     "dataTitle": "Your data",
-    "dataBody": "Stored on this device. Sign in above to keep a copy in your account, or export a backup file.",
+    "dataBody": "Stored on this device. Sign in above to keep it in your account, or export a backup file.",
     "export": "Export a backup",
     "exporting": "Preparing…",
     "exported": "Backup saved",
@@ -373,8 +373,8 @@
     "same": "That is already the base currency."
   },
   "account": {
-    "title": "Account & sync",
-    "signedOutBody": "Keep your data safe if this device is lost or wiped, and use it on your phone and computer together. Sign in on each device and it syncs by itself.",
+    "title": "Account",
+    "signedOutBody": "Keep your data in an account: it survives a lost or broken device, and it's there on your phone and your computer alike. Just sign in.",
     "signedInAs": "Signed in as {{email}}",
     "create": "Create an account",
     "signIn": "Sign in",
@@ -403,20 +403,12 @@
     },
     "status": {
       "checking": "Checking…",
-      "syncing": "Syncing…",
-      "idle": "Synced {{when}}",
-      "idleNever": "Ready to sync",
-      "offline": "Offline. Changes will sync when you're back online.",
-      "error": "Couldn't sync.",
-      "rebasing": "Some amounts arrived in an old base currency and are waiting for exchange rates. Totals may be off until then.",
-      "unknown": "Can't reach the server right now."
+      "saved": "Everything is saved to your account.",
+      "offline": "You're offline. Changes are kept on this device and saved to your account when you're back online.",
+      "error": "Couldn't reach your account. Your changes are kept on this device.",
+      "rebasing": "Some amounts are waiting for exchange rates. Totals may be off until then.",
+      "unknown": "Can't reach your account right now."
     },
-    "syncNow": "Sync now",
-    "signOutQuestion": "What should happen to the data on this device?",
-    "signOutKeep": "Keep it here",
-    "signOutKeepHint": "Keep using the app on this device. It just stops syncing.",
-    "signOutRemove": "Remove it from this device",
-    "signOutRemoveHint": "Usually right on a shared or borrowed device. Your account keeps its copy.",
     "delete": "Delete account",
     "deleteWord": "DELETE",
     "deleteType": "Type {{word}} to confirm",
@@ -425,19 +417,19 @@
     "flow": {
       "signin": {
         "title": "Sign in",
-        "body": "Sign in to sync this device with your account."
+        "body": "Sign in to your account."
       },
       "signup": {
         "title": "Create an account",
-        "body": "Your account keeps a copy of your data, so it survives a lost or broken device."
+        "body": "Your account keeps your data, so it survives a lost or broken device."
       },
       "signout": {
         "title": "Sign out",
-        "body": "Your account keeps your data either way."
+        "body": "Your data stays safe in your account and is removed from this device. Sign in again, here or anywhere, to get it back."
       },
       "delete": {
         "title": "Delete your account?",
-        "body": "This deletes your account and everything stored in it. Your devices keep their own copies. It can't be undone."
+        "body": "This deletes your account and everything in it, and removes the data from this device. It can't be undone. To keep a copy, export a backup first."
       },
       "newPassword": {
         "title": "Choose a new password",
@@ -445,27 +437,40 @@
       },
       "signOutOthers": {
         "title": "Sign out all other devices?",
-        "body": "For a lost or stolen device. Every other device is signed out and can get nothing more from your account; signing back in needs your password. What a device already has on it, it keeps."
-      },
-      "startFresh": {
-        "title": "Start the synced copy over?",
-        "body": "The synced copy is replaced with what's on this device, and your other devices pick it up from here. Anything that was only in the old copy is lost."
+        "body": "For a lost or stolen device. Every other device is signed out, and signing back in needs your password. The data they hold stays hidden until then."
       }
     },
-    "foreignBody": "This device still holds data from a different account. It is not added to yours unless you choose to.",
-    "foreignCounts": "On this device: {{profiles}} people, {{transactions}} transactions.",
-    "foreignErase": "Remove it from this device",
-    "foreignEraseHint": "The app starts over, still signed in. Then unlock your account.",
-    "foreignAdd": "Add it to my account",
-    "downgrade": "The server offered an older lock than this device already has. Sync is paused to protect your data.",
+    "downgrade": "Something is wrong with your account on the server, so nothing is saved to it for now. Everything on this device is safe.",
     "firstRunHave": "I already have an account",
     "firstRunBack": "Set up this device instead",
-    "firstRunJoinBody": "Sign in and unlock sync, and your data arrives on this device.",
+    "firstRunJoinBody": "Sign in, and your data arrives on this device.",
     "signOutOthers": "Sign out all other devices",
     "signedOutOthers": "Every other device is signed out.",
-    "startFresh": "Start the synced copy over from this device",
-    "startedFresh": "Your account now syncs from this device.",
-    "legacyBody": "This account was set up with a sync passphrase, which is no longer used. Open Bookandry on the device where you set it up and it switches over by itself. Or start the synced copy over from this device - anything only in the old copy is lost.",
-    "firstRunEmpty": "Your account has nothing in it yet. Set up this device, and it will sync from here on."
+    "firstRunEmpty": "Your account has nothing in it yet. Set up this device, and everything you add is kept in your account.",
+    "signOutChecking": "Saving your latest changes…",
+    "signOutUnsaved_one": "1 change hasn't reached your account yet - you're offline. Signing out now loses it.",
+    "signOutUnsaved_other": "{{count}} changes haven't reached your account yet - you're offline. Signing out now loses them.",
+    "signOutAnyway": "Sign out anyway",
+    "lock": {
+      "title": "Signed out",
+      "idleTitle": "Locked",
+      "body": "Sign in as {{email}} to see your data.",
+      "bodyNoEmail": "Sign in to see your data.",
+      "idleBody": "Locked after a while without use, to keep your data private. Sign in as {{email}} to carry on.",
+      "idleBodyNoEmail": "Locked after a while without use, to keep your data private. Sign in to carry on.",
+      "other": "Signing in with a different account removes this data from the device first.",
+      "remove": "Remove this data from the device",
+      "removeTitle": "Remove this data from the device?",
+      "removeBody": "The account keeps its data. Anything on this device that never reached the account is lost."
+    },
+    "lockAfter": {
+      "0": "Never",
+      "5": "5 min",
+      "15": "15 min",
+      "60": "1 hour",
+      "1440": "1 day",
+      "label": "Lock after inactivity",
+      "body": "Signs this device out after it sits unused. Signing back in picks up where you left off."
+    }
   }
 }

@@ -9,8 +9,8 @@ import { getKeyState, rotateKeys, rpcTransport, setupKeys } from '@/services/sup
 import { freshDb, type TestDb } from '@/test/db-harness';
 import { freshPg, type TestPg } from '@/test/pg-harness';
 
-import { connectDevice, DATA_OWNER_KEY, joinCheck, rotateAccountKey, type KeyServer } from './account';
-import { adoptKeyring, forgetSyncIdentity, loadKeys } from './keystore';
+import { connectDevice, DATA_OWNER_KEY, rotateAccountKey, type KeyServer } from './account';
+import { adoptKeyring, loadKeys } from './keystore';
 
 /*
  * Getting a device the account's key - against the real SQL, both migrations
@@ -62,8 +62,8 @@ async function sameKey(a: TestDb, b: TestDb): Promise<boolean> {
 
 describe('signing in is enough', () => {
   it('makes the key on the first device and hands it to the next', async () => {
-    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true, needsAccountKey: false });
-    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: true, needsAccountKey: false });
+    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true });
+    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: true });
     expect(await sameKey(phone, laptop)).toBe(true);
 
     const state = await getKeyState(pg.as(USER).rpc);
@@ -74,7 +74,7 @@ describe('signing in is enough', () => {
   it('is safe to call on every sign-in', async () => {
     await connectDevice(phone.db, server, USER);
     const before = await fingerprint(phone);
-    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true, needsAccountKey: false });
+    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true });
     expect(await fingerprint(phone)).toBe(before);
     expect(await version(phone)).toBe(1);
   });
@@ -93,7 +93,7 @@ describe('signing in is enough', () => {
         return server.getKeyState();
       },
     };
-    expect(await connectDevice(laptop.db, racing, USER)).toEqual({ ok: true, needsAccountKey: false });
+    expect(await connectDevice(laptop.db, racing, USER)).toEqual({ ok: true });
     expect(await sameKey(phone, laptop)).toBe(true);
   });
 
@@ -115,57 +115,7 @@ describe('signing in is enough', () => {
   });
 });
 
-describe("never uploading someone else's data", () => {
-  /** The laptop was someone else's synced device; they signed out and kept the data. */
-  async function leftBehindByAnotherAccount(): Promise<void> {
-    await laptop.db.meta.put({ key: DATA_OWNER_KEY, value: OTHER });
-    await laptop.db.profiles.put({ id: 'p-theirs' } as never);
-    await laptop.db.outbox.clear();
-  }
-
-  it('refuses until the person chooses, then adds it only when asked', async () => {
-    await connectDevice(phone.db, server, USER);
-    await leftBehindByAnotherAccount();
-
-    expect(await connectDevice(laptop.db, server, USER)).toEqual({
-      ok: false,
-      reason: 'foreign_data',
-      profiles: 1,
-      transactions: 0,
-    });
-    expect(await loadKeys(laptop.db)).toBeUndefined();
-    expect(await laptop.db.outbox.count()).toBe(0);
-
-    expect(await connectDevice(laptop.db, server, USER, { addExistingData: true })).toMatchObject({
-      ok: true,
-    });
-    expect(await laptop.db.outbox.get(['profiles', 'p-theirs'])).toBeDefined();
-    expect((await laptop.db.meta.get(DATA_OWNER_KEY))?.value).toBe(USER);
-  });
-
-  it('refuses to be the first device of a new account on top of it, too', async () => {
-    await leftBehindByAnotherAccount();
-    expect(await connectDevice(laptop.db, server, USER)).toMatchObject({ ok: false, reason: 'foreign_data' });
-    expect((await getKeyState(pg.as(USER).rpc)).keyVersion).toBe(0); // nothing reached the server
-  });
-
-  it('lets the same account back in without asking', async () => {
-    await connectDevice(laptop.db, server, USER);
-    await laptop.db.profiles.put({ id: 'p-mine' } as never);
-    await forgetSyncIdentity(laptop.db); // signed out, kept the data
-    expect(await joinCheck(laptop.db, USER)).toEqual({ kind: 'fresh' });
-    expect(await connectDevice(laptop.db, server, USER)).toMatchObject({ ok: true });
-  });
-
-  it("does not count sample data as anyone's, and never uploads it", async () => {
-    const { loadDemoData, hasDemoData } = await import('@/db/demo');
-    await laptop.db.meta.put({ key: DATA_OWNER_KEY, value: OTHER });
-    await loadDemoData(laptop.db, { today: d('2026-09-15'), baseCurrency: 'ILS', now: NOW });
-    expect(await joinCheck(laptop.db, USER)).toEqual({ kind: 'fresh' });
-    await connectDevice(laptop.db, server, USER);
-    expect(await hasDemoData(laptop.db)).toBe(false);
-  });
-
+describe('joining', () => {
   it('queues everything already on a device joining, and forgets an old cursor', async () => {
     await laptop.db.profiles.put({ id: 'p-mine' } as never);
     await laptop.db.meta.put({ key: 'syncCursor', value: 999 });
@@ -173,23 +123,53 @@ describe("never uploading someone else's data", () => {
     await connectDevice(laptop.db, server, USER);
     expect(await laptop.db.meta.get('syncCursor')).toBeUndefined();
     expect(await laptop.db.outbox.get(['profiles', 'p-mine'])).toBeDefined();
+    expect((await laptop.db.meta.get(DATA_OWNER_KEY))?.value).toBe(USER);
+  });
+
+  it('never uploads sample data', async () => {
+    const { loadDemoData, hasDemoData } = await import('@/db/demo');
+    await loadDemoData(laptop.db, { today: d('2026-09-15'), baseCurrency: 'ILS', now: NOW });
+    await connectDevice(laptop.db, server, USER);
+    expect(await hasDemoData(laptop.db)).toBe(false);
+  });
+
+  it('fills an account whose server copy was cleared, from a device that had its old key', async () => {
+    await connectDevice(phone.db, server, USER);
+    const before = await fingerprint(phone);
+    await phone.db.profiles.put({ id: 'p1' } as never);
+    await phone.db.meta.put({ key: 'syncCursor', value: 42 });
+    await phone.db.outbox.clear();
+    // The operator starts the account over.
+    await pg.pg.exec(
+      `delete from public.user_keys; delete from public.records; delete from public.user_state;`,
+    );
+
+    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true });
+    expect(await fingerprint(phone)).not.toBe(before);
+    expect(await phone.db.meta.get('syncCursor')).toBeUndefined();
+    expect(await phone.db.outbox.get(['profiles', 'p1'])).toBeDefined();
   });
 });
 
-describe('signing out other devices', () => {
-  it('moves the account to a new key the others fetch, and re-queues everything', async () => {
+describe('a new key', () => {
+  it('is fetched by the other devices, which send everything again', async () => {
     await connectDevice(phone.db, server, USER);
     await connectDevice(laptop.db, server, USER);
     await phone.db.profiles.put({ id: 'p1' } as never);
+    await laptop.db.profiles.put({ id: 'p2' } as never);
     await phone.db.outbox.clear();
+    await laptop.db.outbox.clear();
 
     await rotateAccountKey(phone.db, server, USER);
     expect(await version(phone)).toBe(2);
     expect(await phone.db.outbox.get(['profiles', 'p1'])).toBeDefined();
     expect(await sameKey(phone, laptop)).toBe(false);
 
-    expect(await connectDevice(laptop.db, server, USER)).toMatchObject({ ok: true });
+    // The server dropped what was sealed under the old key; the laptop's rows
+    // come back because it re-sends them.
+    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: true });
     expect(await sameKey(phone, laptop)).toBe(true);
+    expect(await laptop.db.outbox.get(['profiles', 'p2'])).toBeDefined();
   });
 
   it('refuses a server that hands back the key it retired', async () => {
@@ -221,6 +201,8 @@ describe('accounts set up behind a sync passphrase', () => {
     ]);
     await adoptKeyring(phone.db, USER, ring);
     await phone.db.meta.put({ key: DATA_OWNER_KEY, value: USER });
+    await phone.db.profiles.put({ id: 'p-phone' } as never);
+    await phone.db.outbox.clear();
     await rpcTransport(rpc).push([
       {
         rid: 'B'.repeat(43),
@@ -232,33 +214,29 @@ describe('accounts set up behind a sync passphrase', () => {
     ]);
   }
 
-  it('keeps syncing on the device that holds the key, and says it should move over', async () => {
+  it('moves over by itself on whichever device signs in first, asking nothing', async () => {
     await legacyAccount();
-    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true, needsAccountKey: true });
-  });
-
-  it('moves over from that device: a new key the account holds, and the old copy dropped', async () => {
-    await legacyAccount();
-    await rotateAccountKey(phone.db, server, USER);
+    await laptop.db.profiles.put({ id: 'p-laptop' } as never);
+    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: true });
 
     const state = await getKeyState(pg.as(USER).rpc);
     expect(state.keyVersion).toBe(2);
     expect(state.wraps.map((w) => w.kind)).toEqual(['account']);
     expect((await rpcTransport(pg.as(USER).rpc).pull(0, 100)).records).toEqual([]);
-    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true, needsAccountKey: false });
+    expect(await laptop.db.outbox.get(['profiles', 'p-laptop'])).toBeDefined();
 
-    // Any other device now just signs in.
-    expect(await connectDevice(laptop.db, server, USER)).toMatchObject({ ok: true });
+    // The phone, which held v1, meets v2, fetches it and sends what it has.
+    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true });
     expect(await sameKey(phone, laptop)).toBe(true);
+    expect(await phone.db.outbox.get(['profiles', 'p-phone'])).toBeDefined();
   });
 
-  it('tells a device that never held the old key, which can start the copy over', async () => {
+  it('moves over the same way from the device that held the old key', async () => {
     await legacyAccount();
-    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: false, reason: 'legacy_locked' });
-    await rotateAccountKey(laptop.db, server, USER);
-    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: true, needsAccountKey: false });
-    // The phone, which held v1, meets v2 and fetches it like anyone else.
-    expect(await connectDevice(phone.db, server, USER)).toMatchObject({ ok: true });
+    expect(await connectDevice(phone.db, server, USER)).toEqual({ ok: true });
+    expect(await version(phone)).toBe(2);
+    expect(await phone.db.outbox.get(['profiles', 'p-phone'])).toBeDefined();
+    expect(await connectDevice(laptop.db, server, USER)).toEqual({ ok: true });
     expect(await sameKey(phone, laptop)).toBe(true);
   });
 });

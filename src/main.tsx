@@ -11,6 +11,7 @@ import '@fontsource-variable/heebo';
 import './index.css';
 
 import { initAccount } from '@/app/account';
+import { AccountGate } from '@/app/account-gate';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
@@ -85,11 +86,13 @@ async function bootstrap(): Promise<void> {
     <StrictMode>
       <I18nextProvider i18n={i18n}>
         <AppDirection>
-          <TodayProvider>
-            <BootGate firstRun={<FirstRun />}>
-              <RouterProvider router={router} />
-            </BootGate>
-          </TodayProvider>
+          <AccountGate>
+            <TodayProvider>
+              <BootGate firstRun={<FirstRun />}>
+                <RouterProvider router={router} />
+              </BootGate>
+            </TodayProvider>
+          </AccountGate>
         </AppDirection>
       </I18nextProvider>
     </StrictMode>,

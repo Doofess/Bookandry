@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode, type SyntheticEvent } from 'react';
+import { useEffect, useId, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -12,16 +12,14 @@ import type { AuthResult } from '@/services/supabase/auth';
 /**
  * Every account flow, in one bottom sheet.
  *
- * There is nothing here about keys: signing in is enough, and the account
- * hands each device its data key without asking anything of the person. What
- * is left is signing in and out, and the two things that cannot be undone -
- * deleting the account, and starting the synced copy over - each confirmed.
+ * There is nothing here about keys or copies: signing in is enough, and the
+ * account hands each device its data. What is left is signing in and out,
+ * and deleting the account - the one thing that cannot be undone, confirmed.
  */
 export type Flow =
   | { readonly kind: 'signin'; readonly mode: 'signin' | 'signup' }
   | { readonly kind: 'signout' }
   | { readonly kind: 'signOutOthers' }
-  | { readonly kind: 'startFresh' }
   | { readonly kind: 'delete' }
   | { readonly kind: 'newPassword' };
 
@@ -72,16 +70,6 @@ function FlowBody({ flow, onDone }: { readonly flow: Flow; readonly onDone: () =
           action={() => accountController().signOutOthers()}
           label="account.signOutOthers"
           done="account.signedOutOthers"
-          onDone={onDone}
-        />
-      );
-    case 'startFresh':
-      return (
-        <Confirm
-          action={() => accountController().startFresh()}
-          label="account.startFresh"
-          done="account.startedFresh"
-          destructive
           onDone={onDone}
         />
       );
@@ -144,11 +132,23 @@ function Field({
   );
 }
 
-function SignIn({ initial, onDone }: { readonly initial: 'signin' | 'signup'; readonly onDone: () => void }) {
+/** Also the lock screen's form, where only signing in is offered. */
+export function SignIn({
+  initial,
+  onDone,
+  signUp = true,
+  email: knownEmail = '',
+}: {
+  readonly initial: 'signin' | 'signup';
+  readonly onDone: () => void;
+  readonly signUp?: boolean;
+  /** The account this device belongs to, when it is known. */
+  readonly email?: string;
+}) {
   const { t } = useTranslation();
   const messages = useMessages();
   const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>(initial);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(knownEmail);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -262,17 +262,19 @@ function SignIn({ initial, onDone }: { readonly initial: 'signin' | 'signup'; re
             {t('account.forgot')}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="link"
-          onClick={() => {
-            setMode(mode === 'signup' ? 'signin' : 'signup');
-            setError(undefined);
-            setInfo(undefined);
-          }}
-        >
-          {mode === 'signup' ? t('account.haveAccount') : t('account.noAccount')}
-        </Button>
+        {!signUp && mode === 'signin' ? null : (
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => {
+              setMode(mode === 'signup' || !signUp ? 'signin' : 'signup');
+              setError(undefined);
+              setInfo(undefined);
+            }}
+          >
+            {mode === 'signup' || !signUp ? t('account.haveAccount') : t('account.noAccount')}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -287,8 +289,8 @@ function Confirm({
   onDone,
 }: {
   readonly action: () => Promise<void>;
-  readonly label: 'account.signOutOthers' | 'account.startFresh';
-  readonly done: 'account.signedOutOthers' | 'account.startedFresh';
+  readonly label: 'account.signOutOthers';
+  readonly done: 'account.signedOutOthers';
   readonly destructive?: boolean;
   readonly onDone: () => void;
 }) {
@@ -326,22 +328,36 @@ function Confirm({
   );
 }
 
+/**
+ * Signing out takes the data off this device; the account keeps it. The only
+ * thing that can be lost is a change that never reached the account, so the
+ * waiting ones are sent first, and only if some still cannot be (offline) is
+ * the person asked.
+ */
 function SignOut({ onDone }: { readonly onDone: () => void }) {
   const { t } = useTranslation();
   const messages = useMessages();
-  // Nothing preselected, on purpose: this app does not choose for people what
-  // happens to their data.
-  const [choice, setChoice] = useState<'keep' | 'remove' | undefined>(undefined);
+  const [unsaved, setUnsaved] = useState<number | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const groupId = useId();
+
+  useEffect(() => {
+    let live = true;
+    void accountController()
+      .unsavedChanges()
+      .then((n) => {
+        if (live) setUnsaved(n);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const confirm = async (): Promise<void> => {
-    if (choice === undefined) return;
     setBusy(true);
     setError(undefined);
     try {
-      await accountController().signOut(choice === 'remove');
+      await accountController().signOut();
       onDone();
     } catch {
       setError(messages.thrown());
@@ -349,39 +365,29 @@ function SignOut({ onDone }: { readonly onDone: () => void }) {
     }
   };
 
+  if (unsaved === undefined)
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        {t('account.signOutChecking')}
+      </p>
+    );
+
   return (
     <div className="space-y-3">
-      <p id={groupId} className="text-sm font-medium">
-        {t('account.signOutQuestion')}
-      </p>
-      <div role="radiogroup" aria-labelledby={groupId} className="grid gap-1.5">
-        <Choice
-          selected={choice === 'keep'}
-          label={t('account.signOutKeep')}
-          hint={t('account.signOutKeepHint')}
-          onSelect={() => {
-            setChoice('keep');
-          }}
-        />
-        <Choice
-          selected={choice === 'remove'}
-          label={t('account.signOutRemove')}
-          hint={t('account.signOutRemoveHint')}
-          destructive
-          onSelect={() => {
-            setChoice('remove');
-          }}
-        />
-      </div>
+      {unsaved > 0 ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('account.signOutUnsaved', { count: unsaved })}
+        </p>
+      ) : null}
       <ErrorLine message={error} />
       <Button
         type="button"
         className="w-full"
-        variant={choice === 'remove' ? 'destructive' : 'default'}
-        disabled={busy || choice === undefined}
+        variant={unsaved > 0 ? 'destructive' : 'default'}
+        disabled={busy}
         onClick={() => void confirm()}
       >
-        {t('account.signOut')}
+        {unsaved > 0 ? t('account.signOutAnyway') : t('account.signOut')}
       </Button>
     </div>
   );
@@ -500,35 +506,5 @@ function NewPassword({ onDone }: { readonly onDone: () => void }) {
         {t('account.savePassword')}
       </Button>
     </form>
-  );
-}
-
-function Choice({
-  selected,
-  label,
-  hint,
-  destructive = false,
-  onSelect,
-}: {
-  readonly selected: boolean;
-  readonly label: string;
-  readonly hint: string;
-  readonly destructive?: boolean;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      className={
-        'rounded-xl border p-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ' +
-        (selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted')
-      }
-    >
-      <span className={`block text-sm font-medium ${destructive ? 'text-destructive' : ''}`}>{label}</span>
-      <span className="mt-0.5 block text-xs text-muted-foreground">{hint}</span>
-    </button>
   );
 }
