@@ -15,14 +15,12 @@ import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
 import { AccountCard } from '@/features/account/account-card';
 import { changeLanguage } from '@/i18n';
-import type { Language } from '@/i18n/boot';
+import { applyTheme, type Language, type Theme } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 
 import { DataCard } from './data-card';
 import { RecentlyDeleted } from './recently-deleted';
 import { ReconvertDialog } from './reconvert-dialog';
-
-type Theme = 'light' | 'dark' | 'system';
 
 export function SettingsScreen() {
   const { t } = useTranslation(['common', 'categories']);
@@ -48,6 +46,11 @@ export function SettingsScreen() {
     void changeLanguage(language);
   };
 
+  /*
+   * `writeSettings` updates the boot mirror for the NEXT cold start; `applyTheme`
+   * is the current one. Without it the choice does not take effect until a
+   * reload, and a theme toggle that appears to do nothing is one people press twice.
+   */
   const setTheme = (theme: Theme): void => {
     void writeSettings(db, { theme }, systemClock.nowIso());
     applyTheme(theme);
@@ -215,20 +218,4 @@ function usePersisted(): boolean | undefined {
   }, []);
 
   return persisted;
-}
-
-/**
- * Apply the theme to the document immediately.
- *
- * `writeSettings` updates the boot mirror for the NEXT cold start; this is the
- * current one. Without it the choice does not take effect until a reload, and
- * a theme toggle that appears to do nothing is a theme toggle people press
- * twice.
- */
-function applyTheme(theme: Theme): void {
-  const root = document.documentElement;
-  const dark =
-    theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  root.classList.toggle('dark', dark);
-  root.style.colorScheme = dark ? 'dark' : 'light';
 }

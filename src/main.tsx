@@ -28,7 +28,6 @@ import { CategoriesScreen } from '@/features/settings/categories-screen';
 import { PaymentMethodsScreen } from '@/features/settings/payment-methods-screen';
 import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
-import { readBootMirror } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 
 const router = createBrowserRouter([
@@ -82,12 +81,10 @@ async function bootstrap(): Promise<void> {
   const rootEl = document.getElementById('root');
   if (!rootEl) throw new Error('#root not found');
 
-  const { theme } = readBootMirror();
-
   createRoot(rootEl).render(
     <StrictMode>
       <I18nextProvider i18n={i18n}>
-        <AppDirection theme={theme}>
+        <AppDirection>
           <TodayProvider>
             <BootGate firstRun={<FirstRun />}>
               <RouterProvider router={router} />

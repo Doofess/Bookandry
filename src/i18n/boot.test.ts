@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  applyDocumentChrome,
+  applyLanguage,
+  applyTheme,
   BOOT_KEY,
   DEFAULT_BOOT,
   dirFor,
@@ -94,9 +95,10 @@ describe('resolveDark', () => {
   });
 });
 
-describe('applyDocumentChrome', () => {
-  it('sets lang, dir, the dark class and color-scheme together', () => {
-    applyDocumentChrome({ lang: 'he', theme: 'dark' });
+describe('applyLanguage and applyTheme', () => {
+  it('sets lang, dir, the dark class and color-scheme', () => {
+    applyLanguage('he');
+    applyTheme('dark');
     const el = document.documentElement;
     expect(el.lang).toBe('he');
     expect(el.dir).toBe('rtl');
@@ -105,10 +107,19 @@ describe('applyDocumentChrome', () => {
   });
 
   it('clears the dark class when switching to light', () => {
-    applyDocumentChrome({ lang: 'he', theme: 'dark' });
-    applyDocumentChrome({ lang: 'en', theme: 'light' });
+    applyTheme('dark');
+    applyTheme('light');
     const el = document.documentElement;
-    expect(el.lang).toBe('en');
+    expect(el.classList.contains('dark')).toBe(false);
+    expect(el.style.colorScheme).toBe('light');
+  });
+
+  it('never touches the theme when the language changes', () => {
+    // The bug: a language change re-applied the theme read at startup.
+    applyTheme('light');
+    applyLanguage('he');
+    applyLanguage('en');
+    const el = document.documentElement;
     expect(el.dir).toBe('ltr');
     expect(el.classList.contains('dark')).toBe(false);
     expect(el.style.colorScheme).toBe('light');

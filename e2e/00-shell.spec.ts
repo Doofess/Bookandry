@@ -114,6 +114,46 @@ test.describe('@smoke0 app shell', () => {
   });
 });
 
+test.describe('@theme switching language', () => {
+  /*
+   * Language and theme are separate choices, and changing one must never move
+   * the other. The component that applies the language used to re-apply the
+   * theme too - the one it had read at startup - so a person who opened the
+   * app in dark, picked Light, then changed language was put back in dark while
+   * Settings still said Light.
+   */
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'en', 'Drives English copy; once is enough.');
+  });
+
+  test('keeps the theme picked in Settings', async ({ page }) => {
+    await completeFirstRun(page, 'en', { demo: false, theme: 'dark' });
+    await page.goto('/settings');
+    const html = page.locator('html');
+    await expect(html).toHaveClass(/dark/);
+
+    await page.getByRole('radio', { name: 'Light' }).click();
+    await expect(html).not.toHaveClass(/dark/);
+
+    await page.getByRole('radio', { name: 'עברית' }).click();
+    await expect(html).toHaveAttribute('dir', 'rtl');
+    await expect(html).not.toHaveClass(/dark/);
+    await expect(page.getByRole('radio', { name: 'בהיר' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test("keeps the device's theme in the setup wizard", async ({ page }) => {
+    await bootAs(page, 'en', 'dark');
+    await page.goto('/');
+    const html = page.locator('html');
+    await expect(html).toHaveClass(/dark/);
+
+    await page.getByRole('radio', { name: 'עברית' }).click();
+    await expect(html).toHaveAttribute('dir', 'rtl');
+    await expect(html).toHaveClass(/dark/);
+  });
+});
+
 test.describe('@rtl boot', () => {
   test('applies dir=rtl and lang=he before first paint', async ({ page }) => {
     // Seed the flat mirror the inline boot script reads. This is the key that

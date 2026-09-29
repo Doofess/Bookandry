@@ -106,11 +106,23 @@ export function resolveDark(theme: Theme): boolean {
     : false;
 }
 
-/** Applies language, direction and theme to <html>. Mirrors the inline boot script. */
-export function applyDocumentChrome({ lang, theme }: BootMirror): void {
+/*
+ * Language and theme are applied separately, on purpose. They are two choices,
+ * and changing one must never touch the other: when one function applied both,
+ * every language change re-applied whatever theme its caller had to hand - the
+ * one read at startup - and undid a theme picked since.
+ */
+
+/** Applies language and direction to <html>. Mirrors the inline boot script. */
+export function applyLanguage(lang: Language): void {
   const el = document.documentElement;
   el.lang = lang;
   el.dir = dirFor(lang);
+}
+
+/** Applies the theme to <html>. Mirrors the inline boot script. */
+export function applyTheme(theme: Theme): void {
+  const el = document.documentElement;
   const dark = resolveDark(theme);
   el.classList.toggle('dark', dark);
   el.style.colorScheme = dark ? 'dark' : 'light';

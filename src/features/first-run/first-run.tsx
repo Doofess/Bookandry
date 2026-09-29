@@ -14,7 +14,7 @@ import { initialDraft, isDraftValid, type FirstRunDraft } from '@/domain/first-r
 import { detectLocaleDefaults, type Language } from '@/domain/locale-defaults';
 import { AccountCard } from '@/features/account/account-card';
 import i18n from '@/i18n';
-import { applyDocumentChrome, readStoredBootMirror } from '@/i18n/boot';
+import { applyLanguage, readStoredBootMirror } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
 
@@ -88,13 +88,13 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
    *
    * A preview that waits until the end previews nothing - and for Hebrew the
    * entire layout flips, which the user should see before committing to it.
-   * `applyDocumentChrome` keeps `<html lang>` and `dir` in step so Base UI's
+   * `applyLanguage` keeps `<html lang>` and `dir` in step so Base UI's
    * direction-aware primitives flip with it.
    */
   const setLanguage = (language: Language): void => {
     setDraft((current) => ({ ...current, language }));
     void i18n.changeLanguage(language);
-    applyDocumentChrome({ lang: language, theme: 'system' });
+    applyLanguage(language);
   };
 
   const next = (): void => {

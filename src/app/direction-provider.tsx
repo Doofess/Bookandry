@@ -2,7 +2,7 @@ import { type ReactNode, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DirectionProvider } from '@/components/ui/direction';
-import { applyDocumentChrome, dirFor, type Language, type Theme } from '@/i18n/boot';
+import { applyLanguage, dirFor, type Language } from '@/i18n/boot';
 
 /**
  * Base UI's DirectionProvider is NOT optional.
@@ -12,15 +12,19 @@ import { applyDocumentChrome, dirFor, type Language, type Theme } from '@/i18n/b
  * arrow-key order and for flipping `align="start"/"end"`. Without it those are
  * inverted in Hebrew on an otherwise perfectly logical page — and no amount of
  * ps-/pe- hygiene fixes it, because it is primitive logic, not CSS.
+ *
+ * Language only. The theme is the boot script's and the theme picker's: this
+ * once re-applied a theme read at startup on every language change, turning a
+ * person who had since picked Light back to dark.
  */
-export function AppDirection({ theme, children }: { theme: Theme; children: ReactNode }) {
+export function AppDirection({ children }: { children: ReactNode }) {
   const { i18n } = useTranslation();
   const lang = (i18n.resolvedLanguage ?? 'en') as Language;
   const dir = dirFor(lang);
 
   useEffect(() => {
-    applyDocumentChrome({ lang, theme });
-  }, [lang, theme]);
+    applyLanguage(lang);
+  }, [lang]);
 
   return <DirectionProvider direction={dir}>{children}</DirectionProvider>;
 }
