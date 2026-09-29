@@ -290,6 +290,14 @@ and keeps it in step with the account in the background.
 - **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.
+- **Two-step sign-in**, optional: a code from an authenticator app after the
+  password (or Google). Enforced by the database, not just the screens: every
+  function refuses an account with codes turned on unless the session has
+  given one (Supabase's `aal2`), and no table can be read directly.
+  (`supabase/migrations/20260930000000_second_step.sql`)
+- **Passkeys**: sign in with the device's fingerprint, face or screen lock, no
+  password. Added and removed in Settings. A passkey is a first factor here; an
+  account with codes on still asks for the code after one.
 
 What the server holds, per row: a blinded id (an HMAC of table and id), a
 revision, a key version, and AES-256-GCM ciphertext of the table, the id, the
@@ -299,8 +307,10 @@ account keeps it; every other device fetches it on sign-in.
 ### Threat model
 
 - **The account is the lock.** Whoever can sign in as the person gets
-  everything. Use a strong password, and a second factor. Google accounts
-  inherit Google's.
+  everything. Use a passkey, or a strong password with two-step sign-in on.
+  Google accounts also have Google's own protections. Losing the
+  authenticator app with no passkey means asking the project's operator to
+  remove the factor (Authentication → Users in the Supabase dashboard).
 - **The server operator, or a breach of the database, can read and change the
   data.** The data key sits in the same database as the ciphertext. The
   encryption keeps rows unreadable to anything that sees only the records
@@ -352,6 +362,11 @@ Configuration that lives in the dashboard, not in this repo:
   change ON; leaked-password protection ON (Pro plan).
 - **Authentication → Providers → Google**: client id and secret — the secret
   lives only here, never in this repo or `.env.local`.
+- **Authentication → Multi-Factor**: App Authenticator (TOTP) enabled (the
+  default).
+- **Authentication → Passkeys**: enabled; relying party ID `bookandry.com`,
+  display name `Bookandry`, origin `https://bookandry.com`. The ID is
+  permanent in practice: changing it strands every passkey already made.
 - **Authentication → URL Configuration**: Site URL `https://bookandry.com`;
   redirect URLs `https://bookandry.com/settings` (plus a localhost one for
   development only).

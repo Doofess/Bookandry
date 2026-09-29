@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LockScreen } from '@/features/account/lock-screen';
+import { SecondStepScreen } from '@/features/account/second-step';
 
 import { useAccount } from './account';
 
@@ -25,5 +26,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
       </div>
     );
   if (view.status === 'locked') return <LockScreen email={view.email} idle={view.idle} />;
+  // The account's data is already here; it waits for the code like it waits for a sign-in.
+  if (view.status === 'second_step' && view.owned) return <SecondStepScreen />;
   return children;
 }

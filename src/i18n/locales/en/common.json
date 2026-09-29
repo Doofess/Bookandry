@@ -399,7 +399,11 @@
       "weak_password": "Choose a longer password.",
       "rate_limited": "Too many attempts. Wait a minute and try again.",
       "offline": "You're offline. Try again when you're connected.",
-      "unknown": "That didn't work. Try again."
+      "unknown": "That didn't work. Try again.",
+      "wrong_code": "That code didn't work. Check the app and try again.",
+      "passkey_unavailable": "That passkey didn't work here. Sign in another way, then add a passkey in Settings.",
+      "passkey_exists": "This device already has a passkey for your account.",
+      "cancelled": "Cancelled."
     },
     "status": {
       "checking": "Checking…",
@@ -438,6 +442,14 @@
       "signOutOthers": {
         "title": "Sign out all other devices?",
         "body": "For a lost or stolen device. Every other device is signed out, and signing back in needs your password. The data they hold stays hidden until then."
+      },
+      "twoStepOn": {
+        "title": "Turn on two-step sign-in",
+        "body": "Scan this with an authenticator app - Google Authenticator, Microsoft Authenticator or 1Password, say - then enter the code it shows."
+      },
+      "twoStepOff": {
+        "title": "Turn off two-step sign-in?",
+        "body": "Signing in will need only your password, or Google, again."
       }
     },
     "downgrade": "Something is wrong with your account on the server, so nothing is saved to it for now. Everything on this device is safe.",
@@ -471,6 +483,40 @@
       "1440": "1 day",
       "label": "Lock after inactivity",
       "body": "Signs this device out after it sits unused. Signing back in picks up where you left off."
+    },
+    "security": "Sign-in and security",
+    "code": {
+      "title": "Enter your code",
+      "body": "Open your authenticator app and enter the 6-digit code for Bookandry.",
+      "label": "Code",
+      "submit": "Continue",
+      "cancel": "Sign out"
+    },
+    "twoStep": {
+      "label": "Two-step sign-in",
+      "on": "On. Signing in also asks for a code from your authenticator app.",
+      "off": "Off. Ask for a code from an authenticator app at every sign-in, so a stolen password isn't enough.",
+      "turnOn": "Turn on",
+      "turnOff": "Turn off",
+      "turnedOn": "Two-step sign-in is on.",
+      "turnedOff": "Two-step sign-in is off.",
+      "qr": "QR code for your authenticator app",
+      "secret": "Can't scan it? Enter this key in the app instead:",
+      "copy": "Copy key",
+      "copied": "Key copied."
+    },
+    "passkeys": {
+      "label": "Passkeys",
+      "body": "Sign in with your fingerprint, face or screen lock - no password to type or steal.",
+      "add": "Add a passkey",
+      "added": "Passkey added.",
+      "none": "No passkeys yet.",
+      "remove": "Remove {{name}}",
+      "removed": "Passkey removed.",
+      "unnamed": "Passkey",
+      "addedOn": "Added {{date}}",
+      "signIn": "Sign in with a passkey",
+      "unavailable": "Passkeys aren't available right now."
     }
   }
 }

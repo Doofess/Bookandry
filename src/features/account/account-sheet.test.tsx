@@ -23,6 +23,7 @@ beforeAll(async () => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   localStorage.clear();
 });
 
@@ -32,13 +33,14 @@ function open(flow: Flow) {
   return { onClose, user: userEvent.setup() };
 }
 
-function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys']): AccountView {
+function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys'], twoStep = false): AccountView {
   return {
     status: 'signed_in',
     user: { id: 'u1', email: 'dana@example.com', provider: 'google' },
     keys,
     sync: undefined,
     passwordRecovery: false,
+    twoStep,
   };
 }
 
@@ -142,5 +144,111 @@ describe('the lock screen', () => {
     const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByRole('button', { name: 'Remove this data from the device' }));
     expect(remove).toHaveBeenCalled();
+  });
+});
+
+describe('two-step sign-in', () => {
+  it('offers to turn codes on, and off once they are', () => {
+    showCard(signedIn({ kind: 'ready' }));
+    expect(screen.getByText(/^Off\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Turn on' })).toBeInTheDocument();
+  });
+
+  it('says when they are on', () => {
+    showCard(signedIn({ kind: 'ready' }, true));
+    expect(screen.getByText(/^On\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Turn off' })).toBeInTheDocument();
+  });
+
+  it('turns them on only once the app gives a right code', async () => {
+    vi.spyOn(controller, 'startTwoStep').mockResolvedValue({
+      factorId: 'f1',
+      qr: 'data:image/png;base64,AAAA',
+      secret: 'ABCDEFGHIJKL',
+    });
+    const finish = vi
+      .spyOn(controller, 'finishTwoStep')
+      .mockResolvedValueOnce({ ok: false, reason: 'wrong_code' })
+      .mockResolvedValueOnce({ ok: true });
+    const { onClose, user } = open({ kind: 'twoStepOn' });
+
+    expect(await screen.findByRole('img', { name: /qr code/i })).toBeInTheDocument();
+    expect(screen.getByText('ABCD EFGH IJKL')).toBeInTheDocument();
+
+    const field = screen.getByLabelText('Code');
+    const submit = screen.getByRole('button', { name: 'Continue' });
+    await user.type(field, '12a3');
+    expect(field).toHaveValue('123');
+    expect(submit).toBeDisabled();
+
+    await user.type(field, '456');
+    await user.click(submit);
+    expect(finish).toHaveBeenLastCalledWith('f1', '123456');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/didn't work/);
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.type(field, '654321');
+    await user.click(submit);
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  it('asks for the code inside the card on a device joining the account', async () => {
+    const verify = vi.spyOn(controller, 'verifyCode').mockResolvedValue({ ok: true });
+    const cancel = vi.spyOn(controller, 'cancelSecondStep').mockResolvedValue();
+    const user = showCard({
+      status: 'second_step',
+      user: { id: 'u1', email: 'dana@example.com', provider: 'email' },
+      owned: false,
+    });
+    await user.type(screen.getByLabelText('Code'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(verify).toHaveBeenCalledWith('123456');
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(cancel).toHaveBeenCalled();
+  });
+});
+
+describe('passkeys', () => {
+  it('are offered only where the browser has them', () => {
+    showCard(signedIn({ kind: 'ready' }));
+    expect(screen.queryByText('Passkeys')).not.toBeInTheDocument();
+  });
+
+  it('are listed, added and removed', async () => {
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {
+      return undefined;
+    });
+    const list = vi
+      .spyOn(controller, 'listPasskeys')
+      .mockResolvedValue([{ id: 'k1', name: 'iCloud Keychain', createdAt: '2026-09-29T10:00:00Z' }]);
+    const add = vi.spyOn(controller, 'addPasskey').mockResolvedValue({ ok: false, reason: 'cancelled' });
+    const remove = vi.spyOn(controller, 'removePasskey').mockResolvedValue({ ok: true });
+    const user = showCard(signedIn({ kind: 'ready' }));
+
+    expect(await screen.findByText('iCloud Keychain')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add a passkey' }));
+    expect(add).toHaveBeenCalled();
+    // Closing the browser's prompt is not an error.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove iCloud Keychain' }));
+    expect(remove).toHaveBeenCalledWith('k1');
+    await waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('sign in from the sign-in sheet', async () => {
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {
+      return undefined;
+    });
+    const passkey = vi.spyOn(controller, 'signInWithPasskey').mockResolvedValue({ ok: true });
+    const { onClose, user } = open({ kind: 'signin', mode: 'signin' });
+    await user.click(screen.getByRole('button', { name: 'Sign in with a passkey' }));
+    expect(passkey).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 });

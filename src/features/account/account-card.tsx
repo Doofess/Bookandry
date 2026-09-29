@@ -1,6 +1,7 @@
-import { CloudCheck, CloudOff } from 'lucide-react';
-import { useId, useState } from 'react';
+import { CloudCheck, CloudOff, KeyRound, Trash2 } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { accountController, useAccount, type AccountView } from '@/app/account';
 import { LOCK_AFTER_CHOICES, lockAfter, setLockAfter, type LockAfter } from '@/app/idle-lock';
@@ -9,8 +10,10 @@ import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import type { Passkey } from '@/services/supabase/auth';
 
 import { AccountSheet, type Flow } from './account-sheet';
+import { SecondStep } from './second-step';
 
 /**
  * The account, the way a bank shows one: who is signed in, one quiet line
@@ -34,7 +37,7 @@ export function AccountCard() {
     <Card>
       <CardHeader>
         <CardTitle>{t('account.title')}</CardTitle>
-        {view.status === 'signed_in' ? (
+        {view.status === 'signed_in' || view.status === 'second_step' ? (
           <CardDescription>{t('account.signedInAs', { email: view.user.email ?? '' })}</CardDescription>
         ) : (
           <CardDescription>{t('account.signedOutBody')}</CardDescription>
@@ -53,6 +56,8 @@ export function AccountCard() {
               {t('account.signIn')}
             </Button>
           </div>
+        ) : view.status === 'second_step' ? (
+          <SecondStep />
         ) : (
           <SignedIn view={view} open={open} />
         )}
@@ -100,7 +105,14 @@ function SignedIn({
         <Saved sync={view.sync} />
       )}
 
-      <LockAfterChoice />
+      <section className="space-y-4 border-t border-border pt-3" aria-labelledby="account-security">
+        <h3 id="account-security" className="text-sm font-semibold">
+          {t('account.security')}
+        </h3>
+        <TwoStep on={view.twoStep} open={open} />
+        <Passkeys />
+        <LockAfterChoice />
+      </section>
 
       <div className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
         <Button type="button" variant="outline" onClick={open({ kind: 'signout' })}>
@@ -168,6 +180,161 @@ function Status({
   );
 }
 
+/** An authenticator-app code at every sign-in, on or off. */
+function TwoStep({ on, open }: { readonly on: boolean; readonly open: (flow: Flow) => () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-sm font-medium">{t('account.twoStep.label')}</p>
+        <p className="text-xs text-muted-foreground">
+          {on ? t('account.twoStep.on') : t('account.twoStep.off')}
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant={on ? 'ghost' : 'outline'}
+        onClick={open({ kind: on ? 'twoStepOff' : 'twoStepOn' })}
+      >
+        {on ? t('account.twoStep.turnOff') : t('account.twoStep.turnOn')}
+      </Button>
+    </div>
+  );
+}
+
+/** Signing in with the device's own lock. Listed, added, removed. */
+function Passkeys() {
+  const { t, i18n } = useTranslation();
+  const [keys, setKeys] = useState<readonly Passkey[] | undefined>(undefined);
+  const [unavailable, setUnavailable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const supported = typeof window.PublicKeyCredential === 'function';
+
+  const load = async (): Promise<void> => {
+    try {
+      setKeys(await accountController().listPasskeys());
+    } catch {
+      setUnavailable(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!supported) return;
+    let live = true;
+    accountController()
+      .listPasskeys()
+      .then(
+        (list) => {
+          if (live) setKeys(list);
+        },
+        () => {
+          if (live) setUnavailable(true);
+        },
+      );
+    return () => {
+      live = false;
+    };
+  }, [supported]);
+
+  if (!supported) return null;
+
+  const add = async (): Promise<void> => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await accountController().addPasskey();
+      if (result.ok) {
+        toast.success(t('account.passkeys.added'));
+        await load();
+      } else if (result.reason !== 'cancelled') {
+        setError(t(`account.errors.${result.reason}`));
+      }
+    } catch {
+      setError(t('account.errors.unknown'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    setBusy(true);
+    setError(undefined);
+    const result = await accountController()
+      .removePasskey(id)
+      .catch(() => ({ ok: false as const, reason: 'unknown' as const }));
+    if (result.ok) {
+      toast.success(t('account.passkeys.removed'));
+      await load();
+    } else {
+      setError(t(`account.errors.${result.reason}`));
+    }
+    setBusy(false);
+  };
+
+  const date = (iso: string): string =>
+    new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(new Date(iso));
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">{t('account.passkeys.label')}</p>
+        <p className="text-xs text-muted-foreground">{t('account.passkeys.body')}</p>
+      </div>
+      {unavailable ? (
+        <p className="text-xs text-muted-foreground">{t('account.passkeys.unavailable')}</p>
+      ) : (
+        <>
+          {keys !== undefined && keys.length > 0 ? (
+            <ul className="space-y-1.5">
+              {keys.map((k) => {
+                const name = k.name ?? t('account.passkeys.unnamed');
+                return (
+                  <li
+                    key={k.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2"
+                  >
+                    <span className="flex min-w-0 items-center gap-2 text-sm">
+                      <KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="block truncate">{name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {t('account.passkeys.addedOn', { date: date(k.createdAt) })}
+                        </span>
+                      </span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={busy}
+                      aria-label={t('account.passkeys.remove', { name })}
+                      onClick={() => void remove(k.id)}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : keys === undefined ? null : (
+            <p className="text-xs text-muted-foreground">{t('account.passkeys.none')}</p>
+          )}
+          {error === undefined ? null : (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void add()}>
+            {t('account.passkeys.add')}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** How long this device may sit unused before it asks for a sign-in again. */
 function LockAfterChoice() {
   const { t } = useTranslation();
@@ -175,7 +342,7 @@ function LockAfterChoice() {
   const [value, setValue] = useState<LockAfter>(lockAfter);
 
   return (
-    <div className="space-y-2 border-t border-border pt-3">
+    <div className="space-y-2">
       <Label id={id}>{t('account.lockAfter.label')}</Label>
       <Segmented<`${LockAfter}`>
         value={String(value) as `${LockAfter}`}

@@ -17,6 +17,7 @@ export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<unknown
 /** What the database's functions raise, by message. */
 export type ServerErrorCode =
   | 'not_signed_in'
+  | 'second_step_required'
   | 'keys_not_set_up'
   | 'already_set_up'
   | 'key_version_changed'
@@ -31,6 +32,7 @@ export type ServerErrorCode =
 
 const KNOWN: ReadonlySet<string> = new Set<ServerErrorCode>([
   'not_signed_in',
+  'second_step_required',
   'keys_not_set_up',
   'already_set_up',
   'key_version_changed',

@@ -102,3 +102,29 @@ export function storedSessionUser(): Session['user'] | undefined {
     return undefined;
   }
 }
+
+/**
+ * Whether the stored session still owes a second step: the account has a
+ * verified authenticator-app factor, and the session's token was issued
+ * before the code (assurance level aal1). Such a session must not open the
+ * app at boot, even for a moment.
+ */
+export function storedSessionNeedsCode(): boolean {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (raw === null) return false;
+    const stored = JSON.parse(raw) as {
+      access_token?: unknown;
+      user?: { factors?: readonly { status?: unknown }[] };
+    };
+    const hasFactor = stored.user?.factors?.some((f) => f.status === 'verified') ?? false;
+    if (!hasFactor) return false;
+    const token = typeof stored.access_token === 'string' ? stored.access_token : '';
+    const payload = token.split('.')[1] ?? '';
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { aal?: unknown };
+    return claims.aal !== 'aal2';
+  } catch {
+    // Unreadable: do not open the app on it; supabase-js decides properly.
+    return true;
+  }
+}

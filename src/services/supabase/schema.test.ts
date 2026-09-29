@@ -7,6 +7,7 @@ import type { WrappedKey } from '@/services/crypto/wrap';
 import { freshPg, type Session, type TestPg } from '@/test/pg-harness';
 
 import {
+  deleteMyAccount,
   deleteWrap,
   getKeyState,
   putWrap,
@@ -122,9 +123,6 @@ describe('who can read and write what', () => {
     await setUp(alice.rpc);
     await rpcTransport(alice.rpc).push([record(1, 1_000)]);
 
-    expect(await bob.query('select * from public.records')).toEqual([]);
-    expect(await bob.query('select * from public.user_keys')).toEqual([]);
-    expect(await bob.query('select * from public.user_state')).toEqual([]);
     expect((await getKeyState(bob.rpc)).wraps).toEqual([]);
 
     // Bob's own records under the same rid are his, and change nothing of Alice's.
@@ -132,7 +130,41 @@ describe('who can read and write what', () => {
     await rpcTransport(bob.rpc).push([record(1, 9_000, 1, 99)]);
     const alices = await rpcTransport(alice.rpc).pull(0, 100);
     expect(alices.records).toEqual([record(1, 1_000)]);
-    expect(await alice.query('select * from public.records')).toHaveLength(1);
+  });
+
+  it('lets no one read a table directly, not even their own rows: only through the functions', async () => {
+    await setUp(alice.rpc);
+    for (const table of ['records', 'user_keys', 'user_state'])
+      expect(await refused(alice.query(`select * from public.${table}`))).toMatch(/permission denied/);
+  });
+});
+
+describe('two-step sign-in', () => {
+  async function turnOnCodes(userId: string): Promise<void> {
+    await alice.query('select 1'); // creates the auth user
+    await t.pg.query(`insert into auth.mfa_factors (user_id, status) values ($1, 'verified')`, [userId]);
+  }
+
+  it('serves an account with codes turned on only after the code', async () => {
+    await setUp(alice.rpc);
+    await turnOnCodes(ALICE);
+
+    for (const call of [
+      () => getKeyState(alice.rpc),
+      () => rpcTransport(alice.rpc).pull(0, 100),
+      () => rpcTransport(alice.rpc).push([record(1, 1_000)]),
+      () => deleteMyAccount(alice.rpc),
+    ])
+      await expect(call()).rejects.toMatchObject({ code: 'second_step_required' });
+
+    const afterCode = t.as(ALICE, { aal: 'aal2' });
+    expect((await getKeyState(afterCode.rpc)).keyVersion).toBe(1);
+  });
+
+  it('asks nothing more of an account without codes', async () => {
+    await setUp(alice.rpc);
+    await t.pg.query(`insert into auth.mfa_factors (user_id, status) values ($1, 'unverified')`, [ALICE]);
+    expect((await getKeyState(alice.rpc)).keyVersion).toBe(1);
   });
 });
 

@@ -5,12 +5,13 @@ import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
 import { loadKeys } from '@/db/sync/keystore';
 import { systemClock } from '@/lib/clock';
-import type { AuthResult } from '@/services/supabase/auth';
+import type { AuthResult, Enrollment, Passkey, SecondStep } from '@/services/supabase/auth';
 import {
   accountsAvailable,
   getSupabase,
   rpcFor,
   shouldLoadAtBoot,
+  storedSessionNeedsCode,
   storedSessionUser,
   type Session,
 } from '@/services/supabase/client';
@@ -19,6 +20,7 @@ import {
   getKeyState,
   rotateKeys,
   rpcTransport,
+  ServerError,
   setupKeys,
   type Rpc,
 } from '@/services/supabase/transport';
@@ -68,6 +70,13 @@ export type AccountView =
    * here: the data stays hidden until it is.
    */
   | { readonly status: 'locked'; readonly email: string | undefined; readonly idle: boolean }
+  /**
+   * Signed in with the password (or Google), and the account has two-step
+   * sign-in on: the code comes next. The server serves nothing until it does.
+   * `owned`: this device already holds the account's data, so the code is
+   * asked for in front of the whole app rather than in Settings.
+   */
+  | { readonly status: 'second_step'; readonly user: AccountUser; readonly owned: boolean }
   | {
       readonly status: 'signed_in';
       readonly user: AccountUser;
@@ -75,6 +84,8 @@ export type AccountView =
       readonly sync: SyncState | undefined;
       /** Arrived from a password-reset email: ask for the new password. */
       readonly passwordRecovery: boolean;
+      /** Two-step sign-in (an authenticator-app code) is on for this account. */
+      readonly twoStep: boolean;
     };
 
 type SignedIn = Extract<AccountView, { status: 'signed_in' }>;
@@ -159,7 +170,8 @@ export class AccountController {
       if (
         stored !== undefined &&
         stored.id === (await dataOwner(this.db)) &&
-        !idleExpired(systemClock.nowMs())
+        !idleExpired(systemClock.nowMs()) &&
+        !storedSessionNeedsCode()
       ) {
         this.provisional = true;
         this.set({
@@ -168,6 +180,7 @@ export class AccountController {
           keys: { kind: 'checking' },
           sync: undefined,
           passwordRecovery: false,
+          twoStep: false,
         });
       }
       await this.connect();
@@ -248,6 +261,11 @@ export class AccountController {
     this.stop();
     this.lockedForIdle = false;
     this.provisional = false;
+    const step = await this.secondStep();
+    if (step.needsCode) {
+      this.set({ status: 'second_step', user, owned: owner !== undefined });
+      return;
+    }
     if (user.email !== undefined) await this.db.meta.put({ key: OWNER_EMAIL_KEY, value: user.email });
     this.set({
       status: 'signed_in',
@@ -255,6 +273,7 @@ export class AccountController {
       keys: { kind: 'checking' },
       sync: undefined,
       passwordRecovery: recovery,
+      twoStep: step.enabled,
     });
     this.idle = watchIdle({ onIdle: () => void this.lock(), nowMs: () => systemClock.nowMs() });
     await this.refreshKeys();
@@ -272,7 +291,16 @@ export class AccountController {
     try {
       const result = await connectDevice(this.db, this.server(), id);
       keys = result.ok ? { kind: 'ready' } : { kind: 'rolled_back' };
-    } catch {
+    } catch (error) {
+      // The server's own word that this session still owes a code - one the
+      // screens did not see coming (codes turned on from another device while
+      // this session lived, say). Ask for it.
+      if (error instanceof ServerError && error.code === 'second_step_required') {
+        const owned = (await dataOwner(this.db)) !== undefined;
+        this.stop();
+        this.set({ status: 'second_step', user: this.view.user, owned });
+        return;
+      }
       // Offline, most likely. Keys already here are good enough to start; the
       // runner finds out soon enough if the account has moved on.
       const local = await loadKeys(this.db);
@@ -411,6 +439,81 @@ export class AccountController {
     const { signOut } = await import('@/services/supabase/auth');
     const result = await this.auth((s) => signOut(s, 'others'));
     if (!result.ok) throw new Error(result.reason);
+  }
+
+  // -- two-step sign-in ----------------------------------------------------------
+
+  /**
+   * Where this session stands with the account's second step. Unknown counts
+   * as none: the server enforces it regardless, and says so (refreshKeys).
+   */
+  private async secondStep(): Promise<SecondStep> {
+    try {
+      const { secondStep } = await import('@/services/supabase/auth');
+      return await secondStep(await getSupabase());
+    } catch {
+      return { enabled: false, needsCode: false };
+    }
+  }
+
+  /** The code from the authenticator app, after the password or Google. */
+  async verifyCode(code: string): Promise<AuthResult> {
+    const { verifyCode } = await import('@/services/supabase/auth');
+    const result = await this.auth((s) => verifyCode(s, code));
+    if (result.ok) {
+      const { data } = await (await getSupabase()).auth.getSession();
+      await this.onSession(data.session);
+    }
+    return result;
+  }
+
+  /** Back out of the code step: the session ends; any data stays behind the sign-in screen. */
+  async cancelSecondStep(): Promise<void> {
+    this.stop();
+    const { signOut } = await import('@/services/supabase/auth');
+    await signOut(await getSupabase(), 'local').catch(() => undefined);
+    await this.onSession(null);
+  }
+
+  async startTwoStep(): Promise<Enrollment> {
+    const { startEnrollment } = await import('@/services/supabase/auth');
+    return this.auth((s) => startEnrollment(s));
+  }
+
+  async finishTwoStep(factorId: string, code: string): Promise<AuthResult> {
+    const { finishEnrollment } = await import('@/services/supabase/auth');
+    const result = await this.auth((s) => finishEnrollment(s, factorId, code));
+    if (result.ok) this.patch({ twoStep: true });
+    return result;
+  }
+
+  async turnOffTwoStep(): Promise<AuthResult> {
+    const { turnOffCodes } = await import('@/services/supabase/auth');
+    const result = await this.auth((s) => turnOffCodes(s));
+    if (result.ok) this.patch({ twoStep: false });
+    return result;
+  }
+
+  // -- passkeys ------------------------------------------------------------------
+
+  async signInWithPasskey(): Promise<AuthResult> {
+    const { signInWithPasskey } = await import('@/services/supabase/auth');
+    return this.auth((s) => signInWithPasskey(s));
+  }
+
+  async addPasskey(): Promise<AuthResult> {
+    const { addPasskey } = await import('@/services/supabase/auth');
+    return this.auth((s) => addPasskey(s));
+  }
+
+  async listPasskeys(): Promise<readonly Passkey[]> {
+    const { listPasskeys } = await import('@/services/supabase/auth');
+    return this.auth((s) => listPasskeys(s));
+  }
+
+  async removePasskey(id: string): Promise<AuthResult> {
+    const { removePasskey } = await import('@/services/supabase/auth');
+    return this.auth((s) => removePasskey(s, id));
   }
 
   // -- leaving -----------------------------------------------------------------

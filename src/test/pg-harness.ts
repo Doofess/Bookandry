@@ -9,8 +9,8 @@ import { ServerError, type Rpc } from '@/services/supabase/transport';
  * are tested as SQL, not as a description of SQL, and without Docker.
  *
  * What is emulated is only what the migration relies on: the `anon` and
- * `authenticated` roles, `auth.users`, `auth.uid()` reading the JWT's subject
- * from `request.jwt.claims` (as Supabase's does), and Supabase's default
+ * `authenticated` roles, `auth.users`, `auth.uid()` and `auth.jwt()` reading
+ * `request.jwt.claims` (as Supabase's do), `auth.mfa_factors`, and Supabase's default
  * privileges, which grant those roles everything on new tables and functions.
  * That last one matters: the migration's REVOKEs are only proven by a test
  * that starts from Supabase's permissive defaults.
@@ -31,6 +31,14 @@ const SUPABASE_STUB = `
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub', '')::uuid
   $$;
+  create function auth.jwt() returns jsonb language sql stable as $$
+    select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
+  $$;
+  create table auth.mfa_factors (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users on delete cascade,
+    status text not null
+  );
 
   alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
   alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
@@ -50,8 +58,11 @@ export type Session = {
 
 export type TestPg = {
   readonly pg: PGliteInterface;
-  /** A signed-in user (created in auth.users on first use), or anon for null. */
-  as(userId: string | null): Session;
+  /**
+   * A signed-in user (created in auth.users on first use), or anon for null.
+   * `aal` is the session's assurance level: 'aal2' after a second step.
+   */
+  as(userId: string | null, options?: { readonly aal?: 'aal1' | 'aal2' }): Session;
   close(): Promise<void>;
 };
 
@@ -74,9 +85,11 @@ export async function freshPg(): Promise<TestPg> {
   template ??= migrated();
   const pg = await (await template).clone();
 
-  const as = (userId: string | null): Session => {
+  const as = (userId: string | null, options: { readonly aal?: 'aal1' | 'aal2' } = {}): Session => {
     const role: Role = userId === null ? 'anon' : 'authenticated';
-    const claims = JSON.stringify(userId === null ? { role } : { sub: userId, role });
+    const claims = JSON.stringify(
+      userId === null ? { role } : { sub: userId, role, aal: options.aal ?? 'aal1' },
+    );
 
     const query = async <T>(sql: string, params: unknown[] = []): Promise<T[]> => {
       if (userId !== null) {

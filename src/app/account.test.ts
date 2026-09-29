@@ -5,6 +5,7 @@ import { DATA_OWNER_KEY } from '@/db/sync/account';
 import { adoptKeyring, loadKeys } from '@/db/sync/keystore';
 import { instantFromMs } from '@/lib/dates';
 import { deriveKeyring, newDataKey } from '@/services/crypto/keys';
+import type * as Client from '@/services/supabase/client';
 import { getKeyState, setupKeys, type Rpc } from '@/services/supabase/transport';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import { freshPg, type TestPg } from '@/test/pg-harness';
@@ -16,6 +17,8 @@ import { LAST_ACTIVE_KEY, LOCK_AFTER_KEY } from './idle-lock';
  * Postgres. Only supabase-js is replaced - by a session that is there or not,
  * and an rpc that goes straight to the database.
  */
+
+type ClientModule = typeof Client;
 
 const USER = '00000000-0000-4000-8000-0000000000ee';
 const OTHER = '00000000-0000-4000-8000-0000000000ff';
@@ -32,15 +35,18 @@ const fake = vi.hoisted(() => ({
   session: undefined as { user: unknown } | null | undefined,
   sessionError: undefined as Error | undefined,
   signOut: vi.fn<(options: unknown) => Promise<{ error: null }>>(),
+  /** The session's assurance level, and what the account asks for. */
+  aal: { current: 'aal1', next: 'aal1' },
+  /** What a right code does: raise the session. Set per test. */
+  onCode: (): void => undefined,
 }));
 
-vi.mock('@/services/supabase/client', () => ({
+vi.mock('@/services/supabase/client', async (importOriginal) => ({
+  // What reads the stored session is real: it only reads localStorage.
+  storedSessionUser: (await importOriginal<ClientModule>()).storedSessionUser,
+  storedSessionNeedsCode: (await importOriginal<ClientModule>()).storedSessionNeedsCode,
   accountsAvailable: () => true,
   shouldLoadAtBoot: () => fake.session !== null,
-  storedSessionUser: () => {
-    const raw = localStorage.getItem('bookandry.auth');
-    return raw === null ? undefined : (JSON.parse(raw) as { user: unknown }).user;
-  },
   getSupabase: () =>
     Promise.resolve({
       auth: {
@@ -48,6 +54,29 @@ vi.mock('@/services/supabase/client', () => ({
         getSession: () =>
           Promise.resolve({ data: { session: fake.session ?? null }, error: fake.sessionError ?? null }),
         signOut: fake.signOut,
+        mfa: {
+          getAuthenticatorAssuranceLevel: () =>
+            Promise.resolve({
+              data: { currentLevel: fake.aal.current, nextLevel: fake.aal.next },
+              error: null,
+            }),
+          listFactors: () =>
+            Promise.resolve({
+              data: { totp: [{ id: 'f1', status: 'verified' }], all: [] },
+              error: null,
+            }),
+          challengeAndVerify: ({ code }: { code: string }) => {
+            if (code !== '123456') {
+              const error = Object.assign(new Error('Invalid TOTP code entered'), {
+                code: 'mfa_verification_failed',
+              });
+              return Promise.resolve({ data: null, error });
+            }
+            fake.aal.current = 'aal2';
+            fake.onCode();
+            return Promise.resolve({ data: {}, error: null });
+          },
+        },
       },
     }),
   rpcFor: () => (fn: string, args: Record<string, unknown>) => {
@@ -68,6 +97,8 @@ beforeEach(async () => {
   fake.rpc = pg.as(USER).rpc;
   fake.session = { user: userFor(USER) };
   fake.sessionError = undefined;
+  fake.aal = { current: 'aal1', next: 'aal1' };
+  fake.onCode = () => undefined;
   fake.signOut.mockReset().mockImplementation(() => {
     fake.session = null;
     return Promise.resolve({ error: null });
@@ -258,5 +289,82 @@ describe('signing out', () => {
     await device.db.outbox.put({ tbl: 'profiles', id: 'p-late' });
     fake.rpc = () => Promise.reject(new Error('offline'));
     expect(await c.unsavedChanges(200)).toBeGreaterThan(0);
+  });
+});
+
+describe('two-step sign-in', () => {
+  /** Codes on for USER, on the server as in the app. */
+  async function codesOn(): Promise<void> {
+    await pg.as(USER).query('select 1'); // creates the auth user
+    await pg.pg.query(`insert into auth.mfa_factors (user_id, status) values ($1, 'verified')`, [USER]);
+    fake.aal = { current: 'aal1', next: 'aal2' };
+    fake.onCode = () => {
+      fake.rpc = pg.as(USER, { aal: 'aal2' }).rpc;
+    };
+  }
+
+  it('asks for the code after the password, and shows nothing of the account until it is right', async () => {
+    await codesOn();
+    await ownedBy(USER);
+    const c = make();
+    await c.connect();
+    expect(c.getView()).toMatchObject({ status: 'second_step', owned: true });
+
+    expect(await c.verifyCode('000000')).toEqual({ ok: false, reason: 'wrong_code' });
+    expect(c.getView().status).toBe('second_step');
+
+    expect(await c.verifyCode('123456')).toEqual({ ok: true });
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    expect(c.getView()).toMatchObject({ twoStep: true });
+  });
+
+  it('asks for it on a device joining, too, without taking over the screen', async () => {
+    await codesOn();
+    const c = make();
+    await c.connect();
+    expect(c.getView()).toMatchObject({ status: 'second_step', owned: false });
+  });
+
+  it('asks when only the server knows the code is owed', async () => {
+    await codesOn();
+    fake.aal = { current: 'aal1', next: 'aal1' }; // the app's view is out of date
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(c.getView().status).toBe('second_step');
+    });
+  });
+
+  it('never opens the app at boot on a stored session that still owes the code', async () => {
+    await codesOn();
+    await ownedBy(USER);
+    const payload = btoa(JSON.stringify({ aal: 'aal1' }));
+    localStorage.setItem(
+      'bookandry.auth',
+      JSON.stringify({
+        access_token: `x.${payload}.y`,
+        user: { ...userFor(USER), factors: [{ status: 'verified' }] },
+      }),
+    );
+    const seen: string[] = [];
+    const c = make();
+    c.subscribe(() => seen.push(c.getView().status));
+    c.start();
+    await vi.waitFor(() => {
+      expect(c.getView().status).toBe('second_step');
+    });
+    expect(seen).not.toContain('signed_in');
+  });
+
+  it('backs out to the sign-in screen, keeping the data', async () => {
+    await codesOn();
+    await ownedBy(USER);
+    const c = make();
+    await c.connect();
+    await c.cancelSecondStep();
+    expect(c.getView()).toMatchObject({ status: 'locked' });
+    expect(restarted).not.toHaveBeenCalled();
   });
 });

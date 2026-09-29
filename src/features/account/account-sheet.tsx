@@ -1,3 +1,4 @@
+import { Copy, KeyRound } from 'lucide-react';
 import { useEffect, useId, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -7,21 +8,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import type { AuthResult } from '@/services/supabase/auth';
+import { passkeysSupported, type AuthResult, type Enrollment } from '@/services/supabase/auth';
+
+import { CodeForm } from './second-step';
 
 /**
  * Every account flow, in one bottom sheet.
  *
  * There is nothing here about keys or copies: signing in is enough, and the
  * account hands each device its data. What is left is signing in and out,
- * and deleting the account - the one thing that cannot be undone, confirmed.
+ * the second step, and deleting the account - the one thing that cannot be
+ * undone, confirmed.
  */
 export type Flow =
   | { readonly kind: 'signin'; readonly mode: 'signin' | 'signup' }
   | { readonly kind: 'signout' }
   | { readonly kind: 'signOutOthers' }
   | { readonly kind: 'delete' }
-  | { readonly kind: 'newPassword' };
+  | { readonly kind: 'newPassword' }
+  | { readonly kind: 'twoStepOn' }
+  | { readonly kind: 'twoStepOff' };
 
 const MIN_PASSWORD = 8;
 
@@ -77,6 +83,10 @@ function FlowBody({ flow, onDone }: { readonly flow: Flow; readonly onDone: () =
       return <DeleteAccount onDone={onDone} />;
     case 'newPassword':
       return <NewPassword onDone={onDone} />;
+    case 'twoStepOn':
+      return <TwoStepOn onDone={onDone} />;
+    case 'twoStepOff':
+      return <TwoStepOff onDone={onDone} />;
   }
 }
 
@@ -87,8 +97,9 @@ function FlowBody({ flow, onDone }: { readonly flow: Flow; readonly onDone: () =
 function useMessages() {
   const { t } = useTranslation();
   return {
+    // A passkey prompt the person closed is not an error to show them.
     auth: (result: AuthResult): string | undefined =>
-      result.ok ? undefined : t(`account.errors.${result.reason}`),
+      result.ok || result.reason === 'cancelled' ? undefined : t(`account.errors.${result.reason}`),
     thrown: (): string => (navigator.onLine ? t('account.errors.unknown') : t('account.errors.offline')),
   };
 }
@@ -182,6 +193,20 @@ export function SignIn({
     }
   };
 
+  const passkey = async (): Promise<void> => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await accountController().signInWithPasskey();
+      if (result.ok) onDone();
+      else setError(messages.auth(result));
+    } catch {
+      setError(messages.thrown());
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const google = async (): Promise<void> => {
     setBusy(true);
     setError(undefined);
@@ -200,6 +225,12 @@ export function SignIn({
     <div className="space-y-4">
       {mode === 'reset' ? null : (
         <>
+          {mode === 'signin' && passkeysSupported() ? (
+            <Button type="button" className="w-full" disabled={busy} onClick={() => void passkey()}>
+              <KeyRound className="size-4" aria-hidden="true" />
+              {t('account.passkeys.signIn')}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -506,5 +537,129 @@ function NewPassword({ onDone }: { readonly onDone: () => void }) {
         {t('account.savePassword')}
       </Button>
     </form>
+  );
+}
+
+/**
+ * Turning codes on: scan, then prove the app has it with its first code. The
+ * factor is not on until that code checks out, so a sheet closed halfway
+ * leaves the account exactly as it was.
+ */
+function TwoStepOn({ onDone }: { readonly onDone: () => void }) {
+  const { t } = useTranslation();
+  const messages = useMessages();
+  const [enrollment, setEnrollment] = useState<Enrollment | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    accountController()
+      .startTwoStep()
+      .then((e) => {
+        if (live) setEnrollment(e);
+      })
+      .catch(() => {
+        if (live) setError(messages.thrown());
+      });
+    return () => {
+      live = false;
+    };
+    // Once per opening; a new enrollment replaces any unfinished one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (error !== undefined) return <ErrorLine message={error} />;
+  if (enrollment === undefined)
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        {t('account.status.checking')}
+      </p>
+    );
+
+  const grouped = enrollment.secret.replace(/(.{4})/g, '$1 ').trim();
+
+  return (
+    <div className="space-y-4">
+      <img
+        src={enrollment.qr}
+        alt={t('account.twoStep.qr')}
+        width={176}
+        height={176}
+        className="mx-auto rounded-xl bg-white p-2"
+      />
+      <div className="space-y-1.5">
+        <p className="text-xs text-muted-foreground">{t('account.twoStep.secret')}</p>
+        <div className="flex items-center gap-2">
+          <code
+            dir="ltr"
+            className="min-w-0 flex-1 rounded-lg bg-muted px-2 py-1.5 font-mono text-sm break-all"
+          >
+            {grouped}
+          </code>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('account.twoStep.copy')}
+            onClick={() => {
+              void navigator.clipboard.writeText(enrollment.secret).then(() => {
+                toast.success(t('account.twoStep.copied'));
+              });
+            }}
+          >
+            <Copy className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+      <CodeForm
+        submit={async (code) => {
+          const result = await accountController().finishTwoStep(enrollment.factorId, code);
+          if (result.ok) {
+            toast.success(t('account.twoStep.turnedOn'));
+            onDone();
+          }
+          return result;
+        }}
+      />
+    </div>
+  );
+}
+
+function TwoStepOff({ onDone }: { readonly onDone: () => void }) {
+  const { t } = useTranslation();
+  const messages = useMessages();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const run = async (): Promise<void> => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await accountController().turnOffTwoStep();
+      if (result.ok) {
+        toast.success(t('account.twoStep.turnedOff'));
+        onDone();
+        return;
+      }
+      setError(messages.auth(result));
+    } catch {
+      setError(messages.thrown());
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      <ErrorLine message={error} />
+      <Button
+        type="button"
+        variant="destructive"
+        className="w-full"
+        disabled={busy}
+        onClick={() => void run()}
+      >
+        {t('account.twoStep.turnOff')}
+      </Button>
+    </div>
   );
 }

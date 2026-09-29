@@ -140,8 +140,9 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
    * too. An account with nothing in it yet has nothing to bring down - it says
    * so, and this device is set up the ordinary way, then syncs up.
    */
-  const signedIn = accounts.status === 'signed_in';
-  const emptyAccount = signedIn && accounts.keys.kind === 'ready' && accounts.sync?.kind === 'idle';
+  const signedIn = accounts.status === 'signed_in' || accounts.status === 'second_step';
+  const emptyAccount =
+    accounts.status === 'signed_in' && accounts.keys.kind === 'ready' && accounts.sync?.kind === 'idle';
   if (!setUpHere && (joining || signedIn)) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-lg flex-col gap-6 px-4 py-6">

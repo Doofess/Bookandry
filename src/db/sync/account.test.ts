@@ -100,7 +100,7 @@ describe('signing in is enough', () => {
   it('never lets another account read the key', async () => {
     await connectDevice(phone.db, server, USER);
     expect((await getKeyState(pg.as(OTHER).rpc)).wraps).toEqual([]);
-    expect(await pg.as(OTHER).query('select * from public.user_keys')).toEqual([]);
+    await expect(pg.as(OTHER).query('select * from public.user_keys')).rejects.toThrow(/permission denied/);
   });
 
   it('refuses an account entry that is not a key', async () => {
