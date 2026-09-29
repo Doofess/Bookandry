@@ -58,6 +58,10 @@ export function headersFile(input: SecurityHeaderInput): string {
     '  Referrer-Policy: strict-origin-when-cross-origin',
     '  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()',
     '  Cross-Origin-Opener-Policy: same-origin-allow-popups',
+    // After one https visit, the browser never tries plain http again - the
+    // app cannot run on an insecure page. A year; no preload list, which is
+    // hard to leave.
+    '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
     '',
   ].join('\n');
 }

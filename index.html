@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#ffffff" />
     <meta
       name="description"
-      content="Track income and expenses across profiles and currencies, entirely on your own device. No account, no server, no sync."
+      content="Track income and expenses across profiles and currencies. Works entirely on your device, with an optional account that keeps your data safe and on all your devices."
     />
     <title>Bookandry</title>
     <script>
@@ -22,6 +22,22 @@
          frame is already correct. Must never throw: private mode, blocked storage
          and corrupt JSON all fall through to the defaults. */
       (function () {
+        /* Never run over plain http. The browser withholds storage, crypto and
+           passkeys from an insecure page, and the app cannot start without
+           them - it showed an empty screen. The server should redirect first
+           (Cloudflare: Always Use HTTPS; and HSTS in dist/_headers), but this
+           catches a visit that got through. Local development is exempt. */
+        var h = location.hostname;
+        if (
+          location.protocol === 'http:' &&
+          h !== 'localhost' &&
+          h !== '127.0.0.1' &&
+          h !== '[::1]' &&
+          !/\.(localhost|test)$/.test(h)
+        ) {
+          location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+          return;
+        }
         var d = document.documentElement;
         /* No mirror yet means a FIRST launch, and the honest default there is the
            browser's own language - not English. Without this, an Israeli opening

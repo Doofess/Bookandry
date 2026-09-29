@@ -41,6 +41,14 @@ describe('the content security policy', () => {
     expect(directive(csp, 'object-src')).toEqual(["'none'"]);
     expect(headersFile({ scriptHashes: [] })).toMatch(/^\/\*\n {2}Content-Security-Policy: /);
   });
+
+  it('tells browsers never to come back over plain http', () => {
+    // The app cannot start on an insecure page; a phone that opened
+    // http://bookandry.com got an empty screen.
+    expect(headersFile({ scriptHashes: [] })).toContain(
+      '  Strict-Transport-Security: max-age=31536000; includeSubDomains\n',
+    );
+  });
 });
 
 describe('inline scripts', () => {

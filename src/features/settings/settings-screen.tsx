@@ -206,9 +206,11 @@ function usePersisted(): boolean | undefined {
 
   useEffect(() => {
     let cancelled = false;
-    if (typeof navigator.storage.persisted !== 'function') return;
+    // Absent on an insecure page and in some browsers, whatever the types say.
+    const storage = (navigator as Partial<Pick<Navigator, 'storage'>>).storage;
+    if (typeof storage?.persisted !== 'function') return;
 
-    void navigator.storage.persisted().then((value) => {
+    void storage.persisted().then((value) => {
       if (!cancelled) setPersisted(value);
     });
 

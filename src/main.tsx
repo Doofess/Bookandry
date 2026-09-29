@@ -51,7 +51,10 @@ async function bootstrap(): Promise<void> {
   // Ask for durable storage before anything writes. If denied, Settings > Data
   // surfaces a note (Phase 2) — export is the only backup story for a
   // local-first app with no sync.
-  void navigator.storage.persist();
+  // Optional: some browsers, and any insecure page, have no StorageManager.
+  // Losing the request must never stop the app from starting.
+  const storage = (navigator as Partial<Pick<Navigator, 'storage'>>).storage;
+  void storage?.persist().catch(() => undefined);
 
   // Open the database before the first render so `on('populate')` has run and
   // the settings singleton exists. The boot gate then distinguishes "still
