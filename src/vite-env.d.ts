@@ -12,6 +12,10 @@
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+  /** The Google OAuth web client's id (public). See src/services/supabase/id-token.ts. */
+  readonly VITE_GOOGLE_CLIENT_ID?: string;
+  /** The Apple Services ID (public). Unset: no Apple button. */
+  readonly VITE_APPLE_CLIENT_ID?: string;
 }
 
 interface ImportMeta {

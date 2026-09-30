@@ -6,6 +6,7 @@ import { adoptKeyring, loadKeys } from '@/db/sync/keystore';
 import { instantFromMs } from '@/lib/dates';
 import { deriveKeyring, newDataKey } from '@/services/crypto/keys';
 import type * as Client from '@/services/supabase/client';
+import type * as IdToken from '@/services/supabase/id-token';
 import { getKeyState, setupKeys, type Rpc } from '@/services/supabase/transport';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import { freshPg, type TestPg } from '@/test/pg-harness';
@@ -39,6 +40,18 @@ const fake = vi.hoisted(() => ({
   aal: { current: 'aal1', next: 'aal1' },
   /** What a right code does: raise the session. Set per test. */
   onCode: (): void => undefined,
+  /** Back from Google or Apple, as main.tsx's captureArrival would have found. */
+  arrival: undefined as IdToken.Arrival | undefined,
+  signInWithIdToken: vi.fn<(credentials: unknown) => Promise<{ data: unknown; error: Error | null }>>(),
+}));
+
+vi.mock('@/services/supabase/id-token', async (importOriginal) => ({
+  ...(await importOriginal<typeof IdToken>()),
+  takeArrival: () => {
+    const taken = fake.arrival;
+    fake.arrival = undefined;
+    return taken;
+  },
 }));
 
 vi.mock('@/services/supabase/client', async (importOriginal) => ({
@@ -54,6 +67,7 @@ vi.mock('@/services/supabase/client', async (importOriginal) => ({
         getSession: () =>
           Promise.resolve({ data: { session: fake.session ?? null }, error: fake.sessionError ?? null }),
         signOut: fake.signOut,
+        signInWithIdToken: fake.signInWithIdToken,
         mfa: {
           getAuthenticatorAssuranceLevel: () =>
             Promise.resolve({
@@ -99,6 +113,11 @@ beforeEach(async () => {
   fake.sessionError = undefined;
   fake.aal = { current: 'aal1', next: 'aal1' };
   fake.onCode = () => undefined;
+  fake.arrival = undefined;
+  fake.signInWithIdToken.mockReset().mockImplementation(() => {
+    fake.session = { user: { ...userFor(USER), app_metadata: { provider: 'apple' } } };
+    return Promise.resolve({ data: {}, error: null });
+  });
   fake.signOut.mockReset().mockImplementation(() => {
     fake.session = null;
     return Promise.resolve({ error: null });
@@ -206,6 +225,51 @@ describe('signing in', () => {
     await vi.waitFor(() => {
       expect(status()).toBe('ready');
     });
+  });
+});
+
+describe('coming back from Google or Apple', () => {
+  it('finishes the sign-in before anything is shown - never the sign-in screen first', async () => {
+    fake.session = null;
+    fake.arrival = { ok: true, provider: 'apple', token: 'id.token', nonce: 'raw-nonce' };
+    const c = make();
+    const seen: (string | undefined)[] = [];
+    c.subscribe(() => seen.push(status()));
+    c.start();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    expect(fake.signInWithIdToken).toHaveBeenCalledWith({
+      provider: 'apple',
+      token: 'id.token',
+      nonce: 'raw-nonce',
+    });
+    expect(seen).not.toContain('signed_out');
+    expect(c.getView()).toMatchObject({ user: { provider: 'apple' } });
+  });
+
+  it('says why when the answer is refused, on the sign-in screen', async () => {
+    fake.session = null;
+    fake.arrival = { ok: true, provider: 'google', token: 'forged', nonce: 'n' };
+    fake.signInWithIdToken.mockResolvedValue({ data: null, error: new Error('Bad ID token') });
+    const c = make();
+    c.start();
+    await vi.waitFor(() => {
+      expect(status()).toBe('signed_out');
+    });
+    expect(c.signInFailure()).toBe('unknown');
+  });
+
+  it('stays quiet when the person closed the provider page', async () => {
+    fake.session = null;
+    fake.arrival = { ok: false, reason: 'cancelled' };
+    const c = make();
+    c.start();
+    await vi.waitFor(() => {
+      expect(status()).toBe('signed_out');
+    });
+    expect(c.signInFailure()).toBeUndefined();
+    expect(fake.signInWithIdToken).not.toHaveBeenCalled();
   });
 });
 

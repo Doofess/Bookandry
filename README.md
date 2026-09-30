@@ -304,13 +304,22 @@ the background.
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.
 - **Two-step sign-in**, optional: a code from an authenticator app after the
-  password (or Google). Enforced by the database, not just the screens: every
+  password (or Google, or Apple). Enforced by the database, not just the screens: every
   function refuses an account with codes turned on unless the session has
   given one (Supabase's `aal2`), and no table can be read directly.
   (`supabase/migrations/20260930000000_second_step.sql`)
 - **Passkeys**: sign in with the device's fingerprint, face or screen lock, no
   password. Added and removed in Settings. A passkey is a first factor here; an
   account with codes on still asks for the code after one.
+- **Google and Apple** hand their answer straight back to bookandry.com, never
+  by way of Supabase's own address, so Google's page says "to continue to
+  bookandry.com". The answer is a signed ID token, which Supabase checks and
+  exchanges for a session; a nonce only the browser that started the sign-in
+  holds makes a token lifted from elsewhere useless. No client secret is
+  involved, so nothing expires (Apple's OAuth secret would, every six months).
+  Apple POSTs its answer, so one path, `/auth/apple`, runs a Worker
+  (`src/services/cloudflare/worker.ts`); the rest of the site is static
+  files. (`src/services/supabase/id-token.ts`)
 
 What the server holds, per row: a blinded id (an HMAC of table and id), a
 revision, a key version, and AES-256-GCM ciphertext of the table, the id, the
@@ -374,7 +383,18 @@ Configuration that lives in the dashboard, not in this repo:
 - **Authentication → Providers → Email**: confirm email ON; secure password
   change ON; leaked-password protection ON (Pro plan).
 - **Authentication → Providers → Google**: client id and secret — the secret
-  lives only here, never in this repo or `.env.local`.
+  lives only here, never in this repo or `.env.local`. Skip nonce check OFF.
+- **Google Cloud → the OAuth web client → Authorized redirect URIs**: add
+  `https://bookandry.com/auth/callback` (keep the supabase.co callback, for
+  builds without `VITE_GOOGLE_CLIENT_ID`). **Branding**: app name, logo,
+  home page and privacy policy; verifying the brand shows the name and logo
+  too.
+- **Apple Developer** (paid membership): an App ID with Sign in with Apple; a
+  Services ID (e.g. `com.bookandry.web`) with Sign in with Apple on, domain
+  `bookandry.com`, return URL `https://bookandry.com/auth/apple`. No key
+  or secret is needed.
+- **Authentication → Providers → Apple**: enabled, Client IDs = the Services
+  ID. The secret field stays empty.
 - **Authentication → Multi-Factor**: App Authenticator (TOTP) enabled (the
   default).
 - **Authentication → Passkeys**: enabled; relying party ID `bookandry.com`,
@@ -383,8 +403,11 @@ Configuration that lives in the dashboard, not in this repo:
 - **Authentication → URL Configuration**: Site URL `https://bookandry.com`;
   redirect URLs `https://bookandry.com/settings` (plus a localhost one for
   development only).
-- `.env.local` holds only public values: `VITE_SUPABASE_URL` and
-  `VITE_SUPABASE_PUBLISHABLE_KEY`. Never the service-role key.
+- `.env.local` holds only public values: `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_CLIENT_ID` and
+  `VITE_APPLE_CLIENT_ID` (the Services ID; unset, there is no Apple button).
+  Never the service-role key, and never the `client_secret_*.json` Google
+  lets you download.
 
 ### Known limitations
 

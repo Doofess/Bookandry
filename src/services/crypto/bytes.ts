@@ -70,3 +70,9 @@ export function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   for (let i = 0; i < a.length; i += 1) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
   return diff === 0;
 }
+
+/** Lowercase hex SHA-256 of a string: the form OpenID nonces are compared in. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', utf8(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}

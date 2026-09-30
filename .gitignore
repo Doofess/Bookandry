@@ -11,9 +11,13 @@ blob-report/
 .eslintcache
 *.local
 .env*
+# A Google OAuth client download: it holds the client SECRET. It belongs in
+# the Supabase dashboard only, never in this repository.
+client_secret_*.json
 .DS_Store
 Thumbs.db
 
 # Screenshot matrix and ad-hoc browser captures. Phase 7 reviews these by eye;
 # they are build output, not source, and a 400KB PNG per run bloats history.
 artifacts/
+*.tsbuildinfo

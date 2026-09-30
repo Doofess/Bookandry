@@ -30,6 +30,15 @@ import { PaymentMethodsScreen } from '@/features/settings/payment-methods-screen
 import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
 import { systemClock } from '@/lib/clock';
+import { captureArrival } from '@/services/supabase/id-token';
+
+/*
+ * Back from signing in with Google or Apple: take the provider's answer out of
+ * the address before the router reads it (it would find no /auth/callback
+ * screen) and before anything else could see it. The account controller
+ * finishes the sign-in when it starts.
+ */
+captureArrival();
 
 const router = createBrowserRouter([
   {

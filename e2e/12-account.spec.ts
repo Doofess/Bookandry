@@ -99,3 +99,20 @@ test('the front door switches language', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.getByRole('button', { name: 'המשך עם Google' })).toBeVisible();
 });
+
+test('a return from Google or Apple is taken out of the address, and refused unless this browser started it', async ({
+  page,
+}) => {
+  // What an attacker could send someone: a token for a sign-in they never began.
+  await page.goto('/auth/callback#id_token=forged.token.here&state=guessed');
+  await frontDoor(page);
+  await expect(page).toHaveURL('http://localhost:4174/');
+  await expect(page.getByRole('alert')).toHaveText("That didn't work. Try again.");
+});
+
+test('closing the provider page brings the front door back without an error', async ({ page }) => {
+  await page.goto('/auth/callback#error=access_denied&state=s');
+  await frontDoor(page);
+  await expect(page).toHaveURL('http://localhost:4174/');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});

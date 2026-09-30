@@ -1,5 +1,9 @@
 import type { AuthError, SupabaseClient } from '@supabase/supabase-js';
 
+import { systemClock } from '@/lib/clock';
+
+import { beginIdSignIn, idClientId, type Arrival, type IdProvider } from './id-token';
+
 /**
  * Signing in and out: proving who you are to the server. Distinct from
  * UNLOCKING, which gives this device the data key (src/db/sync/account.ts)
@@ -89,11 +93,50 @@ export async function signInWithEmail(
   return error === null ? { ok: true } : failure(error);
 }
 
-/** Leaves the page for Google; the session arrives with the redirect back. */
-export async function signInWithGoogle(supabase: SupabaseClient): Promise<AuthResult> {
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: returnUrl() },
+/** Whether this build offers signing in with the provider at all. */
+export function providerAvailable(provider: IdProvider): boolean {
+  // Google always is: without a client id it falls back to Supabase's flow.
+  return provider === 'google' || idClientId(provider) !== undefined;
+}
+
+/**
+ * Leaves the page for Google or Apple. The session is made on the way back
+ * (finishIdSignIn), from the ID token the provider returns to this site - see
+ * id-token.ts for why not Supabase's own redirect. A build with no Google
+ * client id falls back to that redirect, which works but names the
+ * supabase.co address on Google's page.
+ */
+export async function signInWithProvider(
+  supabase: SupabaseClient,
+  provider: IdProvider,
+): Promise<AuthResult> {
+  const clientId = idClientId(provider);
+  if (clientId === undefined) {
+    if (provider === 'apple') return { ok: false, reason: 'unknown' };
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: returnUrl() },
+    });
+    return error === null ? { ok: true } : failure(error);
+  }
+  const url = await beginIdSignIn(provider, clientId, {
+    origin: window.location.origin,
+    nowMs: systemClock.nowMs(),
+    storage: localStorage,
+  });
+  window.location.assign(url);
+  return { ok: true };
+}
+
+/** The provider's ID token, and the nonce only this browser holds, exchanged for a session. */
+export async function finishIdSignIn(
+  supabase: SupabaseClient,
+  arrival: Extract<Arrival, { ok: true }>,
+): Promise<AuthResult> {
+  const { error } = await supabase.auth.signInWithIdToken({
+    provider: arrival.provider,
+    token: arrival.token,
+    nonce: arrival.nonce,
   });
   return error === null ? { ok: true } : failure(error);
 }
