@@ -58,6 +58,16 @@ export function WelcomeScreen() {
         </p>
       ) : null}
       <SignIn initial="signin" onDone={() => undefined} />
+      {/* Plain links, not the router: these are pages of their own (public/),
+          readable without signing in. */}
+      <footer className="flex justify-center gap-4 text-xs text-muted-foreground">
+        <a className="underline-offset-4 hover:underline" href="/privacy">
+          {t('account.welcome.privacy')}
+        </a>
+        <a className="underline-offset-4 hover:underline" href="/terms">
+          {t('account.welcome.terms')}
+        </a>
+      </footer>
     </main>
   );
 }

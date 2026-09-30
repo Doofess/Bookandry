@@ -15,7 +15,7 @@ import {
   storedSessionUser,
   type Session,
 } from '@/services/supabase/client';
-import { takeArrival, type Arrival, type IdProvider } from '@/services/supabase/id-token';
+import { takeArrival, type Arrival } from '@/services/supabase/id-token';
 import {
   deleteMyAccount,
   getKeyState,
@@ -47,7 +47,7 @@ import { startSyncRunner, type SyncRunner, type SyncState } from './sync-runner'
 export type AccountUser = {
   readonly id: string;
   readonly email: string | undefined;
-  /** 'email', 'google' or 'apple'. Deleting an account re-checks a password only for 'email'. */
+  /** 'email' or 'google'. Deleting an account re-checks a password only for 'email'. */
   readonly provider: string;
 };
 
@@ -72,7 +72,7 @@ export type AccountView =
    */
   | { readonly status: 'locked'; readonly email: string | undefined; readonly idle: boolean }
   /**
-   * Signed in with the password (or Google or Apple), and the account has two-step
+   * Signed in with the password (or Google), and the account has two-step
    * sign-in on: the code comes next. The server serves nothing until it does.
    * `owned`: this device already holds the account's data, so the code is
    * asked for in front of the whole app rather than in Settings.
@@ -119,7 +119,7 @@ export class AccountController {
   private provisional = false;
   /** Clearing the device: the page is about to start over; ignore everything. */
   private leaving = false;
-  /** Why the sign-in this page came back from Google or Apple with did not go through. */
+  /** Why the sign-in this page came back from Google with did not go through. */
   private redirectFailure: AuthFailure | undefined;
   private readonly settled = new Set<(state: SyncState) => void>();
 
@@ -196,14 +196,14 @@ export class AccountController {
   }
 
   /**
-   * Back from Google or Apple with an ID token: made into a session BEFORE
+   * Back from Google with an ID token: made into a session BEFORE
    * the session is followed, so the sign-in screen does not flash up first.
    */
   private async finishArrival(arrival: Arrival): Promise<void> {
     if (arrival.ok) {
       touch(systemClock.nowMs());
-      const { finishIdSignIn } = await import('@/services/supabase/auth');
-      const result = await finishIdSignIn(await getSupabase(), arrival);
+      const { finishGoogleSignIn } = await import('@/services/supabase/auth');
+      const result = await finishGoogleSignIn(await getSupabase(), arrival);
       if (!result.ok && result.reason !== 'cancelled') this.redirectFailure = result.reason;
     } else if (arrival.reason !== 'cancelled') {
       this.redirectFailure = arrival.reason;
@@ -212,7 +212,7 @@ export class AccountController {
   }
 
   /**
-   * Why the last sign-in with Google or Apple failed, for the sign-in screen
+   * Why the last sign-in with Google failed, for the sign-in screen
    * the page came back to. Cleared by the next attempt.
    */
   signInFailure(): AuthFailure | undefined {
@@ -445,10 +445,10 @@ export class AccountController {
     return this.auth((s) => signInWithEmail(s, email, password));
   }
 
-  /** Leaves the page for Google or Apple; start() finishes the sign-in on the way back. */
-  async signInWith(provider: IdProvider): Promise<AuthResult> {
-    const { signInWithProvider } = await import('@/services/supabase/auth');
-    return this.auth((s) => signInWithProvider(s, provider));
+  /** Leaves the page for Google; start() finishes the sign-in on the way back. */
+  async signInWithGoogle(): Promise<AuthResult> {
+    const { signInWithGoogle } = await import('@/services/supabase/auth');
+    return this.auth((s) => signInWithGoogle(s));
   }
 
   async sendPasswordReset(email: string): Promise<AuthResult> {

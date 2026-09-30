@@ -24,7 +24,6 @@ beforeAll(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
   localStorage.clear();
 });
 
@@ -129,25 +128,15 @@ describe('the account card', () => {
   });
 });
 
-describe('Google and Apple', () => {
-  it('offers Apple only in a build that has an Apple client id', async () => {
+describe('Google', () => {
+  it('leaves for Google from its button', async () => {
+    const go = vi.spyOn(controller, 'signInWithGoogle').mockResolvedValue({ ok: true });
     const { user } = open({ kind: 'signin', mode: 'signin' });
-    expect(screen.queryByRole('button', { name: 'Continue with Apple' })).not.toBeInTheDocument();
-
-    const go = vi.spyOn(controller, 'signInWith').mockResolvedValue({ ok: true });
     await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
-    expect(go).toHaveBeenCalledWith('google');
+    expect(go).toHaveBeenCalled();
   });
 
-  it('leaves for Apple from its button', async () => {
-    vi.stubEnv('VITE_APPLE_CLIENT_ID', 'com.bookandry.web');
-    const go = vi.spyOn(controller, 'signInWith').mockResolvedValue({ ok: true });
-    const { user } = open({ kind: 'signin', mode: 'signin' });
-    await user.click(screen.getByRole('button', { name: 'Continue with Apple' }));
-    expect(go).toHaveBeenCalledWith('apple');
-  });
-
-  it('says so when the page came back from them without signing in', () => {
+  it('says so when the page came back from Google without signing in', () => {
     vi.spyOn(controller, 'signInFailure').mockReturnValue('unknown');
     open({ kind: 'signin', mode: 'signin' });
     expect(screen.getByRole('alert')).toHaveTextContent("That didn't work. Try again.");

@@ -8,15 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import {
-  passkeysSupported,
-  providerAvailable,
-  type AuthResult,
-  type Enrollment,
-} from '@/services/supabase/auth';
-import type { IdProvider } from '@/services/supabase/id-token';
+import { passkeysSupported, type AuthResult, type Enrollment } from '@/services/supabase/auth';
 
-import { AppleIcon, GoogleIcon } from './provider-icons';
+import { GoogleIcon } from './provider-icons';
 import { CodeForm } from './second-step';
 
 /**
@@ -169,7 +163,7 @@ export function SignIn({
   const [email, setEmail] = useState(knownEmail);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  // Back from Google or Apple without a session: say so here, where the
+  // Back from Google without a session: say so here, where the
   // person is looking.
   const [error, setError] = useState<string | undefined>(() => {
     const failure = accountController().signInFailure();
@@ -219,12 +213,12 @@ export function SignIn({
     }
   };
 
-  const withProvider = async (provider: IdProvider): Promise<void> => {
+  const google = async (): Promise<void> => {
     setBusy(true);
     setError(undefined);
     try {
-      const result = await accountController().signInWith(provider);
-      // On success the page is already leaving for Google or Apple.
+      const result = await accountController().signInWithGoogle();
+      // On success the page is already leaving for Google.
       if (!result.ok) setError(messages.auth(result));
     } catch {
       setError(messages.thrown());
@@ -248,23 +242,11 @@ export function SignIn({
             variant="outline"
             className="w-full"
             disabled={busy}
-            onClick={() => void withProvider('google')}
+            onClick={() => void google()}
           >
             <GoogleIcon className="size-4" />
             {t('account.google')}
           </Button>
-          {providerAvailable('apple') ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={busy}
-              onClick={() => void withProvider('apple')}
-            >
-              <AppleIcon className="size-4" />
-              {t('account.apple')}
-            </Button>
-          ) : null}
           <p className="text-center text-xs text-muted-foreground">{t('account.or')}</p>
         </>
       )}

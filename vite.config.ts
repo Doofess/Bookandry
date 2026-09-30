@@ -94,8 +94,8 @@ export default defineConfig(({ mode }) => ({
         skipWaiting: false,
         clientsClaim: false,
         navigateFallback: '/index.html',
-        // Apple's sign-in answer is for the Worker (src/services/cloudflare/worker.ts).
-        navigateFallbackDenylist: [/^\/auth\/apple/],
+        // The privacy policy and terms are pages of their own (public/), not the app.
+        navigateFallbackDenylist: [/^\/(privacy|terms)(\.html)?$/],
         runtimeCaching: [
           { urlPattern: RATE_PROVIDER_HOSTS, handler: 'NetworkOnly' },
           { urlPattern: SUPABASE_HOSTS, handler: 'NetworkOnly' },

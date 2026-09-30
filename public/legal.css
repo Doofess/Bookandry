@@ -1,0 +1,91 @@
+/*
+ * The privacy policy and terms (public/privacy.html, public/terms.html):
+ * plain pages outside the app, readable by anyone - and by Google's reviewers -
+ * without signing in. The app's colours, no scripts.
+ */
+:root {
+  color-scheme: light dark;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.004 285.8);
+  --muted-foreground: oklch(0.516 0.013 285.9);
+  --primary: oklch(0.523 0.121 156.1);
+  --border: oklch(0.92 0.004 286.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.141 0.004 285.8);
+    --foreground: oklch(0.985 0 0);
+    --muted-foreground: oklch(0.755 0.011 286.1);
+    --primary: oklch(0.773 0.167 157.5);
+    --border: oklch(0.315 0.007 286);
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0 auto;
+  max-width: 44rem;
+  padding: 1.5rem 1rem 3rem;
+  background: var(--background);
+  color: var(--foreground);
+  font:
+    16px/1.6 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Arial,
+    sans-serif;
+}
+a {
+  color: var(--primary);
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: none;
+}
+nav,
+footer,
+.meta {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+article {
+  padding-top: 1rem;
+}
+article + article {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border);
+}
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  margin: 1rem 0 0.25rem;
+}
+h2 {
+  font-size: 1.125rem;
+  margin: 1.75rem 0 0.5rem;
+}
+ul {
+  padding-inline-start: 1.25rem;
+}
+li + li {
+  margin-top: 0.5rem;
+}
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}

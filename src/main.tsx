@@ -33,7 +33,7 @@ import { systemClock } from '@/lib/clock';
 import { captureArrival } from '@/services/supabase/id-token';
 
 /*
- * Back from signing in with Google or Apple: take the provider's answer out of
+ * Back from signing in with Google: take Google's answer out of
  * the address before the router reads it (it would find no /auth/callback
  * screen) and before anything else could see it. The account controller
  * finishes the sign-in when it starts.

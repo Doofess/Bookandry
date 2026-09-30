@@ -40,7 +40,7 @@ const fake = vi.hoisted(() => ({
   aal: { current: 'aal1', next: 'aal1' },
   /** What a right code does: raise the session. Set per test. */
   onCode: (): void => undefined,
-  /** Back from Google or Apple, as main.tsx's captureArrival would have found. */
+  /** Back from Google, as main.tsx's captureArrival would have found. */
   arrival: undefined as IdToken.Arrival | undefined,
   signInWithIdToken: vi.fn<(credentials: unknown) => Promise<{ data: unknown; error: Error | null }>>(),
 }));
@@ -115,7 +115,7 @@ beforeEach(async () => {
   fake.onCode = () => undefined;
   fake.arrival = undefined;
   fake.signInWithIdToken.mockReset().mockImplementation(() => {
-    fake.session = { user: { ...userFor(USER), app_metadata: { provider: 'apple' } } };
+    fake.session = { user: { ...userFor(USER), app_metadata: { provider: 'google' } } };
     return Promise.resolve({ data: {}, error: null });
   });
   fake.signOut.mockReset().mockImplementation(() => {
@@ -228,10 +228,10 @@ describe('signing in', () => {
   });
 });
 
-describe('coming back from Google or Apple', () => {
+describe('coming back from Google', () => {
   it('finishes the sign-in before anything is shown - never the sign-in screen first', async () => {
     fake.session = null;
-    fake.arrival = { ok: true, provider: 'apple', token: 'id.token', nonce: 'raw-nonce' };
+    fake.arrival = { ok: true, token: 'id.token', nonce: 'raw-nonce' };
     const c = make();
     const seen: (string | undefined)[] = [];
     c.subscribe(() => seen.push(status()));
@@ -240,17 +240,17 @@ describe('coming back from Google or Apple', () => {
       expect(status()).toBe('ready');
     });
     expect(fake.signInWithIdToken).toHaveBeenCalledWith({
-      provider: 'apple',
+      provider: 'google',
       token: 'id.token',
       nonce: 'raw-nonce',
     });
     expect(seen).not.toContain('signed_out');
-    expect(c.getView()).toMatchObject({ user: { provider: 'apple' } });
+    expect(c.getView()).toMatchObject({ user: { provider: 'google' } });
   });
 
   it('says why when the answer is refused, on the sign-in screen', async () => {
     fake.session = null;
-    fake.arrival = { ok: true, provider: 'google', token: 'forged', nonce: 'n' };
+    fake.arrival = { ok: true, token: 'forged', nonce: 'n' };
     fake.signInWithIdToken.mockResolvedValue({ data: null, error: new Error('Bad ID token') });
     const c = make();
     c.start();
@@ -260,7 +260,7 @@ describe('coming back from Google or Apple', () => {
     expect(c.signInFailure()).toBe('unknown');
   });
 
-  it('stays quiet when the person closed the provider page', async () => {
+  it("stays quiet when the person closed Google's page", async () => {
     fake.session = null;
     fake.arrival = { ok: false, reason: 'cancelled' };
     const c = make();

@@ -100,7 +100,7 @@ test('the front door switches language', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'המשך עם Google' })).toBeVisible();
 });
 
-test('a return from Google or Apple is taken out of the address, and refused unless this browser started it', async ({
+test('a return from Google is taken out of the address, and refused unless this browser started it', async ({
   page,
 }) => {
   // What an attacker could send someone: a token for a sign-in they never began.
@@ -110,9 +110,20 @@ test('a return from Google or Apple is taken out of the address, and refused unl
   await expect(page.getByRole('alert')).toHaveText("That didn't work. Try again.");
 });
 
-test('closing the provider page brings the front door back without an error', async ({ page }) => {
+test("closing Google's page brings the front door back without an error", async ({ page }) => {
   await page.goto('/auth/callback#error=access_denied&state=s');
   await frontDoor(page);
   await expect(page).toHaveURL('http://localhost:4174/');
   await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('the privacy policy and terms are open to anyone, linked from the front door', async ({ page }) => {
+  await page.goto('/');
+  await frontDoor(page);
+  await page.getByRole('link', { name: 'Privacy Policy' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Privacy Policy' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'מדיניות פרטיות' })).toBeAttached();
+  await page.getByRole('link', { name: /Terms of Service/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Terms of Service' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'תנאי שימוש' })).toBeAttached();
 });

@@ -1,8 +1,6 @@
-// Hosting: bookandry.com, as a Cloudflare Worker that is almost only static assets.
+// Hosting: bookandry.com, as a static-assets-only Cloudflare Worker.
 //
-// Server code runs for ONE path, /auth/apple (src/services/cloudflare/worker.ts):
-// Sign in with Apple POSTs its answer, which static files cannot take. Every
-// other request is the files in dist/, never touching the worker. Cloudflare
+// No server code runs here - the whole app is the files in dist/. Cloudflare
 // reads dist/_headers (the Content-Security-Policy and friends, written by the
 // build: src/lib/security-headers.ts) and serves index.html for any route that
 // is not a file, so /settings and /chart work on a cold load.
@@ -13,12 +11,9 @@
   "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
   "name": "bookandry",
   "compatibility_date": "2026-09-01",
-  "main": "src/services/cloudflare/worker.ts",
   "assets": {
     "directory": "./dist",
-    "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/auth/apple"],
   },
   // The app lives on the apex alone. OAuth and email links return to
   // https://bookandry.com and the sign-in's PKCE verifier lives in that

@@ -2,7 +2,7 @@ import type { AuthError, SupabaseClient } from '@supabase/supabase-js';
 
 import { systemClock } from '@/lib/clock';
 
-import { beginIdSignIn, idClientId, type Arrival, type IdProvider } from './id-token';
+import { beginGoogleSignIn, googleClientId, type Arrival } from './id-token';
 
 /**
  * Signing in and out: proving who you are to the server. Distinct from
@@ -93,33 +93,23 @@ export async function signInWithEmail(
   return error === null ? { ok: true } : failure(error);
 }
 
-/** Whether this build offers signing in with the provider at all. */
-export function providerAvailable(provider: IdProvider): boolean {
-  // Google always is: without a client id it falls back to Supabase's flow.
-  return provider === 'google' || idClientId(provider) !== undefined;
-}
-
 /**
- * Leaves the page for Google or Apple. The session is made on the way back
- * (finishIdSignIn), from the ID token the provider returns to this site - see
+ * Leaves the page for Google. The session is made on the way back
+ * (finishGoogleSignIn), from the ID token Google returns to this site - see
  * id-token.ts for why not Supabase's own redirect. A build with no Google
  * client id falls back to that redirect, which works but names the
  * supabase.co address on Google's page.
  */
-export async function signInWithProvider(
-  supabase: SupabaseClient,
-  provider: IdProvider,
-): Promise<AuthResult> {
-  const clientId = idClientId(provider);
+export async function signInWithGoogle(supabase: SupabaseClient): Promise<AuthResult> {
+  const clientId = googleClientId();
   if (clientId === undefined) {
-    if (provider === 'apple') return { ok: false, reason: 'unknown' };
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: returnUrl() },
     });
     return error === null ? { ok: true } : failure(error);
   }
-  const url = await beginIdSignIn(provider, clientId, {
+  const url = await beginGoogleSignIn(clientId, {
     origin: window.location.origin,
     nowMs: systemClock.nowMs(),
     storage: localStorage,
@@ -128,13 +118,13 @@ export async function signInWithProvider(
   return { ok: true };
 }
 
-/** The provider's ID token, and the nonce only this browser holds, exchanged for a session. */
-export async function finishIdSignIn(
+/** Google's ID token, and the nonce only this browser holds, exchanged for a session. */
+export async function finishGoogleSignIn(
   supabase: SupabaseClient,
   arrival: Extract<Arrival, { ok: true }>,
 ): Promise<AuthResult> {
   const { error } = await supabase.auth.signInWithIdToken({
-    provider: arrival.provider,
+    provider: 'google',
     token: arrival.token,
     nonce: arrival.nonce,
   });

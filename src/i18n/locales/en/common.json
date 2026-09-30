@@ -380,7 +380,6 @@
     "signIn": "Sign in",
     "signOut": "Sign out",
     "google": "Continue with Google",
-    "apple": "Continue with Apple",
     "or": "or with email",
     "email": "Email",
     "password": "Password",
@@ -517,7 +516,9 @@
     },
     "welcome": {
       "tagline": "Income, expenses and every currency, for everyone in your household. Sign in, or create an account to get started.",
-      "localData": "This device already has data. Sign in and it's added to your account."
+      "localData": "This device already has data. Sign in and it's added to your account.",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service"
     },
     "arriving": {
       "body": "Bringing your data to this device…",
