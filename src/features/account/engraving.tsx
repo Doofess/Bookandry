@@ -25,9 +25,12 @@ const RINGS: readonly Ring[] = [
 
 type Band = { y: number; amplitude: number; wavelength: number; copies: number };
 
+// The last band is centred on the bottom edge, so the line-work runs off the
+// page like a note's border instead of stopping a few pixels short of it.
 const BANDS: readonly Band[] = [
-  { y: 955, amplitude: 14, wavelength: 140, copies: 6 },
-  { y: 984, amplitude: 7, wavelength: 70, copies: 4 },
+  { y: 944, amplitude: 14, wavelength: 140, copies: 6 },
+  { y: 972, amplitude: 7, wavelength: 70, copies: 4 },
+  { y: 1000, amplitude: 14, wavelength: 140, copies: 6 },
 ];
 
 const WIDTH = 800;
