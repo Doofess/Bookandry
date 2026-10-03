@@ -26,14 +26,14 @@ export function AuthLayout({ children }: { readonly children: ReactNode }) {
       <section className="relative isolate overflow-hidden text-brand-deep-foreground lg:sticky lg:top-0 lg:h-dvh">
         {/* On a phone the form sheet overlaps the panel's foot by 1.5rem: the engraving stops there, so its bands sit just above the sheet. */}
         <Engraving className="absolute inset-x-0 top-0 -z-10 h-[calc(100%-1.5rem)] w-full text-brand-vivid/45 lg:h-full rtl:-scale-x-100" />
-        <div className="flex h-full flex-col px-6 pt-5 pb-16 sm:px-10 lg:px-14 lg:py-10">
+        <div className="flex h-full flex-col px-6 pt-5 pb-20 sm:px-10 lg:px-14 lg:py-10">
           <header className="flex items-center justify-between gap-4">
             <Logo size={36} tone="inverse" decorative />
             <LanguageSwitch />
           </header>
           {/* The name is the hero: set large in the brand's face, the line under
               it saying what it is. */}
-          <div className="mt-8 sm:mt-14 lg:mt-auto lg:mb-8">
+          <div className="mt-8 sm:mt-14 lg:mt-auto lg:mb-16">
             <p
               lang="en"
               dir="ltr"
