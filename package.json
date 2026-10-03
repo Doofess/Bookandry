@@ -26,6 +26,7 @@
     "gate:rtl": "node scripts/gate-rtl.mjs",
     "gate:money": "node scripts/gate-money.mjs",
     "gate:pci": "node scripts/gate-pci.mjs",
+    "emails": "node scripts/emails.mjs",
     "gates": "pnpm gate:rtl && pnpm gate:money && pnpm gate:pci",
     "icons": "pwa-assets-generator",
     "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm gates && pnpm test:cov && pnpm build",

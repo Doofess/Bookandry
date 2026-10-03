@@ -409,6 +409,16 @@ Configuration that lives in the dashboard, not in this repo:
 - **Authentication → Passkeys**: enabled; relying party ID `bookandry.com`,
   display name `Bookandry`, origin `https://bookandry.com`. The ID is
   permanent in practice: changing it strands every passkey already made.
+- **Authentication → Emails → SMTP Settings**: custom SMTP on (Resend:
+  `smtp.resend.com`, port 465, user `resend`, the API key as the password —
+  entered here only), sender `no-reply@bookandry.com`, name `Bookandry`.
+  Without it Supabase sends as "Supabase Auth", and **only to members of the
+  project's team**: nobody else gets a confirmation or reset email.
+- **Authentication → Emails → Templates**: "Confirm sign up" and "Reset
+  password" take the subject and body from `supabase/templates/`
+  (`pnpm emails` rebuilds them and `public/email/`; deploy before pasting, as
+  the emails load their images from the site). Each email comes in the
+  account's language, kept in `user_metadata.language`.
 - **Authentication → URL Configuration**: Site URL `https://bookandry.com`;
   redirect URLs `https://bookandry.com/settings` (plus a localhost one for
   development only).

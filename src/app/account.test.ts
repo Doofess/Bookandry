@@ -143,6 +143,7 @@ beforeEach(async () => {
   fake.sessionError = undefined;
   fake.aal = { current: 'aal1', next: 'aal1' };
   fake.onCode = () => undefined;
+  fake.metadata = {};
   fake.arrival = undefined;
   fake.signInWithIdToken.mockReset().mockImplementation(() => {
     fake.session = { user: { ...userFor(USER), app_metadata: { provider: 'google' } } };
@@ -320,6 +321,33 @@ describe('the profile picture', () => {
     const c = make();
     await c.connect();
     expect(c.getView()).toMatchObject({ user: { picture: undefined } });
+  });
+});
+
+describe("the account's emails", () => {
+  afterEach(() => {
+    document.documentElement.lang = '';
+  });
+
+  it('come in the language the person uses here, kept on the account at sign-in', async () => {
+    document.documentElement.lang = 'he';
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(fake.metadata).toMatchObject({ language: 'he' });
+    });
+    expect(c.getView()).toMatchObject({ user: { language: 'he' } });
+  });
+
+  it('follow a language switch, and leave a language already kept alone', async () => {
+    fake.session = { user: { ...userFor(USER), user_metadata: { language: 'en' } } };
+    const c = make();
+    await c.connect();
+    await c.rememberLanguage('en');
+    expect(fake.metadata).toEqual({});
+
+    await c.rememberLanguage('he');
+    expect(fake.metadata).toEqual({ language: 'he' });
   });
 });
 

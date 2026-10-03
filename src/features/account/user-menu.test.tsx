@@ -40,6 +40,7 @@ const signedIn: AccountView = {
     name: 'Dana Levi',
     picture: undefined,
     avatarVersion: undefined,
+    language: undefined,
   },
   keys: { kind: 'ready' },
   sync: undefined,

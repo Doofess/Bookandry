@@ -1,3 +1,4 @@
+import { rememberAccountLanguage } from '@/app/account';
 import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
 import { changeLanguage } from '@/i18n';
@@ -17,6 +18,7 @@ import { systemClock } from '@/lib/clock';
 export function chooseLanguage(language: Language): void {
   void writeSettings(db, { language }, systemClock.nowIso());
   void changeLanguage(language);
+  rememberAccountLanguage(language);
 }
 
 /**

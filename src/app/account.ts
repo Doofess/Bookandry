@@ -4,6 +4,7 @@ import type { BookandryDB } from '@/db/db';
 import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
 import { loadKeys } from '@/db/sync/keystore';
+import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 import type { AuthFailure, AuthResult, Enrollment, Passkey, SecondStep } from '@/services/supabase/auth';
 import {
@@ -56,6 +57,8 @@ export type AccountUser = {
   readonly picture: string | undefined;
   /** The account's own picture: its current version, or undefined for none. */
   readonly avatarVersion: number | undefined;
+  /** The language its emails come in, once one was recorded. */
+  readonly language: Language | undefined;
 };
 
 /** Where this device stands with the account's key. */
@@ -112,6 +115,7 @@ function userOf(session: Pick<Session, 'user'>): AccountUser {
   const meta = (session.user.user_metadata as Record<string, unknown> | undefined) ?? {};
   const picture = text(meta['avatar_url']) ?? text(meta['picture']);
   const version = meta['avatar_version'];
+  const language = meta['language'];
   return {
     id: session.user.id,
     email: session.user.email,
@@ -119,8 +123,12 @@ function userOf(session: Pick<Session, 'user'>): AccountUser {
     name: text(meta['full_name']) ?? text(meta['name']),
     picture: picture?.startsWith('https://lh3.googleusercontent.com/') === true ? picture : undefined,
     avatarVersion: typeof version === 'number' && Number.isFinite(version) ? version : undefined,
+    language: language === 'en' || language === 'he' ? language : undefined,
   };
 }
+
+/** The language the page is in now: set on <html> by i18n/boot. */
+const pageLanguage = (): Language => (document.documentElement.lang === 'he' ? 'he' : 'en');
 
 const isRetryable = (error: unknown): boolean =>
   error instanceof Error && error.name === 'AuthRetryableFetchError';
@@ -302,6 +310,7 @@ export class AccountController {
       // The same person, the account itself changed (a new picture, say).
       this.patch(recovery ? { user, passwordRecovery: true } : { user });
       void this.syncAvatar();
+      void this.rememberLanguage(pageLanguage());
       return;
     }
     // A session restored after sitting idle past the limit ends here, before
@@ -330,6 +339,7 @@ export class AccountController {
     });
     this.idle = watchIdle({ onIdle: () => void this.lock(), nowMs: () => systemClock.nowMs() });
     void this.syncAvatar();
+    void this.rememberLanguage(pageLanguage());
     await this.refreshKeys();
   }
 
@@ -457,9 +467,13 @@ export class AccountController {
     return fn(await getSupabase());
   }
 
-  async signUp(email: string, password: string): Promise<AuthResult & { readonly confirm?: boolean }> {
+  async signUp(
+    email: string,
+    password: string,
+    language: Language,
+  ): Promise<AuthResult & { readonly confirm?: boolean }> {
     const { signUpWithEmail } = await import('@/services/supabase/auth');
-    return this.auth((s) => signUpWithEmail(s, email, password));
+    return this.auth((s) => signUpWithEmail(s, email, password, language));
   }
 
   async signIn(email: string, password: string): Promise<AuthResult> {
@@ -649,6 +663,23 @@ export class AccountController {
     }
   }
 
+  /**
+   * Keeps the account's emails in the language the person uses here: on
+   * every sign-in, and whenever they switch. Started without waiting, so
+   * nothing may escape - the next sign-in tries again.
+   */
+  async rememberLanguage(language: Language): Promise<void> {
+    if (this.view.status !== 'signed_in' || this.view.user.language === language) return;
+    const user = this.view.user;
+    try {
+      const { rememberLanguage } = await import('@/services/supabase/auth');
+      await rememberLanguage(await getSupabase(), language);
+      this.patch({ user: { ...user, language } });
+    } catch {
+      // Offline, most likely.
+    }
+  }
+
   /** A new picture for the account, already squared and shrunk (avatar-image.ts). */
   async setAvatar(image: Blob): Promise<void> {
     if (this.view.status !== 'signed_in') throw new Error('not signed in');
@@ -683,6 +714,11 @@ let controller: AccountController | undefined;
 export function initAccount(db: BookandryDB): AccountController {
   controller ??= new AccountController(db);
   return controller;
+}
+
+/** A language switch, passed on to the account (when there is one). */
+export function rememberAccountLanguage(language: Language): void {
+  void controller?.rememberLanguage(language);
 }
 
 export function accountController(): AccountController {

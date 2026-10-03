@@ -48,6 +48,7 @@ function signedIn(change: Partial<Extract<AccountView, { status: 'signed_in' }>>
       name: undefined,
       picture: undefined,
       avatarVersion: undefined,
+      language: undefined,
     },
     keys: { kind: 'ready' },
     sync: undefined,
@@ -99,6 +100,7 @@ describe('the front door', () => {
         name: undefined,
         picture: undefined,
         avatarVersion: undefined,
+        language: undefined,
       },
       owned: false,
     });

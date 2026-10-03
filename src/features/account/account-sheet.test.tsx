@@ -43,6 +43,7 @@ function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys'], t
       name: undefined,
       picture: undefined,
       avatarVersion: undefined,
+      language: undefined,
     },
     keys,
     sync: undefined,

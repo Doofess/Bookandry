@@ -162,7 +162,7 @@ export function SignIn({
   /** The heading, for each step: the front door names the step; the sheet has its own title. */
   readonly title?: (mode: SignInMode) => ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const messages = useMessages();
   const passwordId = useId();
   const [mode, setMode] = useState<SignInMode>(initial);
@@ -189,7 +189,7 @@ export function SignIn({
         if (result.ok) setInfo(t('account.resetSent'));
         else setError(messages.auth(result));
       } else if (mode === 'signup') {
-        const result = await c.signUp(email, password);
+        const result = await c.signUp(email, password, i18n.resolvedLanguage === 'he' ? 'he' : 'en');
         if (!result.ok) setError(messages.auth(result));
         else if (result.confirm === true) setInfo(t('account.checkEmail'));
         else onDone();

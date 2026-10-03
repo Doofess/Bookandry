@@ -1,5 +1,6 @@
 import type { AuthError, SupabaseClient } from '@supabase/supabase-js';
 
+import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 
 import { beginGoogleSignIn, googleClientId, type Arrival } from './id-token';
@@ -74,11 +75,14 @@ export async function signUpWithEmail(
   supabase: SupabaseClient,
   email: string,
   password: string,
+  language: Language,
 ): Promise<AuthResult & { readonly confirm?: boolean }> {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { emailRedirectTo: returnUrl() },
+    // The emails Supabase sends read it (supabase/templates/): the first one,
+    // confirming this address, already comes in the person's language.
+    options: { emailRedirectTo: returnUrl(), data: { language } },
   });
   if (error !== null) return failure(error);
   return { ok: true, confirm: data.session === null };
@@ -279,4 +283,14 @@ export async function listPasskeys(supabase: SupabaseClient): Promise<readonly P
 export async function removePasskey(supabase: SupabaseClient, id: string): Promise<AuthResult> {
   const { error } = await supabase.auth.passkey.delete({ passkeyId: id });
   return error === null ? { ok: true } : failure(error);
+}
+
+/**
+ * The language the account's emails come in: kept in its metadata, which the
+ * email templates read (supabase/templates/). Best effort - an email in the
+ * other language is no reason to fail anything.
+ */
+export async function rememberLanguage(supabase: SupabaseClient, language: Language): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ data: { language } });
+  if (error !== null) throw error;
 }

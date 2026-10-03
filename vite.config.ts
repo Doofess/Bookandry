@@ -90,6 +90,9 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // Images for the account's emails (scripts/emails.mjs): read by mail
+        // clients from the site, never by the app, so not worth a download.
+        globIgnores: ['email/**'],
         cleanupOutdatedCaches: true,
         // A new version takes over as soon as it is downloaded; open pages reload
         // into it when nothing is lost by doing so (src/app/sw-update.ts).
