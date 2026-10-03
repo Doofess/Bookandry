@@ -293,9 +293,11 @@
   }
 }
 
+/* --engrave-scale is set by the engraving itself (see engraving.tsx). */
 .engraving path {
+  stroke-width: calc(1px / var(--engrave-scale, 1));
   stroke-dasharray: 1;
-  animation: engrave 1.8s var(--ease-out-soft) both;
+  animation: engrave calc(1.8s * var(--engrave-scale, 1)) var(--ease-out-soft) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
