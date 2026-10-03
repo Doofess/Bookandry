@@ -1,3 +1,4 @@
+import { Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -30,15 +31,21 @@ export function AuthLayout({ children }: { readonly children: ReactNode }) {
         <Engraving className="absolute inset-x-0 top-0 -z-10 h-[calc(100%-1.5rem)] w-full text-brand-vivid/45 lg:h-full rtl:-scale-x-100" />
         <div className="flex h-full flex-col px-6 pt-5 pb-16 sm:px-10 lg:px-14 lg:py-10">
           <header className="flex items-center justify-between gap-4">
-            <Wordmark />
+            <Logo size={36} tone="inverse" decorative />
             <LanguageSwitch />
           </header>
-          <div className="mt-10 sm:mt-16 lg:mt-auto lg:mb-8">
-            <p className="font-display text-[2.125rem] leading-[1.08] font-semibold text-balance sm:text-5xl lg:max-w-[13ch] lg:text-[4.25rem]">
-              {t('account.welcome.headline')}
+          {/* The name is the hero: set large in the brand's face, the line under
+              it saying what it is. */}
+          <div className="mt-8 sm:mt-14 lg:mt-auto lg:mb-8">
+            <p
+              lang="en"
+              dir="ltr"
+              className="font-display text-[3.75rem] leading-none font-bold tracking-[-0.01em] sm:text-[5rem] lg:text-[7rem] rtl:text-end"
+            >
+              {t('app.name')}
             </p>
-            <p className="mt-4 max-w-[38ch] text-base/7 text-brand-deep-foreground/80 lg:mt-6 lg:text-lg/8">
-              {t('account.welcome.sub')}
+            <p className="mt-4 max-w-[24ch] font-display text-[1.375rem] leading-snug text-balance text-brand-deep-foreground/85 sm:text-[1.75rem] lg:mt-6 lg:text-[2.125rem]">
+              {t('account.welcome.headline')}
             </p>
           </div>
         </div>
@@ -67,17 +74,12 @@ export function AuthLayout({ children }: { readonly children: ReactNode }) {
   );
 }
 
-function Wordmark() {
-  const { t } = useTranslation();
-  return (
-    <span className="flex items-center gap-2.5">
-      <Logo size={30} tone="inverse" decorative />
-      <span className="font-display text-[1.375rem] leading-none font-semibold">{t('app.name')}</span>
-    </span>
-  );
-}
-
-/** Before anyone signs in, the language is this device's choice, kept in its settings. */
+/**
+ * Before anyone signs in, the language is this device's choice, kept in its
+ * settings. A globe and an outline, so it reads as a control at a glance -
+ * as plain text in the corner it passed for decoration. It names the language
+ * it switches TO, in that language's own script, as language pickers do.
+ */
 function LanguageSwitch() {
   const { t, i18n } = useTranslation();
   const other: Language = i18n.resolvedLanguage === 'he' ? 'en' : 'he';
@@ -85,14 +87,14 @@ function LanguageSwitch() {
     <Button
       type="button"
       variant="ghost"
-      size="sm"
       lang={other}
-      className="text-brand-deep-foreground hover:bg-white/10 hover:text-brand-deep-foreground focus-visible:ring-white/50"
+      className="h-9 gap-2 rounded-full border-white/35 px-3.5 text-sm text-brand-deep-foreground hover:bg-white/10 hover:text-brand-deep-foreground focus-visible:ring-white/50"
       onClick={() => {
         void writeSettings(db, { language: other }, systemClock.nowIso());
         void changeLanguage(other);
       }}
     >
+      <Globe className="size-4" aria-hidden="true" />
       {t(`language.${other}`)}
     </Button>
   );

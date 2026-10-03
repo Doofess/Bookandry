@@ -17,6 +17,7 @@ import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
 import { LINKED_ROUTES, ROUTES } from '@/app/routes';
+import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
 import { db } from '@/db/db';
 import { ensureSettings } from '@/db/repos/settings';
@@ -68,7 +69,12 @@ async function bootstrap(): Promise<void> {
   // before the first await, so it is always listening before `load` fires.
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);
+      void navigator.serviceWorker
+        .register('/sw.js', { scope: '/' })
+        .then((registration) => {
+          keepUpToDate(registration);
+        })
+        .catch(() => undefined);
     });
   }
 

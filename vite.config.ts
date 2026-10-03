@@ -62,7 +62,7 @@ export default defineConfig(({ mode }) => ({
     tailwindcss(),
     securityHeaders(loadEnv(mode, process.cwd(), 'VITE_')['VITE_SUPABASE_URL']),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       // Registered by main.tsx, after its check that this page is not already
       // leaving for https://bookandry.com - never on http or www.
       injectRegister: false,
@@ -91,7 +91,9 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         cleanupOutdatedCaches: true,
-        skipWaiting: false,
+        // A new version takes over as soon as it is downloaded; open pages reload
+        // into it when nothing is lost by doing so (src/app/sw-update.ts).
+        skipWaiting: true,
         clientsClaim: false,
         navigateFallback: '/index.html',
         // The privacy policy and terms are pages of their own (public/), not the app.
