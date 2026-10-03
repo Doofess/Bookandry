@@ -11,6 +11,7 @@ import {
   BuiltinCategoryError,
   createCategory,
   deleteCategory,
+  ensureBuiltinCategories,
   listCategories,
   renameCategory,
   setCategoryArchived,
@@ -149,5 +150,46 @@ describe('deleteCategory', () => {
     await addTx('t1', 'c1');
     await expect(deleteCategory(handle.db, 'c1', { reassignTo: 'cat.salary' }, NOW)).rejects.toThrow();
     expect(await handle.db.categories.get('c1')).toBeDefined();
+  });
+});
+
+describe('the built-in categories on an older install', () => {
+  it('adds the ones it lacks in their places, and moves an untouched "Other" back to last', async () => {
+    // As a device from before AI & software and the rest: Other was 13th of 14.
+    for (const id of ['cat.aiSoftware', 'cat.phoneInternet', 'cat.travel', 'cat.kids', 'cat.pets']) {
+      await handle.db.categories.delete(id);
+    }
+    await handle.db.categories.update('cat.otherExpense', { sortOrder: 13 });
+    await handle.db.outbox.clear();
+
+    await ensureBuiltinCategories(handle.db, NOW);
+
+    const names = (await listCategories(handle.db, { kind: 'expense' })).map((c) => c.id);
+    expect(names.slice(-6)).toEqual([
+      'cat.aiSoftware',
+      'cat.phoneInternet',
+      'cat.travel',
+      'cat.kids',
+      'cat.pets',
+      'cat.otherExpense',
+    ]);
+    expect(await handle.db.outbox.toArray()).toEqual([]);
+  });
+
+  it('leaves an "Other" someone has reordered or archived where they put it', async () => {
+    await handle.db.categories.delete('cat.aiSoftware');
+    await handle.db.categories.update('cat.otherExpense', {
+      sortOrder: 0,
+      isArchived: 1,
+      updatedAt: '2026-09-20T10:00:00.000Z' as IsoInstant,
+    });
+
+    await ensureBuiltinCategories(handle.db, NOW);
+
+    expect(await handle.db.categories.get('cat.otherExpense')).toMatchObject({ sortOrder: 0, isArchived: 1 });
+    expect(await handle.db.categories.get('cat.aiSoftware')).toMatchObject({
+      source: 'builtin',
+      isArchived: 0,
+    });
   });
 });

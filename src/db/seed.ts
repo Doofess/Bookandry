@@ -44,6 +44,14 @@ export const BUILTIN_EXPENSE: readonly BuiltinSeed[] = [
   { id: 'cat.shopping', nameKey: 'categories:builtin.shopping', icon: 'ShoppingBag' },
   { id: 'cat.entertainment', nameKey: 'categories:builtin.entertainment', icon: 'Clapperboard' },
   { id: 'cat.education', nameKey: 'categories:builtin.education', icon: 'GraduationCap' },
+  // Added later (installs from before get them on boot: ensureBuiltinCategories),
+  // so the automatic category has somewhere specific to put "Claude Max Plan",
+  // a phone bill, a flight, nappies or dog food.
+  { id: 'cat.aiSoftware', nameKey: 'categories:builtin.aiSoftware', icon: 'Bot' },
+  { id: 'cat.phoneInternet', nameKey: 'categories:builtin.phoneInternet', icon: 'Smartphone' },
+  { id: 'cat.travel', nameKey: 'categories:builtin.travel', icon: 'Plane' },
+  { id: 'cat.kids', nameKey: 'categories:builtin.kids', icon: 'Baby' },
+  { id: 'cat.pets', nameKey: 'categories:builtin.pets', icon: 'PawPrint' },
   { id: 'cat.otherExpense', nameKey: 'categories:builtin.otherExpense', icon: 'CircleMinus' },
 ];
 

@@ -19,6 +19,11 @@
     "shopping": "Shopping",
     "entertainment": "Entertainment",
     "education": "Education",
+    "aiSoftware": "AI & software",
+    "phoneInternet": "Phone & internet",
+    "travel": "Travel",
+    "kids": "Kids",
+    "pets": "Pets",
     "otherExpense": "Other"
   },
   "manage": {

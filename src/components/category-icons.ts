@@ -1,4 +1,6 @@
 import {
+  Baby,
+  Bot,
   Building2,
   Bus,
   Circle,
@@ -11,10 +13,13 @@ import {
   House,
   Landmark,
   Laptop,
+  PawPrint,
+  Plane,
   Repeat,
   ShieldCheck,
   ShoppingBag,
   ShoppingBasket,
+  Smartphone,
   TrendingUp,
   Undo2,
   UtensilsCrossed,
@@ -56,6 +61,11 @@ export const ICONS: Readonly<Record<string, LucideIcon>> = {
   ShoppingBag,
   Clapperboard,
   GraduationCap,
+  Bot,
+  Smartphone,
+  Plane,
+  Baby,
+  PawPrint,
   CircleMinus,
 };
 

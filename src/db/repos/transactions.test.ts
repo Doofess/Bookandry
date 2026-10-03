@@ -7,6 +7,7 @@ import type { IsoInstant } from '@/types/money';
 
 import {
   ALL_PROFILES,
+  categoryFromHistory,
   findCandidates,
   findOverrides,
   listRecentlyDeleted,
@@ -345,5 +346,53 @@ describe('findOverrides at scale', () => {
       updatedAt: NOW,
     });
     expect(await findOverrides(handle.db, [])).toEqual([]);
+  });
+});
+
+describe('categoryFromHistory', () => {
+  const save = (
+    id: string,
+    note: string,
+    categoryId: string,
+    updatedAt: string,
+    kind: 'expense' | 'income' = 'expense',
+  ) =>
+    putTransaction(
+      handle.db,
+      {
+        id,
+        profileId: 'p1',
+        kind,
+        categoryId,
+        money: MONEY,
+        date: d('2026-09-01'),
+        recurrence: { type: 'one_time' },
+        seriesRootId: id,
+        note,
+        createdAt: ts(updatedAt),
+        updatedAt: ts(updatedAt),
+      },
+      [],
+    );
+
+  it('files a name where it was filed before, ignoring case and spacing', async () => {
+    await save('a', 'Claude Max Plan', 'cat.aiSoftware', '2026-09-01T10:00:00.000Z');
+    expect(await categoryFromHistory(handle.db, 'expense', '  claude   max plan ')).toBe('cat.aiSoftware');
+  });
+
+  it('follows the latest choice, so a correction sticks', async () => {
+    await save('old', 'Netflix', 'cat.subscriptions', '2026-08-01T10:00:00.000Z');
+    await save('new', 'Netflix', 'cat.entertainment', '2026-09-01T10:00:00.000Z');
+    expect(await categoryFromHistory(handle.db, 'expense', 'Netflix')).toBe('cat.entertainment');
+  });
+
+  it('ignores deleted rows, the other kind, and names it has never seen', async () => {
+    await save('gone', 'Wolt', 'cat.dining', '2026-09-01T10:00:00.000Z');
+    await softDelete(handle.db, 'gone', NOW);
+    await save('in', 'Amazon', 'cat.refund', '2026-09-01T10:00:00.000Z', 'income');
+    expect(await categoryFromHistory(handle.db, 'expense', 'Wolt')).toBeUndefined();
+    expect(await categoryFromHistory(handle.db, 'expense', 'Amazon')).toBeUndefined();
+    expect(await categoryFromHistory(handle.db, 'expense', 'Something new')).toBeUndefined();
+    expect(await categoryFromHistory(handle.db, 'expense', '   ')).toBeUndefined();
   });
 });

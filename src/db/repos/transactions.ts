@@ -4,7 +4,7 @@ import { materialize, type TransactionDraft } from '@/db/materialize';
 import { SYNC_CURSOR_KEY } from '@/db/sync/tables';
 import { compareLocal, instantFromMs } from '@/lib/dates';
 import type { Override, Transaction } from '@/types/domain';
-import type { IsoInstant, LocalDate } from '@/types/money';
+import type { IsoInstant, Kind, LocalDate } from '@/types/money';
 
 export const ALL_PROFILES = 'all';
 
@@ -172,3 +172,30 @@ export async function removeOverride(
 ): Promise<void> {
   await db.overrides.where('[transactionId+occurrenceDate]').equals([transactionId, occurrenceDate]).delete();
 }
+
+/**
+ * The category this name was last saved under, if it ever was: "Claude Max
+ * Plan" goes where the person put it before, without asking anyone. What they
+ * corrected stays corrected.
+ *
+ * Matched on the whole name, ignoring case and spacing - "netflix " is
+ * Netflix - and newest first, so a later correction wins over the guess it
+ * corrected. A scan, but one that stops at the first match, over a table a
+ * household fills at a few rows a day.
+ */
+export async function categoryFromHistory(
+  db: BookandryDB,
+  kind: Kind,
+  name: string,
+): Promise<string | undefined> {
+  const wanted = sameName(name);
+  if (wanted === '') return undefined;
+  const found = await db.transactions
+    .orderBy('updatedAt')
+    .reverse()
+    .filter((tx) => tx.isDeleted === 0 && tx.kind === kind && sameName(tx.note ?? '') === wanted)
+    .first();
+  return found?.categoryId;
+}
+
+const sameName = (name: string): string => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();

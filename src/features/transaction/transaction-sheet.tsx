@@ -1,4 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { cn } from 'cn';
+import { Sparkles } from 'lucide-react';
 import { useCallback, useId, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -17,10 +19,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { applySeriesEdit } from '@/db/series-edit';
@@ -51,6 +53,7 @@ import { PaymentMethodField } from './payment-method-field';
 import { RateField } from './rate-field';
 import { RecurrenceFields } from './recurrence-fields';
 import { ScopeChooser } from './scope-chooser';
+import { useAutoCategory } from './use-auto-category';
 import { useRateField } from './use-rate-field';
 import {
   useEditTarget,
@@ -349,17 +352,31 @@ function TransactionForm({
    * would render one frame of a form that contradicts itself, and would put a
    * setState in an effect body to do it.
    */
+  const translateCategory = useCallback((category: Category) => categoryDisplayName(category, t), [t]);
+
+  const auto = useAutoCategory({
+    categories,
+    translate: translateCategory,
+    choose: useCallback(
+      (id: string) => {
+        setValue('categoryId', id, { shouldValidate: true });
+      },
+      [setValue],
+    ),
+    chosenByPerson: editing !== undefined,
+  });
+
   const changeKind = useCallback(
     (next: Kind) => {
       setValue('kind', next);
       const current = categories.find((category) => category.id === form.getValues('categoryId'));
       if (current?.kind === next) return;
       setValue('categoryId', categoriesFor(categories, next)[0]?.id ?? '', { shouldValidate: false });
+      // The same name, now as the other kind: "Refund from Amazon" is income.
+      auto.nameChanged(form.getValues('note'), next);
     },
-    [categories, setValue, form],
+    [categories, setValue, form, auto],
   );
-
-  const translateCategory = useCallback((category: Category) => categoryDisplayName(category, t), [t]);
 
   const errorText = useCallback(
     (code: string | undefined): string | undefined => {
@@ -586,6 +603,23 @@ function TransactionForm({
         />
       </div>
 
+      {/* What it was, in the person's words - and from it, the category. */}
+      <div className="space-y-1.5">
+        <Label htmlFor={noteId}>{t('tx.name')}</Label>
+        <Input
+          id={noteId}
+          placeholder={t('tx.namePlaceholder')}
+          autoComplete="off"
+          aria-invalid={errors.note !== undefined}
+          {...form.register('note', {
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+              auto.nameChanged(event.target.value, form.getValues('kind'));
+            },
+          })}
+        />
+        {errors.note === undefined ? null : <p className="text-xs text-destructive">{errors.note}</p>}
+      </div>
+
       <div className="flex gap-2">
         <div className="min-w-0 flex-1 space-y-1.5">
           <Label htmlFor={amountId}>{t('tx.amount')}</Label>
@@ -647,14 +681,31 @@ function TransactionForm({
       )}
 
       <div className="space-y-1.5">
-        <Label id={categoryId}>{t('tx.category')}</Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label id={categoryId}>{t('tx.category')}</Label>
+          {/* Said quietly, beside the field it is about, and announced once. */}
+          <p className="flex items-center gap-1 text-xs text-muted-foreground" aria-live="polite">
+            {auto.status === 'idle' ? null : (
+              <>
+                <Sparkles
+                  className={cn('size-3.5', auto.status === 'thinking' && 'motion-safe:animate-pulse')}
+                  aria-hidden="true"
+                />
+                {auto.status === 'thinking' ? t('tx.autoThinking') : t('tx.autoChosen')}
+              </>
+            )}
+          </p>
+        </div>
         <Controller
           control={form.control}
           name="categoryId"
           render={({ field }) => (
             <CategoryField
               value={field.value}
-              onChange={field.onChange}
+              onChange={(id) => {
+                field.onChange(id);
+                auto.choseManually();
+              }}
               kind={values.kind}
               categories={categories}
               labelledBy={categoryId}
@@ -806,18 +857,6 @@ function TransactionForm({
           errors={errors}
         />
       )}
-
-      <div className="space-y-1.5">
-        <Label htmlFor={noteId}>{t('tx.note')}</Label>
-        <Textarea
-          id={noteId}
-          rows={2}
-          placeholder={t('tx.notePlaceholder')}
-          aria-invalid={errors.note !== undefined}
-          {...form.register('note')}
-        />
-        {errors.note === undefined ? null : <p className="text-xs text-destructive">{errors.note}</p>}
-      </div>
 
       {saveError === undefined ? null : (
         <p role="alert" className="text-sm text-destructive">

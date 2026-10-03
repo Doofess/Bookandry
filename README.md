@@ -419,6 +419,11 @@ Configuration that lives in the dashboard, not in this repo:
   (`pnpm emails` rebuilds them and `public/email/`; deploy before pasting, as
   the emails load their images from the site). Each email comes in the
   account's language, kept in `user_metadata.language`.
+- **Edge Functions → Secrets**: `ANTHROPIC_API_KEY`, for `categorize`
+  (`supabase/functions/categorize/`), which picks a category from what was
+  typed ("Claude Max Plan" → AI & software). Entered here only. Without it
+  the function answers 503 and the person picks the category, as before.
+  Optional `CATEGORIZE_MODEL` overrides the model (Claude Haiku 4.5).
 - **Authentication → URL Configuration**: Site URL `https://bookandry.com`;
   redirect URLs `https://bookandry.com/settings` (plus a localhost one for
   development only).

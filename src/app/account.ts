@@ -7,6 +7,7 @@ import { loadKeys } from '@/db/sync/keystore';
 import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 import type { AuthFailure, AuthResult, Enrollment, Passkey, SecondStep } from '@/services/supabase/auth';
+import type { CategoryChoice } from '@/services/supabase/categorize';
 import {
   accountsAvailable,
   getSupabase,
@@ -26,6 +27,7 @@ import {
   setupKeys,
   type Rpc,
 } from '@/services/supabase/transport';
+import type { Kind } from '@/types/money';
 
 import { forgetAvatar, readAvatarVersion, storeAvatar } from './avatar-store';
 import { idleExpired, touch, watchIdle, type IdleWatch } from './idle-lock';
@@ -660,6 +662,26 @@ export class AccountController {
       await storeAvatar(this.db, avatarVersion, await downloadAvatar(await getSupabase(), id));
     } catch {
       // Kept as it was; see above.
+    }
+  }
+
+  /**
+   * Which of `choices` the typed name belongs in, by asking Claude through the
+   * account's server (services/supabase/categorize.ts). Only while signed in -
+   * the server answers nobody else - and undefined whenever there is no
+   * answer: the person chooses, as they always could.
+   */
+  async suggestCategory(
+    name: string,
+    kind: Kind,
+    choices: readonly CategoryChoice[],
+  ): Promise<string | undefined> {
+    if (this.view.status !== 'signed_in') return undefined;
+    try {
+      const { suggestCategory } = await import('@/services/supabase/categorize');
+      return await suggestCategory(await getSupabase(), name, kind, choices);
+    } catch {
+      return undefined;
     }
   }
 

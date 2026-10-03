@@ -19,6 +19,8 @@ export default tseslint.config(
       'test-results',
       'node_modules',
       'src/test/fixtures',
+      // Deno, for Supabase Edge Functions: its own runtime and imports.
+      'supabase/functions',
       // Tooling config that no tsconfig covers. Lighthouse reads it with its own
       // loader, so type-aware linting has no project to resolve it against.
       'lighthouserc.cjs',

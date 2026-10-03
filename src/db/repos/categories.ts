@@ -1,5 +1,5 @@
-import type { BookandryDB } from '@/db/db';
-import { FALLBACK_CATEGORY } from '@/db/seed';
+import { withoutTracking, type BookandryDB } from '@/db/db';
+import { buildSeedCategories, FALLBACK_CATEGORY } from '@/db/seed';
 import { normalizeName } from '@/domain/validation';
 import { redirectId, type Category } from '@/types/domain';
 import type { IsoInstant, Kind } from '@/types/money';
@@ -144,5 +144,36 @@ export async function deleteCategory(
       updatedAt: now,
     });
     return { transactionsMoved: affected.length, overridesMoved: overrides.length };
+  });
+}
+
+/**
+ * The built-in categories, on an install made before some of them existed.
+ *
+ * A new database gets them from `populate` (db.ts); this adds the ones an
+ * older one lacks, in their places in the list. Untracked, like the seed:
+ * every install writes the identical rows, and as edits they would undo an
+ * archive made on another device. A built-in cannot be deleted, so a missing
+ * one was never there.
+ *
+ * "Other" moves to stay last - but only where nobody has touched it, which is
+ * the same rule that keeps a pristine built-in from ever being synced.
+ */
+export async function ensureBuiltinCategories(db: BookandryDB, now: IsoInstant): Promise<void> {
+  await withoutTracking(db, [db.categories], async () => {
+    const seeds = buildSeedCategories(now);
+    const missing: Category[] = [];
+    for (const seed of seeds) {
+      if ((await db.categories.get(seed.id)) === undefined) missing.push(seed);
+    }
+    if (missing.length === 0) return;
+    await db.categories.bulkAdd(missing);
+    for (const id of Object.values(FALLBACK_CATEGORY)) {
+      const other = await db.categories.get(id);
+      const place = seeds.find((seed) => seed.id === id)?.sortOrder;
+      if (other?.updatedAt === other?.createdAt && place !== undefined && other?.sortOrder !== place) {
+        await db.categories.update(id, { sortOrder: place });
+      }
+    }
   });
 }
