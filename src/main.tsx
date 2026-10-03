@@ -16,19 +16,23 @@ import { AccountGate } from '@/app/account-gate';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
-import { LINKED_ROUTES, ROUTES } from '@/app/routes';
+import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
 import { db } from '@/db/db';
 import { ensureSettings } from '@/db/repos/settings';
 import { startSweeper } from '@/db/sweeper';
+import { AccountScreen } from '@/features/account/account-screen';
+import { SecurityScreen } from '@/features/account/security-screen';
 import { ChartScreen } from '@/features/chart/chart-screen';
 import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
 import { FirstRun } from '@/features/first-run/first-run';
 import { ProfilesScreen } from '@/features/profiles/profiles-screen';
 import { CategoriesScreen } from '@/features/settings/categories-screen';
+import { DataScreen } from '@/features/settings/data-screen';
 import { PaymentMethodsScreen } from '@/features/settings/payment-methods-screen';
+import { PreferencesScreen } from '@/features/settings/preferences-screen';
 import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
 import { systemClock } from '@/lib/clock';
@@ -51,6 +55,10 @@ const router = createBrowserRouter([
       { path: ROUTES.chart, element: <ChartScreen /> },
       { path: ROUTES.profiles, element: <ProfilesScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
+      { path: SETTINGS_ROUTES.account, element: <AccountScreen /> },
+      { path: SETTINGS_ROUTES.security, element: <SecurityScreen /> },
+      { path: SETTINGS_ROUTES.preferences, element: <PreferencesScreen /> },
+      { path: SETTINGS_ROUTES.data, element: <DataScreen /> },
       { path: LINKED_ROUTES.commitments, element: <CommitmentsScreen /> },
       { path: LINKED_ROUTES.categories, element: <CategoriesScreen /> },
       { path: LINKED_ROUTES.paymentMethods, element: <PaymentMethodsScreen /> },

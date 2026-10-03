@@ -41,7 +41,14 @@ function show(view: AccountView) {
 function signedIn(change: Partial<Extract<AccountView, { status: 'signed_in' }>> = {}): AccountView {
   return {
     status: 'signed_in',
-    user: { id: 'u1', email: 'dana@example.com', provider: 'google' },
+    user: {
+      id: 'u1',
+      email: 'dana@example.com',
+      provider: 'google',
+      name: undefined,
+      picture: undefined,
+      avatarVersion: undefined,
+    },
     keys: { kind: 'ready' },
     sync: undefined,
     passwordRecovery: false,
@@ -83,7 +90,18 @@ describe('the front door', () => {
   });
 
   it('asks for the code before anything else', () => {
-    show({ status: 'second_step', user: { id: 'u1', email: undefined, provider: 'email' }, owned: false });
+    show({
+      status: 'second_step',
+      user: {
+        id: 'u1',
+        email: undefined,
+        provider: 'email',
+        name: undefined,
+        picture: undefined,
+        avatarVersion: undefined,
+      },
+      owned: false,
+    });
     expect(screen.getByRole('heading', { name: 'Enter your code' })).toBeInTheDocument();
     expect(screen.queryByText(APP)).not.toBeInTheDocument();
   });

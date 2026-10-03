@@ -10,21 +10,30 @@ export type RouteKey = keyof typeof ROUTES;
 /**
  * Order is the tab-bar / rail order, and the primary tab order.
  *
- * Four, and it stays four. Every screen the app grows does not earn a tab: a
- * fifth costs the other four a share of a 375px bar, and a bar that scrolls is
- * a bar nobody reads.
+ * Three: the places the money is. Settings left the tabs for the account menu
+ * at the top of every screen (the person's picture), where an account's and
+ * an app's settings are looked for. Every screen the app grows does not earn
+ * a tab: a bar that scrolls is a bar nobody reads.
  */
-export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'profiles', 'settings'];
+export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'profiles'];
 
 /**
- * Routes reachable by link rather than by tab.
+ * Routes reachable by link rather than by tab: from the account menu, and
+ * from the Settings page that lists the same places.
  *
- * Recurring commitments is a monthly visit, reached from Settings and from the
- * expense breakdown - which is where the question "what am I actually paying
- * for" gets asked.
+ * Recurring commitments is also linked from the expense breakdown - which is
+ * where the question "what am I actually paying for" gets asked.
  */
 export const LINKED_ROUTES = {
   commitments: '/commitments',
   categories: '/categories',
   paymentMethods: '/payment-methods',
+} as const;
+
+/** Settings, one page per subject. `/settings` itself lists them. */
+export const SETTINGS_ROUTES = {
+  account: '/settings/account',
+  security: '/settings/security',
+  preferences: '/settings/preferences',
+  data: '/settings/data',
 } as const;

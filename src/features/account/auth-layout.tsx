@@ -2,13 +2,10 @@ import { Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { chooseLanguage } from '@/app/preferences';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
-import { db } from '@/db/db';
-import { writeSettings } from '@/db/repos/settings';
-import { changeLanguage } from '@/i18n';
 import type { Language } from '@/i18n/boot';
-import { systemClock } from '@/lib/clock';
 
 import { Engraving } from './engraving';
 
@@ -90,8 +87,7 @@ function LanguageSwitch() {
       lang={other}
       className="h-9 gap-2 rounded-full border-white/35 px-3.5 text-sm text-brand-deep-foreground hover:bg-white/10 hover:text-brand-deep-foreground focus-visible:ring-white/50"
       onClick={() => {
-        void writeSettings(db, { language: other }, systemClock.nowIso());
-        void changeLanguage(other);
+        chooseLanguage(other);
       }}
     >
       <Globe className="size-4" aria-hidden="true" />

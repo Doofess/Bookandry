@@ -129,7 +129,7 @@ test.describe('@theme switching language', () => {
 
   test('keeps the theme picked in Settings', async ({ page }) => {
     await completeFirstRun(page, 'en', { demo: false, theme: 'dark' });
-    await page.goto('/settings');
+    await page.goto('/settings/preferences');
     const html = page.locator('html');
     await expect(html).toHaveClass(/dark/);
 
@@ -399,5 +399,26 @@ test.describe('@nav the app mark', () => {
 
     const box = await page.getByRole('link', { name: 'Bookandry' }).boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  });
+});
+
+test.describe('@nav the account menu', () => {
+  test('sits at the top end - right in English, left in Hebrew - and holds the settings', async ({
+    page,
+  }, testInfo) => {
+    const rtl = testInfo.project.name === 'he';
+    await completeFirstRun(page, rtl ? 'he' : 'en');
+
+    const trigger = page.getByRole('button', { name: rtl ? 'חשבון והגדרות' : 'Account and settings' });
+    await expect(trigger).toBeVisible();
+    const box = await trigger.boundingBox();
+    const width = page.viewportSize()?.width ?? 0;
+    if (rtl) expect(box?.x ?? width).toBeLessThan(width / 2);
+    else expect(box?.x ?? 0).toBeGreaterThan(width / 2);
+
+    await trigger.click();
+    await page.getByRole('menuitem', { name: rtl ? 'העדפות' : 'Preferences' }).click();
+    await expect(page).toHaveURL(/\/settings\/preferences$/);
+    await expect(page.getByRole('heading', { level: 1, name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
   });
 });

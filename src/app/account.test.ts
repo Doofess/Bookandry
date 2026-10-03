@@ -43,6 +43,10 @@ const fake = vi.hoisted(() => ({
   /** Back from Google, as main.tsx's captureArrival would have found. */
   arrival: undefined as IdToken.Arrival | undefined,
   signInWithIdToken: vi.fn<(credentials: unknown) => Promise<{ data: unknown; error: Error | null }>>(),
+  /** Supabase Storage's avatars bucket, by path. */
+  files: new Map<string, Blob>(),
+  /** What updateUser was last asked to merge into the account's metadata. */
+  metadata: ((): Record<string, unknown> => ({}))(),
 }));
 
 vi.mock('@/services/supabase/id-token', async (importOriginal) => ({
@@ -50,6 +54,8 @@ vi.mock('@/services/supabase/id-token', async (importOriginal) => ({
   takeArrival: () => {
     const taken = fake.arrival;
     fake.arrival = undefined;
+    fake.files.clear();
+    fake.metadata = {};
     return taken;
   },
 }));
@@ -62,12 +68,36 @@ vi.mock('@/services/supabase/client', async (importOriginal) => ({
   shouldLoadAtBoot: () => fake.session !== null,
   getSupabase: () =>
     Promise.resolve({
+      storage: {
+        from: () => ({
+          upload: (path: string, blob: Blob) => {
+            fake.files.set(path, blob);
+            return Promise.resolve({ data: {}, error: null });
+          },
+          download: (path: string) => {
+            const blob = fake.files.get(path);
+            return Promise.resolve(
+              blob === undefined
+                ? { data: null, error: new Error('not found') }
+                : { data: blob, error: null },
+            );
+          },
+          remove: (paths: string[]) => {
+            for (const p of paths) fake.files.delete(p);
+            return Promise.resolve({ data: [], error: null });
+          },
+        }),
+      },
       auth: {
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => undefined } } }),
         getSession: () =>
           Promise.resolve({ data: { session: fake.session ?? null }, error: fake.sessionError ?? null }),
         signOut: fake.signOut,
         signInWithIdToken: fake.signInWithIdToken,
+        updateUser: ({ data }: { data: Record<string, unknown> }) => {
+          Object.assign(fake.metadata, data);
+          return Promise.resolve({ data: {}, error: null });
+        },
         mfa: {
           getAuthenticatorAssuranceLevel: () =>
             Promise.resolve({
@@ -225,6 +255,70 @@ describe('signing in', () => {
     await vi.waitFor(() => {
       expect(status()).toBe('ready');
     });
+  });
+});
+
+describe('the profile picture', () => {
+  const picture = (): Blob => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' });
+  const kept = async (): Promise<unknown> => (await device.db.meta.get('accountAvatar'))?.value;
+
+  it('is saved to the account, kept on this device, and shown at once', async () => {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    await c.setAvatar(picture());
+    expect(fake.files.has(`${USER}/avatar`)).toBe(true);
+    const version = fake.metadata.avatar_version;
+    expect(typeof version).toBe('number');
+    expect(c.getView()).toMatchObject({ user: { avatarVersion: version } });
+    expect(await kept()).toMatchObject({ version, type: 'image/webp' });
+  });
+
+  it('is removed from the account and from this device', async () => {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    await c.setAvatar(picture());
+    await c.removeAvatar();
+    expect(fake.files.size).toBe(0);
+    expect(fake.metadata.avatar_version).toBeNull();
+    expect(c.getView()).toMatchObject({ user: { avatarVersion: undefined } });
+    expect(await kept()).toBeUndefined();
+  });
+
+  it('arrives on another device by itself, at sign-in', async () => {
+    fake.files.set(`${USER}/avatar`, picture());
+    fake.session = { user: { ...userFor(USER), user_metadata: { avatar_version: 42 } } };
+    await make().connect();
+    await vi.waitFor(async () => {
+      expect(await kept()).toMatchObject({ version: 42 });
+    });
+  });
+
+  it("takes a name, and Google's picture only from Google's image host", async () => {
+    fake.session = {
+      user: {
+        ...userFor(USER),
+        user_metadata: { full_name: 'Dana Levi', avatar_url: 'https://lh3.googleusercontent.com/a/pic' },
+      },
+    };
+    const c = make();
+    await c.connect();
+    expect(c.getView()).toMatchObject({
+      user: { name: 'Dana Levi', picture: 'https://lh3.googleusercontent.com/a/pic' },
+    });
+
+    fake.session = {
+      user: { ...userFor(OTHER), user_metadata: { avatar_url: 'https://evil.example/x.png' } },
+    };
+    controller = new AccountController(device.db, restarted);
+    await device.db.meta.clear();
+    await controller.connect();
+    expect(controller.getView()).toMatchObject({ user: { picture: undefined } });
   });
 });
 

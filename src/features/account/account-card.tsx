@@ -3,135 +3,46 @@ import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { accountController, useAccount, type AccountView } from '@/app/account';
+import { accountController, type AccountView } from '@/app/account';
 import { LOCK_AFTER_CHOICES, lockAfter, setLockAfter, type LockAfter } from '@/app/idle-lock';
 import type { SyncState } from '@/app/sync-runner';
 import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import type { Passkey } from '@/services/supabase/auth';
 
-import { AccountSheet, type Flow } from './account-sheet';
-import { SecondStep } from './second-step';
+import type { Flow } from './account-sheet';
 
 /**
- * The account, the way a bank shows one: who is signed in, one quiet line
- * saying the data is safe, and the ways out. No sync status to watch, no
- * button to push: keeping this device and the account in step is the app's
- * job, and the only time it says anything is when a change is not yet safe -
- * offline, or the account out of reach.
+ * The parts of the account's settings pages (account-screen.tsx,
+ * security-screen.tsx), the way a bank shows them: one quiet line saying the
+ * data is safe, and the controls. No sync status to watch, no button to push:
+ * keeping this device and the account in step is the app's job, and the only
+ * time it says anything is when a change is not yet safe - offline, or the
+ * account out of reach.
  */
-export function AccountCard() {
-  const { t } = useTranslation();
-  const view = useAccount();
-  const [flow, setFlow] = useState<Flow | undefined>(undefined);
 
-  if (view.status === 'unavailable' || view.status === 'locked') return null;
-
-  const open = (next: Flow) => () => {
-    setFlow(next);
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('account.title')}</CardTitle>
-        {view.status === 'signed_in' || view.status === 'second_step' ? (
-          <CardDescription>{t('account.signedInAs', { email: view.user.email ?? '' })}</CardDescription>
-        ) : (
-          <CardDescription>{t('account.signedOutBody')}</CardDescription>
-        )}
-      </CardHeader>
-
-      <CardContent className="space-y-3">
-        {view.status === 'loading' ? (
-          <p className="text-sm text-muted-foreground">{t('account.status.checking')}</p>
-        ) : view.status === 'signed_out' ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button type="button" onClick={open({ kind: 'signin', mode: 'signup' })}>
-              {t('account.create')}
-            </Button>
-            <Button type="button" variant="outline" onClick={open({ kind: 'signin', mode: 'signin' })}>
-              {t('account.signIn')}
-            </Button>
-          </div>
-        ) : view.status === 'second_step' ? (
-          <SecondStep />
-        ) : (
-          <SignedIn view={view} open={open} />
-        )}
-      </CardContent>
-
-      <AccountSheet
-        flow={
-          view.status === 'signed_in' && view.passwordRecovery && flow === undefined
-            ? { kind: 'newPassword' }
-            : flow
-        }
-        onClose={() => {
-          setFlow(undefined);
-        }}
-      />
-    </Card>
-  );
-}
-
-function SignedIn({
-  view,
-  open,
-}: {
-  readonly view: Extract<AccountView, { status: 'signed_in' }>;
-  readonly open: (flow: Flow) => () => void;
-}) {
+/** Where the account stands, in a line - and a retry only when there is one to make. */
+export function AccountStatus({ view }: { readonly view: Extract<AccountView, { status: 'signed_in' }> }) {
   const { t } = useTranslation();
   const { keys } = view;
-
-  return (
-    <>
-      {keys.kind === 'checking' ? (
-        <p className="text-sm text-muted-foreground">{t('account.status.checking')}</p>
-      ) : keys.kind === 'rolled_back' ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t('account.downgrade')}
-        </p>
-      ) : keys.kind === 'unknown' ? (
-        <Status
-          icon="off"
-          text={t('account.status.unknown')}
-          retry={() => void accountController().refreshKeys()}
-        />
-      ) : (
-        <Saved sync={view.sync} />
-      )}
-
-      <section className="space-y-4 border-t border-border pt-3" aria-labelledby="account-security">
-        <h3 id="account-security" className="text-sm font-semibold">
-          {t('account.security')}
-        </h3>
-        <TwoStep on={view.twoStep} open={open} />
-        <Passkeys />
-        <LockAfterChoice />
-      </section>
-
-      <div className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
-        <Button type="button" variant="outline" onClick={open({ kind: 'signout' })}>
-          {t('account.signOut')}
-        </Button>
-        <Button type="button" variant="ghost" onClick={open({ kind: 'signOutOthers' })}>
-          {t('account.signOutOthers')}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-destructive sm:col-span-2"
-          onClick={open({ kind: 'delete' })}
-        >
-          {t('account.delete')}
-        </Button>
-      </div>
-    </>
-  );
+  if (keys.kind === 'checking')
+    return <p className="text-sm text-muted-foreground">{t('account.status.checking')}</p>;
+  if (keys.kind === 'rolled_back')
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {t('account.downgrade')}
+      </p>
+    );
+  if (keys.kind === 'unknown')
+    return (
+      <Status
+        icon="off"
+        text={t('account.status.unknown')}
+        retry={() => void accountController().refreshKeys()}
+      />
+    );
+  return <Saved sync={view.sync} />;
 }
 
 /** One line. Quiet when all is well; a retry only when there is something to retry. */
@@ -181,7 +92,7 @@ function Status({
 }
 
 /** An authenticator-app code at every sign-in, on or off. */
-function TwoStep({ on, open }: { readonly on: boolean; readonly open: (flow: Flow) => () => void }) {
+export function TwoStep({ on, open }: { readonly on: boolean; readonly open: (flow: Flow) => () => void }) {
   const { t } = useTranslation();
   return (
     <div className="flex items-start justify-between gap-3">
@@ -204,7 +115,7 @@ function TwoStep({ on, open }: { readonly on: boolean; readonly open: (flow: Flo
 }
 
 /** Signing in with the device's own lock. Listed, added, removed. */
-function Passkeys() {
+export function Passkeys() {
   const { t, i18n } = useTranslation();
   const [keys, setKeys] = useState<readonly Passkey[] | undefined>(undefined);
   const [unavailable, setUnavailable] = useState(false);
@@ -336,7 +247,7 @@ function Passkeys() {
 }
 
 /** How long this device may sit unused before it asks for a sign-in again. */
-function LockAfterChoice() {
+export function LockAfterChoice() {
   const { t } = useTranslation();
   const id = useId();
   const [value, setValue] = useState<LockAfter>(lockAfter);

@@ -54,7 +54,7 @@ type Envelope = {
 
 /** Pull a real, valid document out of the running app. */
 async function exportEnvelope(page: Page): Promise<Envelope> {
-  await page.goto('/settings');
+  await page.goto('/settings/data');
 
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export a backup' }).click();
@@ -141,7 +141,7 @@ async function storedTransactions(page: Page): Promise<number> {
 }
 
 async function importEnvelope(page: Page, envelope: Envelope): Promise<void> {
-  await page.goto('/settings');
+  await page.goto('/settings/data');
   await page.getByRole('radio', { name: 'Replace everything' }).click();
 
   await page.getByLabel('Choose a backup file to restore').setInputFiles({

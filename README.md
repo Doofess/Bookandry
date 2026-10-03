@@ -304,6 +304,17 @@ the background.
   `auth-layout.tsx`): a first visit, a returning person and a locked device
   all see the same sign-in page, and it says nothing about what the device
   holds or how it is protected. The security is done, not explained.
+- **The account menu** (`src/features/account/user-menu.tsx`): the person's
+  picture at the top end of every screen holds every settings page (account,
+  sign-in and security, preferences, commitments, categories, payment
+  methods, backup), appearance and language switches, and signing out, last.
+  Settings is no longer a tab; `/settings` lists the same pages.
+- **Profile pictures**: squared and shrunk to 256 px WebP in the browser
+  (location and camera details never leave), kept in the private `avatars`
+  Storage bucket, one folder per account, readable and writable only by that
+  account and only after the second step
+  (`supabase/migrations/20261003000000_avatars.sql`). Each device keeps a copy
+  for offline. Without one, Google's picture (Google sign-ins) or initials.
 - **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.

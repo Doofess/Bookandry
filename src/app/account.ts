@@ -26,6 +26,7 @@ import {
   type Rpc,
 } from '@/services/supabase/transport';
 
+import { forgetAvatar, readAvatarVersion, storeAvatar } from './avatar-store';
 import { idleExpired, touch, watchIdle, type IdleWatch } from './idle-lock';
 import { startSyncRunner, type SyncRunner, type SyncState } from './sync-runner';
 
@@ -49,6 +50,12 @@ export type AccountUser = {
   readonly email: string | undefined;
   /** 'email' or 'google'. Deleting an account re-checks a password only for 'email'. */
   readonly provider: string;
+  /** The person's name, where the sign-in gave one (Google does). */
+  readonly name: string | undefined;
+  /** Google's picture for the account, for an account without one of its own. */
+  readonly picture: string | undefined;
+  /** The account's own picture: its current version, or undefined for none. */
+  readonly avatarVersion: number | undefined;
 };
 
 /** Where this device stands with the account's key. */
@@ -94,12 +101,24 @@ type SignedIn = Extract<AccountView, { status: 'signed_in' }>;
 /** The email of the account whose data this device holds, for the sign-in screen. */
 const OWNER_EMAIL_KEY = 'accountEmail';
 
+const text = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+
 function userOf(session: Pick<Session, 'user'>): AccountUser {
   const provider = session.user.app_metadata.provider;
+  // user_metadata is the account's own to edit: everything read from it is
+  // checked for shape, and a picture is taken only from Google's image host -
+  // the one the content security policy lets an <img> load from.
+  const meta = (session.user.user_metadata as Record<string, unknown> | undefined) ?? {};
+  const picture = text(meta['avatar_url']) ?? text(meta['picture']);
+  const version = meta['avatar_version'];
   return {
     id: session.user.id,
     email: session.user.email,
     provider: typeof provider === 'string' ? provider : 'email',
+    name: text(meta['full_name']) ?? text(meta['name']),
+    picture: picture?.startsWith('https://lh3.googleusercontent.com/') === true ? picture : undefined,
+    avatarVersion: typeof version === 'number' && Number.isFinite(version) ? version : undefined,
   };
 }
 
@@ -280,7 +299,9 @@ export class AccountController {
 
     const current = this.view;
     if (current.status === 'signed_in' && current.user.id === user.id && !this.provisional) {
-      if (recovery) this.patch({ passwordRecovery: true });
+      // The same person, the account itself changed (a new picture, say).
+      this.patch(recovery ? { user, passwordRecovery: true } : { user });
+      void this.syncAvatar();
       return;
     }
     // A session restored after sitting idle past the limit ends here, before
@@ -308,6 +329,7 @@ export class AccountController {
       twoStep: step.enabled,
     });
     this.idle = watchIdle({ onIdle: () => void this.lock(), nowMs: () => systemClock.nowMs() });
+    void this.syncAvatar();
     await this.refreshKeys();
   }
 
@@ -594,11 +616,54 @@ export class AccountController {
   /** Delete the account and everything the server holds, and this device's copy. */
   async deleteAccount(): Promise<void> {
     this.stop();
+    // Storage keeps its files apart from the database: the picture goes first.
+    await this.removeAvatar().catch(() => undefined);
     await deleteMyAccount(await this.connect());
     const { signOut } = await import('@/services/supabase/auth');
     // The account is gone, so the server may refuse; the local session goes regardless.
     await this.auth((s) => signOut(s, 'local')).catch(() => undefined);
     await this.clearDevice();
+  }
+
+  // -- profile picture -----------------------------------------------------------
+
+  /** This device's copy of the account's picture, brought in step with the account. */
+  private async syncAvatar(): Promise<void> {
+    if (this.view.status !== 'signed_in') return;
+    const { id, avatarVersion } = this.view.user;
+    const kept = await readAvatarVersion(this.db);
+    if (avatarVersion === undefined) {
+      if (kept !== undefined) await forgetAvatar(this.db);
+      return;
+    }
+    if (kept === avatarVersion) return;
+    try {
+      const { downloadAvatar } = await import('@/services/supabase/avatar');
+      await storeAvatar(this.db, avatarVersion, await downloadAvatar(await getSupabase(), id));
+    } catch {
+      // Offline, most likely: the initials (or Google's picture) stand in
+      // until the next sign-in or change brings it.
+    }
+  }
+
+  /** A new picture for the account, already squared and shrunk (avatar-image.ts). */
+  async setAvatar(image: Blob): Promise<void> {
+    if (this.view.status !== 'signed_in') throw new Error('not signed in');
+    const user = this.view.user;
+    const version = systemClock.nowMs();
+    const { uploadAvatar } = await import('@/services/supabase/avatar');
+    await uploadAvatar(await getSupabase(), user.id, image, version);
+    await storeAvatar(this.db, version, image);
+    this.patch({ user: { ...user, avatarVersion: version } });
+  }
+
+  async removeAvatar(): Promise<void> {
+    if (this.view.status !== 'signed_in') throw new Error('not signed in');
+    const user = this.view.user;
+    const { removeAvatar } = await import('@/services/supabase/avatar');
+    await removeAvatar(await getSupabase(), user.id);
+    await forgetAvatar(this.db);
+    this.patch({ user: { ...user, avatarVersion: undefined } });
   }
 
   /** Everything off this device; the app starts over from the beginning. */

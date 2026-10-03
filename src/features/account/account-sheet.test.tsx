@@ -6,8 +6,9 @@ import { initAccount, type AccountView } from '@/app/account';
 import { freshDb } from '@/test/db-harness';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
-import { AccountCard } from './account-card';
+import { AccountScreen } from './account-screen';
 import { AccountSheet, type Flow } from './account-sheet';
+import { SecurityScreen } from './security-screen';
 
 /*
  * The screens' rules, not their styling: what each answer does, what is never
@@ -35,7 +36,14 @@ function open(flow: Flow) {
 function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys'], twoStep = false): AccountView {
   return {
     status: 'signed_in',
-    user: { id: 'u1', email: 'dana@example.com', provider: 'google' },
+    user: {
+      id: 'u1',
+      email: 'dana@example.com',
+      provider: 'google',
+      name: undefined,
+      picture: undefined,
+      avatarVersion: undefined,
+    },
     keys,
     sync: undefined,
     passwordRecovery: false,
@@ -45,7 +53,13 @@ function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys'], t
 
 function showCard(view: AccountView) {
   vi.spyOn(controller, 'getView').mockReturnValue(view);
-  renderWithProviders(<AccountCard />);
+  // The account and security pages, where the card's parts now live.
+  renderWithProviders(
+    <>
+      <AccountScreen />
+      <SecurityScreen />
+    </>,
+  );
   return userEvent.setup();
 }
 
@@ -95,7 +109,7 @@ describe('signing out', () => {
   });
 });
 
-describe('the account card', () => {
+describe('the account pages', () => {
   it('says the data is safe, and asks nothing', () => {
     showCard(signedIn({ kind: 'ready' }));
     expect(screen.getByText('Everything is saved to your account.')).toBeInTheDocument();
@@ -187,21 +201,6 @@ describe('two-step sign-in', () => {
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
     });
-  });
-
-  it('asks for the code inside the card on a device joining the account', async () => {
-    const verify = vi.spyOn(controller, 'verifyCode').mockResolvedValue({ ok: true });
-    const cancel = vi.spyOn(controller, 'cancelSecondStep').mockResolvedValue();
-    const user = showCard({
-      status: 'second_step',
-      user: { id: 'u1', email: 'dana@example.com', provider: 'email' },
-      owned: false,
-    });
-    await user.type(screen.getByLabelText('Code'), '123456');
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(verify).toHaveBeenCalledWith('123456');
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(cancel).toHaveBeenCalled();
   });
 });
 

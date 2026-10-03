@@ -350,7 +350,16 @@
     "categoriesLink": "Categories",
     "methodsLink": "Payment methods",
     "importFile": "Choose a backup file to restore",
-    "importReplaceSignedIn": "Not available while signed in: it would wipe every device on your account. Merge instead."
+    "importReplaceSignedIn": "Not available while signed in: it would wipe every device on your account. Merge instead.",
+    "sections": {
+      "account": "Account",
+      "accountHint": "Your picture, name and email",
+      "securityHint": "Passkeys, two-step sign-in, automatic sign-out",
+      "preferences": "Preferences",
+      "preferencesHint": "Language, appearance and currency",
+      "data": "Backup and data",
+      "dataHint": "Export, restore and recently deleted"
+    }
   },
   "reconvert": {
     "change": "Change base currency",
@@ -515,6 +524,18 @@
     "arriving": {
       "offline": "You're offline. Connect to the internet to open your account.",
       "error": "Couldn't reach your account."
+    },
+    "picture": {
+      "add": "Add a picture",
+      "change": "Change picture",
+      "remove": "Remove picture",
+      "saved": "Picture saved.",
+      "removed": "Picture removed.",
+      "unreadable": "That file isn't a picture this browser can open. Try a JPEG or PNG.",
+      "failed": "Couldn't save the picture. Try again."
     }
+  },
+  "menu": {
+    "label": "Account and settings"
   }
 }

@@ -36,6 +36,20 @@ describe('the content security policy', () => {
     );
   });
 
+  it("shows images from itself and, with accounts, Google's profile pictures - nothing else", () => {
+    expect(directive(csp, 'img-src')).toEqual([
+      "'self'",
+      'data:',
+      'blob:',
+      'https://lh3.googleusercontent.com',
+    ]);
+    expect(directive(contentSecurityPolicy({ scriptHashes: [] }), 'img-src')).toEqual([
+      "'self'",
+      'data:',
+      'blob:',
+    ]);
+  });
+
   it('cannot be framed, and loads no plugins', () => {
     expect(directive(csp, 'frame-ancestors')).toEqual(["'none'"]);
     expect(directive(csp, 'object-src')).toEqual(["'none'"]);

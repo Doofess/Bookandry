@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router-dom';
 
 import { Logo } from '@/components/logo';
+import { UserMenu } from '@/features/account/user-menu';
 
 import { NAV_ORDER, ROUTES, type RouteKey } from './routes';
 import { Toaster } from './toaster';
@@ -22,7 +23,7 @@ const ICONS: Record<RouteKey, ComponentType<{ className?: string }>> = {
  * tree for no gain, and screen readers see both.
  *
  * Tab labels are kept at every size: an icon-only bottom bar is a known
- * comprehension and a11y regression, and four items are not crowded.
+ * comprehension and a11y regression, and three items are not crowded.
  */
 function PrimaryNav() {
   const { t } = useTranslation();
@@ -101,7 +102,12 @@ export function AppShell() {
         {t('a11y.skipToContent')}
       </a>
 
-      <header className="flex items-center px-4 pt-[env(safe-area-inset-top,0px)] lg:hidden">
+      {/*
+        The top bar: the mark (on a phone; the rail carries it on a desktop) at
+        the start, the account menu at the end - top right in English, top left
+        in Hebrew, where every app people use keeps it.
+      */}
+      <header className="flex items-center justify-between gap-3 px-4 pt-[env(safe-area-inset-top,0px)] lg:ms-56 lg:h-16 lg:justify-end lg:px-6">
         {/*
           Tappable, and sized to be tappable: the padding is on the LINK rather
           than on the header, so the target is the full height of the bar
@@ -110,11 +116,12 @@ export function AppShell() {
         <NavLink
           to={ROUTES.feed}
           end
-          className="-mx-2 flex items-center gap-2 rounded-lg px-2 py-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="-mx-2 flex items-center gap-2 rounded-lg px-2 py-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:hidden"
         >
           <Logo size={24} decorative />
           <span className="text-sm font-semibold tracking-tight">{t('app.name')}</span>
         </NavLink>
+        <UserMenu />
       </header>
 
       <PrimaryNav />

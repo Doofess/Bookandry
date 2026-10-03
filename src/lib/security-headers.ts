@@ -19,6 +19,13 @@ export type SecurityHeaderInput = {
   readonly supabaseOrigin?: string;
 };
 
+/**
+ * Where Google serves an account's profile picture: shown as the account's
+ * picture until it has one of its own (src/app/account-avatar.ts). Images
+ * only, and only in a build with accounts.
+ */
+const GOOGLE_PICTURES = 'https://lh3.googleusercontent.com';
+
 /** Exchange-rate providers the app fetches from directly. */
 const RATE_ORIGINS = ['https://api.frankfurter.dev', 'https://open.er-api.com'];
 
@@ -36,7 +43,10 @@ export function contentSecurityPolicy(input: SecurityHeaderInput): string {
     // The toast library injects its stylesheet at runtime. Styles cannot run
     // code; scripts are what this policy is for.
     ['style-src', ["'self'", "'unsafe-inline'"]],
-    ['img-src', ["'self'", 'data:', 'blob:']],
+    [
+      'img-src',
+      ["'self'", 'data:', 'blob:', ...(input.supabaseOrigin === undefined ? [] : [GOOGLE_PICTURES])],
+    ],
     ['font-src', ["'self'"]],
     ['connect-src', connect],
     ['worker-src', ["'self'"]],
