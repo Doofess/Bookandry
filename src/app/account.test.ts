@@ -299,7 +299,7 @@ describe('the profile picture', () => {
     });
   });
 
-  it("takes a name, and Google's picture only from Google's image host", async () => {
+  it("takes a name, and Google's picture from Google's image host", async () => {
     fake.session = {
       user: {
         ...userFor(USER),
@@ -311,14 +311,15 @@ describe('the profile picture', () => {
     expect(c.getView()).toMatchObject({
       user: { name: 'Dana Levi', picture: 'https://lh3.googleusercontent.com/a/pic' },
     });
+  });
 
+  it('takes no picture from anywhere else', async () => {
     fake.session = {
-      user: { ...userFor(OTHER), user_metadata: { avatar_url: 'https://evil.example/x.png' } },
+      user: { ...userFor(USER), user_metadata: { avatar_url: 'https://evil.example/x.png' } },
     };
-    controller = new AccountController(device.db, restarted);
-    await device.db.meta.clear();
-    await controller.connect();
-    expect(controller.getView()).toMatchObject({ user: { picture: undefined } });
+    const c = make();
+    await c.connect();
+    expect(c.getView()).toMatchObject({ user: { picture: undefined } });
   });
 });
 
