@@ -284,6 +284,19 @@
    dash the length of the path, offset by its own length, starts it hidden.
    Reduced motion: drawn already.
 --------------------------------------------------------------------------- */
+/* The front door shows one green. Its filled buttons and links take the
+   engraved panel's, not the app's brighter primary beside it: on white, the
+   deep green measures 10.4:1. */
+.front-door {
+  --primary: var(--brand-deep);
+  --primary-foreground: var(--brand-deep-foreground);
+}
+/* On a near-black page deep green text would vanish; links there take the
+   logo's green, the same family, at 8:1. Fills keep the panel's. */
+.dark .front-door .text-primary {
+  color: var(--brand-vivid);
+}
+
 @keyframes engrave {
   from {
     stroke-dashoffset: 1;

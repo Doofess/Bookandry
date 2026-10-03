@@ -25,9 +25,11 @@ const RINGS: readonly Ring[] = [
 
 type Band = { y: number; amplitude: number; wavelength: number; copies: number };
 
+// Low on the foot: on wide panels the drawing is scaled up from its bottom
+// edge, and the bands must stay clear of the headline above them.
 const BANDS: readonly Band[] = [
-  { y: 955, amplitude: 14, wavelength: 140, copies: 6 },
-  { y: 984, amplitude: 7, wavelength: 70, copies: 4 },
+  { y: 964, amplitude: 14, wavelength: 140, copies: 6 },
+  { y: 990, amplitude: 7, wavelength: 70, copies: 4 },
 ];
 
 const WIDTH = 800;

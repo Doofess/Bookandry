@@ -1,8 +1,8 @@
-import { Globe } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Globe, Moon, Sun } from 'lucide-react';
+import { type ReactNode, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { chooseLanguage } from '@/app/preferences';
+import { chooseLanguage, chooseTheme } from '@/app/preferences';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import type { Language } from '@/i18n/boot';
@@ -22,18 +22,21 @@ import { Engraving } from './engraving';
 export function AuthLayout({ children }: { readonly children: ReactNode }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-dvh flex-col bg-brand-deep lg:grid lg:grid-cols-[minmax(0,7fr)_minmax(0,6fr)]">
+    <div className="front-door flex min-h-dvh flex-col bg-brand-deep lg:grid lg:grid-cols-[minmax(0,7fr)_minmax(0,6fr)]">
       <section className="relative isolate overflow-hidden text-brand-deep-foreground lg:sticky lg:top-0 lg:h-dvh">
         {/* On a phone the form sheet overlaps the panel's foot by 1.5rem: the engraving stops there, so its bands sit just above the sheet. */}
         <Engraving className="absolute inset-x-0 top-0 -z-10 h-[calc(100%-1.5rem)] w-full text-brand-vivid/45 lg:h-full rtl:-scale-x-100" />
         <div className="flex h-full flex-col px-6 pt-5 pb-16 sm:px-10 lg:px-14 lg:py-10">
           <header className="flex items-center justify-between gap-4">
             <Logo size={36} tone="inverse" decorative />
-            <LanguageSwitch />
+            <div className="flex items-center gap-2">
+              <ThemeSwitch />
+              <LanguageSwitch />
+            </div>
           </header>
           {/* The name is the hero: set large in the brand's face, the line under
               it saying what it is. */}
-          <div className="mt-8 sm:mt-14 lg:mt-auto lg:mb-8">
+          <div className="mt-8 sm:mt-14 lg:mt-auto lg:mb-12">
             <p
               lang="en"
               dir="ltr"
@@ -92,6 +95,41 @@ function LanguageSwitch() {
     >
       <Globe className="size-4" aria-hidden="true" />
       {t(`language.${other}`)}
+    </Button>
+  );
+}
+
+/** Whether the page is dark right now: the class the theme puts on <html>. */
+function watchTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  return () => {
+    observer.disconnect();
+  };
+}
+const isDark = (): boolean => document.documentElement.classList.contains('dark');
+
+/**
+ * Light or dark, one press, beside the language. The front door is outside
+ * the app's settings, so it reads the page itself; the choice is kept the
+ * same way the account menu keeps it. Shows where it goes: a moon on a light
+ * page, a sun on a dark one.
+ */
+function ThemeSwitch() {
+  const { t } = useTranslation();
+  const dark = useSyncExternalStore(watchTheme, isDark);
+  const Icon = dark ? Sun : Moon;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={t(dark ? 'account.welcome.toLight' : 'account.welcome.toDark')}
+      className="size-9 rounded-full border-white/35 p-0 text-brand-deep-foreground hover:bg-white/10 hover:text-brand-deep-foreground focus-visible:ring-white/50"
+      onClick={() => {
+        chooseTheme(dark ? 'light' : 'dark');
+      }}
+    >
+      <Icon className="size-4" aria-hidden="true" />
     </Button>
   );
 }
