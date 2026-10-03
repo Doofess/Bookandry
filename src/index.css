@@ -297,6 +297,35 @@
   color: var(--brand-vivid);
 }
 
+/* The sign-in form changing step (features/account/morph.ts): each part it
+   keeps moves to its new place in one short ease, the curve the rest of the
+   app's motion uses; what looks the same before and after cross-fades into
+   itself, so it simply stays. Words that change (.words) hand over instead:
+   the old ones are gone before the new ones arrive, so two headings or two
+   button labels are never on top of each other mid-way. */
+::view-transition-group(.auth) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-out-soft);
+}
+::view-transition-old(.words) {
+  animation: auth-leave 120ms ease-out both;
+}
+::view-transition-new(.words) {
+  animation: auth-arrive 200ms ease-out 110ms both;
+}
+
+@keyframes auth-leave {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes auth-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes engrave {
   from {
     stroke-dashoffset: 1;

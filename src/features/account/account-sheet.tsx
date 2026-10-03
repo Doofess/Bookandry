@@ -1,5 +1,6 @@
+import { cn } from 'cn';
 import { Copy, KeyRound } from 'lucide-react';
-import { useEffect, useId, useState, type ReactNode, type SyntheticEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -10,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { passkeysSupported, type AuthResult, type Enrollment } from '@/services/supabase/auth';
 
+import { morph } from './morph';
 import { GoogleIcon } from './provider-icons';
 import { CodeForm } from './second-step';
 
@@ -128,13 +130,24 @@ function InfoLine({ children }: { readonly children: ReactNode }) {
 function Field({
   label,
   hint,
+  className,
+  inputClassName,
   ...input
-}: { readonly label: string; readonly hint?: string } & React.ComponentProps<'input'>) {
+}: {
+  readonly label: string;
+  readonly hint?: string;
+  readonly inputClassName?: string;
+} & React.ComponentProps<'input'>) {
   const id = useId();
   return (
-    <div className="space-y-1.5">
+    <div className={cn('space-y-1.5', className)}>
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} aria-describedby={hint === undefined ? undefined : `${id}-hint`} {...input} />
+      <Input
+        id={id}
+        aria-describedby={hint === undefined ? undefined : `${id}-hint`}
+        className={inputClassName}
+        {...input}
+      />
       {hint === undefined ? null : (
         <p id={`${id}-hint`} className="text-xs text-muted-foreground">
           {hint}
@@ -145,6 +158,29 @@ function Field({
 }
 
 export type SignInMode = 'signin' | 'signup' | 'reset';
+
+/**
+ * A part of the sign-in form that keeps its identity from one step to the
+ * next (morph.ts): the same name before and after, so the browser moves it
+ * rather than swapping it. One form is ever on the page, so the names are
+ * unique, as they must be.
+ */
+const PARTS = {
+  title: '[view-transition-name:auth-title]',
+  note: '[view-transition-name:auth-note]',
+  google: '[view-transition-name:auth-google]',
+  passkey: '[view-transition-name:auth-passkey]',
+  or: '[view-transition-name:auth-or]',
+  email: '[view-transition-name:auth-email]',
+  password: '[view-transition-name:auth-password]',
+  submit: '[view-transition-name:auth-submit]',
+  submitLabel: '[view-transition-name:auth-submit-label]',
+  switch: '[view-transition-name:auth-switch]',
+} as const;
+/** The parts whose words change between steps (index.css hands those over). */
+const WORDS: ReadonlySet<keyof typeof PARTS> = new Set(['title', 'submitLabel', 'switch']);
+const part = (name: keyof typeof PARTS): string =>
+  `${PARTS[name]} ${WORDS.has(name) ? '[view-transition-class:auth_words]' : '[view-transition-class:auth]'}`;
 
 /** Signing in, creating an account, or asking for a password reset. */
 export function SignIn({
@@ -176,6 +212,7 @@ export function SignIn({
     return failure === undefined ? undefined : messages.auth({ ok: false, reason: failure });
   });
   const [info, setInfo] = useState<string | undefined>(undefined);
+  const emailRef = useRef<HTMLInputElement>(null);
 
   const submit = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault();
@@ -234,24 +271,29 @@ export function SignIn({
   };
 
   const switchTo = (next: SignInMode): void => {
-    setMode(next);
-    setError(undefined);
-    setInfo(undefined);
+    morph(() => {
+      setMode(next);
+      setError(undefined);
+      setInfo(undefined);
+    });
+    // The link that asked for the reset is gone with the step it was on:
+    // the address it is for is where to carry on.
+    if (next === 'reset') emailRef.current?.focus();
   };
 
   return (
     <div className="space-y-6">
-      {title === undefined ? null : title(mode)}
+      {title === undefined ? null : <div className={part('title')}>{title(mode)}</div>}
 
       {mode === 'reset' ? (
-        <p className="text-sm text-muted-foreground">{t('account.welcome.resetBody')}</p>
+        <p className={cn('text-sm text-muted-foreground', part('note'))}>{t('account.welcome.resetBody')}</p>
       ) : (
         <>
           <div className="space-y-3">
             <Button
               type="button"
               variant="outline"
-              className="h-11 w-full"
+              className={cn('h-11 w-full', part('google'))}
               disabled={busy}
               onClick={() => void google()}
             >
@@ -262,7 +304,7 @@ export function SignIn({
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 w-full"
+                className={cn('h-11 w-full', part('passkey'))}
                 disabled={busy}
                 onClick={() => void passkey()}
               >
@@ -271,7 +313,10 @@ export function SignIn({
               </Button>
             ) : null}
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+          <div
+            className={cn('flex items-center gap-3 text-xs text-muted-foreground', part('or'))}
+            aria-hidden="true"
+          >
             <span className="h-px flex-1 bg-border" />
             {t('account.or')}
             <span className="h-px flex-1 bg-border" />
@@ -281,11 +326,13 @@ export function SignIn({
 
       <form className="space-y-4" onSubmit={(e) => void submit(e)}>
         <Field
+          ref={emailRef}
+          className={part('email')}
           label={t('account.email')}
           type="email"
           autoComplete="email"
           dir="ltr"
-          className="h-11"
+          inputClassName="h-11"
           required
           value={email}
           onChange={(e) => {
@@ -293,7 +340,7 @@ export function SignIn({
           }}
         />
         {mode === 'reset' ? null : (
-          <div className="space-y-1.5">
+          <div className={cn('space-y-1.5', part('password'))}>
             <div className="flex items-baseline justify-between gap-3">
               <Label htmlFor={passwordId}>{t('account.password')}</Label>
               {mode === 'signin' ? (
@@ -330,17 +377,20 @@ export function SignIn({
         )}
         <ErrorLine message={error} />
         {info === undefined ? null : <InfoLine>{info}</InfoLine>}
-        <Button type="submit" className="h-11 w-full" disabled={busy}>
-          {mode === 'reset'
-            ? t('account.sendReset')
-            : mode === 'signup'
-              ? t('account.create')
-              : t('account.signIn')}
+        <Button type="submit" className={cn('h-11 w-full', part('submit'))} disabled={busy}>
+          {/* Its own part, so the label changes while the button stays solid. */}
+          <span className={cn('w-full text-center', part('submitLabel'))}>
+            {mode === 'reset'
+              ? t('account.sendReset')
+              : mode === 'signup'
+                ? t('account.create')
+                : t('account.signIn')}
+          </span>
         </Button>
       </form>
 
       {mode === 'signin' && !signUp ? null : (
-        <p className="text-center text-sm text-muted-foreground">
+        <p className={cn('text-center text-sm text-muted-foreground', part('switch'))}>
           {mode === 'reset' ? null : (
             <>{mode === 'signup' ? t('account.welcome.haveAccount') : t('account.welcome.newHere')} </>
           )}
