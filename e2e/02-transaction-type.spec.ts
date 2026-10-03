@@ -38,6 +38,8 @@ const COPY = {
     addMethod: 'Add a payment method',
     methodLabel: 'Label',
     methodRate: 'Annual credit interest',
+    cash: 'Cash',
+    cheque: 'Cheque',
   },
   he: {
     regular: 'עסקה רגילה',
@@ -55,6 +57,8 @@ const COPY = {
     addMethod: 'הוספת אמצעי תשלום',
     methodLabel: 'תווית',
     methodRate: 'ריבית שנתית לעסקאות קרדיט',
+    cash: 'מזומן',
+    cheque: "צ'ק",
   },
 } as const;
 
@@ -190,6 +194,49 @@ for (const lang of ['en', 'he'] as const) {
 
       // What the feed shows is what the card will charge, not the price typed.
       await expect(page.getByText(/207\.06/).first()).toBeVisible();
+    });
+
+    test('pays by cheque once or in instalments, and a קרדיט only by credit card', async ({ page }) => {
+      await completeFirstRun(page, lang, { demo: false });
+      await page.goto('/payment-methods');
+      await page.getByRole('button', { name: copy.addMethod, exact: true }).click();
+      await page.getByLabel(copy.methodLabel, { exact: true }).fill('Visa');
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+
+      await page.goto('/');
+      await page.getByTestId('fab').click();
+      await page.getByLabel(copy.amount, { exact: true }).fill('4500');
+      const paidWith = page.getByRole('combobox', { name: new RegExp(copy.paidWith) });
+      const offered = async (): Promise<string[]> => {
+        await paidWith.click();
+        const names = await page.getByRole('option').allInnerTexts();
+        await page.keyboard.press('Escape');
+        return names.join('|').split('|');
+      };
+
+      // A regular purchase: cheques are there from the start, nothing to set up.
+      await paidWith.click();
+      await page.getByRole('option', { name: new RegExp(copy.cheque) }).click();
+      await expect(paidWith).toContainText(copy.cheque);
+
+      // תשלומים by post-dated cheques keeps it.
+      await page.getByRole('radio', { name: copy.installments, exact: true }).click();
+      await expect(paidWith).toContainText(copy.cheque);
+
+      // A standing order is the bank paying by itself: the cheque goes, and is not offered.
+      await page.getByRole('radio', { name: copy.standing, exact: true }).click();
+      await expect(paidWith).not.toContainText(copy.cheque);
+      const forStanding = (await offered()).join(' ');
+      expect(forStanding).not.toContain(copy.cheque);
+      expect(forStanding).toContain(copy.cash);
+
+      // קרדיט: the card's own arrangement, so the card and nothing else.
+      await page.getByRole('radio', { name: copy.credit, exact: true }).click();
+      const forCredit = (await offered()).join(' ');
+      expect(forCredit).toContain('Visa');
+      expect(forCredit).not.toContain(copy.cash);
+      expect(forCredit).not.toContain(copy.cheque);
     });
 
     test('refuses a rate that is not one, and says why', async ({ page }) => {

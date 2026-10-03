@@ -4,20 +4,22 @@ import type { Currency, IsoInstant, Kind, LocalDate, Minor, MoneySnapshot } from
 export const SHARED_OWNER = '*';
 
 /**
- * Cash, which every install has and nobody should have to create.
+ * Cash and cheques, which every install has and nobody should have to create.
  *
- * A deterministic id for the same reason the built-in categories have one: it
+ * Deterministic ids for the same reason the built-in categories have them: it
  * is how a merge-import recognises the row it already has instead of adding a
- * second one. Cash is the only payment method that is not a thing the user
- * owns - there is no card to name, no account to distinguish - so it is seeded,
- * its label follows the UI language, and it cannot be renamed or deleted. It
- * CAN be archived, exactly like a built-in category, for someone who never
- * carries any.
+ * second one. These are the payment methods that are not a thing the user
+ * owns - there is no card to name, no account to distinguish - so they are
+ * seeded, their labels follow the UI language, and they cannot be renamed or
+ * deleted. They CAN be archived, exactly like a built-in category, for someone
+ * who never carries cash or writes a cheque.
  */
 export const CASH_METHOD_ID = 'pm.cash';
+/** צ'ק: still how rent and a good deal of Israeli household spending are paid. */
+export const CHEQUE_METHOD_ID = 'pm.cheque';
 
 export function isBuiltinPaymentMethod(id: string): boolean {
-  return id === CASH_METHOD_ID;
+  return id === CASH_METHOD_ID || id === CHEQUE_METHOD_ID;
 }
 
 /** The merged view. A literal union with string collapses, so name the sentinel. */
@@ -83,6 +85,8 @@ export type Category = {
 
 export type PaymentMethodType =
   | 'cash'
+  /** צ'ק. Paid in one go or as a set of post-dated cheques, never as a standing order. */
+  | 'cheque'
   | 'credit_card'
   | 'debit_card'
   | 'bank_transfer'

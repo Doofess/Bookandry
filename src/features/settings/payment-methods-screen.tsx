@@ -77,6 +77,7 @@ type MethodTypeKey = 'profiles:method.cash';
 
 const TYPE_KEY: Record<PaymentMethodType, string> = {
   cash: 'profiles:method.cash',
+  cheque: 'profiles:method.cheque',
   credit_card: 'profiles:method.credit_card',
   debit_card: 'profiles:method.debit_card',
   bank_transfer: 'profiles:method.bank_transfer',

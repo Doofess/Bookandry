@@ -36,7 +36,7 @@ import {
   type TxFormParsed,
   type TxFormValues,
 } from '@/domain/tx-form';
-import { categoriesFor } from '@/domain/tx-options';
+import { categoriesFor, methodFits } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
 import { isLocalDate, monthsBetween } from '@/lib/dates';
@@ -697,6 +697,7 @@ function TransactionForm({
                   }
                 }}
                 profileId={values.profileId}
+                mode={values.mode}
                 methods={paymentMethods}
                 labelledBy={methodId}
               />
@@ -773,13 +774,21 @@ function TransactionForm({
             // a loop, and the `as never` it takes to compile would let a typo
             // through silently.
             if (patch.mode !== undefined) setValue('mode', patch.mode);
+            // A method this kind of transaction does not take (a cheque on a
+            // standing order, cash on a קרדיט) is let go rather than carried
+            // into it: the picker no longer offers it, so nothing on screen
+            // would explain it.
+            const method = paymentMethods.find((m) => m.id === values.paymentMethodId);
+            const methodKept =
+              patch.mode === undefined || method === undefined || methodFits(method, patch.mode);
+            if (!methodKept) setValue('paymentMethodId', '');
             if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
             if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
             if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
             if (patch.mode === 'credit') {
               // Entering קרדיט: the card's rate is the answer to a question the
               // user should not have to be asked, so it arrives filled in.
-              setValue('annualRate', rateOfCard(paymentMethods, values.paymentMethodId));
+              setValue('annualRate', methodKept ? rateOfCard(paymentMethods, values.paymentMethodId) : '');
             } else if (patch.annualRate !== undefined) {
               setValue('annualRate', patch.annualRate, { shouldValidate: true });
             }

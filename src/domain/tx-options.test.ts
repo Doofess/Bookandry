@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { categoriesFor, methodsFor } from './tx-options';
+import { categoriesFor, methodFits, methodsFor } from './tx-options';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
@@ -103,5 +103,35 @@ describe('methodsFor', () => {
 
   it('is empty for a profile with nothing of its own and no shared methods', () => {
     expect(methodsFor([method({ id: 'theirs', profileId: 'p2' })], 'p1')).toEqual([]);
+  });
+});
+
+describe('what each kind of transaction can be paid with', () => {
+  const card = method({ id: 'visa', type: 'credit_card' });
+  const debit = method({ id: 'debit', type: 'debit_card' });
+  const cash = method({ id: 'cash', type: 'cash', profileId: SHARED_OWNER });
+  const cheque = method({ id: 'cheque', type: 'cheque', profileId: SHARED_OWNER });
+  const all = [card, debit, cash, cheque];
+  const offered = (mode: Parameters<typeof methodFits>[1], keep = '') =>
+    methodsFor(all, 'p1', keep, mode).map((m) => m.id);
+
+  it('a credit plan takes only credit cards', () => {
+    expect(offered('credit')).toEqual(['visa']);
+  });
+
+  it('a cheque pays once or in instalments, never as a standing order', () => {
+    expect(offered('one_time')).toContain('cheque');
+    expect(offered('installments')).toContain('cheque');
+    expect(offered('standing_order')).not.toContain('cheque');
+    expect(methodFits(cheque, 'monthly')).toBe(false);
+    expect(methodFits(cheque, 'yearly')).toBe(false);
+  });
+
+  it('everything else stays on offer outside a credit plan', () => {
+    expect(offered('standing_order')).toEqual(['cash', 'debit', 'visa']);
+  });
+
+  it('keeps what an old row already uses, even where it would not be offered now', () => {
+    expect(offered('credit', 'debit')).toEqual(['debit', 'visa']);
   });
 });

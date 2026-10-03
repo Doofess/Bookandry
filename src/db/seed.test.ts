@@ -20,10 +20,10 @@ describe('populate', () => {
     expect(categories.every((c) => c.source === 'builtin')).toBe(true);
   });
 
-  it('seeds one shared cash method, so the first transaction is savable', async () => {
+  it('seeds shared cash and cheques, so the first transaction is savable', async () => {
     const methods = await handle.db.paymentMethods.toArray();
-    expect(methods.map((m) => m.id)).toEqual(['pm.cash']);
-    expect(methods[0]?.profileId).toBe('*');
+    expect(methods.map((m) => m.id)).toEqual(['pm.cash', 'pm.cheque']);
+    expect(methods.every((m) => m.profileId === '*')).toBe(true);
   });
 
   it('does not run again on reopen', async () => {

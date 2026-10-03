@@ -4,12 +4,13 @@ import { materialize } from '@/db/materialize';
 import { MONEY, d, modify } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import { CASH_METHOD_ID, SHARED_OWNER } from '@/types/domain';
+import { CASH_METHOD_ID, CHEQUE_METHOD_ID, SHARED_OWNER } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import {
   createPaymentMethod,
   deletePaymentMethod,
+  ensureBuiltinPaymentMethods,
   listPaymentMethods,
   setPaymentMethodArchived,
   updatePaymentMethod,
@@ -69,7 +70,7 @@ describe('listPaymentMethods', () => {
     // The SHARED_OWNER sentinel exists precisely so these rows are reachable: a
     // null owner would be invisible to the [profileId+isArchived] index.
     // pm.cash is seeded by populate() and shared by every profile.
-    expect(ids.sort()).toEqual(['joint', 'mine', 'pm.cash']);
+    expect(ids.sort()).toEqual(['joint', 'mine', 'pm.cash', 'pm.cheque']);
     expect(ids).not.toContain('theirs');
   });
 
@@ -78,12 +79,13 @@ describe('listPaymentMethods', () => {
     expect((await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id).sort()).toEqual([
       'joint',
       'pm.cash',
+      'pm.cheque',
     ]);
     expect(
       (await listPaymentMethods(handle.db, { profileId: 'p1', includeArchived: true }))
         .map((m) => m.id)
         .sort(),
-    ).toEqual(['joint', 'mine', 'pm.cash']);
+    ).toEqual(['joint', 'mine', 'pm.cash', 'pm.cheque']);
   });
 
   it('supports הוראת קבע as its own type', async () => {
@@ -224,7 +226,7 @@ describe('cash is built in', () => {
     await setPaymentMethodArchived(handle.db, CASH_METHOD_ID, true, NOW);
 
     expect((await handle.db.paymentMethods.get(CASH_METHOD_ID))?.isArchived).toBe(1);
-    expect(await listPaymentMethods(handle.db)).toEqual([]);
+    expect((await listPaymentMethods(handle.db)).map((m) => m.id)).toEqual([CHEQUE_METHOD_ID]);
   });
 
   it('leaves every other method deletable', async () => {
@@ -294,5 +296,24 @@ describe('a card’s credit rate', () => {
 
     await updatePaymentMethod(handle.db, 'pm.visa', { creditAnnualRate: null }, NOW);
     expect((await handle.db.paymentMethods.get('pm.visa'))?.creditAnnualRate).toBeUndefined();
+  });
+});
+
+describe('the built-in methods on an older install', () => {
+  it('adds the ones it lacks - and only those - without announcing them as edits', async () => {
+    // As a device from before cheques: cash, archived there, and no cheque.
+    await handle.db.paymentMethods.delete(CHEQUE_METHOD_ID);
+    await handle.db.paymentMethods.update(CASH_METHOD_ID, { isArchived: 1 });
+    await handle.db.outbox.clear();
+
+    await ensureBuiltinPaymentMethods(handle.db, NOW);
+
+    expect(await handle.db.paymentMethods.get(CHEQUE_METHOD_ID)).toMatchObject({
+      type: 'cheque',
+      profileId: SHARED_OWNER,
+      isArchived: 0,
+    });
+    expect((await handle.db.paymentMethods.get(CASH_METHOD_ID))?.isArchived).toBe(1);
+    expect(await handle.db.outbox.toArray()).toEqual([]);
   });
 });

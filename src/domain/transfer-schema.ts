@@ -101,6 +101,7 @@ const paymentMethodSchema = z.object({
   profileId: z.string().min(1),
   type: z.enum([
     'cash',
+    'cheque',
     'credit_card',
     'debit_card',
     'bank_transfer',

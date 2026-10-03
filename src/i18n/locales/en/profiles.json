@@ -37,6 +37,7 @@
   "limit": "Bookandry supports up to {{count}} profiles, one per colour.",
   "method": {
     "cash": "Cash",
+    "cheque": "Cheque",
     "credit_card": "Credit card",
     "debit_card": "Debit card",
     "bank_transfer": "Bank transfer",

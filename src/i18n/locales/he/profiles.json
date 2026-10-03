@@ -37,6 +37,7 @@
   "limit": "Bookandry תומך בעד {{count}} פרופילים, אחד לכל צבע.",
   "method": {
     "cash": "מזומן",
+    "cheque": "צ'ק",
     "credit_card": "כרטיס אשראי",
     "debit_card": "כרטיס חיוב מיידי",
     "bank_transfer": "העברה בנקאית",

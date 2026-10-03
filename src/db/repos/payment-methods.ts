@@ -1,4 +1,5 @@
-import type { BookandryDB } from '@/db/db';
+import { withoutTracking, type BookandryDB } from '@/db/db';
+import { buildSeedPaymentMethods } from '@/db/seed';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
 import {
@@ -214,5 +215,22 @@ export async function deletePaymentMethod(
       updatedAt: now,
     });
     return { transactionsUpdated: affected.length, overridesUpdated: overrides.length };
+  });
+}
+
+/**
+ * The built-in methods, on an install made before one of them existed.
+ *
+ * A new database gets them from `populate` (db.ts); this adds any that an
+ * older one lacks - Cheque, for installs from before it. Untracked, like the
+ * seed: every install writes the identical row, and as an edit it would
+ * overwrite an archive made on another device. A built-in cannot be deleted,
+ * so a missing one was never there.
+ */
+export async function ensureBuiltinPaymentMethods(db: BookandryDB, now: IsoInstant): Promise<void> {
+  await withoutTracking(db, [db.paymentMethods], async () => {
+    for (const method of buildSeedPaymentMethods(now)) {
+      if ((await db.paymentMethods.get(method.id)) === undefined) await db.paymentMethods.add(method);
+    }
   });
 }

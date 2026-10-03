@@ -1,4 +1,10 @@
-import type { Category, PaymentMethod } from '@/types/domain';
+import {
+  CASH_METHOD_ID,
+  CHEQUE_METHOD_ID,
+  SHARED_OWNER,
+  type Category,
+  type PaymentMethod,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 /**
@@ -63,14 +69,23 @@ export function buildSeedCategories(now: IsoInstant): Category[] {
   ];
 }
 
-/** A cash method every profile can use from the first transaction. */
+/** Cash and cheques: methods every profile can use from the first transaction. */
 export function buildSeedPaymentMethods(now: IsoInstant): PaymentMethod[] {
   return [
     {
-      id: 'pm.cash',
-      profileId: '*',
+      id: CASH_METHOD_ID,
+      profileId: SHARED_OWNER,
       type: 'cash',
       label: 'Cash',
+      isArchived: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: CHEQUE_METHOD_ID,
+      profileId: SHARED_OWNER,
+      type: 'cheque',
+      label: 'Cheque',
       isArchived: 0,
       createdAt: now,
       updatedAt: now,

@@ -1,4 +1,4 @@
-import { isBuiltinPaymentMethod, type PaymentMethod } from '@/types/domain';
+import { CASH_METHOD_ID, CHEQUE_METHOD_ID, type PaymentMethod } from '@/types/domain';
 
 /**
  * A payment method's display name, resolved in ONE place.
@@ -14,9 +14,11 @@ import { isBuiltinPaymentMethod, type PaymentMethod } from '@/types/domain';
  * that has both built-in and user-owned members, and no component deciding for
  * itself which it is looking at.
  */
-type MethodKey = 'profiles:method.cash';
+type MethodKey = 'profiles:method.cash' | 'profiles:method.cheque';
 export type Translate = (key: MethodKey) => string;
 
 export function methodDisplayName(method: PaymentMethod, t: Translate): string {
-  return isBuiltinPaymentMethod(method.id) ? t('profiles:method.cash') : method.label;
+  if (method.id === CASH_METHOD_ID) return t('profiles:method.cash');
+  if (method.id === CHEQUE_METHOD_ID) return t('profiles:method.cheque');
+  return method.label;
 }

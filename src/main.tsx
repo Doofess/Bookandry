@@ -20,6 +20,7 @@ import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
 import { db } from '@/db/db';
+import { ensureBuiltinPaymentMethods } from '@/db/repos/payment-methods';
 import { ensureSettings } from '@/db/repos/settings';
 import { startSweeper } from '@/db/sweeper';
 import { AccountScreen } from '@/features/account/account-screen';
@@ -100,6 +101,7 @@ async function bootstrap(): Promise<void> {
   // skeleton that never resolves.
   await db.open();
   await ensureSettings(db, systemClock.nowIso());
+  await ensureBuiltinPaymentMethods(db, systemClock.nowIso());
 
   /*
    * Purge expired tombstones, unawaited.

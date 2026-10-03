@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { RecurrenceMode } from '@/domain/tx-form';
 import { methodsFor } from '@/domain/tx-options';
 import { methodDisplayName } from '@/i18n/method-name';
 import type { PaymentMethod } from '@/types/domain';
@@ -25,6 +26,7 @@ export function PaymentMethodField({
   value,
   onChange,
   profileId,
+  mode,
   methods,
   labelledBy,
   describedBy,
@@ -32,6 +34,8 @@ export function PaymentMethodField({
   readonly value: string;
   readonly onChange: (id: string) => void;
   readonly profileId: string;
+  /** The kind of transaction: credit takes only cards, a cheque no standing order. */
+  readonly mode: RecurrenceMode;
   readonly methods: readonly PaymentMethod[];
   readonly labelledBy: string;
   readonly describedBy?: string;
@@ -43,13 +47,13 @@ export function PaymentMethodField({
       // "Not specified" is a real choice, listed rather than implied by an
       // empty field: a payment method is optional and the UI has to say so.
       { id: '', label: t('tx.paymentMethodNone') },
-      ...methodsFor(methods, profileId, value).map((method) => ({
+      ...methodsFor(methods, profileId, value, mode).map((method) => ({
         id: method.id,
         label: methodDisplayName(method, t),
         hint: t(PAYMENT_TYPE_KEY[method.type] as MethodTypeKey),
       })),
     ],
-    [methods, profileId, value, t],
+    [methods, profileId, value, mode, t],
   );
 
   return (
@@ -79,6 +83,7 @@ type MethodTypeKey = 'profiles:method.cash';
 /** Type labels live in the `profiles` namespace beside the settings screens. */
 const PAYMENT_TYPE_KEY = {
   cash: 'profiles:method.cash',
+  cheque: 'profiles:method.cheque',
   credit_card: 'profiles:method.credit_card',
   debit_card: 'profiles:method.debit_card',
   bank_transfer: 'profiles:method.bank_transfer',
