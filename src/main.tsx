@@ -8,6 +8,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import '@fontsource-variable/inter';
 import '@fontsource-variable/heebo';
+import '@fontsource-variable/frank-ruhl-libre';
 import './index.css';
 
 import { initAccount } from '@/app/account';

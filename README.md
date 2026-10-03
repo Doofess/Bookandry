@@ -287,7 +287,7 @@ the background.
   returning person is never offered the setup wizard while their data is on
   its way.
 - **Data from before accounts** (a device used signed out) is added to the
-  account it signs in to; the sign-in screen says so.
+  account it signs in to.
 - **A build without Supabase configured** (a fork; the e2e suite's local build,
   `pnpm build:local`) has no accounts at all and is the local-only app. The
   e2e suite drives the app screens through it, since a test cannot sign in to
@@ -297,9 +297,13 @@ the background.
   changes have not reached the account yet (offline), signing out says so
   first.
 - **A device whose session ends any other way** — locked after inactivity, or
-  signed out from another device — keeps the data but shows only a sign-in
-  screen until the same account signs in again. From there it can also remove
-  the data. Signing in with a different account removes it first.
+  signed out from another device — keeps the data but shows only the front
+  door until the same account signs in again. Signing in with a different
+  account removes it first.
+- **One front door for everyone** (`src/features/account/welcome-screen.tsx`,
+  `auth-layout.tsx`): a first visit, a returning person and a locked device
+  all see the same sign-in page, and it says nothing about what the device
+  holds or how it is protected. The security is done, not explained.
 - **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.

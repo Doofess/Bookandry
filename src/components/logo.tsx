@@ -3,6 +3,8 @@ import { cn } from 'cn';
 type LogoProps = {
   size?: number;
   className?: string;
+  /** 'inverse': a light disc, for the deep-green brand panel. */
+  tone?: 'brand' | 'inverse';
 } & ({ title: string } | { decorative: true });
 
 /**
@@ -16,7 +18,9 @@ type LogoProps = {
  * is thinner than 1.5 device px at 24px. The favicon is a SEPARATE, simplified
  * file: at 16px the corner marks below would render at ~0.67px and disappear.
  */
-export function Logo({ size = 28, className, ...rest }: LogoProps) {
+export function Logo({ size = 28, className, tone = 'brand', ...rest }: LogoProps) {
+  const disc = tone === 'inverse' ? 'fill-brand-deep-foreground' : 'fill-primary dark:fill-brand-vivid';
+  const paper = tone === 'inverse' ? 'fill-brand-deep' : 'fill-primary-foreground dark:fill-background';
   const a11y =
     'decorative' in rest
       ? ({ 'aria-hidden': true, focusable: false } as const)
@@ -33,18 +37,11 @@ export function Logo({ size = 28, className, ...rest }: LogoProps) {
       {...a11y}
     >
       {'decorative' in rest ? null : <title>{rest.title}</title>}
-      <circle cx="12" cy="12" r="11" className="fill-primary dark:fill-brand-vivid" />
-      <rect
-        x="4.5"
-        y="8"
-        width="15"
-        height="8"
-        rx="1.5"
-        className="fill-primary-foreground dark:fill-background"
-      />
-      <circle cx="12" cy="12" r="1.9" className="fill-primary dark:fill-brand-vivid" />
-      <circle cx="7" cy="10" r="0.9" className="fill-primary dark:fill-brand-vivid" />
-      <circle cx="17" cy="14" r="0.9" className="fill-primary dark:fill-brand-vivid" />
+      <circle cx="12" cy="12" r="11" className={disc} />
+      <rect x="4.5" y="8" width="15" height="8" rx="1.5" className={paper} />
+      <circle cx="12" cy="12" r="1.9" className={disc} />
+      <circle cx="7" cy="10" r="0.9" className={disc} />
+      <circle cx="17" cy="14" r="0.9" className={disc} />
     </svg>
   );
 }

@@ -2,10 +2,11 @@ import { useId, useState, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { accountController } from '@/app/account';
-import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+import { AuthLayout } from './auth-layout';
 
 const CODE = /^\d{6}$/;
 
@@ -94,14 +95,17 @@ export function SecondStep() {
   );
 }
 
-/** In front of the whole app, on a device that already holds the account's data. */
+/** The code, in front of the whole app: part of the way in, so in the front door's frame. */
 export function SecondStepScreen() {
   const { t } = useTranslation();
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-4 py-10">
-      <Logo size={32} title={t('app.name')} />
-      <h1 className="text-2xl font-semibold tracking-tight">{t('account.code.title')}</h1>
-      <SecondStep />
-    </main>
+    <AuthLayout>
+      <div className="space-y-6">
+        <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight">
+          {t('account.code.title')}
+        </h1>
+        <SecondStep />
+      </div>
+    </AuthLayout>
   );
 }

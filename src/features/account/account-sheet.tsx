@@ -144,22 +144,28 @@ function Field({
   );
 }
 
-/** Also the lock screen's form, where only signing in is offered. */
+export type SignInMode = 'signin' | 'signup' | 'reset';
+
+/** Signing in, creating an account, or asking for a password reset. */
 export function SignIn({
   initial,
   onDone,
   signUp = true,
   email: knownEmail = '',
+  title,
 }: {
   readonly initial: 'signin' | 'signup';
   readonly onDone: () => void;
   readonly signUp?: boolean;
   /** The account this device belongs to, when it is known. */
   readonly email?: string;
+  /** The heading, for each step: the front door names the step; the sheet has its own title. */
+  readonly title?: (mode: SignInMode) => ReactNode;
 }) {
   const { t } = useTranslation();
   const messages = useMessages();
-  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>(initial);
+  const passwordId = useId();
+  const [mode, setMode] = useState<SignInMode>(initial);
   const [email, setEmail] = useState(knownEmail);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -227,36 +233,59 @@ export function SignIn({
     }
   };
 
+  const switchTo = (next: SignInMode): void => {
+    setMode(next);
+    setError(undefined);
+    setInfo(undefined);
+  };
+
   return (
-    <div className="space-y-4">
-      {mode === 'reset' ? null : (
+    <div className="space-y-6">
+      {title === undefined ? null : title(mode)}
+
+      {mode === 'reset' ? (
+        <p className="text-sm text-muted-foreground">{t('account.welcome.resetBody')}</p>
+      ) : (
         <>
-          {mode === 'signin' && passkeysSupported() ? (
-            <Button type="button" className="w-full" disabled={busy} onClick={() => void passkey()}>
-              <KeyRound className="size-4" aria-hidden="true" />
-              {t('account.passkeys.signIn')}
+          <div className="space-y-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full"
+              disabled={busy}
+              onClick={() => void google()}
+            >
+              <GoogleIcon className="size-[1.125rem]" />
+              {t('account.google')}
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            disabled={busy}
-            onClick={() => void google()}
-          >
-            <GoogleIcon className="size-4" />
-            {t('account.google')}
-          </Button>
-          <p className="text-center text-xs text-muted-foreground">{t('account.or')}</p>
+            {mode === 'signin' && passkeysSupported() ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full"
+                disabled={busy}
+                onClick={() => void passkey()}
+              >
+                <KeyRound className="size-[1.125rem]" aria-hidden="true" />
+                {t('account.passkeys.signIn')}
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+            <span className="h-px flex-1 bg-border" />
+            {t('account.or')}
+            <span className="h-px flex-1 bg-border" />
+          </div>
         </>
       )}
 
-      <form className="space-y-3" onSubmit={(e) => void submit(e)}>
+      <form className="space-y-4" onSubmit={(e) => void submit(e)}>
         <Field
           label={t('account.email')}
           type="email"
           autoComplete="email"
           dir="ltr"
+          className="h-11"
           required
           value={email}
           onChange={(e) => {
@@ -264,22 +293,44 @@ export function SignIn({
           }}
         />
         {mode === 'reset' ? null : (
-          <Field
-            label={t('account.password')}
-            hint={mode === 'signup' ? t('account.passwordHint') : undefined}
-            type="password"
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            required
-            minLength={mode === 'signup' ? MIN_PASSWORD : undefined}
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-            }}
-          />
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <Label htmlFor={passwordId}>{t('account.password')}</Label>
+              {mode === 'signin' ? (
+                <button
+                  type="button"
+                  className="rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  onClick={() => {
+                    switchTo('reset');
+                  }}
+                >
+                  {t('account.forgot')}
+                </button>
+              ) : null}
+            </div>
+            <Input
+              id={passwordId}
+              type="password"
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              className="h-11"
+              required
+              minLength={mode === 'signup' ? MIN_PASSWORD : undefined}
+              aria-describedby={mode === 'signup' ? `${passwordId}-hint` : undefined}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+              }}
+            />
+            {mode === 'signup' ? (
+              <p id={`${passwordId}-hint`} className="text-xs text-muted-foreground">
+                {t('account.passwordHint')}
+              </p>
+            ) : null}
+          </div>
         )}
         <ErrorLine message={error} />
         {info === undefined ? null : <InfoLine>{info}</InfoLine>}
-        <Button type="submit" className="w-full" disabled={busy}>
+        <Button type="submit" className="h-11 w-full" disabled={busy}>
           {mode === 'reset'
             ? t('account.sendReset')
             : mode === 'signup'
@@ -288,32 +339,26 @@ export function SignIn({
         </Button>
       </form>
 
-      <div className="grid gap-1">
-        {mode === 'signin' ? (
-          <Button
+      {mode === 'signin' && !signUp ? null : (
+        <p className="text-center text-sm text-muted-foreground">
+          {mode === 'reset' ? null : (
+            <>{mode === 'signup' ? t('account.welcome.haveAccount') : t('account.welcome.newHere')} </>
+          )}
+          <button
             type="button"
-            variant="link"
+            className="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             onClick={() => {
-              setMode('reset');
+              switchTo(mode === 'signin' ? 'signup' : 'signin');
             }}
           >
-            {t('account.forgot')}
-          </Button>
-        ) : null}
-        {!signUp && mode === 'signin' ? null : (
-          <Button
-            type="button"
-            variant="link"
-            onClick={() => {
-              setMode(mode === 'signup' || !signUp ? 'signin' : 'signup');
-              setError(undefined);
-              setInfo(undefined);
-            }}
-          >
-            {mode === 'signup' || !signUp ? t('account.haveAccount') : t('account.noAccount')}
-          </Button>
-        )}
-      </div>
+            {mode === 'reset'
+              ? t('account.welcome.backToSignIn')
+              : mode === 'signup'
+                ? t('account.signIn')
+                : t('account.create')}
+          </button>
+        </p>
+      )}
     </div>
   );
 }

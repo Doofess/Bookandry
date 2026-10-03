@@ -91,7 +91,7 @@ test('@csp the sign-in screen runs under it too, on the production build', async
 
   await page.goto('http://localhost:4174/');
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
-  await page.getByRole('button', { name: /new here\? create an account/i }).click();
-  await expect(page.getByRole('button', { name: 'Create an account' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create an account' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Create your account' })).toBeVisible();
   expect(violations).toEqual([]);
 });

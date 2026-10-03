@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import { db } from '@/db/db';
-import { LockScreen } from '@/features/account/lock-screen';
 import { SecondStepScreen } from '@/features/account/second-step';
 import { WelcomeScreen } from '@/features/account/welcome-screen';
 
@@ -15,9 +14,9 @@ import { accountController, useAccount, type AccountView } from './account';
  * Nothing of the app is shown until an account is signed in.
  *
  * Outside the whole app, BootGate included:
- * - signed out: the front door - sign in, or create an account;
- * - a device holding an account's data without its session (locked after
- *   inactivity, signed out elsewhere): the sign-in screen for that account;
+ * - signed out - and equally a device holding an account's data without its
+ *   session (locked after inactivity, signed out elsewhere): the front door.
+ *   One page for everyone; it says nothing about what the device holds;
  * - owing the second step: the code;
  * - signed in on a device with nothing yet: the account's data is fetched
  *   first, so an account that has data opens straight into the app and only a
@@ -35,9 +34,8 @@ export function AccountGate({ children }: { children: ReactNode }) {
     case 'loading':
       return <Blank />;
     case 'signed_out':
-      return <WelcomeScreen />;
     case 'locked':
-      return <LockScreen email={view.email} idle={view.idle} />;
+      return <WelcomeScreen />;
     case 'second_step':
       return <SecondStepScreen />;
     case 'signed_in':
@@ -85,15 +83,17 @@ function Arriving({
         ? t('account.arriving.offline')
         : undefined;
 
+  // A quiet moment, not an explanation: the mark, breathing, until the app is
+  // ready. Words only when something needs the person.
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-4 py-10">
-      <Logo size={32} title={t('app.name')} />
+    <main className="mx-auto flex min-h-dvh max-w-sm flex-col items-center justify-center gap-8 px-4 py-10">
+      <Logo size={56} title={t('app.name')} className="motion-safe:animate-pulse" />
       {trouble === undefined ? (
-        <p role="status" aria-busy="true" className="text-sm text-muted-foreground">
-          {t('account.arriving.body')}
+        <p role="status" aria-busy="true" className="sr-only">
+          {t('a11y.loading')}
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="w-full space-y-3 text-center">
           <p role="alert" className="text-sm">
             {trouble}
           </p>

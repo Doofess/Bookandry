@@ -72,6 +72,10 @@
 
   /* Logo + dark fills ONLY. Never text on a light background. */
   --brand-vivid: oklch(0.71 0.163 156.3);
+  /* The front door's engraved panel: banknote green, the same in both themes.
+     White text on it measures 10.4:1. */
+  --brand-deep: oklch(0.36 0.075 158);
+  --brand-deep-foreground: oklch(0.985 0.01 156);
   --avatar-paper: oklch(0.985 0 0);
   --avatar-ink: oklch(0.2 0.01 286);
 
@@ -123,6 +127,8 @@
   --chart-balance: oklch(0.755 0.011 286.1);
 
   --brand-vivid: oklch(0.71 0.163 156.3);
+  --brand-deep: oklch(0.33 0.07 158);
+  --brand-deep-foreground: oklch(0.985 0.01 156);
   --avatar-paper: oklch(0.985 0 0);
   --avatar-ink: oklch(0.2 0.01 286);
 
@@ -161,6 +167,8 @@
   --color-chart-expense: var(--chart-expense);
   --color-chart-balance: var(--chart-balance);
   --color-brand-vivid: var(--brand-vivid);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-deep-foreground: var(--brand-deep-foreground);
   --color-fab: var(--fab);
   --color-fab-foreground: var(--fab-foreground);
   --color-fab-rim: var(--fab-rim);
@@ -173,6 +181,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   --font-sans: var(--font-stack-sans);
+  --font-display: var(--font-stack-display);
 
   --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-soft: cubic-bezier(0.3, 0, 0.8, 0.15);
@@ -190,6 +199,16 @@
 
    Do not declare font-family anywhere outside this file.
 --------------------------------------------------------------------------- */
+/*
+ * The display face: the brand's wordmark and the front door's headline, and
+ * nothing else. A ledger serif with Hebrew of its own, so the headline keeps
+ * its character in both languages. Amounts and UI text stay in the sans stack
+ * above, for its tabular figures.
+ */
+:root {
+  --font-stack-display: 'Frank Ruhl Libre Variable', 'Heebo Variable', Georgia, serif;
+}
+
 :root {
   --font-stack-sans:
     'Inter Variable', 'Heebo Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
@@ -254,5 +273,33 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The front door's engraving (src/features/account/engraving.tsx).
+
+   Its one moment of motion: the lines are drawn in once, as the page opens,
+   the way a banknote's guilloche is cut. Every path has pathLength="1", so one
+   dash the length of the path, offset by its own length, starts it hidden.
+   Reduced motion: drawn already.
+--------------------------------------------------------------------------- */
+@keyframes engrave {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.engraving path {
+  stroke-dasharray: 1;
+  animation: engrave 1.8s var(--ease-out-soft) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .engraving path {
+    animation: none;
   }
 }

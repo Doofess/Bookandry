@@ -41,6 +41,7 @@ async function seed(page: Page, rows: { meta?: object[]; profiles?: object[] }):
 }
 
 async function frontDoor(page: Page): Promise<void> {
+  await expect(page.getByRole('heading', { level: 1, name: 'Sign in to Bookandry' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
 }
@@ -48,7 +49,7 @@ async function frontDoor(page: Page): Promise<void> {
 test('a first visit is the sign-in screen - no setup wizard, no app', async ({ page }) => {
   await page.goto('/');
   await frontDoor(page);
-  await expect(page.getByRole('button', { name: /new here\? create an account/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create an account' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /language and currency/i })).toHaveCount(0);
   await expect(page.getByRole('navigation')).toHaveCount(0);
 
@@ -57,15 +58,7 @@ test('a first visit is the sign-in screen - no setup wizard, no app', async ({ p
   await frontDoor(page);
 });
 
-test('says data already on the device will join the account', async ({ page }) => {
-  await page.goto('/');
-  await frontDoor(page);
-  await seed(page, { profiles: [{ id: 'p-before-accounts', name: 'Dana' }] });
-  await page.reload();
-  await expect(page.getByRole('note')).toHaveText(/already has data.*added to your account/i);
-});
-
-test("a device holding an account's data shows only that account's sign-in", async ({ page }) => {
+test("a device holding an account's data shows the very same front door", async ({ page }) => {
   await page.goto('/');
   await frontDoor(page);
   await seed(page, {
@@ -77,19 +70,10 @@ test("a device holding an account's data shows only that account's sign-in", asy
   });
   await page.reload();
 
-  await expect(page.getByRole('heading', { name: 'Signed out' })).toBeVisible();
-  await expect(page.getByLabel('Email')).toHaveValue('dana@example.com');
-  await expect(page.getByRole('navigation')).toHaveCount(0);
-
-  await page.getByRole('button', { name: 'Remove this data from the device' }).click();
-  await page
-    .getByRole('alertdialog')
-    .getByRole('button', { name: 'Remove this data from the device' })
-    .click();
-
-  // Back to the front door, with nothing left behind.
   await frontDoor(page);
-  await expect(page.getByRole('note')).toHaveCount(0);
+  await expect(page.getByLabel('Email')).toHaveValue('');
+  await expect(page.getByText(/device/i)).toHaveCount(0);
+  await expect(page.getByRole('navigation')).toHaveCount(0);
 });
 
 test('the front door switches language', async ({ page }) => {

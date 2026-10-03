@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '@/db/db';
@@ -52,8 +53,33 @@ function signedIn(change: Partial<Extract<AccountView, { status: 'signed_in' }>>
 describe('the front door', () => {
   it('is the sign-in screen when no one is signed in', async () => {
     show({ status: 'signed_out' });
-    expect(await screen.findByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Sign in to Bookandry' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
     expect(screen.queryByText(APP)).not.toBeInTheDocument();
+  });
+
+  it('is the very same page on a device that holds an account locked away - nothing about the device', async () => {
+    show({ status: 'locked', email: 'dana@example.com', idle: true });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Sign in to Bookandry' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/dana@example\.com/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/device/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(APP)).not.toBeInTheDocument();
+  });
+
+  it('switches between signing in, creating an account and resetting a password', async () => {
+    show({ status: 'signed_out' });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Create an account' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Create your account' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(screen.getByRole('button', { name: 'Forgot your password?' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Reset your password' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Sign in to Bookandry' })).toBeInTheDocument();
   });
 
   it('asks for the code before anything else', () => {
@@ -71,7 +97,7 @@ describe('the front door', () => {
 describe('after signing in', () => {
   it("waits for the account's data on an empty device, instead of offering setup", async () => {
     show(signedIn({ sync: { kind: 'syncing' } }));
-    expect(await screen.findByText('Bringing your data to this device…')).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveAttribute('aria-busy', 'true');
     expect(screen.queryByText(APP)).not.toBeInTheDocument();
   });
 
