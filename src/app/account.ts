@@ -631,18 +631,21 @@ export class AccountController {
   private async syncAvatar(): Promise<void> {
     if (this.view.status !== 'signed_in') return;
     const { id, avatarVersion } = this.view.user;
-    const kept = await readAvatarVersion(this.db);
-    if (avatarVersion === undefined) {
-      if (kept !== undefined) await forgetAvatar(this.db);
-      return;
-    }
-    if (kept === avatarVersion) return;
+    // Started without waiting, so nothing may escape: offline, most likely,
+    // or the device being cleared underneath it (signing out closes the
+    // database). The initials (or Google's picture) stand in until the next
+    // sign-in or change brings it.
     try {
+      const kept = await readAvatarVersion(this.db);
+      if (avatarVersion === undefined) {
+        if (kept !== undefined) await forgetAvatar(this.db);
+        return;
+      }
+      if (kept === avatarVersion) return;
       const { downloadAvatar } = await import('@/services/supabase/avatar');
       await storeAvatar(this.db, avatarVersion, await downloadAvatar(await getSupabase(), id));
     } catch {
-      // Offline, most likely: the initials (or Google's picture) stand in
-      // until the next sign-in or change brings it.
+      // Kept as it was; see above.
     }
   }
 
