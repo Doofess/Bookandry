@@ -154,8 +154,8 @@
   "breakdown": {
     "balanceBody": "כל מה שנספר מ-{{date}}.",
     "opening": "יתרת פתיחה",
-    "income": "נכנס",
-    "expense": "יצא",
+    "income": "הכנסות",
+    "expense": "הוצאות",
     "total": "יתרה",
     "expenseBody": "ממה מורכב {{month}}.",
     "empty": "אין הוצאות צפויות החודש.",

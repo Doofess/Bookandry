@@ -153,8 +153,8 @@
   "breakdown": {
     "balanceBody": "Everything counted since {{date}}.",
     "opening": "Starting balance",
-    "income": "Money in",
-    "expense": "Money out",
+    "income": "Income",
+    "expense": "Expenses",
     "total": "Balance",
     "expenseBody": "What makes up {{month}}.",
     "empty": "Nothing expected this month.",
