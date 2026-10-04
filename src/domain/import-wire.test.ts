@@ -1,0 +1,394 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+import {
+  base64Bytes,
+  cleanExtract,
+  cleanMap,
+  cleanRow,
+  cleanText,
+  cleanVerify,
+  contextText,
+  extractSchema,
+  extractTask,
+  LIMITS,
+  mapSchema,
+  mapTask,
+  maskLongNumbers,
+  parseWireRequest,
+  tokensForRows,
+  verifySchema,
+  verifyTask,
+  type WireContext,
+} from './import-wire';
+
+const ctx: WireContext = {
+  today: '2026-10-04',
+  base: 'ILS',
+  lang: 'he',
+  cats: [
+    { a: 'c1', n: 'מזון', k: 'e' },
+    { a: 'c2', n: 'משכורת', k: 'i' },
+  ],
+  pms: [{ a: 'p1', n: 'Max', t: 'credit_card' }],
+};
+
+const row = (over: Record<string, unknown> = {}) => ({
+  s: 0,
+  p: null,
+  k: 'e',
+  st: 'posted',
+  fee: false,
+  d: '03/10/26',
+  a: '1,234.50',
+  c: '₪',
+  sg: null,
+  ca: null,
+  cc: null,
+  cd: null,
+  m: 'שופרסל',
+  cat: 'c1',
+  pm: 'p1',
+  pl: null,
+  ...over,
+});
+
+const extract = (over: Record<string, unknown> = {}) => ({
+  mode: 'extract',
+  read: 'primary',
+  ctx,
+  sources: [{ kind: 'text', text: 'hello', label: 'a.txt' }],
+  maxTokens: 4000,
+  continueAfter: 0,
+  cache: false,
+  ...over,
+});
+
+describe('the copy the function deploys', () => {
+  it('is this file, byte for byte', () => {
+    const app = readFileSync(resolve(__dirname, 'import-wire.ts'), 'utf8');
+    const fn = readFileSync(resolve(__dirname, '../../supabase/functions/_shared/import-wire.ts'), 'utf8');
+    expect(fn, 'run: cp src/domain/import-wire.ts supabase/functions/_shared/').toBe(app);
+  });
+});
+
+describe('a request', () => {
+  it('passes when every part is in bounds', () => {
+    expect(parseWireRequest(extract())).toMatchObject({ mode: 'extract', read: 'primary', maxTokens: 4000 });
+    const image = { kind: 'image', media: 'image/png', data: 'aGVsbG8=', label: 'shot.png' };
+    expect(
+      parseWireRequest(extract({ sources: [image, { kind: 'pdf', data: 'aGk=', label: 'b.pdf' }] })),
+    ).toMatchObject({
+      sources: [{ kind: 'image' }, { kind: 'pdf' }],
+    });
+    // Asked-for tokens are clamped, not refused.
+    expect(parseWireRequest(extract({ maxTokens: 999_999 }))).toMatchObject({ maxTokens: LIMITS.maxTokens });
+    expect(parseWireRequest(extract({ maxTokens: 10 }))).toMatchObject({ maxTokens: LIMITS.minTokens });
+  });
+
+  it.each([
+    ['no body', undefined],
+    ['an unknown mode', { ...extract(), mode: 'chat' }],
+    ['a bad date', extract({ ctx: { ...ctx, today: 'today' } })],
+    ['a bad currency', extract({ ctx: { ...ctx, base: 'shekel' } })],
+    ['a bad language', extract({ ctx: { ...ctx, lang: 'fr' } })],
+    [
+      'too many categories',
+      extract({ ctx: { ...ctx, cats: Array.from({ length: 81 }, () => ctx.cats[0]) } }),
+    ],
+    ['a category of no kind', extract({ ctx: { ...ctx, cats: [{ a: 'c1', n: 'x', k: 'z' }] } })],
+    ['a bad method', extract({ ctx: { ...ctx, pms: [{ a: 'p1', n: 5, t: 'x' }] } })],
+    ['no sources', extract({ sources: [] })],
+    [
+      'an image of an unknown type',
+      extract({ sources: [{ kind: 'image', media: 'image/heic', data: 'aGk=', label: 'x' }] }),
+    ],
+    ['data that is not base64', extract({ sources: [{ kind: 'pdf', data: 'not base64!', label: 'x' }] })],
+    ['a long label', extract({ sources: [{ kind: 'text', text: 'x', label: 'x'.repeat(81) }] })],
+    ['a wrong read', extract({ read: 'third' })],
+    ['a negative continuation', extract({ continueAfter: -1 })],
+    ['a missing cache flag', extract({ cache: 'yes' })],
+    ['no token budget', extract({ maxTokens: 'lots' })],
+  ])('is refused with %s', (_why, body) => {
+    expect(parseWireRequest(body)).toBeUndefined();
+  });
+
+  it('is refused when the files are too big together', () => {
+    const big = 'A'.repeat(Math.floor((LIMITS.sourceBytes * 4) / 3) - 4);
+    expect(base64Bytes(big)).toBeLessThanOrEqual(LIMITS.sourceBytes);
+    const sources = [0, 1].map(() => ({ kind: 'pdf', data: big, label: 'x' }));
+    expect(parseWireRequest(extract({ sources }))).toBeUndefined();
+  });
+
+  it('carries a map or a verify', () => {
+    expect(
+      parseWireRequest({
+        mode: 'map',
+        ctx,
+        rows: [['תאריך', 'סכום']],
+        merchants: ['שופרסל'],
+        maxTokens: 800,
+      }),
+    ).toMatchObject({ mode: 'map' });
+    expect(parseWireRequest({ mode: 'map', ctx, rows: [], merchants: [], maxTokens: 800 })).toBeUndefined();
+    expect(
+      parseWireRequest({ mode: 'map', ctx, rows: [[1]], merchants: [], maxTokens: 800 }),
+    ).toBeUndefined();
+    expect(
+      parseWireRequest({ mode: 'map', ctx, rows: [['a']], merchants: [3], maxTokens: 800 }),
+    ).toBeUndefined();
+    expect(
+      parseWireRequest({ mode: 'map', ctx, rows: ['a'], merchants: [], maxTokens: 800 }),
+    ).toBeUndefined();
+
+    const verify = {
+      mode: 'verify',
+      ctx,
+      sources: [{ kind: 'text', text: 'x', label: 'x' }],
+      disputes: [{ id: 'r1', problem: 'amount not found', candidates: [row()] }],
+      maxTokens: 1000,
+    };
+    expect(parseWireRequest(verify)).toMatchObject({ mode: 'verify', disputes: [{ id: 'r1' }] });
+    expect(parseWireRequest({ ...verify, disputes: [] })).toBeUndefined();
+    expect(
+      parseWireRequest({ ...verify, disputes: [{ id: 'r1', problem: 'x', candidates: [{}] }] }),
+    ).toBeUndefined();
+    expect(
+      parseWireRequest({ ...verify, disputes: [{ id: 5, problem: 'x', candidates: [] }] }),
+    ).toBeUndefined();
+  });
+});
+
+describe('an answer', () => {
+  it('keeps a good row, mapping aliases back whatever their case', () => {
+    expect(cleanRow(row({ cat: 'C1', pm: 'P1', k: 'E' }), 1, ctx)).toMatchObject({
+      cat: 'c1',
+      pm: 'p1',
+      k: 'e',
+    });
+  });
+
+  it('drops what it cannot use, and nulls what it was not offered', () => {
+    expect(cleanRow(row({ s: 1 }), 1, ctx)).toBeUndefined();
+    expect(cleanRow(row({ d: '' }), 1, ctx)).toBeUndefined();
+    expect(cleanRow(row({ a: 5 }), 1, ctx)).toBeUndefined();
+    expect(cleanRow(row({ k: 'x' }), 1, ctx)).toBeUndefined();
+    expect(cleanRow(row({ c: 7 }), 1, ctx)).toBeUndefined();
+    expect(cleanRow('row', 1, ctx)).toBeUndefined();
+    expect(cleanRow(row({ cat: 'c9', pm: 'p7' }), 1, ctx)).toMatchObject({ cat: null, pm: null });
+    // An income category on an expense is no answer.
+    expect(cleanRow(row({ cat: 'c2' }), 1, ctx)).toMatchObject({ cat: null });
+    expect(cleanRow(row({ st: 'weird', fee: 'yes', p: -1 }), 1, ctx)).toMatchObject({
+      st: 'posted',
+      fee: false,
+      p: null,
+    });
+  });
+
+  it('keeps a plan only when its numbers make sense', () => {
+    expect(cleanRow(row({ pl: { md: 'installments', n: 3, of: 6, tot: '1,200' } }), 1, ctx)?.pl).toEqual({
+      md: 'installments',
+      n: 3,
+      of: 6,
+      tot: '1,200',
+    });
+    expect(cleanRow(row({ pl: { md: 'credit', n: 1, of: 12, tot: null } }), 1, ctx)?.pl).toMatchObject({
+      md: 'credit',
+    });
+    for (const bad of [
+      { md: 'x', n: 1, of: 2 },
+      { md: 'credit', n: 7, of: 6 },
+      { md: 'credit', n: 1, of: 1 },
+      'plan',
+    ]) {
+      expect(cleanRow(row({ pl: bad }), 1, ctx)?.pl, JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('strips characters that could reorder or hide text, and caps it', () => {
+    expect(cleanText('\u202Eevil\u202C', 50)).toBe('evil');
+    expect(cleanText('a\u0000b', 50)).toBe('ab');
+    // The marks a Hebrew page carries for its numbers stay.
+    expect(cleanText('\u200F₪5', 50)).toBe('\u200F₪5');
+    expect(cleanText('x'.repeat(10), 4)).toBe('xxxx');
+    expect(cleanText(5, 4)).toBeUndefined();
+  });
+
+  it('never lets a full card or account number through', () => {
+    // A valid test card number, spaced as printed.
+    expect(maskLongNumbers('Visa 4111 1111 1111 1111 paid')).toBe('Visa ••••1111 paid');
+    // Sixteen digits that are not a card number (the check digit is wrong) stay as printed.
+    expect(maskLongNumbers('4111111111111112')).toBe('4111111111111112');
+    expect(maskLongNumbers('IL620108000000099999999')).toBe('••••9999');
+    // Short runs are left alone: a phone number, an amount, an approval code.
+    expect(maskLongNumbers('050-1234567 1,234.50 אסמכתא 123456')).toBe('050-1234567 1,234.50 אסמכתא 123456');
+    expect(cleanRow(row({ m: 'card 4111111111111111' }), 1, ctx)?.m).toBe('card ••••1111');
+  });
+
+  it('cleans a whole extract, dropping bad rows rather than failing the lot', () => {
+    const result = cleanExtract(
+      {
+        r: [row(), row({ s: 9 }), row({ m: 'רמי לוי' })],
+        t: [
+          { l: 'סה"כ לחיוב', a: '2,469.00', c: '₪', s: 0, p: 1 },
+          { l: 'bad', a: '', c: null, s: 0, p: null },
+          { l: 'other doc', a: '1', c: null, s: 4, p: null },
+          'total',
+        ],
+        per: { f: '01/09/26', t: '30/09/26' },
+        done: false,
+      },
+      1,
+      ctx,
+    );
+    expect(result?.r.map((r) => r.m)).toEqual(['שופרסל', 'רמי לוי']);
+    expect(result?.t).toEqual([{ l: 'סה"כ לחיוב', a: '2,469.00', c: '₪', s: 0, p: 1 }]);
+    expect(result?.per).toEqual({ f: '01/09/26', t: '30/09/26' });
+    expect(result?.done).toBe(false);
+    expect(cleanExtract({ r: 'rows' }, 1, ctx)).toBeUndefined();
+    expect(cleanExtract({ r: [], t: 'x', per: { f: 1 } }, 1, ctx)).toEqual({
+      r: [],
+      t: [],
+      per: null,
+      done: true,
+    });
+  });
+
+  it('takes a verify answer only for the rows it asked about', () => {
+    const result = cleanVerify(
+      {
+        r: [
+          { ...row(), id: 'r1' },
+          { ...row(), id: 'r9' },
+          { ...row({ s: 3 }), id: 'r2' },
+        ],
+      },
+      1,
+      ctx,
+      ['r1', 'r2'],
+    );
+    expect(result?.r.map((r) => r.id)).toEqual(['r1']);
+    expect(cleanVerify({}, 1, ctx, ['r1'])).toBeUndefined();
+  });
+
+  it('takes a column map only inside the block it saw', () => {
+    const map = {
+      hr: 1,
+      date: 0,
+      desc: 1,
+      amt: 2,
+      debit: null,
+      credit: null,
+      cur: 3,
+      chg: 9,
+      chgCur: null,
+      chgDate: null,
+      plan: null,
+      dec: ',',
+      df: 'ymd',
+      mc: [{ m: 'שופרסל', cat: 'C1' }, { m: '', cat: null }, 'x'],
+    };
+    expect(cleanMap(map, 5, 4, ctx)).toMatchObject({
+      hr: 1,
+      amt: 2,
+      cur: 3,
+      chg: null,
+      dec: ',',
+      df: 'ymd',
+      mc: [{ m: 'שופרסל', cat: 'c1' }],
+    });
+    expect(cleanMap({ ...map, df: 'mdy', dec: 'x' }, 5, 4, ctx)).toMatchObject({ df: 'mdy', dec: '.' });
+    expect(cleanMap({ ...map, df: 'other' }, 5, 4, ctx)).toMatchObject({ df: 'dmy' });
+    expect(cleanMap({ ...map, hr: 7 }, 5, 4, ctx)).toBeUndefined();
+    expect(cleanMap({ ...map, amt: null }, 5, 4, ctx)).toBeUndefined();
+    expect(cleanMap(null, 5, 4, ctx)).toBeUndefined();
+  });
+});
+
+describe('what the model is given', () => {
+  /** Structured outputs allow at most 16 union-typed fields per request. */
+  function unions(schema: unknown): number {
+    if (Array.isArray(schema)) return schema.reduce((n: number, s) => n + unions(s), 0);
+    if (typeof schema !== 'object' || schema === null) return 0;
+    const own = 'anyOf' in schema || Array.isArray((schema as { type?: unknown }).type) ? 1 : 0;
+    return own + Object.values(schema).reduce((n: number, v) => n + unions(v), 0);
+  }
+  /** And every object must close itself and require every field. */
+  function closed(schema: unknown): boolean {
+    if (Array.isArray(schema)) return schema.every(closed);
+    if (typeof schema !== 'object' || schema === null) return true;
+    const s = schema as {
+      type?: unknown;
+      properties?: Record<string, unknown>;
+      required?: string[];
+      additionalProperties?: unknown;
+    };
+    if (s.type === 'object') {
+      if (s.additionalProperties !== false) return false;
+      if (Object.keys(s.properties ?? {}).some((k) => !(s.required ?? []).includes(k))) return false;
+    }
+    return Object.values(schema).every(closed);
+  }
+
+  it('has answer schemas inside the API’s limits', () => {
+    for (const schema of [extractSchema(ctx), verifySchema(ctx, ['r1']), mapSchema(ctx)]) {
+      expect(unions(schema)).toBeLessThanOrEqual(16);
+      expect(closed(schema)).toBe(true);
+    }
+    // No payment methods: the field can only be null, never an empty enum.
+    const none = extractSchema({ ...ctx, pms: [] }) as {
+      properties: { r: { items: { properties: { pm: unknown } } } };
+    };
+    expect(none.properties.r.items.properties.pm).toEqual({ type: 'null' });
+  });
+
+  it('lists the household compactly, and says what is left to read', () => {
+    expect(contextText(ctx)).toContain('c1 מזון (e)');
+    expect(contextText(ctx)).toContain('p1 Max (credit_card)');
+    expect(contextText({ ...ctx, pms: [] })).toContain('Payment methods:\nnone');
+    const request = parseWireRequest(extract({ continueAfter: 40 }));
+    expect(request?.mode === 'extract' && extractTask(request, 50)).toContain('Skip the first 40 rows');
+    const first = parseWireRequest(extract());
+    expect(first?.mode === 'extract' && extractTask(first, 50)).not.toContain('Skip');
+  });
+
+  it('frames a map and a verify', () => {
+    const map = parseWireRequest({
+      mode: 'map',
+      ctx,
+      rows: [['date', 'amount']],
+      merchants: [],
+      maxTokens: 800,
+    });
+    expect(map?.mode === 'map' && mapTask(map)).toContain('0: "date" | "amount"');
+    expect(map?.mode === 'map' && mapTask(map)).toContain('none');
+    const withMerchants = parseWireRequest({
+      mode: 'map',
+      ctx,
+      rows: [['a']],
+      merchants: ['שופרסל'],
+      maxTokens: 800,
+    });
+    expect(withMerchants?.mode === 'map' && mapTask(withMerchants)).toContain('"שופרסל"');
+    const verify = parseWireRequest({
+      mode: 'verify',
+      ctx,
+      sources: [{ kind: 'text', text: 'x', label: 'x' }],
+      disputes: [
+        { id: 'r1', problem: 'amount not found', candidates: [] },
+        { id: 'r2', problem: 'reads disagree', candidates: [row()] },
+      ],
+      maxTokens: 1000,
+    });
+    const task = verify?.mode === 'verify' ? verifyTask(verify) : '';
+    expect(task).toContain('r1: amount not found');
+    expect(task).toContain('Reads so far');
+  });
+
+  it('sizes the answer to the rows expected', () => {
+    expect(tokensForRows(0)).toBe(400);
+    expect(tokensForRows(10)).toBe(1100);
+    expect(tokensForRows(1000)).toBe(LIMITS.maxTokens);
+  });
+});

@@ -95,7 +95,7 @@ export function normalizeAmountInput(input: string): string {
   // Strip currency symbols, spaces (incl. NBSP/NNBSP) and the bidi control
   // characters that `Intl` injects into he-IL currency output.
   const cleaned = input
-    .replace(/[‎‏؜⁦-⁩]/g, '')
+    .replace(/[\u200E\u200F\u061C\u2066-\u2069]/g, '')
     .replace(/[\s\u00A0\u202F]/g, '')
     .replace(/[^\d.,+-]/g, '');
 

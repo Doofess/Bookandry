@@ -109,7 +109,7 @@ describe('toMinor', () => {
   it('strips currency symbols and the bidi marks Intl injects', () => {
     // he-IL currency output carries RLM marks. A user pasting it back must not
     // produce a parse error or a wrong number.
-    expect(toMinor('‏1,234.56 ₪', 'ILS')).toBe(123456);
+    expect(toMinor('\u200F1,234.56 ₪', 'ILS')).toBe(123456);
     expect(toMinor('$45.00', 'USD')).toBe(4500);
   });
 

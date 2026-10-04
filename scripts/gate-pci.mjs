@@ -20,6 +20,9 @@ const FORBIDDEN =
 const files = await globby([
   'src/**/*.{ts,tsx,json}',
   'e2e/**/*.ts',
+  // What reads documents on the server, and the service worker that receives shared files.
+  'supabase/functions/**/*.ts',
+  'public/*.js',
   '!src/**/*.test.*',
   '!src/test/fixtures/**',
 ]);
