@@ -29,6 +29,23 @@ self.addEventListener('fetch', (event) => {
   ) {
     return;
   }
+  /*
+   * Only a share: the phone's Share menu, never another website.
+   *
+   * Any page can submit a form to this address, and without this check a
+   * stranger's page could plant files in the import sheet - a made-up
+   * "statement" waiting to be read and added. A share from the system comes
+   * from no page at all (Sec-Fetch-Site "none", no referrer); a form posted by
+   * another site says "cross-site", or names that site as its referrer. Those
+   * are turned away, and nothing they sent is kept.
+   */
+  const site = event.request.headers.get('sec-fetch-site');
+  const referrer = event.request.referrer;
+  const foreignReferrer = referrer !== '' && new URL(referrer).origin !== self.location.origin;
+  if ((site !== null && site !== 'none' && site !== 'same-origin') || foreignReferrer) {
+    event.respondWith(Response.redirect(new URL('/', self.location.origin).href, 303));
+    return;
+  }
   event.respondWith(
     (async () => {
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
