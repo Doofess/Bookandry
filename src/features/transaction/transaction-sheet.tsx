@@ -35,7 +35,7 @@ import {
   firstOccurrenceDate,
   partialFirstOf,
   pastPaymentsOf,
-  MAX_INSTALLMENTS,
+  maxPaymentsFor,
   MIN_INSTALLMENTS,
   NOTE_MAX_LENGTH,
   txFormSchema,
@@ -65,6 +65,9 @@ import {
   type EditTargetState,
   type SheetTarget,
 } from './use-transaction-sheet';
+
+/** The built-in category a loan's repayments start in. */
+const LOANS_CATEGORY_ID = 'cat.loans';
 
 /**
  * The interest a given card charges, or '' for no card and no rate.
@@ -330,8 +333,15 @@ function TransactionForm({
    */
   const values = useWatch({ control: form.control, defaultValue: initial }) as TxFormValues;
   const amountMinor = parseAmount(values.amount, values.currency);
-  /** A rule that repeats on its own, whose date is therefore its first payment. */
-  const repeats = values.mode === 'monthly' || values.mode === 'yearly' || values.mode === 'standing_order';
+  /**
+   * A rule that repeats on its own, or a loan, whose date is therefore its
+   * first payment. A purchase in תשלומים keeps "Date": that is the day it was bought.
+   */
+  const repeats =
+    values.mode === 'monthly' ||
+    values.mode === 'yearly' ||
+    values.mode === 'standing_order' ||
+    values.mode === 'loan';
   // Only for a new rule: an edit already shows its past in the feed.
   const past = editing === undefined ? pastPaymentsOf(values, today) : undefined;
   /** The part-month the first payment leaves, whether or not it is being charged. */
@@ -384,6 +394,7 @@ function TransactionForm({
       if (current?.kind === next) return;
       setValue('categoryId', categoriesFor(categories, next)[0]?.id ?? '', { shouldValidate: false });
       // The same name, now as the other kind: "Refund from Amazon" is income.
+      auto.typeChosen(undefined, form.getValues('note'), next);
       auto.nameChanged(form.getValues('note'), next);
     },
     [categories, setValue, form, auto],
@@ -418,7 +429,8 @@ function TransactionForm({
         case 'installments_out_of_range':
           return t('tx.errInstallmentsOutOfRange', {
             min: MIN_INSTALLMENTS,
-            max: MAX_INSTALLMENTS,
+            // 60 on a card, 360 on a loan.
+            max: maxPaymentsFor(form.getValues('mode')),
           });
         case 'rate_out_of_range':
           return t('tx.errRateOutOfRange');
@@ -433,7 +445,7 @@ function TransactionForm({
           return undefined;
       }
     },
-    [t],
+    [t, form],
   );
 
   /**
@@ -892,6 +904,16 @@ function TransactionForm({
             if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
             if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
             if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
+            // A loan's repayments are filed under Loans, unless a category was
+            // picked by hand: the type is a better answer than a guess from
+            // the name, and a worse one than the person's own choice.
+            if (patch.mode !== undefined) {
+              auto.typeChosen(
+                patch.mode === 'loan' ? LOANS_CATEGORY_ID : undefined,
+                form.getValues('note'),
+                values.kind,
+              );
+            }
             if (patch.mode === 'credit') {
               // Entering קרדיט: the card's rate is the answer to a question the
               // user should not have to be asked, so it arrives filled in.

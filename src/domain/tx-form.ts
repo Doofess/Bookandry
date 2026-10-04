@@ -49,6 +49,8 @@ export const NOTE_MAX_LENGTH = 140;
  */
 export const MIN_INSTALLMENTS = 2;
 export const MAX_INSTALLMENTS = 60;
+/** A 30-year mortgage. */
+export const MAX_LOAN_PAYMENTS = 360;
 
 /** The sentinel day that means "the last day of whatever month this is". */
 export const LAST_DAY_OF_MONTH = 31;
@@ -71,14 +73,28 @@ export const LAST_DAY_OF_MONTH = 31;
  * or yearly recurrence - a standing order IS a repeating charge - so the mode
  * carries the user's word for it and `frequency` carries the shape.
  *
+ * A הלוואה is the plans' shape again - N payments on a לוח שפיצר - for money
+ * borrowed rather than spent, and so it asks for the amount borrowed.
+ *
  * INCOME keeps the plain repeat vocabulary: a salary is monthly, and it is not
  * a standing order, which is a thing you set up to pay someone else.
  */
-export type RecurrenceMode = 'one_time' | 'monthly' | 'installments' | 'credit' | 'standing_order' | 'yearly';
+export type RecurrenceMode =
+  'one_time' | 'monthly' | 'installments' | 'credit' | 'loan' | 'standing_order' | 'yearly';
 
-/** Both plans split a purchase the same way; only the interest differs. */
+/** The plans and a loan split an amount the same way; only the interest differs. */
 export function isInstallmentMode(mode: RecurrenceMode): boolean {
-  return mode === 'installments' || mode === 'credit';
+  return mode === 'installments' || mode === 'credit' || mode === 'loan';
+}
+
+/** The modes priced with a rate: a קרדיט plan, and a loan. */
+export function chargesInterest(mode: RecurrenceMode): boolean {
+  return mode === 'credit' || mode === 'loan';
+}
+
+/** How many payments a plan may have: a card's plans stop at 60, a mortgage does not. */
+export function maxPaymentsFor(mode: RecurrenceMode): number {
+  return mode === 'loan' ? MAX_LOAN_PAYMENTS : MAX_INSTALLMENTS;
 }
 
 /** Nothing is preselected: a standing order has to say which it is. */
@@ -105,7 +121,7 @@ export const txFormSchema = z
     date: localDate,
     note: z.string(),
 
-    mode: z.enum(['one_time', 'monthly', 'installments', 'credit', 'standing_order', 'yearly']),
+    mode: z.enum(['one_time', 'monthly', 'installments', 'credit', 'loan', 'standing_order', 'yearly']),
     /** Only read in the monthly, standing-order and instalment modes. */
     dayOfMonth: digits('day_invalid'),
     /** '' means open-ended. */
@@ -179,7 +195,7 @@ export const txFormSchema = z
     // payments are absurd, and absurd is easier to catch here than in the feed
     // six months later.
     if (
-      values.mode === 'credit' &&
+      chargesInterest(values.mode) &&
       values.annualRate !== '' &&
       normalizeAnnualRate(values.annualRate) === undefined
     ) {
@@ -188,7 +204,11 @@ export const txFormSchema = z
 
     if (isInstallmentMode(values.mode)) {
       const count = Number(values.installmentCount);
-      if (!/^\d+$/.test(values.installmentCount) || count < MIN_INSTALLMENTS || count > MAX_INSTALLMENTS) {
+      if (
+        !/^\d+$/.test(values.installmentCount) ||
+        count < MIN_INSTALLMENTS ||
+        count > maxPaymentsFor(values.mode)
+      ) {
         ctx.addIssue({
           code: 'custom',
           path: ['installmentCount'],
@@ -307,6 +327,7 @@ function toRecurrence(
     }
 
     case 'credit':
+    case 'loan':
     case 'installments':
       /*
        * The day comes from the purchase date, and is NOT user-settable here.
@@ -322,10 +343,10 @@ function toRecurrence(
         type: 'monthly',
         dayOfMonth: parseLocalDate(date).day,
         installments: Number(values.installmentCount),
-        plan: values.mode === 'credit' ? 'credit' : 'installments',
+        plan: values.mode,
         // Snapshotted, like an exchange rate: the card's rate can change next
         // year and this plan's payments cannot.
-        ...(values.mode === 'credit' && values.annualRate !== ''
+        ...(chargesInterest(values.mode) && values.annualRate !== ''
           ? { creditAnnualRate: values.annualRate.trim() }
           : {}),
       };
@@ -357,10 +378,12 @@ export function planTotal(values: {
   if (principal === undefined || principal <= 0) return undefined;
 
   const count = Number(values.installmentCount);
-  if (!Number.isInteger(count) || count < MIN_INSTALLMENTS || count > MAX_INSTALLMENTS) return undefined;
+  if (!Number.isInteger(count) || count < MIN_INSTALLMENTS || count > maxPaymentsFor(values.mode)) {
+    return undefined;
+  }
 
-  // תשלומים, or קרדיט at no interest: the payments sum to the purchase.
-  if (values.mode !== 'credit' || values.annualRate === '') return principal;
+  // תשלומים, or קרדיט or a loan at no interest: the payments sum to the amount.
+  if (!chargesInterest(values.mode) || values.annualRate === '') return principal;
 
   const rate = normalizeAnnualRate(values.annualRate);
   if (rate === undefined) return undefined;
@@ -465,7 +488,8 @@ export function firstOccurrenceDate(date: LocalDate, recurrence: Recurrence): Lo
  * says so before saving, so starting a הוראת קבע a year back reads as filling
  * that year in rather than as a mistake.
  *
- * Open-ended rules only: an instalment plan is a purchase with its own count.
+ * A plan or a loan counts too, up to its own number of payments: a mortgage
+ * taken in 2020 has already made its first seventy-odd.
  */
 export function pastPayments(
   date: LocalDate,
@@ -473,14 +497,14 @@ export function pastPayments(
   today: LocalDate,
 ): { readonly count: number; readonly first: LocalDate; readonly last: LocalDate } | undefined {
   if (recurrence.type === 'one_time') return undefined;
-  if (recurrence.type === 'monthly' && recurrence.installments !== undefined) return undefined;
+  const limit = recurrence.type === 'monthly' ? (recurrence.installments ?? Infinity) : Infinity;
   const until = recurrence.endDate !== undefined && recurrence.endDate < today ? recurrence.endDate : today;
 
   let count = 0;
   let first: LocalDate | undefined;
   let last: LocalDate | undefined;
   // Bounded: a rule started in 1900 still stops looking after a century of months.
-  for (let k = 0; k < 1200; k++) {
+  for (let k = 0; k < Math.min(1200, limit); k++) {
     const slot =
       recurrence.type === 'yearly'
         ? yearlySlot(parseLocalDate(date).year + k, recurrence.month, recurrence.day)
@@ -554,14 +578,22 @@ export function partialFirstOf(values: {
 
 /**
  * `pastPayments` for the form as it stands, or undefined while it does not yet
- * describe an open-ended rule: a one-off, a plan, a standing order whose
- * frequency is still unanswered, a date or day still being typed.
+ * describe a repeating rule: a one-off, a standing order whose frequency is
+ * still unanswered, a plan whose count is not a count yet, a date or day still
+ * being typed.
  */
 export function pastPaymentsOf(values: TxFormValues, today: LocalDate): ReturnType<typeof pastPayments> {
   const repeating =
     values.mode === 'monthly' ||
     values.mode === 'yearly' ||
     (values.mode === 'standing_order' && values.frequency !== '');
+  if (isInstallmentMode(values.mode)) {
+    const count = Number(values.installmentCount);
+    if (!isLocalDate(values.date) || !(count >= MIN_INSTALLMENTS && count <= maxPaymentsFor(values.mode))) {
+      return undefined;
+    }
+    return pastPayments(values.date, toRecurrence(values, values.date), today);
+  }
   if (!repeating || !isLocalDate(values.date)) return undefined;
   const day = Number(values.dayOfMonth);
   if (values.mode !== 'yearly' && values.frequency !== 'yearly' && !(day >= 1 && day <= LAST_DAY_OF_MONTH)) {
@@ -627,6 +659,7 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
       };
 
     case 'credit':
+    case 'loan':
     case 'installments':
       return {
         mode,
@@ -640,7 +673,9 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
         // Cleared leaving credit, kept entering it: the sheet fills it from the
         // chosen card, and a rate left behind on a תשלומים plan would be read
         // by nothing and mean nothing.
-        ...(mode === 'credit' ? {} : { annualRate: '' }),
+        // A loan keeps one too: its rate is typed, and switching between the
+        // two priced modes is a reclassification, not a new rate.
+        ...(chargesInterest(mode) ? {} : { annualRate: '' }),
       };
 
     case 'standing_order':

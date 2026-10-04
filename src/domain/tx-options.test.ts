@@ -127,6 +127,10 @@ describe('what each kind of transaction can be paid with', () => {
     expect(methodFits(cheque, 'yearly')).toBe(false);
   });
 
+  it('a loan is paid back any way at all: by the bank, by cheque, in cash, by card', () => {
+    expect(offered('loan')).toEqual(['cash', 'cheque', 'debit', 'visa']);
+  });
+
   it('everything else stays on offer outside a credit plan', () => {
     expect(offered('standing_order')).toEqual(['cash', 'debit', 'visa']);
   });

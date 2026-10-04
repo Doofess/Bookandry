@@ -211,6 +211,23 @@ describe('TransactionRow', () => {
     expect(screen.getByText('Credit 1 of 6')).toBeInTheDocument();
   });
 
+  it('counts a loan out in repayments', () => {
+    const tx = makeTx({
+      id: 't1',
+      date: d('2026-07-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10, installments: 360, plan: 'loan', creditAnnualRate: '5' },
+    });
+    render(
+      <TransactionRow
+        occurrence={occurrence({ transaction: tx })}
+        context={context()}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByText('Loan 3 of 360')).toBeInTheDocument();
+  });
+
   it('calls repeating income monthly or yearly, never a standing order', () => {
     const monthly = makeTx({
       id: 't1',

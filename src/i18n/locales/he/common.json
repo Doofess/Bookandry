@@ -152,6 +152,7 @@
     "restore": "שחזור",
     "typeStandingOrder": "הוראת קבע",
     "typeInstallment": "תשלום {{index}} מתוך {{count}}",
+    "typeLoan": "הלוואה {{index}} מתוך {{count}}",
     "typeCredit": "קרדיט {{index}} מתוך {{count}}",
     "typeMonthly": "חודשי",
     "typeYearly": "שנתי"
@@ -165,6 +166,7 @@
     "expenseBody": "ממה מורכב {{month}}.",
     "empty": "אין הוצאות צפויות החודש.",
     "groupRecurring": "כל חודש",
+    "groupLoans": "הלוואות",
     "groupInstallments": "תשלומים",
     "groupYearly": "פעם בשנה",
     "groupOneTime": "חד-פעמי"
@@ -218,6 +220,10 @@
     "typeRegular": "עסקה רגילה",
     "typeInstallments": "עסקת תשלומים",
     "typeCredit": "עסקת קרדיט",
+    "typeLoan": "הלוואה",
+    "loanCount": "מספר החזרים חודשיים",
+    "loanTotalHint": "הזינו את סכום ההלוואה. Bookandry יחשב את ההחזר החודשי.",
+    "loanRateHint": "מהסכם ההלוואה. השאירו ריק להלוואה ללא ריבית.",
     "typeStandingOrder": "הוראת קבע",
     "frequency": "כל כמה זמן",
     "frequencyMonthly": "חודשי",

@@ -80,6 +80,7 @@ describe('recurrenceModeOf', () => {
     [{ type: 'yearly', month: 3, day: 1 } as const, 'income', 'yearly'],
     [{ type: 'monthly', dayOfMonth: 10, installments: 3 } as const, 'expense', 'installments'],
     [{ type: 'monthly', dayOfMonth: 10, installments: 3, plan: 'credit' } as const, 'expense', 'credit'],
+    [{ type: 'monthly', dayOfMonth: 10, installments: 120, plan: 'loan' } as const, 'expense', 'loan'],
   ])('reads %o on %s as %s', (recurrence, kind, expected) => {
     expect(recurrenceModeOf(recurrence, kind as 'expense' | 'income')).toBe(expected);
   });

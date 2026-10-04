@@ -4,15 +4,19 @@ import { splitInstallments } from './calculators';
 import { expandOccurrences } from './occurrences';
 import { d, makeTx } from './test-factories';
 import {
+  chargesInterest,
   defaultFormValues,
   defaultRecurringDay,
   firstOccurrenceDate,
   firstPartialPeriod,
   partialFirstOf,
   pastPayments,
+  pastPaymentsOf,
   isLastDayChoice,
   lastInstallmentDate,
   MAX_INSTALLMENTS,
+  MAX_LOAN_PAYMENTS,
+  maxPaymentsFor,
   NOTE_MAX_LENGTH,
   planTotal,
   recurrenceDefaults,
@@ -562,6 +566,62 @@ describe('עסקת קרדיט interest', () => {
   });
 });
 
+describe('a loan', () => {
+  /*
+   * Money borrowed and paid back on a לוח שפיצר. ₪500,000 over 30 years at
+   * 5% is ₪2,684.11 a month - the number the bank debits, so the number stored.
+   */
+  const loan = (over: Partial<TxFormValues> = {}) =>
+    values({ mode: 'loan', amount: '500000', installmentCount: '360', annualRate: '5', ...over });
+
+  it('stores the repayments, a plan that says it is a loan, and its rate', () => {
+    const parsed = parse(loan());
+    expect(parsed.installmentTotalMinor).toBe(268_411 * 360);
+    expect(parsed.recurrence).toMatchObject({
+      type: 'monthly',
+      installments: 360,
+      plan: 'loan',
+      creditAnnualRate: '5',
+    });
+  });
+
+  it('runs as long as a mortgage, and no longer', () => {
+    expect(issuesFor(loan({ installmentCount: String(MAX_LOAN_PAYMENTS) }), 'installmentCount')).toEqual([]);
+    expect(issuesFor(loan({ installmentCount: String(MAX_LOAN_PAYMENTS + 1) }), 'installmentCount')).toEqual([
+      'installments_out_of_range',
+    ]);
+    // A card's plan keeps its own limit.
+    expect(issuesFor(loan({ mode: 'credit', installmentCount: '61' }), 'installmentCount')).toEqual([
+      'installments_out_of_range',
+    ]);
+    expect(planTotal(loan({ installmentCount: String(MAX_LOAN_PAYMENTS + 1) }))).toBeUndefined();
+  });
+
+  it('is the amount borrowed, split evenly, without interest', () => {
+    // A loan from family: no rate, and the payments sum to what was borrowed.
+    const parsed = parse(loan({ amount: '12000', installmentCount: '24', annualRate: '' }));
+    expect(parsed.installmentTotalMinor).toBe(1_200_000);
+    expect(parsed.recurrence).not.toHaveProperty('creditAnnualRate');
+  });
+
+  it('checks its rate', () => {
+    expect(issuesFor(loan({ annualRate: '1.2.3' }), 'annualRate')).toEqual(['rate_out_of_range']);
+  });
+
+  it('keeps a rate across a switch from קרדיט, and lets it go leaving', () => {
+    expect(recurrenceDefaults('loan', loan({ mode: 'credit' }))).not.toHaveProperty('annualRate');
+    expect(recurrenceDefaults('installments', loan()).annualRate).toBe('');
+  });
+
+  it('is told apart by what can charge interest and how long it may run', () => {
+    expect(chargesInterest('loan')).toBe(true);
+    expect(chargesInterest('credit')).toBe(true);
+    expect(chargesInterest('installments')).toBe(false);
+    expect(maxPaymentsFor('loan')).toBe(MAX_LOAN_PAYMENTS);
+    expect(maxPaymentsFor('installments')).toBe(MAX_INSTALLMENTS);
+  });
+});
+
 describe('pastPayments', () => {
   const today = d('2026-10-04');
 
@@ -587,12 +647,35 @@ describe('pastPayments', () => {
     });
   });
 
-  it('has nothing to say about the future, a one-off or an instalment plan', () => {
+  it('has nothing to say about the future or a one-off', () => {
     expect(pastPayments(d('2026-11-01'), { type: 'monthly', dayOfMonth: 1 }, today)).toBeUndefined();
     expect(pastPayments(d('2025-11-01'), { type: 'one_time' }, today)).toBeUndefined();
+  });
+
+  it('counts a plan or a loan only as far as its own number of payments', () => {
+    // A loan from November 2025: twelve repayments made of 360.
     expect(
-      pastPayments(d('2025-11-01'), { type: 'monthly', dayOfMonth: 1, installments: 12 }, today),
-    ).toBeUndefined();
+      pastPayments(
+        d('2025-11-01'),
+        { type: 'monthly', dayOfMonth: 1, installments: 360, plan: 'loan' },
+        today,
+      ),
+    ).toEqual({ count: 12, first: '2025-11-01', last: '2026-10-01' });
+    // Six תשלומים from 2025, all of them behind it.
+    expect(
+      pastPayments(d('2025-01-10'), { type: 'monthly', dayOfMonth: 10, installments: 6 }, today),
+    ).toEqual({ count: 6, first: '2025-01-10', last: '2025-06-10' });
+  });
+
+  it('says it for a loan on the form only once the count is a count', () => {
+    const form = (installmentCount: string) =>
+      pastPaymentsOf(
+        values({ mode: 'loan', date: d('2025-11-01'), amount: '1000', installmentCount, annualRate: '' }),
+        today,
+      );
+    expect(form('360')).toMatchObject({ count: 12 });
+    expect(form('')).toBeUndefined();
+    expect(form('361')).toBeUndefined();
   });
 });
 

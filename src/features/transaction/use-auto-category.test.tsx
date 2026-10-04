@@ -38,6 +38,7 @@ const category = (id: string, kind: 'income' | 'expense' = 'expense', sortOrder 
 const CATEGORIES = [
   category('cat.subscriptions', 'expense', 1),
   category('cat.aiSoftware', 'expense', 2),
+  category('cat.loans', 'expense', 3),
   category('cat.salary', 'income'),
 ];
 
@@ -77,6 +78,7 @@ describe('choosing the category from the name', () => {
     expect(claude.suggestCategory).toHaveBeenCalledWith('Claude Max Plan', 'expense', [
       { id: 'cat.subscriptions', name: 'cat.subscriptions' },
       { id: 'cat.aiSoftware', name: 'cat.aiSoftware' },
+      { id: 'cat.loans', name: 'cat.loans' },
     ]);
     expect(choose).toHaveBeenCalledWith('cat.aiSoftware');
     expect(hook.result.current.status).toBe('chosen');
@@ -116,6 +118,47 @@ describe('choosing the category from the name', () => {
     });
     await settle();
     expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('files a loan under Loans, and holds it there while it stays a loan', async () => {
+    claude.suggestCategory.mockResolvedValue('cat.subscriptions');
+    const { choose, hook } = setup();
+    act(() => {
+      hook.result.current.typeChosen('cat.loans', 'Car loan', 'expense');
+    });
+    expect(choose).toHaveBeenLastCalledWith('cat.loans');
+    expect(hook.result.current.status).toBe('chosen');
+
+    // "Car loan" is still a loan: the name does not get a say.
+    act(() => {
+      hook.result.current.nameChanged('Car loan from the bank', 'expense');
+    });
+    await settle();
+    expect(claude.suggestCategory).not.toHaveBeenCalled();
+
+    // No longer a loan: the name is looked at again.
+    act(() => {
+      hook.result.current.typeChosen(undefined, 'Car loan from the bank', 'expense');
+    });
+    await settle();
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(choose).toHaveBeenLastCalledWith('cat.subscriptions');
+  });
+
+  it('never moves a category the person picked, for the type either', () => {
+    const { choose, hook } = setup();
+    act(() => {
+      hook.result.current.choseManually();
+      hook.result.current.typeChosen('cat.loans', '', 'expense');
+    });
+    expect(choose).not.toHaveBeenCalled();
+
+    // Nor to a category that is not there to choose.
+    const fresh = setup();
+    act(() => {
+      fresh.hook.result.current.typeChosen('cat.gone', '', 'expense');
+    });
+    expect(fresh.choose).not.toHaveBeenCalled();
   });
 
   it('leaves a saved row alone, and takes nothing it was not offered', async () => {

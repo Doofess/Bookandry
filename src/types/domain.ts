@@ -125,14 +125,19 @@ export type PaymentMethod = {
 };
 
 /**
- * תשלומים versus קרדיט.
+ * תשלומים versus קרדיט versus הלוואה.
  *
- * Both are a purchase split over N monthly payments on a card. תשלומים is
- * interest-free and is what "3 תשלומים" on a shop sign means; קרדיט is the
- * same arrangement with interest, which the issuer adds and this app does not
- * model.
+ * The first two are a purchase split over N monthly payments on a card.
+ * תשלומים is interest-free and is what "3 תשלומים" on a shop sign means;
+ * קרדיט is the same arrangement with interest, which the issuer adds and this
+ * app does not model.
+ *
+ * A הלוואה is money borrowed and paid back the same way - N equal monthly
+ * payments on a לוח שפיצר - from whatever pays it: a bank debit, post-dated
+ * cheques to a relative, a card's own loan. Same shape, its own word, and
+ * longer: a mortgage is 360 payments.
  */
-export type InstallmentPlan = 'installments' | 'credit';
+export type InstallmentPlan = 'installments' | 'credit' | 'loan';
 
 export type Recurrence =
   | { readonly type: 'one_time' }
@@ -168,7 +173,8 @@ export type Recurrence =
        * A SNAPSHOT, exactly like a transaction's exchange rate: the card's rate
        * can change next year, and a plan that silently re-priced itself would
        * make the feed disagree with the statement the user is holding. Only
-       * meaningful alongside `plan: 'credit'`; absent means interest-free.
+       * meaningful alongside `plan: 'credit'` or `'loan'`; absent means
+       * interest-free.
        */
       readonly creditAnnualRate?: string;
     }

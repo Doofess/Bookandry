@@ -151,6 +151,7 @@
     "restore": "Restore",
     "typeStandingOrder": "Standing order",
     "typeInstallment": "Payment {{index}} of {{count}}",
+    "typeLoan": "Loan {{index}} of {{count}}",
     "typeCredit": "Credit {{index}} of {{count}}",
     "typeMonthly": "Monthly",
     "typeYearly": "Yearly"
@@ -164,6 +165,7 @@
     "expenseBody": "What makes up {{month}}.",
     "empty": "Nothing expected this month.",
     "groupRecurring": "Every month",
+    "groupLoans": "Loans",
     "groupInstallments": "Instalments",
     "groupYearly": "Once a year",
     "groupOneTime": "One-off"
@@ -215,6 +217,10 @@
     "typeRegular": "Regular transaction",
     "typeInstallments": "Installment transaction",
     "typeCredit": "Credit installment",
+    "typeLoan": "Loan",
+    "loanCount": "Number of monthly payments",
+    "loanTotalHint": "Enter the amount you borrowed. Bookandry works out the monthly repayment.",
+    "loanRateHint": "From the loan agreement. Leave empty for a loan without interest.",
     "typeStandingOrder": "Standing order",
     "frequency": "How often",
     "frequencyMonthly": "Monthly",

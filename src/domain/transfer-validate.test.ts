@@ -216,6 +216,16 @@ describe('referential integrity', () => {
     }
   });
 
+  it('accepts a loan as long as a mortgage', () => {
+    const loan = (installments: number, seriesEnd: string) =>
+      withTx({
+        recurrence: { type: 'monthly', dayOfMonth: 12, installments, plan: 'loan', creditAnnualRate: '5' },
+        seriesEnd,
+      });
+    expect(validateEnvelope(loan(360, '2056-02-12')).ok).toBe(true);
+    expect(validateEnvelope(loan(361, '2056-03-12')).ok).toBe(false);
+  });
+
   it('rejects an impossible calendar date', () => {
     // A regex alone would wave 2026-02-30 through, and it would only surface
     // much later inside occurrence expansion.

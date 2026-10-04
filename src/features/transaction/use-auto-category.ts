@@ -38,6 +38,8 @@ export function useAutoCategory({
 }) {
   const [status, setStatus] = useState<AutoCategoryStatus>('idle');
   const manual = useRef(chosenByPerson);
+  /** Held by the transaction's type (`typeChosen`) rather than guessed from the name. */
+  const byType = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** Each look-up's number: only the latest one may set the field. */
   const latest = useRef(0);
@@ -80,7 +82,7 @@ export function useAutoCategory({
   const nameChanged = useCallback(
     (name: string, kind: Kind): void => {
       clearTimeout(timer.current);
-      if (manual.current) return;
+      if (manual.current || byType.current) return;
       latest.current++;
       if (name.trim().length < 2) {
         setStatus('idle');
@@ -101,7 +103,32 @@ export function useAutoCategory({
     setStatus('idle');
   }, []);
 
-  return { status, nameChanged, choseManually };
+  /**
+   * The type says what it is (a loan is Loans): taken over any guess from the
+   * name, and held while that type stays chosen - "Car loan" is still a loan -
+   * but never over the person's own pick, and only if they still have it.
+   * Undefined lets go, and the name is looked at again.
+   */
+  const typeChosen = useCallback(
+    (categoryId: string | undefined, name: string, kind: Kind): void => {
+      if (manual.current) return;
+      if (categoryId === undefined) {
+        if (!byType.current) return;
+        byType.current = false;
+        nameChanged(name, kind);
+        return;
+      }
+      if (!categories.some((category) => category.id === categoryId && category.isArchived === 0)) return;
+      byType.current = true;
+      clearTimeout(timer.current);
+      latest.current++;
+      choose(categoryId);
+      setStatus('chosen');
+    },
+    [categories, choose, nameChanged],
+  );
+
+  return { status, nameChanged, choseManually, typeChosen };
 }
 
 /** Claude's answer through the account, or none: offline, signed out, a build without accounts. */

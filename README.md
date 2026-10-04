@@ -205,8 +205,8 @@ above it.
 `01-31, 02-28, 03-31, 04-30` and **returns to the 31st** after February.
 Iterative `addMonths` gives `Jan31 → Feb28 → Mar28` and loses the 31st forever.
 
-**An expense has a TYPE, not a repeat frequency.** The four are the ones an
-Israeli already uses: עסקה רגילה, עסקת תשלומים, עסקת קרדיט, הוראת קבע. Three of
+**An expense has a TYPE, not a repeat frequency.** The five are the ones an
+Israeli already uses: עסקה רגילה, עסקת תשלומים, עסקת קרדיט, הוראת קבע, הלוואה. Four of
 them collapse onto recurrence the data model already had — a הוראת קבע _is_
 monthly or yearly recurrence — so the mode carries the user's word for the thing
 and the storage stays one shape. Income keeps the plain repeat vocabulary: a
@@ -224,6 +224,15 @@ is six payments of ₪207.06, and the form shows the total and the interest in
 shekels before saving. The rate is **snapshotted** onto the plan, like an
 exchange rate, so changing the card's rate next year never re-prices a plan
 already running. An empty rate, or zero, makes a קרדיט plan exactly תשלומים.
+
+**A הלוואה is the same לוח שפיצר for money borrowed.** Stored as a plan
+(`plan: 'loan'`) with its own rate, typed from the loan agreement rather than
+taken from a card, up to 360 payments so a mortgage fits, and paid with any
+method — the bank's debit, cheques, cash. Its repayments are filed under the
+built-in Loans category unless one is picked by hand, and have their own group
+in the month's breakdown. The money received is not recorded: the feed tracks
+what leaves the account. Variable-rate (prime-linked) and CPI-linked loans are
+not modelled; the rate is fixed at what was entered.
 
 What is not modelled: issuer fees, and rates that differ from the nominal
 annual rate divided by twelve. The payment shown is the textbook one; a

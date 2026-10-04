@@ -156,7 +156,14 @@ describe('deleteCategory', () => {
 describe('the built-in categories on an older install', () => {
   it('adds the ones it lacks in their places, and moves an untouched "Other" back to last', async () => {
     // As a device from before AI & software and the rest: Other was 13th of 14.
-    for (const id of ['cat.aiSoftware', 'cat.phoneInternet', 'cat.travel', 'cat.kids', 'cat.pets']) {
+    for (const id of [
+      'cat.aiSoftware',
+      'cat.phoneInternet',
+      'cat.travel',
+      'cat.kids',
+      'cat.pets',
+      'cat.loans',
+    ]) {
       await handle.db.categories.delete(id);
     }
     await handle.db.categories.update('cat.otherExpense', { sortOrder: 13 });
@@ -165,12 +172,13 @@ describe('the built-in categories on an older install', () => {
     await ensureBuiltinCategories(handle.db, NOW);
 
     const names = (await listCategories(handle.db, { kind: 'expense' })).map((c) => c.id);
-    expect(names.slice(-6)).toEqual([
+    expect(names.slice(-7)).toEqual([
       'cat.aiSoftware',
       'cat.phoneInternet',
       'cat.travel',
       'cat.kids',
       'cat.pets',
+      'cat.loans',
       'cat.otherExpense',
     ]);
     expect(await handle.db.outbox.toArray()).toEqual([]);

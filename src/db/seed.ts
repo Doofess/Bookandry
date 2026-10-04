@@ -52,6 +52,8 @@ export const BUILTIN_EXPENSE: readonly BuiltinSeed[] = [
   { id: 'cat.travel', nameKey: 'categories:builtin.travel', icon: 'Plane' },
   { id: 'cat.kids', nameKey: 'categories:builtin.kids', icon: 'Baby' },
   { id: 'cat.pets', nameKey: 'categories:builtin.pets', icon: 'PawPrint' },
+  // Where a loan's repayments go by default (the form's Loan type picks it).
+  { id: 'cat.loans', nameKey: 'categories:builtin.loans', icon: 'HandCoins' },
   { id: 'cat.otherExpense', nameKey: 'categories:builtin.otherExpense', icon: 'CircleMinus' },
 ];
 

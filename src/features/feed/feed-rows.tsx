@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import type { TFunction } from 'i18next';
-import { Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
+import { HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -70,7 +70,7 @@ export function DayHeader({
 
 /**
  * What kind of transaction a row belongs to, in the words the form used to make
- * it: "Standing order", "Payment 3 of 12", "Credit 3 of 12".
+ * it: "Standing order", "Payment 3 of 12", "Credit 3 of 12", "Loan 3 of 120".
  *
  * Nothing for a regular one-off - it is most of the feed, and a chip on every
  * row would drown the few that say something. The payment number is counted
@@ -84,11 +84,12 @@ function rowType(
   const { recurrence, kind, date } = occurrence.transaction;
   const mode = recurrenceModeOf(recurrence, kind);
   if (mode === 'one_time' || recurrence.type === 'one_time') return undefined;
-  if (mode === 'installments' || mode === 'credit') {
+  if (mode === 'installments' || mode === 'credit' || mode === 'loan') {
     const values = {
       index: monthsBetween(date, occurrence.originalDate) + 1,
       count: recurrence.type === 'monthly' ? (recurrence.installments ?? 0) : 0,
     };
+    if (mode === 'loan') return { label: t('feed.typeLoan', values), icon: HandCoins };
     return mode === 'credit'
       ? { label: t('feed.typeCredit', values), icon: Percent }
       : { label: t('feed.typeInstallment', values), icon: Layers };

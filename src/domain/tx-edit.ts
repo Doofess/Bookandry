@@ -66,7 +66,7 @@ export function recurrenceModeOf(recurrence: Recurrence, kind: Kind = 'expense')
   if (recurrence.type === 'one_time') return 'one_time';
   if (recurrence.type === 'yearly') return kind === 'expense' ? 'standing_order' : 'yearly';
   if (recurrence.installments !== undefined) {
-    return recurrence.plan === 'credit' ? 'credit' : 'installments';
+    return recurrence.plan === 'credit' || recurrence.plan === 'loan' ? recurrence.plan : 'installments';
   }
   return kind === 'expense' ? 'standing_order' : 'monthly';
 }

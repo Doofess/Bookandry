@@ -32,12 +32,13 @@ export function categoriesFor(categories: readonly Category[], kind: Kind, keepI
  *
  * עסקת קרדיט is a credit card's own arrangement - the interest is the card's -
  * so it takes nothing else. A cheque is written once, or as a set of
- * post-dated cheques for a plan in תשלומים; a standing order is the bank
- * paying by itself, which is precisely what a cheque is not.
+ * post-dated cheques for a plan in תשלומים or a loan from family; a standing
+ * order is the bank paying by itself, which is precisely what a cheque is not.
+ * A loan takes anything: the bank's own debit, cheques, cash, a card's loan.
  */
 export function methodFits(method: Pick<PaymentMethod, 'type'>, mode: RecurrenceMode): boolean {
   if (mode === 'credit') return method.type === 'credit_card';
-  if (method.type === 'cheque') return mode === 'one_time' || mode === 'installments';
+  if (method.type === 'cheque') return mode === 'one_time' || mode === 'installments' || mode === 'loan';
   return true;
 }
 

@@ -161,7 +161,7 @@ export function splitInstallments(totalMinor: Minor, count: number): Minor[] {
   return Array.from({ length: count }, (_, i) => sign * (base + (i === 0 ? remainder : 0)));
 }
 
-export type ExpenseGroupKind = 'recurring' | 'yearly' | 'installments' | 'one_time';
+export type ExpenseGroupKind = 'recurring' | 'yearly' | 'installments' | 'loans' | 'one_time';
 
 export type ExpenseGroup = {
   readonly kind: ExpenseGroupKind;
@@ -198,14 +198,18 @@ export function groupMonthlyExpenses(occurrences: readonly Occurrence[]): Expens
             // which is when they stop.
             recurrence.installments === undefined
             ? 'recurring'
-            : 'installments';
+            : // A loan ends too, but it is a debt being paid off, not a
+              // purchase being paid for: the two answer different questions.
+              recurrence.plan === 'loan'
+              ? 'loans'
+              : 'installments';
 
     const bucket = buckets.get(kind);
     if (bucket === undefined) buckets.set(kind, [occurrence]);
     else bucket.push(occurrence);
   }
 
-  const order: readonly ExpenseGroupKind[] = ['recurring', 'installments', 'yearly', 'one_time'];
+  const order: readonly ExpenseGroupKind[] = ['recurring', 'loans', 'installments', 'yearly', 'one_time'];
   return order
     .filter((kind) => buckets.has(kind))
     .map((kind) => {

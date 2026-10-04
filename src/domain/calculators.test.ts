@@ -309,6 +309,15 @@ describe('groupMonthlyExpenses', () => {
     expect(groups.map((g) => g.kind)).toEqual(['recurring', 'installments']);
   });
 
+  it('keeps a loan apart from instalments: a debt, not a purchase', () => {
+    const groups = groupMonthlyExpenses([
+      expense('fridge', 29_916, { type: 'monthly', dayOfMonth: 8, installments: 12 }),
+      expense('mortgage', 268_411, { type: 'monthly', dayOfMonth: 10, installments: 360, plan: 'loan' }),
+      expense('rent', 720_000, { type: 'monthly', dayOfMonth: 1 }),
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(['recurring', 'loans', 'installments']);
+  });
+
   it('puts a yearly bill in its own group', () => {
     const groups = groupMonthlyExpenses([
       expense('test', 145_000, { type: 'yearly', month: 9, day: 15 }),

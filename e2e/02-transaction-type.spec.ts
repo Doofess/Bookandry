@@ -27,6 +27,10 @@ const COPY = {
     installments: 'Installment transaction',
     credit: 'Credit installment',
     standing: 'Standing order',
+    loan: 'Loan',
+    loanCount: 'Number of monthly payments',
+    loansCategory: 'Loans',
+    loanRow: 'Loan 1 of 360',
     count: 'Number of payments',
     frequency: 'How often',
     monthly: 'Monthly',
@@ -54,6 +58,10 @@ const COPY = {
     installments: 'עסקת תשלומים',
     credit: 'עסקת קרדיט',
     standing: 'הוראת קבע',
+    loan: 'הלוואה',
+    loanCount: 'מספר החזרים חודשיים',
+    loansCategory: 'הלוואות',
+    loanRow: 'הלוואה 1 מתוך 360',
     count: 'מספר תשלומים',
     frequency: 'כל כמה זמן',
     monthly: 'חודשי',
@@ -95,10 +103,10 @@ for (const lang of ['en', 'he'] as const) {
 
     const copy = COPY[lang];
 
-    test('offers the four types an Israeli actually uses', async ({ page }) => {
+    test('offers the five types an Israeli actually uses', async ({ page }) => {
       await openAddSheet(page, lang);
 
-      for (const name of [copy.regular, copy.installments, copy.credit, copy.standing]) {
+      for (const name of [copy.regular, copy.installments, copy.credit, copy.standing, copy.loan]) {
         await expect(page.getByRole('radio', { name, exact: true })).toBeVisible();
       }
 
@@ -210,6 +218,34 @@ for (const lang of ['en', 'he'] as const) {
 
       // What the feed shows is what the card will charge, not the price typed.
       await expect(page.getByText(/207\.06/).first()).toBeVisible();
+    });
+
+    test('pays back a loan, priced on a לוח שפיצר, filed under Loans', async ({ page }) => {
+      /*
+       * ₪500,000 over 30 years at 5%: ₪2,684.11 a month, ₪966,279.60 in all,
+       * ₪466,279.60 of it interest - said before saving, in money.
+       */
+      await completeFirstRun(page, lang, { demo: false });
+      await page.getByTestId('fab').click();
+      await page.getByLabel(copy.amount, { exact: true }).fill('500000');
+      await page.getByRole('radio', { name: copy.loan, exact: true }).click();
+      await page.getByLabel(copy.loanCount, { exact: true }).fill('360');
+      await page.getByLabel(copy.rate, { exact: true }).fill('5');
+
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(sheet).toContainText('2,684.11');
+      await expect(sheet).toContainText('966,279.60');
+      await expect(sheet).toContainText('466,279.60');
+      // The type chose the category.
+      await expect(sheet).toContainText(copy.loansCategory);
+
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(sheet).toHaveCount(0);
+
+      // The feed says which repayment it is.
+      const row = page.getByRole('listitem').filter({ hasText: copy.loanRow });
+      await expect(row).toBeVisible();
+      await expect(row).toContainText('2,684.11');
     });
 
     test('pays by cheque once or in instalments, and a קרדיט only by credit card', async ({ page }) => {

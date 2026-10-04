@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { splitInstallments } from '@/domain/calculators';
 import {
+  chargesInterest,
   firstOccurrenceDate,
   isInstallmentMode,
   isLastDayChoice,
   lastInstallmentDate,
-  MAX_INSTALLMENTS,
+  maxPaymentsFor,
   MIN_INSTALLMENTS,
   planTotal,
   recurrenceDefaults,
@@ -33,7 +34,7 @@ import { DateField } from './date-field';
  *
  * An expense is not described by how often it repeats; it is described by what
  * it IS, and in Israel that is a short list everybody already knows: a regular
- * purchase, a תשלומים plan, a קרדיט plan, or a הוראת קבע. "Repeats: monthly"
+ * purchase, a תשלומים plan, a קרדיט plan, a הוראת קבע, or a הלוואה. "Repeats: monthly"
  * asks the user to translate their own word for the thing into the app's, and
  * the two plans - which repeat monthly - are not repeats in any sense they
  * would recognise.
@@ -123,6 +124,7 @@ export function RecurrenceFields({
                 { value: 'installments', label: t('tx.typeInstallments') },
                 { value: 'credit', label: t('tx.typeCredit') },
                 { value: 'standing_order', label: t('tx.typeStandingOrder') },
+                { value: 'loan', label: t('tx.typeLoan') },
               ]
             : [
                 { value: 'one_time', label: t('tx.repeatOnce') },
@@ -219,7 +221,7 @@ export function RecurrenceFields({
 
       {isInstallmentMode(mode) && date !== undefined ? (
         <div className="space-y-1.5">
-          <Label htmlFor={countId}>{t('tx.installmentCount')}</Label>
+          <Label htmlFor={countId}>{mode === 'loan' ? t('tx.loanCount') : t('tx.installmentCount')}</Label>
           <Input
             id={countId}
             type="text"
@@ -233,9 +235,9 @@ export function RecurrenceFields({
             className="h-11 w-24"
           />
           <p id={`${countId}-hint`} className="text-xs text-muted-foreground">
-            {t('tx.installmentsTotalHint')}
+            {mode === 'loan' ? t('tx.loanTotalHint') : t('tx.installmentsTotalHint')}
           </p>
-          {mode === 'credit' ? (
+          {chargesInterest(mode) ? (
             <div className="space-y-1.5 pt-2">
               <Label htmlFor={rateId}>{t('tx.annualRate')}</Label>
               <div className="flex items-center gap-2">
@@ -257,7 +259,12 @@ export function RecurrenceFields({
                 <span className="text-sm text-muted-foreground">{t('tx.annualRateUnit')}</span>
               </div>
               <p id={`${rateId}-hint`} className="text-xs text-muted-foreground">
-                {errors.annualRate === undefined ? t('tx.annualRateHint') : ''}
+                {/* A card's rate is filled in from the card; a loan's is the agreement's. */}
+                {errors.annualRate === undefined
+                  ? mode === 'loan'
+                    ? t('tx.loanRateHint')
+                    : t('tx.annualRateHint')
+                  : ''}
               </p>
               {errors.annualRate === undefined ? null : (
                 <p className="text-xs text-destructive">{errors.annualRate}</p>
@@ -271,7 +278,8 @@ export function RecurrenceFields({
               count={Number(values.installmentCount)}
               principalMinor={amountMinor}
               totalMinor={planTotal(values)}
-              annualRate={mode === 'credit' ? values.annualRate : ''}
+              annualRate={chargesInterest(mode) ? values.annualRate : ''}
+              maxCount={maxPaymentsFor(mode)}
               currency={currency}
             />
           ) : (
@@ -317,6 +325,7 @@ function InstallmentPreview({
   principalMinor,
   totalMinor,
   annualRate,
+  maxCount,
   currency,
 }: {
   readonly date: LocalDate;
@@ -327,6 +336,8 @@ function InstallmentPreview({
   readonly totalMinor: Minor | undefined;
   /** '' for an interest-free plan, which is every תשלומים. */
   readonly annualRate: string;
+  /** 60 for a card's plan, 360 for a loan. */
+  readonly maxCount: number;
   readonly currency: Currency;
 }) {
   const { t, i18n } = useTranslation();
@@ -334,7 +345,7 @@ function InstallmentPreview({
   if (totalMinor === undefined || totalMinor <= 0 || !Number.isInteger(count) || count < MIN_INSTALLMENTS) {
     return null;
   }
-  if (count > MAX_INSTALLMENTS) return null;
+  if (count > maxCount) return null;
 
   /*
    * Priced from the PRINCIPAL, not from the total.
