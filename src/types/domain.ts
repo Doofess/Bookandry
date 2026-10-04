@@ -94,6 +94,8 @@ export type PaymentMethodType =
    *  Israelis treat it as categorically different from a transfer they made. */
   | 'standing_order'
   | 'digital_wallet'
+  /** חשבון בנק: where salaries arrive and cards, standing orders and loans are paid from. */
+  | 'bank_account'
   | 'other';
 
 /** An interest rate as a card company quotes it: prime plus a margin, or fixed. */
@@ -171,12 +173,54 @@ export type CardDetails = {
    */
   readonly fxFeeRate?: string;
   /**
+   * The household's bank account the bill is debited from: a `bank_account`
+   * payment method's id. `bank` keeps that bank's name, so the card still
+   * reads right if the account is deleted.
+   */
+  readonly accountId?: string;
+  /**
    * The card's קרדיט interest as prime plus this margin. When set, it is the
    * card's credit rate and `PaymentMethod.creditAnnualRate` is not read.
    */
   readonly creditPrimeMargin?: string;
   /** ריבית פיגורים: charged on a bill not paid in time. */
   readonly lateRate?: RateTerm;
+};
+
+/**
+ * Whose an account is: one person's, a joint account (a couple's, a family's),
+ * or a business account held with partners.
+ */
+export type AccountHolding = 'personal' | 'joint' | 'business';
+
+/**
+ * A bank account as the bank writes it: bank, branch and account number
+ * (12-689-123456), whose it is, and its overdraft limit.
+ *
+ * The account number is kept because it is how an account is told apart and
+ * recognised on a statement - it is printed on every cheque and given to
+ * anyone who sends money to it. It authorises nothing: no password, no code,
+ * nothing that moves money is ever kept (§12).
+ */
+export type BankAccountDetails = {
+  /** Masav bank code, digits: "12". */
+  readonly bank: string;
+  /** Branch number, digits: "689". */
+  readonly branch?: string;
+  /** Account number, digits only. */
+  readonly number?: string;
+  readonly holding: AccountHolding;
+  /**
+   * The household's people on a joint or business account: the method's
+   * `profileId` is the one of them, or SHARED_OWNER when there are several -
+   * and then it is offered to them and no one else. A personal account's
+   * holder is its `profileId`, and this is absent.
+   */
+  readonly holders?: readonly string[];
+  /** Holders outside the household, as typed: a business partner, a parent. */
+  readonly otherHolders?: string;
+  /** מסגרת עו״ש: how far below zero the bank lets it go, in ILS minor units. */
+  readonly overdraftLimitMinor?: number;
 };
 
 export type PaymentMethod = {
@@ -202,6 +246,8 @@ export type PaymentMethod = {
   readonly creditAnnualRate?: string;
   /** Credit cards only: billing day, issuer, fees and the rest. */
   readonly card?: CardDetails;
+  /** Bank accounts only. */
+  readonly account?: BankAccountDetails;
   readonly color?: string;
   readonly isArchived: 0 | 1;
   readonly archivedAt?: IsoInstant;

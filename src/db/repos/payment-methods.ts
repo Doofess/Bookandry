@@ -1,12 +1,13 @@
 import { withoutTracking, type BookandryDB } from '@/db/db';
 import { buildSeedPaymentMethods } from '@/db/seed';
-import { cardSchema } from '@/domain/transfer-schema';
+import { accountSchema, cardSchema } from '@/domain/transfer-schema';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
 import {
   isBuiltinPaymentMethod,
   redirectId,
   SHARED_OWNER,
+  type BankAccountDetails,
   type CardDetails,
   type PaymentMethod,
   type PaymentMethodType,
@@ -51,6 +52,7 @@ export async function createPaymentMethod(
     color?: string;
     creditAnnualRate?: string;
     card?: CardDetails;
+    account?: BankAccountDetails;
   },
   now: IsoInstant,
 ): Promise<PaymentMethod> {
@@ -68,6 +70,7 @@ export async function createPaymentMethod(
     color: draft.color,
     ...(creditAnnualRate === undefined ? {} : { creditAnnualRate }),
     ...(draft.card === undefined ? {} : { card: checkedCard(draft.card) }),
+    ...(draft.account === undefined ? {} : { account: checkedAccount(draft.account) }),
     isArchived: 0,
     createdAt: now,
     updatedAt: now,
@@ -84,6 +87,8 @@ export async function updatePaymentMethod(
     readonly creditAnnualRate?: string | null;
     /** The card's details, whole; `null` removes them. */
     readonly card?: CardDetails | null;
+    /** The bank account's details, whole; `null` removes them. */
+    readonly account?: BankAccountDetails | null;
   },
   now: IsoInstant,
 ): Promise<PaymentMethod> {
@@ -108,7 +113,7 @@ export async function updatePaymentMethod(
   return db.transaction('rw', db.paymentMethods, async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);
-    const { creditAnnualRate: _raw, card, ...rest } = patch;
+    const { creditAnnualRate: _raw, card, account, ...rest } = patch;
     const next: PaymentMethod = {
       ...current,
       ...rest,
@@ -120,6 +125,7 @@ export async function updatePaymentMethod(
           ? { creditAnnualRate: undefined }
           : { creditAnnualRate: rate }),
       ...(card === undefined ? {} : { card: card === null ? undefined : checkedCard(card) }),
+      ...(account === undefined ? {} : { account: account === null ? undefined : checkedAccount(account) }),
       updatedAt: now,
     };
     await db.paymentMethods.put(next);
@@ -137,6 +143,10 @@ export async function updatePaymentMethod(
 /** Card details the rest of the app can read, or a thrown error - the same rule an import is held to. */
 function checkedCard(card: CardDetails): CardDetails {
   return cardSchema.parse(card);
+}
+
+function checkedAccount(account: BankAccountDetails): BankAccountDetails {
+  return accountSchema.parse(account);
 }
 
 function checkedRate(input: string): string {
@@ -212,6 +222,22 @@ export async function deletePaymentMethod(
               { ...o, patch: { ...o.patch, paymentMethodId: target ?? null }, updatedAt: now }
             : o,
         ),
+      );
+    }
+
+    /*
+     * Cards debited from a deleted account let go of it.
+     *
+     * Their `bank` already holds the bank's name, so they still say where
+     * the bill goes; only the link to a row that is gone is dropped.
+     */
+    const debited = (await db.paymentMethods.toArray()).filter((m) => m.card?.accountId === id);
+    if (debited.length > 0) {
+      await db.paymentMethods.bulkPut(
+        debited.map((m) => {
+          const { accountId: _gone, ...card } = m.card ?? {};
+          return { ...m, card, updatedAt: now };
+        }),
       );
     }
 

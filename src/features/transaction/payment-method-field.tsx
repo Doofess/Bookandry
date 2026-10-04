@@ -89,5 +89,6 @@ const PAYMENT_TYPE_KEY = {
   bank_transfer: 'profiles:method.bank_transfer',
   standing_order: 'profiles:method.standing_order',
   digital_wallet: 'profiles:method.digital_wallet',
+  bank_account: 'profiles:method.bank_account',
   other: 'profiles:method.other',
 } as const;

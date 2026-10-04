@@ -20,7 +20,7 @@ test.beforeEach(({}, testInfo) => {
 const COPY = {
   en: {
     nav: 'Cards',
-    title: 'Credit cards',
+    title: 'Cards and accounts',
     add: 'Add a card',
     label: 'Label',
     max: 'Max',
@@ -44,7 +44,7 @@ const COPY = {
   },
   he: {
     nav: 'כרטיסים',
-    title: 'כרטיסי אשראי',
+    title: 'כרטיסים וחשבונות',
     add: 'הוספת כרטיס',
     label: 'תווית',
     max: 'מקס',
@@ -213,5 +213,61 @@ test.describe('@cards what a card is committed to', () => {
     await box.getByRole('button', { name: /עסקאות תשלומים והלוואות בכרטיס/ }).click();
     await expect(box).toContainText('נותרו 6 מתוך 6 תשלומים');
     await expect(page.getByTestId('household-commitments')).toContainText('1,242.36');
+  });
+});
+
+test.describe('@cards bank accounts', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'he', 'Hebrew: the language the account is written in.');
+  });
+
+  test('adds an account by its number, names its branch, and offers it to a new card', async ({ page }) => {
+    await completeFirstRun(page, 'he', { demo: false });
+    await page.getByRole('link', { name: 'כרטיסים' }).click();
+
+    // Pasted whole, the way a cheque prints it: bank, branch and number fill in.
+    await page.getByRole('button', { name: 'הוספת חשבון בנק' }).click();
+    await page.getByLabel('מספר חשבון', { exact: true }).fill('12-532-123456');
+    await expect(page.getByRole('combobox', { name: /בנק/ })).toContainText('בנק הפועלים');
+    await expect(page.getByLabel('מספר סניף', { exact: true })).toHaveValue('532');
+    await expect(page.getByLabel('מספר חשבון', { exact: true })).toHaveValue('123456');
+    // The branch, by name, from the Bank of Israel's list.
+    await expect(page.getByText('סניף: שאול המלך')).toBeVisible();
+    // Named after its bank until named otherwise.
+    await expect(page.getByLabel('תווית', { exact: true })).toHaveValue('בנק הפועלים');
+    await page.getByRole('radio', { name: 'משותף', exact: true }).click();
+    await page.getByLabel('בעלים נוספים', { exact: true }).fill('דנה');
+    await page.getByLabel('מסגרת עו״ש', { exact: true }).fill('10,000');
+    await page.getByRole('button', { name: 'שמירה', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const account = page.getByRole('article').filter({ hasText: '12-532-123456' });
+    await expect(account).toContainText('משותף');
+    await expect(account).toContainText('דנה');
+    await expect(account).toContainText('10,000');
+
+    // A new card is offered the account it is paid from.
+    await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
+    await page.getByLabel('תווית', { exact: true }).fill('Visa');
+    await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
+    await page
+      .getByRole('radiogroup', { name: 'משולם מהחשבון', exact: true })
+      .getByRole('radio', { name: /3456/ })
+      .click();
+    await page.getByRole('button', { name: 'שמירה', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(account).toContainText('חיובי כרטיסים שיורדים מהחשבון');
+    await expect(account).toContainText('Visa');
+  });
+
+  test('finds the Arab banks by their Arabic name', async ({ page }) => {
+    await completeFirstRun(page, 'he', { demo: false });
+    await page.getByRole('link', { name: 'כרטיסים' }).click();
+    await page.getByRole('button', { name: 'הוספת חשבון בנק' }).click();
+    await page.getByRole('combobox', { name: /בנק/ }).click();
+    await page.getByPlaceholder('חיפוש לפי שם או קוד').fill('بنك فلسطين');
+    await page.getByRole('option', { name: /בנק פלסטין/ }).click();
+    await expect(page.getByRole('combobox', { name: /בנק/ })).toContainText('בנק פלסטין');
   });
 });

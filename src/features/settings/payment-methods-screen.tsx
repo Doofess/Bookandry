@@ -27,7 +27,10 @@ import {
   setPaymentMethodArchived,
   updatePaymentMethod,
 } from '@/db/repos/payment-methods';
+import { accountDraftOf, accountFromDraft, type AccountDraft } from '@/domain/account-draft';
+import { bankByCode, bankName } from '@/domain/banks';
 import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, type CardDraft } from '@/domain/card-draft';
+import { AccountFields } from '@/features/cards/account-fields';
 import { CardFields } from '@/features/cards/card-fields';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
@@ -67,6 +70,7 @@ import {
  */
 const TYPES: readonly PaymentMethodType[] = [
   'credit_card',
+  'bank_account',
   'debit_card',
   'bank_transfer',
   'standing_order',
@@ -85,6 +89,7 @@ const TYPE_KEY: Record<PaymentMethodType, string> = {
   bank_transfer: 'profiles:method.bank_transfer',
   standing_order: 'profiles:method.standing_order',
   digital_wallet: 'profiles:method.digital_wallet',
+  bank_account: 'profiles:method.bank_account',
   other: 'profiles:method.other',
 };
 
@@ -258,7 +263,7 @@ export function MethodEditor({
   /** What a new method starts as. */
   readonly newType?: PaymentMethodType;
 }) {
-  const { t } = useTranslation(['common', 'categories', 'profiles']);
+  const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
   const isNew = target === 'new';
   const existing = target === 'new' ? undefined : target;
 
@@ -266,6 +271,17 @@ export function MethodEditor({
   const [type, setType] = useState<PaymentMethodType>('credit_card');
   const [owner, setOwner] = useState<string>(SHARED_OWNER);
   const [card, setCard] = useState<CardDraft>(EMPTY_CARD_DRAFT);
+  const [account, setAccount] = useState<AccountDraft>(() => accountDraftOf(undefined, SHARED_OWNER));
+
+  // The household's bank accounts, for a card to say which one pays its bill.
+  const accounts =
+    useLiveQuery(
+      async () =>
+        (await db.paymentMethods.toArray())
+          .filter((m) => m.type === 'bank_account' && m.id !== existing?.id)
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      [existing?.id],
+    ) ?? [];
   /** Set by a save attempt: the rate error waits until somebody tries. */
   const [attempted, setAttempted] = useState(false);
   const [seeded, setSeeded] = useState<string | undefined>(undefined);
@@ -283,6 +299,7 @@ export function MethodEditor({
     setType(existing?.type ?? newType);
     setOwner(existing?.profileId ?? profiles[0]?.id ?? SHARED_OWNER);
     setCard(cardDraftOf(existing));
+    setAccount(accountDraftOf(existing, profiles[0]?.id ?? SHARED_OWNER));
     setAttempted(false);
   }
 
@@ -291,6 +308,30 @@ export function MethodEditor({
     month: systemClock.today().slice(0, 7),
   });
   const cardInvalid = type === 'credit_card' && !parsedCard.ok;
+  const parsedAccount = accountFromDraft(account);
+  const accountInvalid = type === 'bank_account' && !parsedAccount.ok;
+
+  /**
+   * A new account is named after its bank until it is named otherwise: picking
+   * Leumi fills in "Bank Leumi", and picking again follows - but never over a
+   * name somebody typed.
+   */
+  const changeAccount = (patch: Partial<AccountDraft>): void => {
+    setAccount((current) => ({ ...current, ...patch }));
+    const next = patch.bank === undefined ? undefined : bankByCode(patch.bank);
+    if (next === undefined || patch.bank === account.bank) return;
+    const previous = bankByCode(account.bank);
+    if (label.trim() === '' || (previous !== undefined && label === bankName(previous, i18n.language))) {
+      setLabel(bankName(next, i18n.language));
+    }
+  };
+
+  /** A new card paid from one of the accounts belongs, to begin with, to whoever holds it. */
+  const changeCard = (patch: Partial<CardDraft>): void => {
+    setCard((current) => ({ ...current, ...patch }));
+    const from = accounts.find((a) => a.id === patch.accountId);
+    if (isNew && from !== undefined) setOwner(from.profileId);
+  };
 
   const save = async (): Promise<void> => {
     const now = systemClock.nowIso();
@@ -305,6 +346,9 @@ export function MethodEditor({
     const isCard = type === 'credit_card' && parsedCard.ok;
     const creditAnnualRate = isCard ? parsedCard.creditAnnualRate : null;
     const details = isCard ? parsedCard.card : undefined;
+    // An account's owner is its holder, or the household when several hold it.
+    const accountDetails = type === 'bank_account' && parsedAccount.ok ? parsedAccount.account : undefined;
+    const profileId = type === 'bank_account' && parsedAccount.ok ? parsedAccount.profileId : owner;
 
     try {
       if (isNew) {
@@ -314,9 +358,10 @@ export function MethodEditor({
           {
             label,
             type,
-            profileId: owner,
+            profileId,
             ...(creditAnnualRate === null ? {} : { creditAnnualRate }),
             ...(details === undefined ? {} : { card: details }),
+            ...(accountDetails === undefined ? {} : { account: accountDetails }),
           },
           now,
         );
@@ -324,7 +369,14 @@ export function MethodEditor({
         await updatePaymentMethod(
           db,
           existing.id,
-          { label, type, profileId: owner, creditAnnualRate, card: details ?? null },
+          {
+            label,
+            type,
+            profileId,
+            creditAnnualRate,
+            card: details ?? null,
+            account: accountDetails ?? null,
+          },
           now,
         );
       }
@@ -348,7 +400,7 @@ export function MethodEditor({
           onSubmit={(event) => {
             event.preventDefault();
             setAttempted(true);
-            if (label.trim() !== '' && !cardInvalid) void save();
+            if (label.trim() !== '' && !cardInvalid && !accountInvalid) void save();
           }}
           className="space-y-4 px-4 pb-6"
         >
@@ -389,29 +441,41 @@ export function MethodEditor({
             <CardFields
               key={seeded}
               draft={card}
-              onChange={(patch) => {
-                setCard((current) => ({ ...current, ...patch }));
-              }}
+              onChange={changeCard}
               invalid={attempted && !parsedCard.ok ? parsedCard.invalid : []}
+              accounts={accounts}
             />
           ) : null}
 
-          <div className="space-y-1.5">
-            <Label id={ownerId}>{t('categories:manage.methodOwner')}</Label>
-            <Segmented
-              value={owner}
-              labelledBy={ownerId}
-              onChange={setOwner}
-              size="sm"
-              options={[
-                ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
-                { value: SHARED_OWNER, label: t('categories:manage.methodShared') },
-              ]}
+          {/*
+            A bank account names its own holders - one person, or several on
+            a joint or business account - so it does not ask "belongs to".
+          */}
+          {type === 'bank_account' ? (
+            <AccountFields
+              draft={account}
+              onChange={changeAccount}
+              invalid={attempted && !parsedAccount.ok ? parsedAccount.invalid : []}
+              profiles={profiles}
             />
-            {owner === SHARED_OWNER ? (
-              <p className="text-xs text-muted-foreground">{t('categories:manage.methodSharedHint')}</p>
-            ) : null}
-          </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label id={ownerId}>{t('categories:manage.methodOwner')}</Label>
+              <Segmented
+                value={owner}
+                labelledBy={ownerId}
+                onChange={setOwner}
+                size="sm"
+                options={[
+                  ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+                  { value: SHARED_OWNER, label: t('categories:manage.methodShared') },
+                ]}
+              />
+              {owner === SHARED_OWNER ? (
+                <p className="text-xs text-muted-foreground">{t('categories:manage.methodSharedHint')}</p>
+              ) : null}
+            </div>
+          )}
 
           <div className="flex gap-2 pt-1">
             <Button

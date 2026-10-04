@@ -1,6 +1,6 @@
 {
-  "title": "Credit cards",
-  "subtitle": "What is on each card, and when the bank is charged for it.",
+  "title": "Cards and accounts",
+  "subtitle": "What is on each card, when the bank is charged for it, and the accounts that pay.",
   "add": "Add a card",
   "emptyTitle": "No credit cards yet",
   "emptyBody": "Add a card with its billing day, and purchases on it count on the day the bank is charged.",
@@ -107,7 +107,10 @@
     "discountPercent": "Discount",
     "discountUntil": "Until",
     "discountHint": "100% waives the fee. Usually for a year from when the card was issued; leave Until empty if it has no end.",
-    "discountPercentInvalid": "A percentage, 0 to 100."
+    "discountPercentInvalid": "A percentage, 0 to 100.",
+    "debitedFrom": "Paid from",
+    "debitedFromHint": "The account the card's monthly bill is taken from.",
+    "debitedOther": "Another account"
   },
   "feeLine": "Card fee",
   "feeThisMonth": "Card fee for {{month}}",
@@ -116,5 +119,55 @@
   "discountToGo": "Spent <spent></spent> of <target></target> for <percent></percent> off the fee.",
   "discountUntil": "Discount until {{date}}.",
   "discountNoEnd": "The discount has no end date.",
-  "discountEnded": "The fee discount has ended."
+  "discountEnded": "The fee discount has ended.",
+  "accounts": {
+    "title": "Bank accounts",
+    "body": "The accounts the household's cards are paid from, and how far below zero each can go.",
+    "add": "Add a bank account",
+    "empty": "No bank accounts yet. Add one, and each card can say which account pays its bill.",
+    "holding": {
+      "personal": "Personal",
+      "joint": "Joint",
+      "business": "Business"
+    },
+    "branch": "Branch {{branch}}",
+    "branchClosed": "This branch closed on {{date}}.",
+    "branchMerged": "This branch closed on {{date}}; its accounts moved to branch {{into}}.",
+    "overdraft": "Overdraft limit",
+    "holders": "Held by",
+    "cardsFrom": "Card bills paid from this account",
+    "chargeOn": "on {{date}}",
+    "noCharge": "Nothing coming up",
+    "edit": {
+      "open": "Edit account",
+      "theAccount": "The account",
+      "bank": "Bank",
+      "bankChoose": "Choose a bank",
+      "bankSearch": "Search by name or code",
+      "bankEmpty": "No bank by that name or code.",
+      "bankInvalid": "Choose the bank.",
+      "groupIsrael": "Banks in Israel",
+      "groupMerged": "Older codes, of banks that merged",
+      "groupArab": "Arab banks",
+      "mergedInto": "Now part of {{bank}}",
+      "branch": "Branch number",
+      "branchLooking": "Looking up the branch…",
+      "branchFound": "Branch: {{name}}, {{city}}",
+      "branchUnknown": "There is no branch {{branch}} at {{bank}} in the Bank of Israel's list. Check the number.",
+      "branchUnlisted": "The Bank of Israel's list has no branch names for this bank.",
+      "branchInvalid": "Up to 4 digits.",
+      "number": "Account number",
+      "numberHint": "Pasting the whole account, like 12-689-123456, fills in the bank and branch too. Only the number is kept: never a password or code.",
+      "numberInvalid": "Digits only, 2 to 13 of them.",
+      "holding": "Type of account",
+      "owner": "Account holder",
+      "holders": "Holders in the household",
+      "holdersHint": "Everyone in the household who is on the account.",
+      "holdersInvalid": "Choose who the account belongs to.",
+      "otherHolders": "Other holders",
+      "otherHoldersPlaceholder": "e.g. a business partner",
+      "overdraft": "Overdraft limit (מסגרת עו״ש)",
+      "overdraftHint": "How far below zero the bank lets the account go. Leave empty if it has none."
+    }
+  }
 }

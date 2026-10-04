@@ -26,9 +26,16 @@ import {
 import { MethodEditor } from '@/features/settings/payment-methods-screen';
 import { ordinalDay } from '@/i18n/ordinal';
 import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
-import { SHARED_OWNER, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
+import {
+  SHARED_OWNER,
+  type Occurrence,
+  type PaymentMethod,
+  type PaymentMethodType,
+  type Profile,
+} from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
+import { AccountsSection } from './accounts-section';
 import { useCardsData } from './use-cards-data';
 
 /**
@@ -47,6 +54,8 @@ export function CardsScreen() {
   const baseCurrency = useBaseCurrency();
   const data = useCardsData(today, baseCurrency);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
+  // What "new" makes: a card from the header, an account from the accounts section.
+  const [newType, setNewType] = useState<PaymentMethodType>('credit_card');
   // Each card's commitments, worked out once: its panel and the household's total both read them.
   const commitments = useMemo(
     () =>
@@ -66,6 +75,7 @@ export function CardsScreen() {
         <Button
           type="button"
           onClick={() => {
+            setNewType('credit_card');
             setEditing('new');
           }}
         >
@@ -73,6 +83,20 @@ export function CardsScreen() {
           {t('add')}
         </Button>
       </header>
+
+      {data === undefined ? null : (
+        <AccountsSection
+          accounts={data.accounts}
+          cards={data.cards}
+          occurrences={data.occurrences}
+          profiles={data.profiles}
+          onAdd={() => {
+            setNewType('bank_account');
+            setEditing('new');
+          }}
+          onEdit={setEditing}
+        />
+      )}
 
       {data === undefined ? null : data.cards.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center">
@@ -109,7 +133,7 @@ export function CardsScreen() {
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
         }}
-        newType="credit_card"
+        newType={newType}
       />
     </section>
   );

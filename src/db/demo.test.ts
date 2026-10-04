@@ -50,7 +50,7 @@ describe('loadDemoData', () => {
   it('writes the whole dataset in one go', async () => {
     const counts = await loadDemoData(handle.db, INPUT);
     expect(counts.profiles).toBe(3);
-    expect(counts.paymentMethods).toBe(4);
+    expect(counts.paymentMethods).toBe(5);
     expect(counts.transactions).toBeGreaterThan(60);
     expect(await handle.db.transactions.count()).toBe(counts.transactions);
     expect(await hasDemoData(handle.db)).toBe(true);

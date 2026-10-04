@@ -24,11 +24,12 @@ describe('the content security policy', () => {
     expect(scripts).not.toContain("'unsafe-eval'");
   });
 
-  it('talks only to itself, the rate providers and the one Supabase project', () => {
+  it('talks only to itself, the rate providers, the branch list and the one Supabase project', () => {
     expect(directive(csp, 'connect-src')).toEqual([
       "'self'",
       'https://api.frankfurter.dev',
       'https://open.er-api.com',
+      'https://data.gov.il',
       'https://eanrighmesbmboergnhj.supabase.co',
     ]);
     expect(directive(contentSecurityPolicy({ scriptHashes: [] }), 'connect-src')).not.toContainEqual(

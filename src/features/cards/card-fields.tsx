@@ -4,15 +4,18 @@ import { useTranslation } from 'react-i18next';
 import { Segmented } from '@/components/segmented';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { accountTail, bankByCode, bankName } from '@/domain/banks';
 import type { CardDraft, CardDraftField, RateDraft } from '@/domain/card-draft';
 import { COMMON_BILLING_DAYS } from '@/domain/cards';
 import { ordinalDay } from '@/i18n/ordinal';
-import type { CardIssuer, CardKind, CardNetwork } from '@/types/domain';
+import type { CardIssuer, CardKind, CardNetwork, PaymentMethod } from '@/types/domain';
 
 const ISSUERS: readonly CardIssuer[] = ['isracard', 'cal', 'max', 'amex', 'diners', 'other'];
 const NETWORKS: readonly CardNetwork[] = ['visa', 'mastercard', 'amex', 'diners', 'isracard'];
 const KINDS: readonly CardKind[] = ['non_bank', 'bank'];
 const OTHER_DAY = 'other';
+/** "Another account": the card is paid from an account not entered here. */
+const OTHER_ACCOUNT = 'other';
 
 /**
  * Everything a card company shows about a card, for the payment-method
@@ -26,13 +29,22 @@ export function CardFields({
   draft,
   onChange,
   invalid,
+  accounts = [],
 }: {
   readonly draft: CardDraft;
   readonly onChange: (patch: Partial<CardDraft>) => void;
   /** Fields that could not be read, shown once a save was attempted. */
   readonly invalid: readonly CardDraftField[];
+  /** The household's bank accounts, offered as the one the bill is paid from. */
+  readonly accounts?: readonly PaymentMethod[];
 }) {
   const { t, i18n } = useTranslation('cards');
+  // Archived accounts are not offered, unless this card is already paid from one.
+  const payers = accounts.filter((a) => a.isArchived === 0 || a.id === draft.accountId);
+  // Nothing picked yet, an account, or "another account" once the bank is typed.
+  const [otherAccount, setOtherAccount] = useState(draft.accountId === '' && draft.bank !== '');
+  // An account deleted on another device leaves its bank's name, which is shown instead.
+  const linked = payers.some((a) => a.id === draft.accountId);
   const common = (COMMON_BILLING_DAYS as readonly number[]).map(String);
   // "Other" is a choice of its own: picking it opens the field before any day is typed.
   const [other, setOther] = useState(draft.billingDay !== '' && !common.includes(draft.billingDay));
@@ -40,6 +52,7 @@ export function CardFields({
     issuer: useId(),
     network: useId(),
     kind: useId(),
+    account: useId(),
     bank: useId(),
     tier: useId(),
     club: useId(),
@@ -100,15 +113,63 @@ export function CardFields({
           />
         </div>
 
-        <TextField
-          id={ids.bank}
-          label={draft.kind === 'bank' ? t('edit.bankOfCard') : t('edit.bankDebited')}
-          value={draft.bank}
-          placeholder={t('edit.bankPlaceholder')}
-          onChange={(bank) => {
-            onChange({ bank });
-          }}
-        />
+        {/*
+          The household's accounts, when there are any, as the first answer to
+          "paid from where": one tap links the card to the account, and its
+          bank's name comes with it.
+        */}
+        {payers.length === 0 ? null : (
+          <div className="space-y-1.5">
+            <Label id={ids.account}>{t('edit.debitedFrom')}</Label>
+            <Segmented<string>
+              value={linked ? draft.accountId : otherAccount ? OTHER_ACCOUNT : ''}
+              labelledBy={ids.account}
+              onChange={(choice) => {
+                if (choice === OTHER_ACCOUNT) {
+                  setOtherAccount(true);
+                  onChange({ accountId: '' });
+                  return;
+                }
+                setOtherAccount(false);
+                const bank = bankByCode(payers.find((a) => a.id === choice)?.account?.bank ?? '');
+                onChange({
+                  accountId: choice,
+                  ...(bank === undefined ? {} : { bank: bankName(bank, i18n.language) }),
+                });
+              }}
+              size="sm"
+              options={[
+                ...payers.map((payer) => {
+                  const bank = bankByCode(payer.account?.bank ?? '');
+                  const number = payer.account?.number;
+                  return {
+                    value: payer.id,
+                    label: payer.label,
+                    hint: [
+                      bank === undefined ? undefined : bankName(bank, i18n.language),
+                      number === undefined ? undefined : accountTail(number),
+                    ]
+                      .filter(Boolean)
+                      .join(' '),
+                  };
+                }),
+                { value: OTHER_ACCOUNT, label: t('edit.debitedOther') },
+              ]}
+            />
+            <p className="text-xs text-muted-foreground">{t('edit.debitedFromHint')}</p>
+          </div>
+        )}
+        {payers.length > 0 && !otherAccount && (linked || draft.accountId === '') ? null : (
+          <TextField
+            id={ids.bank}
+            label={draft.kind === 'bank' ? t('edit.bankOfCard') : t('edit.bankDebited')}
+            value={draft.bank}
+            placeholder={t('edit.bankPlaceholder')}
+            onChange={(bank) => {
+              onChange({ bank });
+            }}
+          />
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField
             id={ids.tier}
@@ -324,7 +385,7 @@ export function CardFields({
   );
 }
 
-function TextField({
+export function TextField({
   id,
   label,
   value,
@@ -354,7 +415,7 @@ function TextField({
   );
 }
 
-function MoneyField({
+export function MoneyField({
   id,
   label,
   value,

@@ -29,10 +29,14 @@ const GOOGLE_PICTURES = 'https://lh3.googleusercontent.com';
 /** Exchange-rate providers the app fetches from directly. */
 const RATE_ORIGINS = ['https://api.frankfurter.dev', 'https://open.er-api.com'];
 
+/** The Bank of Israel's list of bank branches, read when the app's own copy lacks a branch. */
+const BRANCHES_ORIGIN = 'https://data.gov.il';
+
 export function contentSecurityPolicy(input: SecurityHeaderInput): string {
   const connect = [
     "'self'",
     ...RATE_ORIGINS,
+    BRANCHES_ORIGIN,
     ...(input.supabaseOrigin === undefined ? [] : [input.supabaseOrigin]),
   ];
   const directives: readonly (readonly [string, readonly string[]])[] = [

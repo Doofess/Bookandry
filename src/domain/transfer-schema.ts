@@ -140,6 +140,24 @@ export const cardSchema = z.object({
   fxFeeRate: annualRate.optional(),
   creditPrimeMargin: margin.optional(),
   lateRate: rateTerm.optional(),
+  accountId: z.string().min(1).optional(),
+});
+
+/** A bank account as the bank writes it; never anything that moves money (§12). */
+export const accountSchema = z.object({
+  bank: z.string().regex(/^\d{1,3}$/),
+  branch: z
+    .string()
+    .regex(/^\d{1,4}$/)
+    .optional(),
+  number: z
+    .string()
+    .regex(/^\d{2,13}$/)
+    .optional(),
+  holding: z.enum(['personal', 'joint', 'business']),
+  holders: z.array(z.string().min(1)).min(1).max(20).readonly().optional(),
+  otherHolders: z.string().trim().min(1).max(80).optional(),
+  overdraftLimitMinor: minorAmount.optional(),
 });
 
 const paymentMethodSchema = z.object({
@@ -153,6 +171,7 @@ const paymentMethodSchema = z.object({
     'bank_transfer',
     'standing_order',
     'digital_wallet',
+    'bank_account',
     'other',
   ]),
   // A LABEL only. §12 forbids storing any credential, and gate:pci enforces
@@ -162,6 +181,7 @@ const paymentMethodSchema = z.object({
   // credential: it identifies nothing about the card.
   creditAnnualRate: annualRate.optional(),
   card: cardSchema.optional(),
+  account: accountSchema.optional(),
   color: z.string().optional(),
   isArchived: z.union([z.literal(0), z.literal(1)]),
   archivedAt: isoInstant.optional(),

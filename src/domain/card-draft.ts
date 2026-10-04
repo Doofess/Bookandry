@@ -11,6 +11,8 @@ export type CardDraft = {
   readonly issuer: CardIssuer | '';
   readonly network: CardNetwork | '';
   readonly kind: CardKind | '';
+  /** The household account the bill is paid from, or '' for none of them. */
+  readonly accountId: string;
   readonly bank: string;
   readonly tier: string;
   readonly club: string;
@@ -46,6 +48,7 @@ export const EMPTY_CARD_DRAFT: CardDraft = {
   issuer: '',
   network: '',
   kind: '',
+  accountId: '',
   bank: '',
   tier: '',
   club: '',
@@ -77,6 +80,7 @@ export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
     issuer: card?.issuer ?? '',
     network: card?.network ?? '',
     kind: card?.kind ?? '',
+    accountId: card?.accountId ?? '',
     bank: card?.bank ?? '',
     tier: card?.tier ?? '',
     club: card?.club ?? '',
@@ -204,6 +208,7 @@ export function cardFromDraft(
     ...(draft.network === '' ? {} : { network: draft.network }),
     ...(draft.kind === '' ? {} : { kind: draft.kind }),
     ...(text(draft.bank) === undefined ? {} : { bank: text(draft.bank) }),
+    ...(draft.accountId === '' ? {} : { accountId: draft.accountId }),
     ...(text(draft.tier) === undefined ? {} : { tier: text(draft.tier) }),
     ...(text(draft.club) === undefined ? {} : { club: text(draft.club) }),
     ...(expiresMonth === '' || expiresMonth === undefined ? {} : { expiresMonth }),

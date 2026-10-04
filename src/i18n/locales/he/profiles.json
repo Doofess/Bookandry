@@ -43,7 +43,8 @@
     "bank_transfer": "העברה בנקאית",
     "standing_order": "הוראת קבע",
     "digital_wallet": "ארנק דיגיטלי",
-    "other": "אחר"
+    "other": "אחר",
+    "bank_account": "חשבון בנק"
   },
   "screen": {
     "title": "פרופילים",

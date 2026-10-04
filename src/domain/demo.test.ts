@@ -160,9 +160,15 @@ describe('buildDemoData — shape', () => {
     }
   });
 
-  it('shares the joint card and the standing order across profiles', () => {
+  it('shares the joint card, the joint account and the standing order across profiles', () => {
     const shared = data.paymentMethods.filter((m) => m.profileId === '*');
-    expect(shared.map((m) => m.type).sort()).toEqual(['credit_card', 'standing_order']);
+    expect(shared.map((m) => m.type).sort()).toEqual(['bank_account', 'credit_card', 'standing_order']);
+  });
+
+  it('pays two of the cards from the joint account, held by the couple', () => {
+    const account = data.paymentMethods.find((m) => m.type === 'bank_account');
+    expect(account?.account?.holders).toHaveLength(2);
+    expect(data.paymentMethods.filter((m) => m.card?.accountId === account?.id)).toHaveLength(2);
   });
 
   it('includes a last-day-of-month standing order', () => {

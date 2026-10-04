@@ -35,11 +35,28 @@ export function categoriesFor(categories: readonly Category[], kind: Kind, keepI
  * post-dated cheques for a plan in תשלומים or a loan from family; a standing
  * order is the bank paying by itself, which is precisely what a cheque is not.
  * A loan takes anything: the bank's own debit, cheques, cash, a card's loan.
+ * A bank account takes everything but תשלומים, which is a card's.
  */
 export function methodFits(method: Pick<PaymentMethod, 'type'>, mode: RecurrenceMode): boolean {
   if (mode === 'credit') return method.type === 'credit_card';
   if (method.type === 'cheque') return mode === 'one_time' || mode === 'installments' || mode === 'loan';
+  // A bank account pays at once, by order or by debit - not in a card's תשלומים.
+  if (method.type === 'bank_account') return mode !== 'installments';
   return true;
+}
+
+/**
+ * Whether `profileId` can pay with a method: it is theirs, or the
+ * household's - and a joint account the household shares is its holders'.
+ */
+export function methodOwnedBy(
+  method: Pick<PaymentMethod, 'profileId' | 'account'>,
+  profileId: string,
+): boolean {
+  if (method.profileId === profileId) return true;
+  if (method.profileId !== SHARED_OWNER) return false;
+  const holders = method.account?.holders;
+  return holders === undefined || holders.includes(profileId);
 }
 
 /**
@@ -63,7 +80,7 @@ export function methodsFor(
   return methods
     .filter(
       (method) =>
-        (method.profileId === profileId || method.profileId === SHARED_OWNER) &&
+        methodOwnedBy(method, profileId) &&
         (method.id === keepId ||
           (method.isArchived === 0 && (mode === undefined || methodFits(method, mode)))),
     )

@@ -73,7 +73,10 @@ Lint cannot express these, so they are scripts.
 - **`gate:pci`** — bans card numbers, expiry dates, CVV, IBAN, SWIFT and routing
   numbers from `src/**` and `e2e/**`, scanning i18n JSON as well as source.
   Payment methods store a user-chosen **label** only. There is no escape hatch,
-  deliberately.
+  deliberately. A bank account is the one exception the user asked for: it
+  keeps its bank, branch and account number - what is printed on every cheque
+  and given to anyone who sends money to it - and never a password, code or
+  anything else that moves money.
 
 ---
 
@@ -263,6 +266,23 @@ it), usually for a year (`until`). It is in the feed, the balance (on the bill)
 and the chart, in a shekel base only; a shared card's fee is in the
 household's view. Not modelled: cycles that close on a day other than the end
 of the month.
+
+**A bank account is written the way the bank writes it.** A payment method of
+its own type (`bank_account`): the bank by its Masav code (`src/domain/banks.ts`:
+the banks in Israel, the codes of banks that have merged, and the Arab and
+Palestinian banks that clear through Masav, with their Arabic names), the
+branch, the account number - pasting "12-689-123456" fills all three - whose
+it is (personal; joint, as a couple's; or business, with partners outside the
+household by name), and its overdraft limit (מסגרת עו״ש). A joint account held
+by several people belongs to the household and is offered only to its holders.
+The branch is named as it is typed, from the Bank of Israel's list of branches
+on data.gov.il: the app ships a copy (`src/data/bank-branches.json`, its own
+chunk, refreshed with `pnpm data:banks`) and fetches the live list - whole,
+never by the number typed - only when the copy lacks a branch. A card can say
+which account pays its bill (`card.accountId`); the card editor offers the
+household's accounts first, and each account shows the card bills it is about
+to pay. Paying straight from an account is any method but תשלומים and קרדיט,
+which are a card's. Not modelled: an account's balance.
 
 **"Add with AI" reads files into transactions, and code checks the reading.**
 The + button opens a menu: _Add manually_, or _Add with AI_, which takes

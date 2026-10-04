@@ -270,6 +270,8 @@ const STRINGS = {
     danaCard: 'Dana card',
     yossiCard: 'Yossi card',
     jointCard: 'Joint card',
+    jointAccount: 'Joint account',
+    accountBank: 'Bank Hapoalim',
     standingOrder: 'Bank standing order',
     noteRent: 'Rent',
     noteFridge: 'Fridge, 12 payments',
@@ -282,6 +284,8 @@ const STRINGS = {
     danaCard: 'כרטיס דנה',
     yossiCard: 'כרטיס יוסי',
     jointCard: 'כרטיס משותף',
+    jointAccount: 'החשבון המשותף',
+    accountBank: 'בנק הפועלים',
     standingOrder: 'הוראת קבע',
     noteRent: 'שכר דירה',
     noteFridge: 'מקרר, 12 תשלומים',
@@ -299,6 +303,7 @@ const PM_DANA = `${DEMO_PREFIX}pm.danaCard`;
 const PM_YOSSI = `${DEMO_PREFIX}pm.yossiCard`;
 const PM_JOINT = `${DEMO_PREFIX}pm.jointCard`;
 const PM_STANDING = `${DEMO_PREFIX}pm.standingOrder`;
+const PM_ACCOUNT = `${DEMO_PREFIX}pm.jointAccount`;
 /** Seeded by `buildSeedPaymentMethods`, shared by every profile. */
 const PM_CASH = 'pm.cash';
 
@@ -518,7 +523,10 @@ export function buildDemoData(input: DemoInput): DemoData {
    * with the fees and prime-linked interest their statements quote - so the
    * Cards screen and the billing-day balance have something real to show.
    */
-  const methodSeeds: readonly Pick<PaymentMethod, 'id' | 'profileId' | 'type' | 'label' | 'card'>[] = [
+  const methodSeeds: readonly Pick<
+    PaymentMethod,
+    'id' | 'profileId' | 'type' | 'label' | 'card' | 'account'
+  >[] = [
     {
       id: PM_DANA,
       profileId: P_DANA,
@@ -528,6 +536,8 @@ export function buildDemoData(input: DemoInput): DemoData {
         issuer: 'max',
         network: 'mastercard',
         kind: 'non_bank',
+        bank: s.accountBank,
+        accountId: PM_ACCOUNT,
         billingDay: 10,
         expiresMonth: '2029-04',
         creditLimitMinor: 1_500_000,
@@ -569,6 +579,8 @@ export function buildDemoData(input: DemoInput): DemoData {
         issuer: 'isracard',
         network: 'isracard',
         kind: 'non_bank',
+        bank: s.accountBank,
+        accountId: PM_ACCOUNT,
         billingDay: 15,
         expiresMonth: '2030-01',
         creditLimitMinor: 2_500_000,
@@ -576,6 +588,21 @@ export function buildDemoData(input: DemoInput): DemoData {
         feeSince: openingDate.slice(0, 7),
         fxFeeRate: '2.5',
         creditPrimeMargin: '3',
+      },
+    },
+    // The couple's joint account, which both their cards' bills come out of. The number is made up.
+    {
+      id: PM_ACCOUNT,
+      profileId: SHARED_OWNER,
+      type: 'bank_account',
+      label: s.jointAccount,
+      account: {
+        bank: '12',
+        branch: '532',
+        number: '345678',
+        holding: 'joint',
+        holders: [P_DANA, P_YOSSI],
+        overdraftLimitMinor: 1_500_000,
       },
     },
     // הוראת קבע: how rent, arnona, insurance and the va'ad are actually paid.

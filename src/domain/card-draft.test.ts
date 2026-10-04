@@ -185,3 +185,12 @@ describe('the card editor', () => {
     });
   });
 });
+
+describe('the account a card is paid from', () => {
+  it('round-trips, and is left out when none is picked', () => {
+    const linked = cardFromDraft({ ...EMPTY_CARD_DRAFT, accountId: 'acc', bank: 'Bank Leumi' });
+    expect(linked).toMatchObject({ ok: true, card: { accountId: 'acc', bank: 'Bank Leumi' } });
+    expect(cardDraftOf(method({ card: { accountId: 'acc' } })).accountId).toBe('acc');
+    expect(cardFromDraft(EMPTY_CARD_DRAFT)).toMatchObject({ ok: true, card: undefined });
+  });
+});

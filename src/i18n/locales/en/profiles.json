@@ -43,7 +43,8 @@
     "bank_transfer": "Bank transfer",
     "standing_order": "Standing order",
     "digital_wallet": "Digital wallet",
-    "other": "Other"
+    "other": "Other",
+    "bank_account": "Bank account"
   },
   "screen": {
     "title": "Profiles",

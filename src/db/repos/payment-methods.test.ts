@@ -360,3 +360,77 @@ describe('a credit card’s details', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('a bank account', () => {
+  const account = {
+    bank: '12',
+    branch: '689',
+    number: '123456',
+    holding: 'joint' as const,
+    holders: ['p1', 'p2'],
+    overdraftLimitMinor: 1_000_000,
+  };
+
+  it('is kept with its details, set whole and removed with null', async () => {
+    await createPaymentMethod(
+      handle.db,
+      'acc',
+      { label: 'Joint', type: 'bank_account', profileId: SHARED_OWNER, account },
+      NOW,
+    );
+    expect((await handle.db.paymentMethods.get('acc'))?.account).toEqual(account);
+    await updatePaymentMethod(
+      handle.db,
+      'acc',
+      { account: { ...account, holding: 'personal', holders: undefined } },
+      NOW,
+    );
+    expect((await handle.db.paymentMethods.get('acc'))?.account?.holding).toBe('personal');
+    await updatePaymentMethod(handle.db, 'acc', { account: null }, NOW);
+    expect((await handle.db.paymentMethods.get('acc'))?.account).toBeUndefined();
+  });
+
+  it('is refused when its details do not read, by the repository and not only the screen', async () => {
+    await expect(
+      createPaymentMethod(
+        handle.db,
+        'bad',
+        { label: 'Bad', type: 'bank_account', profileId: 'p1', account: { ...account, number: '12-34' } },
+        NOW,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      createPaymentMethod(
+        handle.db,
+        'bad',
+        { label: 'Bad', type: 'bank_account', profileId: 'p1', account: { ...account, holders: [] } },
+        NOW,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('when deleted, lets go of the cards paid from it - which keep their bank’s name', async () => {
+    await createPaymentMethod(
+      handle.db,
+      'acc',
+      { label: 'Joint', type: 'bank_account', profileId: 'p1', account },
+      NOW,
+    );
+    await createPaymentMethod(
+      handle.db,
+      'visa',
+      {
+        label: 'Visa',
+        type: 'credit_card',
+        profileId: 'p1',
+        card: { bank: 'בנק הפועלים', accountId: 'acc', billingDay: 10 },
+      },
+      NOW,
+    );
+    await deletePaymentMethod(handle.db, 'acc', {}, NOW);
+    expect((await handle.db.paymentMethods.get('visa'))?.card).toEqual({
+      bank: 'בנק הפועלים',
+      billingDay: 10,
+    });
+  });
+});

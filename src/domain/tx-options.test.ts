@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { categoriesFor, methodFits, methodsFor } from './tx-options';
+import { categoriesFor, methodFits, methodOwnedBy, methodsFor } from './tx-options';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
@@ -137,5 +137,32 @@ describe('what each kind of transaction can be paid with', () => {
 
   it('keeps what an old row already uses, even where it would not be offered now', () => {
     expect(offered('credit', 'debit')).toEqual(['debit', 'visa']);
+  });
+});
+
+describe('bank accounts', () => {
+  const account = method({ id: 'leumi', type: 'bank_account' });
+
+  it('pay at once, by order or by debit, and back a loan - never a card’s תשלומים or credit', () => {
+    for (const mode of ['one_time', 'monthly', 'yearly', 'standing_order', 'loan'] as const) {
+      expect(methodFits(account, mode)).toBe(true);
+    }
+    expect(methodFits(account, 'installments')).toBe(false);
+    expect(methodFits(account, 'credit')).toBe(false);
+  });
+
+  it('shared by some of the household are offered to them, and no one else', () => {
+    const joint = method({
+      id: 'joint',
+      type: 'bank_account',
+      profileId: SHARED_OWNER,
+      account: { bank: '12', holding: 'joint', holders: ['p1', 'p2'] },
+    });
+    expect(methodOwnedBy(joint, 'p1')).toBe(true);
+    expect(methodOwnedBy(joint, 'p2')).toBe(true);
+    expect(methodOwnedBy(joint, 'p3')).toBe(false);
+    expect(methodsFor([joint], 'p3')).toEqual([]);
+    expect(methodOwnedBy(method({ id: 'cash', profileId: SHARED_OWNER }), 'p3')).toBe(true);
+    expect(methodOwnedBy(method({ id: 'theirs', profileId: 'p2' }), 'p3')).toBe(false);
   });
 });
