@@ -25,6 +25,7 @@ import {
   sum,
   toDecimalString,
   toMinor,
+  prorateMinor,
 } from './money';
 
 describe('decimalToRational', () => {
@@ -642,5 +643,21 @@ describe('creditSchedule never costs less than the purchase', () => {
         },
       ),
     );
+  });
+});
+
+describe('prorateMinor', () => {
+  it('takes the part of an amount its days cover, rounded once', () => {
+    expect(prorateMinor(30000, 15, 30)).toBe(15000);
+    expect(prorateMinor(10000, 16, 31)).toBe(5161);
+    expect(prorateMinor(10000, 0, 30)).toBe(0);
+    expect(prorateMinor(10000, 30, 30)).toBe(10000);
+  });
+
+  it('refuses a part that is not one', () => {
+    expect(() => prorateMinor(100, 31, 30)).toThrow(RangeError);
+    expect(() => prorateMinor(100, 1, 0)).toThrow(RangeError);
+    expect(() => prorateMinor(100, -1, 30)).toThrow(RangeError);
+    expect(() => prorateMinor(1.5, 1, 30)).toThrow(RangeError);
   });
 });

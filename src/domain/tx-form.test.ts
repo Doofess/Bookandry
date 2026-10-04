@@ -7,6 +7,8 @@ import {
   defaultFormValues,
   defaultRecurringDay,
   firstOccurrenceDate,
+  firstPartialPeriod,
+  partialFirstOf,
   pastPayments,
   isLastDayChoice,
   lastInstallmentDate,
@@ -591,5 +593,68 @@ describe('pastPayments', () => {
     expect(
       pastPayments(d('2025-11-01'), { type: 'monthly', dayOfMonth: 1, installments: 12 }, today),
     ).toBeUndefined();
+  });
+});
+
+describe('the first month of a monthly rule that starts between billing days', () => {
+  it('is the days left to the next billing day, out of that billing month', () => {
+    // The example: billed on the 1st, started on 16 November - 15 of 30 days.
+    expect(firstPartialPeriod(d('2025-11-16'), 1)).toEqual({
+      days: 15,
+      periodDays: 30,
+      nextBilling: '2025-12-01',
+    });
+    // Billed on the 10th: the billing month runs 10 October to 10 November.
+    expect(firstPartialPeriod(d('2025-10-25'), 10)).toEqual({
+      days: 16,
+      periodDays: 31,
+      nextBilling: '2025-11-10',
+    });
+    // February is a short billing month.
+    expect(firstPartialPeriod(d('2026-02-15'), 1)).toEqual({
+      days: 14,
+      periodDays: 28,
+      nextBilling: '2026-03-01',
+    });
+  });
+
+  it('is nothing when the first payment is itself a billing day', () => {
+    expect(firstPartialPeriod(d('2025-12-01'), 1)).toBeUndefined();
+    expect(firstPartialPeriod(d('2026-02-28'), 31)).toBeUndefined();
+  });
+
+  const form = {
+    mode: 'standing_order' as const,
+    frequency: 'monthly' as const,
+    date: '2025-11-16',
+    dayOfMonth: '1',
+    amount: '300',
+    currency: 'ILS',
+    partialFirst: true,
+  };
+
+  it('charges 300 a month for 15 of 30 days as 150', () => {
+    expect(partialFirstOf(form)).toEqual({
+      amountMinor: 15000,
+      days: 15,
+      periodDays: 30,
+      nextBilling: '2025-12-01',
+    });
+  });
+
+  it('rounds to the agora, once', () => {
+    // 100 x 16 / 31 = 51.6129...
+    expect(
+      partialFirstOf({ ...form, amount: '100', date: '2025-10-25', dayOfMonth: '10' })?.amountMinor,
+    ).toBe(5161);
+  });
+
+  it('is off when turned off, yearly, unanswered, a plan, or a one-off', () => {
+    expect(partialFirstOf({ ...form, partialFirst: false })).toBeUndefined();
+    expect(partialFirstOf({ ...form, frequency: 'yearly' })).toBeUndefined();
+    expect(partialFirstOf({ ...form, frequency: '' })).toBeUndefined();
+    expect(partialFirstOf({ ...form, mode: 'installments' })).toBeUndefined();
+    expect(partialFirstOf({ ...form, mode: 'one_time' })).toBeUndefined();
+    expect(partialFirstOf({ ...form, amount: '' })).toBeUndefined();
   });
 });

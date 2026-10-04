@@ -323,6 +323,20 @@ export function divideMinor(minor: Minor, divisor: number): Minor {
 }
 
 /**
+ * The part of an amount that covers `part` of `whole` days: a ₪300 monthly
+ * charge started with 15 days of a 30-day month left costs ₪150 for them.
+ * One multiplication, one division, rounded once - half away from zero, as
+ * everywhere here - so it is never an agora out.
+ */
+export function prorateMinor(minor: Minor, part: number, whole: number): Minor {
+  if (!Number.isSafeInteger(minor)) throw new RangeError('minor must be a safe integer');
+  if (!Number.isSafeInteger(part) || !Number.isSafeInteger(whole) || whole <= 0 || part < 0 || part > whole) {
+    throw new RangeError(`cannot take ${String(part)} of ${String(whole)}`);
+  }
+  return toSafeNumber(divRound(BigInt(minor) * BigInt(part), BigInt(whole)));
+}
+
+/**
  * לוח שפיצר - the fixed monthly payment of an amortizing plan.
  *
  *   PMT = PV · r(1+r)^n / ((1+r)^n − 1)

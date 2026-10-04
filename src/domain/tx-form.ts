@@ -4,11 +4,12 @@ import {
   addMonthsClamped,
   clampDay,
   compareLocal,
+  daysBetween,
   isLocalDate,
   makeLocalDate,
   parseLocalDate,
 } from '@/lib/dates';
-import { creditSchedule, normalizeAnnualRate, toMinor } from '@/lib/money';
+import { creditSchedule, normalizeAnnualRate, prorateMinor, toMinor } from '@/lib/money';
 import type { Recurrence } from '@/types/domain';
 import type { Kind, LocalDate, Minor } from '@/types/money';
 
@@ -131,6 +132,13 @@ export const txFormSchema = z
      * to תשלומים rather than an error.
      */
     annualRate: z.string(),
+    /**
+     * A monthly rule whose first payment falls between two billing days pays
+     * only for the days it covers first (`firstPartialPeriod`). Turned on when
+     * a first payment is picked, and only ever offered, and applied, when the
+     * dates actually leave a part-month.
+     */
+    partialFirst: z.boolean(),
   })
   .superRefine((values, ctx) => {
     const amountMinor = parseAmount(values.amount, values.currency);
@@ -246,6 +254,8 @@ export const txFormSchema = z
        * at 12% is six payments of ₪207.06, not of ₪200.
        */
       installmentTotalMinor: isInstallmentMode(values.mode) ? planTotal(values) : undefined,
+      /** The one-off charge for the part-month before the first full payment, when there is one. */
+      partialFirst: partialFirstOf(values),
     };
   });
 
@@ -394,6 +404,10 @@ export function defaultFormValues(input: {
     installmentCount: '',
     frequency: '',
     annualRate: '',
+    // Off until a first payment is actually chosen (the sheet turns it on
+    // then): today's date and the last-day default are not a person saying
+    // "it started mid-month", and rent entered on the 4th is not a part-month.
+    partialFirst: false,
   };
 }
 
@@ -478,6 +492,64 @@ export function pastPayments(
     count++;
   }
   return first === undefined || last === undefined ? undefined : { count, first, last };
+}
+
+/**
+ * The part-month before a monthly rule's first full payment.
+ *
+ * A subscription taken on 16 November and billed on the 1st first charges for
+ * 16-30 November: 15 of that billing month's 30 days, so ₪150 of ₪300, on the
+ * day it starts. Measured against the billing month it falls in - from the
+ * billing day before it to the one after - so a rule billed on the 10th
+ * counts 10 October to 10 November, and a February one 28 or 29 days.
+ *
+ * Undefined when the first payment IS a billing day: there is no part-month.
+ */
+export function firstPartialPeriod(
+  date: LocalDate,
+  dayOfMonth: number,
+): { readonly days: number; readonly periodDays: number; readonly nextBilling: LocalDate } | undefined {
+  const nextBilling = firstOccurrenceDate(date, { type: 'monthly', dayOfMonth });
+  if (nextBilling === date) return undefined;
+  const previousBilling = addMonthsClamped(nextBilling, -1, dayOfMonth);
+  return {
+    days: daysBetween(date, nextBilling),
+    periodDays: daysBetween(previousBilling, nextBilling),
+    nextBilling,
+  };
+}
+
+/**
+ * The partial first charge the form will save alongside a monthly rule, or
+ * undefined: a one-off, a yearly or open-ended-but-unanswered standing order, a
+ * plan, a first payment that falls on a billing day, or the option turned off.
+ */
+export function partialFirstOf(values: {
+  readonly mode: RecurrenceMode;
+  readonly frequency: StandingOrderFrequency;
+  readonly date: string;
+  readonly dayOfMonth: string;
+  readonly amount: string;
+  readonly currency: string;
+  readonly partialFirst: boolean;
+}):
+  | {
+      readonly amountMinor: Minor;
+      readonly days: number;
+      readonly periodDays: number;
+      readonly nextBilling: LocalDate;
+    }
+  | undefined {
+  const monthly =
+    values.mode === 'monthly' || (values.mode === 'standing_order' && values.frequency === 'monthly');
+  if (!monthly || !values.partialFirst || !isLocalDate(values.date)) return undefined;
+  const day = Number(values.dayOfMonth);
+  if (!(day >= 1 && day <= LAST_DAY_OF_MONTH)) return undefined;
+  const amountMinor = parseAmount(values.amount, values.currency);
+  if (amountMinor === undefined || amountMinor <= 0) return undefined;
+  const period = firstPartialPeriod(values.date, day);
+  if (period === undefined) return undefined;
+  return { amountMinor: prorateMinor(amountMinor, period.days, period.periodDays), ...period };
 }
 
 /**

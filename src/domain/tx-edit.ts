@@ -117,6 +117,8 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
      * an edit of a plan never rewrites.
      */
     annualRate: '',
+    // A saved rule's first month is behind it: nothing to split.
+    partialFirst: false,
   };
 }
 

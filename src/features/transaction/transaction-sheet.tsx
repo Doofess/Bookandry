@@ -3,10 +3,11 @@ import { cn } from 'cn';
 import { History, Sparkles } from 'lucide-react';
 import { useCallback, useId, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { AmountInput } from '@/components/amount-input';
 import { CurrencySelect } from '@/components/currency-select';
+import { Money } from '@/components/money';
 import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
@@ -23,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { applySeriesEdit } from '@/db/series-edit';
@@ -31,6 +33,7 @@ import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } f
 import {
   defaultFormValues,
   firstOccurrenceDate,
+  partialFirstOf,
   pastPaymentsOf,
   MAX_INSTALLMENTS,
   MIN_INSTALLMENTS,
@@ -304,6 +307,7 @@ function TransactionForm({
   const methodId = useId();
   const dateId = useId();
   const noteId = useId();
+  const partialId = useId();
   const profileLabelId = useId();
 
   const form = useForm<TxFormValues, unknown, TxFormParsed>({
@@ -330,6 +334,8 @@ function TransactionForm({
   const repeats = values.mode === 'monthly' || values.mode === 'yearly' || values.mode === 'standing_order';
   // Only for a new rule: an edit already shows its past in the feed.
   const past = editing === undefined ? pastPaymentsOf(values, today) : undefined;
+  /** The part-month the first payment leaves, whether or not it is being charged. */
+  const partMonth = editing === undefined ? partialFirstOf({ ...values, partialFirst: true }) : undefined;
 
   const rateField = useRateField({
     amount: values.amount,
@@ -479,13 +485,36 @@ function TransactionForm({
 
     try {
       if (editing === undefined) {
-        const result = await saveNewTransaction(db, {
-          parsed,
-          baseCurrency,
-          ...(rate === undefined ? {} : { rate }),
-          now: systemClock.nowIso(),
-          newId,
-        });
+        const save = (input: typeof parsed) =>
+          saveNewTransaction(db, {
+            parsed: input,
+            baseCurrency,
+            ...(rate === undefined ? {} : { rate }),
+            now: systemClock.nowIso(),
+            newId,
+          });
+        const partial = parsed.partialFirst;
+        if (partial !== undefined) {
+          /*
+           * Two rows, written together or not at all: the part-month as a
+           * one-off on the day it started, and the rule from its first full
+           * billing day. A rule can only pay on its billing day, so the
+           * part-month cannot be one of its own payments.
+           */
+          await db.transaction('rw', [db.transactions, db.overrides], async () => {
+            await save({
+              ...parsed,
+              amountMinor: partial.amountMinor,
+              recurrence: { type: 'one_time' },
+              installmentTotalMinor: undefined,
+              partialFirst: undefined,
+            });
+            await save({ ...parsed, date: partial.nextBilling });
+          });
+          onSaved(parsed.date);
+          return;
+        }
+        const result = await save(parsed);
         /*
          * The first OCCURRENCE, not the transaction's date.
          *
@@ -799,6 +828,8 @@ function TransactionForm({
                 if (values.mode !== 'one_time') {
                   setValue('dayOfMonth', String(parseLocalDate(next).day), { shouldValidate: true });
                 }
+                // A first payment someone picked is one that may start mid-month.
+                setValue('partialFirst', true);
               }}
               labelledBy={dateId}
               invalid={errors.date !== undefined}
@@ -881,6 +912,42 @@ function TransactionForm({
           amountMinor={amountMinor}
           errors={errors}
         />
+      )}
+
+      {/* A part-month before the first full payment: charge only for its days, or the whole month. */}
+      {partMonth === undefined ? null : (
+        <div className="flex items-start justify-between gap-4 rounded-xl border border-border p-3">
+          <div className="space-y-1">
+            <Label htmlFor={partialId}>{t('tx.partialFirst')}</Label>
+            <p className="text-xs text-muted-foreground">
+              <Trans
+                i18nKey={values.partialFirst ? 'tx.partialFirstOn' : 'tx.partialFirstOff'}
+                values={{
+                  days: partMonth.days,
+                  period: partMonth.periodDays,
+                  start: formatLocalDate(values.date as LocalDate, i18n.language, {
+                    day: 'numeric',
+                    month: 'long',
+                  }),
+                  next: formatLocalDate(partMonth.nextBilling, i18n.language, {
+                    day: 'numeric',
+                    month: 'long',
+                  }),
+                }}
+                components={{
+                  amount: <Money minor={partMonth.amountMinor} currency={values.currency} announce={false} />,
+                }}
+              />
+            </p>
+          </div>
+          <Switch
+            id={partialId}
+            checked={values.partialFirst}
+            onCheckedChange={(on) => {
+              setValue('partialFirst', on);
+            }}
+          />
+        </div>
       )}
 
       {saveError === undefined ? null : (

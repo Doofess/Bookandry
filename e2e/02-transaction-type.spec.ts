@@ -43,6 +43,9 @@ const COPY = {
     firstPayment: 'First payment',
     day: 'On day',
     typed: '11/01/2025',
+    midMonth: '11/16/2025',
+    partial: 'Charge only for the days used in the first month',
+    partialText: /15 of 30 days/,
     readout: /November 1, 2025/,
     past: /Starts in the past: \d+ payments, November 2025 to/,
   },
@@ -67,6 +70,9 @@ const COPY = {
     firstPayment: 'תשלום ראשון',
     day: 'ביום',
     typed: '01/11/2025',
+    midMonth: '16/11/2025',
+    partial: 'חיוב רק על הימים שנוצלו בחודש הראשון',
+    partialText: /15 מתוך 30 ימים/,
     readout: /1 בנובמבר 2025/,
     past: /מתחיל בעבר: \d+ תשלומים, מ־נובמבר 2025 עד/,
   },
@@ -270,6 +276,60 @@ for (const lang of ['en', 'he'] as const) {
 
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test('charges a first month that starts mid-month only for its days', async ({ page }) => {
+      /*
+       * ₪300 a month, billed on the 1st, started on 16 November: 15 of the
+       * month's 30 days, so ₪150 then, and ₪300 from 1 December.
+       */
+      await completeFirstRun(page, lang, { demo: false });
+      await page.getByTestId('fab').click();
+      await page.getByLabel(copy.amount, { exact: true }).fill('300');
+      await page.getByRole('radio', { name: copy.standing, exact: true }).click();
+      await page.getByRole('radio', { name: copy.monthly, exact: true }).click();
+      const date = page.getByLabel(copy.firstPayment, { exact: true });
+      await date.fill(copy.midMonth);
+      await date.press('Enter');
+      await page.getByLabel(copy.day, { exact: true }).fill('1');
+
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(page.getByRole('switch', { name: copy.partial })).toBeChecked();
+      await expect(sheet).toContainText(copy.partialText);
+      await expect(sheet).toContainText('150.00');
+
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+
+      // Exactly what was promised: one part-month charge, one rule from the 1st.
+      const saved = await page.evaluate(
+        () =>
+          new Promise<{ date: string; amount: number; type: string }[]>((resolve, reject) => {
+            const open = indexedDB.open('greenback');
+            open.onerror = () => {
+              reject(new Error('open failed'));
+            };
+            open.onsuccess = () => {
+              const all = open.result.transaction('transactions').objectStore('transactions').getAll();
+              all.onsuccess = () => {
+                const rows = all.result as {
+                  date: string;
+                  money: { amountMinor: number };
+                  recurrence: { type: string };
+                }[];
+                resolve(
+                  rows
+                    .map((r) => ({ date: r.date, amount: r.money.amountMinor, type: r.recurrence.type }))
+                    .sort((a, b) => a.date.localeCompare(b.date)),
+                );
+              };
+            };
+          }),
+      );
+      expect(saved).toEqual([
+        { date: '2025-11-16', amount: 15000, type: 'one_time' },
+        { date: '2025-12-01', amount: 30000, type: 'monthly' },
+      ]);
     });
 
     test('refuses a rate that is not one, and says why', async ({ page }) => {
