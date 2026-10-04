@@ -27,6 +27,7 @@ import { ensureSettings } from '@/db/repos/settings';
 import { startSweeper } from '@/db/sweeper';
 import { AccountScreen } from '@/features/account/account-screen';
 import { SecurityScreen } from '@/features/account/security-screen';
+import { CardsScreen } from '@/features/cards/cards-screen';
 import { ChartScreen } from '@/features/chart/chart-screen';
 import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
@@ -56,6 +57,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <FeedScreen /> },
       { path: ROUTES.chart, element: <ChartScreen /> },
+      { path: ROUTES.cards, element: <CardsScreen /> },
       { path: ROUTES.profiles, element: <ProfilesScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
       { path: SETTINGS_ROUTES.account, element: <AccountScreen /> },

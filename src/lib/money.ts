@@ -495,3 +495,12 @@ export function addRates(a: string, b: string): string {
   const fraction = digits.slice(digits.length - places).replace(/0+$/, '');
   return (n < 0n ? '-' : '') + whole + (fraction === '' ? '' : `.${fraction}`);
 }
+
+/**
+ * An amount with a percentage fee added - a card's foreign-currency fee:
+ * ₪100.00 at 2.5% is ₪102.50. Exact, and rounded once (half away from zero).
+ */
+export function addPercentFee(minor: Minor, percent: string): Minor {
+  const rate = decimalToRational(percent);
+  return toSafeNumber(BigInt(minor) + divRound(BigInt(minor) * rate.n, rate.d * 100n));
+}

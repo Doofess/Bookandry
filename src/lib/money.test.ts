@@ -21,6 +21,7 @@ import {
   normalizeAnnualRate,
   normalizeRateMargin,
   addRates,
+  addPercentFee,
   rateDeviationExceeds,
   rateFromAmounts,
   spitzerPayment,
@@ -695,5 +696,18 @@ describe('addRates', () => {
     ['0.05', '0.05', '0.1'],
   ])('%s + %s = %s, exactly', (a, b, expected) => {
     expect(addRates(a, b)).toBe(expected);
+  });
+});
+
+describe('addPercentFee', () => {
+  it.each([
+    [10_000, '2.5', 10_250],
+    [10_000, '0', 10_000],
+    [333, '3', 343],
+    // 0.5 agora rounds away from zero.
+    [50, '1', 51],
+    [12_345, '2.75', 12_684],
+  ])('%i + %s%% = %i', (minor, percent, expected) => {
+    expect(addPercentFee(minor, percent)).toBe(expected);
   });
 });

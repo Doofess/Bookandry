@@ -27,10 +27,11 @@ import {
   setPaymentMethodArchived,
   updatePaymentMethod,
 } from '@/db/repos/payment-methods';
+import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, type CardDraft } from '@/domain/card-draft';
+import { CardFields } from '@/features/cards/card-fields';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
-import { normalizeAnnualRate } from '@/lib/money';
 import {
   isBuiltinPaymentMethod,
   SHARED_OWNER,
@@ -42,10 +43,11 @@ import {
 /**
  * The payment-method manager.
  *
- * What it stores is a LABEL the user chose and nothing else. No part of a
- * payment instrument is ever requested or kept, and that is not a convention
- * anyone has to remember: `gate:pci` fails the build on those field names
- * anywhere in src or e2e, with no escape hatch.
+ * What it stores is a LABEL the user chose and, for a credit card, what the
+ * card company shows about it - billing day, fees, interest, the month it
+ * expires. Never anything that identifies or charges the card: no number, no
+ * code from the back, and that is not a convention anyone has to remember - `gate:pci` fails
+ * the build on those field names anywhere in src or e2e, with no escape hatch.
  *
  * Methods belong to a profile or to the household. The shared owner is a real
  * indexable sentinel rather than a null, because IndexedDB cannot index null -
@@ -244,14 +246,17 @@ export function PaymentMethodsScreen() {
   );
 }
 
-function MethodEditor({
+export function MethodEditor({
   target,
   profiles,
   onOpenChange,
+  newType = 'credit_card',
 }: {
   readonly target: PaymentMethod | 'new' | undefined;
   readonly profiles: readonly Profile[];
   readonly onOpenChange: (open: boolean) => void;
+  /** What a new method starts as. */
+  readonly newType?: PaymentMethodType;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const isNew = target === 'new';
@@ -260,7 +265,7 @@ function MethodEditor({
   const [label, setLabel] = useState('');
   const [type, setType] = useState<PaymentMethodType>('credit_card');
   const [owner, setOwner] = useState<string>(SHARED_OWNER);
-  const [rate, setRate] = useState('');
+  const [card, setCard] = useState<CardDraft>(EMPTY_CARD_DRAFT);
   /** Set by a save attempt: the rate error waits until somebody tries. */
   const [attempted, setAttempted] = useState(false);
   const [seeded, setSeeded] = useState<string | undefined>(undefined);
@@ -268,7 +273,6 @@ function MethodEditor({
   const labelId = useId();
   const typeId = useId();
   const ownerId = useId();
-  const rateId = useId();
 
   // Derived from the target during render, not synchronised in an effect: an
   // effect would paint one frame of the previous method's label.
@@ -276,13 +280,14 @@ function MethodEditor({
   if (identity !== seeded) {
     setSeeded(identity);
     setLabel(existing?.label ?? '');
-    setType(existing?.type ?? 'credit_card');
+    setType(existing?.type ?? newType);
     setOwner(existing?.profileId ?? profiles[0]?.id ?? SHARED_OWNER);
-    setRate(existing?.creditAnnualRate ?? '');
+    setCard(cardDraftOf(existing));
     setAttempted(false);
   }
 
-  const rateInvalid = type === 'credit_card' && rate.trim() !== '' && normalizeAnnualRate(rate) === undefined;
+  const parsedCard = cardFromDraft(card);
+  const cardInvalid = type === 'credit_card' && !parsedCard.ok;
 
   const save = async (): Promise<void> => {
     const now = systemClock.nowIso();
@@ -294,18 +299,31 @@ function MethodEditor({
      * `null` rather than omission, because the patch type uses `undefined` for
      * "leave alone" - omitting it would make the rate unclearable.
      */
-    const creditAnnualRate = type === 'credit_card' ? (normalizeAnnualRate(rate) ?? null) : null;
+    const isCard = type === 'credit_card' && parsedCard.ok;
+    const creditAnnualRate = isCard ? parsedCard.creditAnnualRate : null;
+    const details = isCard ? parsedCard.card : undefined;
 
     try {
       if (isNew) {
         await createPaymentMethod(
           db,
           newId(),
-          { label, type, profileId: owner, ...(creditAnnualRate === null ? {} : { creditAnnualRate }) },
+          {
+            label,
+            type,
+            profileId: owner,
+            ...(creditAnnualRate === null ? {} : { creditAnnualRate }),
+            ...(details === undefined ? {} : { card: details }),
+          },
           now,
         );
       } else if (existing !== undefined) {
-        await updatePaymentMethod(db, existing.id, { label, type, profileId: owner, creditAnnualRate }, now);
+        await updatePaymentMethod(
+          db,
+          existing.id,
+          { label, type, profileId: owner, creditAnnualRate, card: details ?? null },
+          now,
+        );
       }
       onOpenChange(false);
     } catch {
@@ -327,7 +345,7 @@ function MethodEditor({
           onSubmit={(event) => {
             event.preventDefault();
             setAttempted(true);
-            if (label.trim() !== '' && !rateInvalid) void save();
+            if (label.trim() !== '' && !cardInvalid) void save();
           }}
           className="space-y-4 px-4 pb-6"
         >
@@ -359,42 +377,20 @@ function MethodEditor({
           </div>
 
           {/*
-            The card's own interest rate, asked once instead of per purchase.
-
-            It is a property of the CARD: it is on the statement, it is the same
-            for every עסקת קרדיט charged to it, and typing it into each
-            transaction is how a wrong one gets in. Only for a credit card,
-            because nothing else charges it.
+            Everything a card company shows about the card - its billing day,
+            its fees, its interest - asked once instead of per purchase, and
+            never its number. Only for a credit card: nothing else is billed
+            monthly or charges קרדיט.
           */}
           {type === 'credit_card' ? (
-            <div className="space-y-1.5">
-              <Label htmlFor={rateId}>{t('categories:manage.methodRate')}</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id={rateId}
-                  type="text"
-                  inputMode="decimal"
-                  value={rate}
-                  onChange={(event) => {
-                    setRate(event.target.value.replace(/[^\d.]/g, '').slice(0, 6));
-                  }}
-                  aria-invalid={attempted && rateInvalid}
-                  aria-describedby={`${rateId}-hint`}
-                  className="h-11 w-24"
-                />
-                <span className="text-sm text-muted-foreground">{t('tx.annualRateUnit')}</span>
-              </div>
-              {/* The error REPLACES the hint in the described-by target, so a
-                  screen reader hears why the save did nothing. */}
-              <p
-                id={`${rateId}-hint`}
-                className={
-                  attempted && rateInvalid ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'
-                }
-              >
-                {attempted && rateInvalid ? t('tx.errRateOutOfRange') : t('categories:manage.methodRateHint')}
-              </p>
-            </div>
+            <CardFields
+              key={seeded}
+              draft={card}
+              onChange={(patch) => {
+                setCard((current) => ({ ...current, ...patch }));
+              }}
+              invalid={attempted && !parsedCard.ok ? parsedCard.invalid : []}
+            />
           ) : null}
 
           <div className="space-y-1.5">

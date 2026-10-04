@@ -8,7 +8,8 @@
     "feed": "תנועות",
     "chart": "תרשים",
     "profiles": "פרופילים",
-    "settings": "הגדרות"
+    "settings": "הגדרות",
+    "cards": "כרטיסים"
   },
   "a11y": {
     "skipToContent": "דילוג לתוכן",
@@ -169,7 +170,8 @@
     "groupLoans": "הלוואות",
     "groupInstallments": "תשלומים",
     "groupYearly": "פעם בשנה",
-    "groupOneTime": "חד-פעמי"
+    "groupOneTime": "חד-פעמי",
+    "cardPending": "נקנה בכרטיס, טרם חויב"
   },
   "profile": {
     "switcher": "פרופיל",
@@ -340,7 +342,9 @@
     "primeNextDecision": "ההחלטה הבאה ב־{{date}}.",
     "primeBuiltIn": "נכון ל־{{date}}; יתעדכן כשהאפליקציה תהיה מחוברת.",
     "primeTotal": "ריבית ההלוואה: <rate></rate> לשנה.",
-    "errMarginInvalid": "הזינו מספר, למשל 1.5 או ⁦-0.5⁩."
+    "errMarginInvalid": "הזינו מספר, למשל 1.5 או ⁦-0.5⁩.",
+    "cardCharged": "יחויב בבנק עם חיוב הכרטיס ב־{{date}}.",
+    "cardFxFee": "במטבע חוץ, הכרטיס מוסיף <rate></rate>."
   },
   "commitments": {
     "title": "התחייבויות קבועות",

@@ -1,11 +1,13 @@
 import { withoutTracking, type BookandryDB } from '@/db/db';
 import { buildSeedPaymentMethods } from '@/db/seed';
+import { cardSchema } from '@/domain/transfer-schema';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
 import {
   isBuiltinPaymentMethod,
   redirectId,
   SHARED_OWNER,
+  type CardDetails,
   type PaymentMethod,
   type PaymentMethodType,
 } from '@/types/domain';
@@ -48,11 +50,12 @@ export async function createPaymentMethod(
     profileId: string;
     color?: string;
     creditAnnualRate?: string;
+    card?: CardDetails;
   },
   now: IsoInstant,
 ): Promise<PaymentMethod> {
-  // §12: a LABEL, never a number, expiry or any other credential. The label is
-  // the only free text this table holds, and gate:pci keeps it that way.
+  // §12: a LABEL, never a number or any other credential. gate:pci keeps it
+  // that way.
   const label = normalizeName(draft.label);
   const creditAnnualRate =
     draft.creditAnnualRate === undefined ? undefined : checkedRate(draft.creditAnnualRate);
@@ -64,6 +67,7 @@ export async function createPaymentMethod(
     label,
     color: draft.color,
     ...(creditAnnualRate === undefined ? {} : { creditAnnualRate }),
+    ...(draft.card === undefined ? {} : { card: checkedCard(draft.card) }),
     isArchived: 0,
     createdAt: now,
     updatedAt: now,
@@ -78,6 +82,8 @@ export async function updatePaymentMethod(
   patch: Partial<Pick<PaymentMethod, 'label' | 'type' | 'color' | 'profileId'>> & {
     /** `null` CLEARS it, which `Partial<>` alone cannot express. */
     readonly creditAnnualRate?: string | null;
+    /** The card's details, whole; `null` removes them. */
+    readonly card?: CardDetails | null;
   },
   now: IsoInstant,
 ): Promise<PaymentMethod> {
@@ -102,7 +108,7 @@ export async function updatePaymentMethod(
   return db.transaction('rw', db.paymentMethods, async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);
-    const { creditAnnualRate: _raw, ...rest } = patch;
+    const { creditAnnualRate: _raw, card, ...rest } = patch;
     const next: PaymentMethod = {
       ...current,
       ...rest,
@@ -113,6 +119,7 @@ export async function updatePaymentMethod(
         : rate === null
           ? { creditAnnualRate: undefined }
           : { creditAnnualRate: rate }),
+      ...(card === undefined ? {} : { card: card === null ? undefined : checkedCard(card) }),
       updatedAt: now,
     };
     await db.paymentMethods.put(next);
@@ -127,6 +134,11 @@ export async function updatePaymentMethod(
  * rules are: the screen is one caller. A rate that reached the table as "1e1"
  * or "12.5.1" would be copied onto every קרדיט plan charged to the card.
  */
+/** Card details the rest of the app can read, or a thrown error - the same rule an import is held to. */
+function checkedCard(card: CardDetails): CardDetails {
+  return cardSchema.parse(card);
+}
+
 function checkedRate(input: string): string {
   const rate = normalizeAnnualRate(input);
   if (rate === undefined) throw new RangeError(`Not an annual rate: ${JSON.stringify(input)}`);

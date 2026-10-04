@@ -247,6 +247,41 @@ describe('referential integrity', () => {
     }
   });
 
+  it('accepts what a card company shows about a card, and refuses what does not read', () => {
+    const doc = envelope() as ExportEnvelope;
+    const [first] = doc.data.paymentMethods;
+    const withCard = (card: unknown) =>
+      validateEnvelope({ ...doc, data: { ...doc.data, paymentMethods: [{ ...first, card }] } });
+    expect(
+      withCard({
+        issuer: 'max',
+        network: 'mastercard',
+        kind: 'non_bank',
+        bank: 'Leumi',
+        tier: 'Platinum',
+        club: 'FLY CARD',
+        expiresMonth: '2029-04',
+        billingDay: 10,
+        creditLimitMinor: 1_500_000,
+        monthlyFeeMinor: 1_490,
+        fxFeeRate: '2.5',
+        creditPrimeMargin: '3.5',
+        lateRate: { basis: 'prime', margin: '8' },
+      }).ok,
+    ).toBe(true);
+    for (const bad of [
+      { billingDay: 32 },
+      { expiresMonth: '09/28' },
+      { issuer: 'leumicard' },
+      { fxFeeRate: '1e1' },
+      { creditPrimeMargin: '+1' },
+      { lateRate: { basis: 'fixed', rate: '-1' } },
+      { creditLimitMinor: -1 },
+    ]) {
+      expect(withCard(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
   it('rejects an impossible calendar date', () => {
     // A regex alone would wave 2026-02-30 through, and it would only surface
     // much later inside occurrence expansion.

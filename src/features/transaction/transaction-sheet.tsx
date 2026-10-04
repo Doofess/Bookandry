@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { applySeriesEdit } from '@/db/series-edit';
+import { cardCreditRate, fxFeeFor } from '@/domain/cards';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
 import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } from '@/domain/tx-edit';
 import {
@@ -52,6 +53,7 @@ import { toDecimalString, toMinor } from '@/lib/money';
 import type { Category, PaymentMethod, Profile } from '@/types/domain';
 import type { Currency, Kind, LocalDate, Minor } from '@/types/money';
 
+import { CardChargeNote } from './card-charge-note';
 import { CategoryField } from './category-field';
 import { DateField } from './date-field';
 import { PaymentMethodField } from './payment-method-field';
@@ -76,8 +78,11 @@ const LOANS_CATEGORY_ID = 'cat.loans';
  * '' is a real answer rather than a missing one: a plan at no interest is
  * arithmetically תשלומים, which is a coherent thing to have chosen.
  */
-function rateOfCard(methods: readonly PaymentMethod[], methodId: string): string {
-  return methods.find((method) => method.id === methodId)?.creditAnnualRate ?? '';
+function rateOfCard(methods: readonly PaymentMethod[], methodId: string, primeRate: string): string {
+  return cardCreditRate(
+    methods.find((method) => method.id === methodId),
+    primeRate,
+  );
 }
 
 /**
@@ -504,6 +509,11 @@ function TransactionForm({
             rateSource: resolution.rateSource,
           }
         : undefined;
+    // The paying card's foreign-currency fee, snapshotted with the rate.
+    const feeRate = fxFeeFor(
+      paymentMethods.find((m) => m.id === parsed.paymentMethodId),
+      parsed.currency,
+    );
 
     try {
       if (editing === undefined) {
@@ -512,6 +522,7 @@ function TransactionForm({
             parsed: input,
             baseCurrency,
             ...(rate === undefined ? {} : { rate }),
+            ...(feeRate === undefined ? {} : { feeRate }),
             now: systemClock.nowIso(),
             newId,
           });
@@ -564,6 +575,7 @@ function TransactionForm({
         parsed,
         baseCurrency,
         ...(rate === undefined ? {} : { rate }),
+        ...(feeRate === undefined ? {} : { feeRate }),
         now: systemClock.nowIso(),
         newId,
       });
@@ -798,7 +810,7 @@ function TransactionForm({
                    * body, and an effect would also fight the user's own typing.
                    */
                   if (values.mode === 'credit') {
-                    form.setValue('annualRate', rateOfCard(paymentMethods, methodId_), {
+                    form.setValue('annualRate', rateOfCard(paymentMethods, methodId_, prime.primeRate), {
                       shouldValidate: true,
                     });
                   }
@@ -809,6 +821,12 @@ function TransactionForm({
                 labelledBy={methodId}
               />
             )}
+          />
+          <CardChargeNote
+            method={paymentMethods.find((m) => m.id === values.paymentMethodId)}
+            date={values.date}
+            currency={values.currency}
+            amountMinor={amountMinor}
           />
         </div>
       ) : null}
@@ -927,7 +945,10 @@ function TransactionForm({
             if (patch.mode === 'credit') {
               // Entering קרדיט: the card's rate is the answer to a question the
               // user should not have to be asked, so it arrives filled in.
-              setValue('annualRate', methodKept ? rateOfCard(paymentMethods, values.paymentMethodId) : '');
+              setValue(
+                'annualRate',
+                methodKept ? rateOfCard(paymentMethods, values.paymentMethodId, prime.primeRate) : '',
+              );
             } else if (patch.annualRate !== undefined) {
               setValue('annualRate', patch.annualRate, { shouldValidate: true });
             }

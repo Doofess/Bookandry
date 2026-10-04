@@ -1,5 +1,5 @@
 import type { TxFormParsed } from '@/domain/tx-form';
-import { convertMinor } from '@/lib/money';
+import { addPercentFee, convertMinor } from '@/lib/money';
 import type { Currency, IsoInstant, LocalDate, MoneySnapshot, RateSource, RateString } from '@/types/money';
 
 import type { BookandryDB } from './db';
@@ -22,6 +22,8 @@ export type SaveInput = {
   readonly baseCurrency: Currency;
   /** Absent only when the transaction is already in the base currency. */
   readonly rate?: ResolvedRate;
+  /** The paying card's foreign-currency fee (`fxFeeFor`), when it charges one. */
+  readonly feeRate?: string;
   readonly now: IsoInstant;
   readonly newId: () => string;
 };
@@ -42,6 +44,14 @@ export class RateMissingError extends Error {
  * recomputes from `(amountMinor, currency)` rather than from `baseAmountMinor`.
  */
 export function buildMoney(input: SaveInput): MoneySnapshot {
+  const money = convertedMoney(input);
+  const fee = input.feeRate;
+  if (fee === undefined) return money;
+  // A card's foreign-currency fee: what the statement will charge, in the base.
+  return { ...money, baseAmountMinor: addPercentFee(money.baseAmountMinor, fee), feeRate: fee };
+}
+
+function convertedMoney(input: SaveInput): MoneySnapshot {
   const { parsed, baseCurrency, rate } = input;
 
   if (parsed.currency === baseCurrency) {

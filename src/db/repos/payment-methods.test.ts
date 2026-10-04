@@ -317,3 +317,46 @@ describe('the built-in methods on an older install', () => {
     expect(await handle.db.outbox.toArray()).toEqual([]);
   });
 });
+
+describe('a credit card’s details', () => {
+  const card = { issuer: 'max', billingDay: 10, expiresMonth: '2029-04', fxFeeRate: '2.5' } as const;
+
+  it('are kept with the card, set whole and removed with null', async () => {
+    const made = await createPaymentMethod(
+      handle.db,
+      'visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1', card },
+      NOW,
+    );
+    expect(made.card).toEqual(card);
+
+    await updatePaymentMethod(handle.db, 'visa', { label: 'Visa Gold' }, NOW);
+    expect((await handle.db.paymentMethods.get('visa'))?.card).toEqual(card);
+
+    await updatePaymentMethod(handle.db, 'visa', { card: { billingDay: 2 } }, NOW);
+    expect((await handle.db.paymentMethods.get('visa'))?.card).toEqual({ billingDay: 2 });
+
+    await updatePaymentMethod(handle.db, 'visa', { card: null }, NOW);
+    expect((await handle.db.paymentMethods.get('visa'))?.card).toBeUndefined();
+  });
+
+  it('are refused when they do not read, by the repository and not only the screen', async () => {
+    await expect(
+      createPaymentMethod(
+        handle.db,
+        'bad',
+        { label: 'Bad', type: 'credit_card', profileId: 'p1', card: { billingDay: 40 } },
+        NOW,
+      ),
+    ).rejects.toThrow();
+    await createPaymentMethod(
+      handle.db,
+      'visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1' },
+      NOW,
+    );
+    await expect(
+      updatePaymentMethod(handle.db, 'visa', { card: { expiresMonth: '09/28' } }, NOW),
+    ).rejects.toThrow();
+  });
+});

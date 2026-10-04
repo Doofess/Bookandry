@@ -226,6 +226,8 @@ export type BalanceParts = {
   readonly openingMinor: Minor;
   readonly incomeMinor: Minor;
   readonly expenseMinor: Minor;
+  /** Bought on a card and not yet debited: on a bill still to come, so not in the balance yet. */
+  readonly cardPendingMinor?: Minor;
 };
 
 /**

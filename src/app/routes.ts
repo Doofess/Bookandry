@@ -1,6 +1,7 @@
 export const ROUTES = {
   feed: '/',
   chart: '/chart',
+  cards: '/cards',
   profiles: '/profiles',
   settings: '/settings',
 } as const;
@@ -10,12 +11,13 @@ export type RouteKey = keyof typeof ROUTES;
 /**
  * Order is the tab-bar / rail order, and the primary tab order.
  *
- * Three: the places the money is. Settings left the tabs for the account menu
+ * Four: the places the money is - and the cards it moves through, which
+ * decide WHEN it leaves the account. Settings left the tabs for the account menu
  * at the top of every screen (the person's picture), where an account's and
  * an app's settings are looked for. Every screen the app grows does not earn
  * a tab: a bar that scrolls is a bar nobody reads.
  */
-export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'profiles'];
+export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'cards', 'profiles'];
 
 /**
  * Routes reachable by link rather than by tab: from the account menu, and

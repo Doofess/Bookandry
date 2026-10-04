@@ -513,10 +513,63 @@ export function buildDemoData(input: DemoInput): DemoData {
     updatedAt: now,
   }));
 
-  const methodSeeds: readonly Pick<PaymentMethod, 'id' | 'profileId' | 'type' | 'label'>[] = [
-    { id: PM_DANA, profileId: P_DANA, type: 'credit_card', label: s.danaCard },
-    { id: PM_YOSSI, profileId: P_YOSSI, type: 'credit_card', label: s.yossiCard },
-    { id: PM_JOINT, profileId: SHARED_OWNER, type: 'credit_card', label: s.jointCard },
+  /*
+   * The three Israeli card companies, each billing on one of the usual days,
+   * with the fees and prime-linked interest their statements quote - so the
+   * Cards screen and the billing-day balance have something real to show.
+   */
+  const methodSeeds: readonly Pick<PaymentMethod, 'id' | 'profileId' | 'type' | 'label' | 'card'>[] = [
+    {
+      id: PM_DANA,
+      profileId: P_DANA,
+      type: 'credit_card',
+      label: s.danaCard,
+      card: {
+        issuer: 'max',
+        network: 'mastercard',
+        kind: 'non_bank',
+        billingDay: 10,
+        expiresMonth: '2029-04',
+        creditLimitMinor: 1_500_000,
+        monthlyFeeMinor: 1_490,
+        fxFeeRate: '2.5',
+        creditPrimeMargin: '3.5',
+        lateRate: { basis: 'prime', margin: '8' },
+      },
+    },
+    {
+      id: PM_YOSSI,
+      profileId: P_YOSSI,
+      type: 'credit_card',
+      label: s.yossiCard,
+      card: {
+        issuer: 'cal',
+        network: 'visa',
+        kind: 'bank',
+        billingDay: 2,
+        expiresMonth: '2028-11',
+        creditLimitMinor: 1_200_000,
+        fxFeeRate: '3',
+        creditPrimeMargin: '4',
+      },
+    },
+    {
+      id: PM_JOINT,
+      profileId: SHARED_OWNER,
+      type: 'credit_card',
+      label: s.jointCard,
+      card: {
+        issuer: 'isracard',
+        network: 'isracard',
+        kind: 'non_bank',
+        billingDay: 15,
+        expiresMonth: '2030-01',
+        creditLimitMinor: 2_500_000,
+        monthlyFeeMinor: 990,
+        fxFeeRate: '2.5',
+        creditPrimeMargin: '3',
+      },
+    },
     // הוראת קבע: how rent, arnona, insurance and the va'ad are actually paid.
     { id: PM_STANDING, profileId: SHARED_OWNER, type: 'standing_order', label: s.standingOrder },
   ];

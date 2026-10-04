@@ -55,4 +55,11 @@ export type MoneySnapshot = {
   readonly rateUsed: RateString;
   readonly rateDate: LocalDate;
   readonly rateSource: RateSource;
+  /**
+   * A card's foreign-currency fee, as a percentage, when one was charged:
+   * `baseAmountMinor` is then the converted amount PLUS the fee - what the
+   * statement says, not what the price tag did. Kept so a reconversion can
+   * apply it again.
+   */
+  readonly feeRate?: string;
 };

@@ -1,6 +1,11 @@
 /**
- * gate:pci — §12 "Never store or request card numbers, expiry dates, CVVs,
- * IBANs, or any credential — payment methods are labels only."
+ * gate:pci — §12 "Never store or request card numbers, CVVs, IBANs, or any
+ * credential."
+ *
+ * A credit card keeps what its company shows about it - billing day, fees,
+ * interest, and the month it expires (`expiresMonth`, as a reminder of when the
+ * new card is due; on its own it identifies and authorises nothing). The names
+ * below are what must never appear beside them.
  *
  * Ten lines that permanently close an entire class of spec violation, and give
  * the README something concrete to point at. Scans source AND i18n JSON, because

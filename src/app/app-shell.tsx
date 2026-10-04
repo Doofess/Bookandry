@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import { BarChart3, Receipt, Settings, Users } from 'lucide-react';
+import { BarChart3, CreditCard, Receipt, Settings, Users } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router-dom';
@@ -13,6 +13,7 @@ import { Toaster } from './toaster';
 const ICONS: Record<RouteKey, ComponentType<{ className?: string }>> = {
   feed: Receipt,
   chart: BarChart3,
+  cards: CreditCard,
   profiles: Users,
   settings: Settings,
 };

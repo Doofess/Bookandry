@@ -170,6 +170,28 @@ describe('planReconversion', () => {
     expect(plan.transactions[1]?.money.rateDate).toBe('2026-07-01');
   });
 
+  it('charges a card’s foreign-currency fee again, on the newly converted amount', () => {
+    // 45.00 EUR at 3.53 = 158.85 ILS, plus 2.5% = 162.82.
+    const tx = makeTx({
+      date: d('2026-03-12'),
+      recurrence: { type: 'one_time' },
+      money: money({ feeRate: '2.5', baseAmountMinor: 5033 }),
+    });
+    const plan = planReconversion(input({ transactions: [tx] }), toILS);
+    expect(plan.transactions[0]?.money).toMatchObject({ baseAmountMinor: 16_282, feeRate: '2.5' });
+  });
+
+  it('never charges the fee twice on a manual rate in an unchanged base', () => {
+    // 45.00 EUR at 1.08 = 48.60 USD, plus 2.5% = 49.82 - the same as stored.
+    const tx = makeTx({
+      date: d('2026-03-12'),
+      recurrence: { type: 'one_time' },
+      money: money({ rateSource: 'manual', rateUsed: '1.08', baseAmountMinor: 4982, feeRate: '2.5' }),
+    });
+    const plan = planReconversion(input({ newBase: 'USD', transactions: [tx] }), toILS);
+    expect(plan.transactions[0]?.money.baseAmountMinor).toBe(4982);
+  });
+
   it('produces identical output when run twice', () => {
     // Because every input is a fact that cannot change, re-running is a no-op.
     const tx = makeTx({ date: d('2026-03-12'), recurrence: { type: 'one_time' }, money: money() });

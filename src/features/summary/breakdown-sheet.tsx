@@ -68,6 +68,15 @@ export function BalanceBreakdownSheet({
               <Money minor={total} currency={currency} />
             </dd>
           </div>
+          {/* Bought, and not yet taken: said, so the balance is not read as having missed it. */}
+          {parts.cardPendingMinor === undefined || parts.cardPendingMinor === 0 ? null : (
+            <div className="mt-3 flex items-baseline justify-between gap-4 rounded-lg bg-muted px-3 py-2">
+              <dt className="text-xs text-muted-foreground">{t('breakdown.cardPending')}</dt>
+              <dd className="text-sm font-medium">
+                <Money minor={-parts.cardPendingMinor} currency={currency} signMode="always" />
+              </dd>
+            </div>
+          )}
         </dl>
       </SheetContent>
     </Sheet>

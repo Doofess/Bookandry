@@ -96,12 +96,77 @@ export type PaymentMethodType =
   | 'digital_wallet'
   | 'other';
 
+/** An interest rate as a card company quotes it: prime plus a margin, or fixed. */
+export type RateTerm =
+  | { readonly basis: 'prime'; /** Signed decimal string: "1.5", "-0.5". */ readonly margin: string }
+  | { readonly basis: 'fixed'; /** Annual, as a decimal string. */ readonly rate: string };
+
+/** Who issued the card: חברת כרטיסי האשראי, which is who bills it. */
+export type CardIssuer = 'isracard' | 'cal' | 'max' | 'amex' | 'diners' | 'other';
+
+/** The network printed on it. Isracard is a local network of its own. */
+export type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'diners' | 'isracard';
+
+/**
+ * A bank card (כרטיס בנקאי: issued through the bank, the bank is a party to
+ * the credit) or a non-bank one (חוץ בנקאי: issued by the card company
+ * directly, with its own credit terms and its own limit).
+ */
+export type CardKind = 'bank' | 'non_bank';
+
+/**
+ * What a card company shows about a credit card - everything but what would
+ * identify or charge it.
+ *
+ * Never a card number, the code from its back or a PIN: `gate:pci` fails the build on those names.
+ * The expiry is kept as a month only, the way it is printed, as a reminder of
+ * when a new card is due - on its own it identifies and authorises nothing.
+ *
+ * Money in ILS minor units: an Israeli card bills in shekels.
+ */
+export type CardDetails = {
+  readonly issuer?: CardIssuer;
+  readonly network?: CardNetwork;
+  readonly kind?: CardKind;
+  /** The bank behind a bank card, or the account a non-bank card is debited from. */
+  readonly bank?: string;
+  /** Gold, Platinum, World Elite... as the card says it. */
+  readonly tier?: string;
+  /** The club or programme it belongs to: FLY CARD, Max Back, a supermarket club. */
+  readonly club?: string;
+  /** YYYY-MM. */
+  readonly expiresMonth?: string;
+  /**
+   * The day of the month the bill is debited from the bank (מועד חיוב):
+   * usually the 2nd, 10th or 15th. A month's purchases are charged together
+   * on this day of the next month.
+   */
+  readonly billingDay?: number;
+  /** מסגרת אשראי. */
+  readonly creditLimitMinor?: number;
+  /** דמי כרטיס, a month. */
+  readonly monthlyFeeMinor?: number;
+  /**
+   * עמלת עסקה במטבע חוץ: the percentage added to every purchase in a
+   * currency other than the shekel. Snapshotted onto each purchase when it is
+   * saved (`MoneySnapshot.feeRate`), like the exchange rate it rides on.
+   */
+  readonly fxFeeRate?: string;
+  /**
+   * The card's קרדיט interest as prime plus this margin. When set, it is the
+   * card's credit rate and `PaymentMethod.creditAnnualRate` is not read.
+   */
+  readonly creditPrimeMargin?: string;
+  /** ריבית פיגורים: charged on a bill not paid in time. */
+  readonly lateRate?: RateTerm;
+};
+
 export type PaymentMethod = {
   readonly id: string;
   /** SHARED_OWNER for household-wide methods. Never null: IndexedDB cannot index it. */
   readonly profileId: string;
   readonly type: PaymentMethodType;
-  /** A user-chosen LABEL only. Never a number, expiry or any credential (§12). */
+  /** A user-chosen LABEL only. Never a number or any credential (§12). */
   readonly label: string;
   /**
    * The annual nominal interest this card charges on עסקת קרדיט, as a decimal
@@ -117,6 +182,8 @@ export type PaymentMethod = {
    * the card, and a rate identifies nothing.
    */
   readonly creditAnnualRate?: string;
+  /** Credit cards only: billing day, issuer, fees and the rest. */
+  readonly card?: CardDetails;
   readonly color?: string;
   readonly isArchived: 0 | 1;
   readonly archivedAt?: IsoInstant;

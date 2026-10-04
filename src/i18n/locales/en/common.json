@@ -8,7 +8,8 @@
     "feed": "Feed",
     "chart": "Chart",
     "profiles": "Profiles",
-    "settings": "Settings"
+    "settings": "Settings",
+    "cards": "Cards"
   },
   "a11y": {
     "skipToContent": "Skip to content",
@@ -168,7 +169,8 @@
     "groupLoans": "Loans",
     "groupInstallments": "Instalments",
     "groupYearly": "Once a year",
-    "groupOneTime": "One-off"
+    "groupOneTime": "One-off",
+    "cardPending": "Bought by card, not yet charged"
   },
   "profile": {
     "switcher": "Profile",
@@ -334,7 +336,9 @@
     "primeNextDecision": "Next decision {{date}}.",
     "primeBuiltIn": "As of {{date}}; it updates once the app is online.",
     "primeTotal": "This loan: <rate></rate> a year.",
-    "errMarginInvalid": "Enter a number, like 1.5 or -0.5."
+    "errMarginInvalid": "Enter a number, like 1.5 or -0.5.",
+    "cardCharged": "Charged to the bank with this card's bill on {{date}}.",
+    "cardFxFee": "In a foreign currency, the card adds <rate></rate>."
   },
   "commitments": {
     "title": "Recurring commitments",

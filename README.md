@@ -233,6 +233,25 @@ built-in Loans category unless one is picked by hand, and have their own group
 in the month's breakdown. The money received is not recorded: the feed tracks
 what leaves the account. CPI-linked (צמוד מדד) loans are not modelled.
 
+**A credit card bills monthly, so its purchases leave the account later.** A
+credit card can carry what its company shows about it: the card company
+(Isracard, Cal, Max, Amex, Diners), network, bank or non-bank card (כרטיס
+בנקאי / חוץ בנקאי), level, club, the month it expires, its billing day (מועד
+חיוב, usually the 2nd, 10th or 15th), credit limit, monthly card fee,
+foreign-currency fee, and its קרדיט and late-payment interest (prime + margin,
+or fixed). Never its number or the code on its back (`gate:pci`). With a
+billing day set, a month's purchases are charged together on that day of the
+next month: the Balance counts them then - the day the money actually leaves
+the bank - and its breakdown shows what is bought and not yet charged. An
+instalment is a purchase of its own month. The foreign-currency fee is added to
+the converted amount when a purchase in another currency is saved, and kept on
+the money snapshot (`feeRate`) so a reconversion applies it again. The Cards
+screen shows each card's next bill, the month building up, past bills with
+their purchases, and how much of the limit is used - including every
+instalment still to come, as the card company counts it. Not modelled: the card
+fee as a charge (it is shown, not booked), and cycles that close on a day other
+than the end of the month.
+
 **Prime is fetched, never typed.** Israeli prime is the Bank of Israel's rate
 plus 1.5. The app keeps the Bank's rate on the device (`meta`, not synced),
 asks the `prime-rate` relay for it at start, when the app comes back into view

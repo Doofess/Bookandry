@@ -2,9 +2,11 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import { readBootMirror, type Language } from './boot';
+import enCards from './locales/en/cards.json';
 import enCategories from './locales/en/categories.json';
 import enCommon from './locales/en/common.json';
 import enProfiles from './locales/en/profiles.json';
+import heCards from './locales/he/cards.json';
 import heCategories from './locales/he/categories.json';
 import heCommon from './locales/he/common.json';
 import heProfiles from './locales/he/profiles.json';
@@ -19,10 +21,11 @@ export const defaultNS = 'common' as const;
  * (`globPatterns` covers js/css/html), so switching to Hebrew while offline
  * would fail — unacceptable for an offline-first app.
  */
-export const NAMESPACES = ['common', 'categories', 'profiles'] as const;
+export const NAMESPACES = ['common', 'categories', 'profiles', 'cards'] as const;
 
 /**
- * Three namespaces, not one.
+ * Several namespaces, not one. (`cards` is only the credit-cards screen's own
+ * copy, kept apart because there is a lot of it.)
  *
  * `categories` and `profiles` are referenced by KEY from stored rows -
  * `Category.nameKey` is `categories:builtin.groceries` - so their shape is
@@ -31,8 +34,8 @@ export const NAMESPACES = ['common', 'categories', 'profiles'] as const;
  * points at.
  */
 export const resources = {
-  en: { common: enCommon, categories: enCategories, profiles: enProfiles },
-  he: { common: heCommon, categories: heCategories, profiles: heProfiles },
+  en: { common: enCommon, categories: enCategories, profiles: enProfiles, cards: enCards },
+  he: { common: heCommon, categories: heCategories, profiles: heProfiles, cards: heCards },
 } as const;
 
 /**

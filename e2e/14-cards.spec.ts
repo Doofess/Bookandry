@@ -1,0 +1,132 @@
+import { expect, test } from '@playwright/test';
+
+import { completeFirstRun } from './support/seed';
+
+/**
+ * Credit cards: what is on each one, and when the bank is charged for it.
+ *
+ * The point a unit test cannot see is the whole path: a card set up with a
+ * billing day, an expense paid with it, and the balance NOT moving until the
+ * bill - with the breakdown saying why - while the card's own screen shows the
+ * bill it is waiting on.
+ */
+
+// eslint-disable-next-line no-empty-pattern
+test.beforeEach(({}, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'Covered at desktop and in Hebrew.');
+});
+
+const COPY = {
+  en: {
+    nav: 'Cards',
+    title: 'Credit cards',
+    add: 'Add a card',
+    label: 'Label',
+    max: 'Max',
+    day10: 'The 10th',
+    fxFee: 'Foreign-currency fee',
+    limit: 'Credit limit',
+    save: 'Save',
+    billed: 'Billed on the 10th',
+    amount: 'Amount',
+    paidWith: 'Paid with',
+    charged: /Charged to the bank with this card's bill on/,
+    balance: 'Balance',
+    pending: 'Bought by card, not yet charged',
+    nextBill: /Next charge/,
+    // The browser's locale makes dollars the base here: not the card's
+    // currency, so its 2.5% foreign-currency fee is on top.
+    charge: '256.25',
+    demoCards: ['Max', 'Cal', 'Isracard'],
+  },
+  he: {
+    nav: 'כרטיסים',
+    title: 'כרטיסי אשראי',
+    add: 'הוספת כרטיס',
+    label: 'תווית',
+    max: 'מקס',
+    day10: 'ב־10 לחודש',
+    fxFee: 'עמלת עסקה במט״ח',
+    limit: 'מסגרת אשראי',
+    save: 'שמירה',
+    billed: 'חיוב ב־10 לחודש',
+    amount: 'סכום',
+    paidWith: 'אמצעי תשלום',
+    charged: /יחויב בבנק עם חיוב הכרטיס ב־/,
+    balance: 'יתרה',
+    pending: 'נקנה בכרטיס, טרם חויב',
+    nextBill: /החיוב הבא/,
+    charge: '250.00',
+    demoCards: ['מקס', 'כאל', 'ישראכרט'],
+  },
+} as const;
+
+for (const lang of ['en', 'he'] as const) {
+  test.describe(`@cards in ${lang}`, () => {
+    // eslint-disable-next-line no-empty-pattern
+    test.beforeEach(({}, testInfo) => {
+      test.skip(testInfo.project.name !== lang, 'Language is set by the project.');
+    });
+    const copy = COPY[lang];
+
+    test('shows each card the way its company does, with its next bill', async ({ page }) => {
+      await completeFirstRun(page, lang);
+      await page.getByRole('link', { name: copy.nav }).click();
+      await expect(page.getByRole('heading', { level: 1, name: copy.title })).toBeVisible();
+      for (const issuer of copy.demoCards) {
+        await expect(page.getByRole('article').filter({ hasText: issuer }).first()).toBeVisible();
+      }
+      // A limit, as a meter.
+      await expect(page.getByRole('meter', { name: copy.limit }).first()).toBeVisible();
+    });
+
+    test('charges a card purchase on the billing day, not the day it was made', async ({ page }) => {
+      await completeFirstRun(page, lang, { demo: false });
+
+      // The card: Max, billed on the 10th.
+      await page.getByRole('link', { name: copy.nav }).click();
+      await page.getByRole('button', { name: copy.add }).click();
+      await page.getByLabel(copy.label, { exact: true }).fill('Visa');
+      await page.getByRole('radio', { name: copy.max, exact: true }).click();
+      await page.getByRole('radio', { name: copy.day10, exact: true }).click();
+      await page.getByLabel(copy.fxFee, { exact: true }).fill('2.5');
+      await page.getByLabel(copy.limit, { exact: true }).fill('15,000');
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      const tile = page.getByRole('article').filter({ hasText: 'Visa' });
+      await expect(tile).toContainText(copy.billed);
+
+      // The balance before.
+      await page.goto('/');
+      const balance = page.getByTestId('balance-amount');
+      const before = await balance.getAttribute('data-value', { timeout: 5000 }).catch(() => null);
+      const beforeText = await balance.textContent();
+
+      // A purchase on it, today.
+      await page.getByTestId('fab').click();
+      await page.getByLabel(copy.amount, { exact: true }).fill('250');
+      await page.getByRole('combobox', { name: new RegExp(copy.paidWith) }).click();
+      await page.getByRole('option', { name: /Visa/ }).click();
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(sheet.getByTestId('card-charge-note')).toContainText(copy.charged);
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(sheet).toHaveCount(0);
+
+      // Not taken yet: the balance is as it was, and the breakdown says why.
+      await expect(balance).toHaveText(beforeText ?? '');
+      if (before !== null) await expect(balance).toHaveAttribute('data-value', before);
+      await page
+        .getByRole('button', { name: new RegExp(copy.balance) })
+        .first()
+        .click();
+      await expect(page.getByRole('dialog')).toContainText(copy.pending);
+      await expect(page.getByRole('dialog')).toContainText(copy.charge);
+      await page.keyboard.press('Escape');
+
+      // And it is on the card's coming bill.
+      await page.getByRole('link', { name: copy.nav }).click();
+      await expect(tile).toContainText(copy.nextBill);
+      await expect(tile).toContainText(copy.charge);
+    });
+  });
+}

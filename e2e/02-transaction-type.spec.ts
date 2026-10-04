@@ -46,7 +46,7 @@ const COPY = {
     rate: 'Annual interest',
     addMethod: 'Add a payment method',
     methodLabel: 'Label',
-    methodRate: 'Annual credit interest',
+    methodRate: 'Credit (קרדיט) interest',
     cash: 'Cash',
     cheque: 'Cheque',
     firstPayment: 'First payment',
@@ -82,7 +82,7 @@ const COPY = {
     rate: 'ריבית שנתית',
     addMethod: 'הוספת אמצעי תשלום',
     methodLabel: 'תווית',
-    methodRate: 'ריבית שנתית לעסקאות קרדיט',
+    methodRate: 'ריבית קרדיט',
     cash: 'מזומן',
     cheque: "צ'ק",
     firstPayment: 'תשלום ראשון',
@@ -197,7 +197,12 @@ for (const lang of ['en', 'he'] as const) {
       await page.goto('/payment-methods');
       await page.getByRole('button', { name: copy.addMethod, exact: true }).click();
       await page.getByLabel(copy.methodLabel, { exact: true }).fill('Visa');
-      await page.getByLabel(copy.methodRate, { exact: true }).fill('12');
+      // A fixed rate here; prime-linked is the card editor's default.
+      await page
+        .getByRole('radiogroup', { name: copy.methodRate, exact: true })
+        .getByRole('radio', { name: copy.fixed, exact: true })
+        .click();
+      await page.getByRole('textbox', { name: copy.methodRate, exact: true }).fill('12');
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
 

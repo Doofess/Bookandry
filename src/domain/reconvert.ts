@@ -1,4 +1,4 @@
-import { convertMinor, multiplyRates } from '@/lib/money';
+import { addPercentFee, convertMinor, multiplyRates } from '@/lib/money';
 import type { Override, Profile, Transaction } from '@/types/domain';
 import type { Currency, LocalDate, MoneySnapshot, RateSource, RateString } from '@/types/money';
 
@@ -107,8 +107,27 @@ export function collectRateRequests(input: ReconvertInput): RateRequest[] {
 
 type Resolved = { money: MoneySnapshot } | { reason: UnresolvedRow['reason'] };
 
-/** Rebuild one snapshot in the new base, from its ORIGINAL amount. */
+/**
+ * Rebuild one snapshot in the new base, from its ORIGINAL amount - and with
+ * the card's foreign-currency fee on top again, where one was charged.
+ */
 function resolveMoney(
+  money: MoneySnapshot,
+  date: LocalDate,
+  input: ReconvertInput,
+  lookup: RateLookup,
+): Resolved {
+  const resolved = convertMoney(money, date, input, lookup);
+  if (!('money' in resolved) || money.feeRate === undefined) return resolved;
+  return {
+    money: {
+      ...resolved.money,
+      baseAmountMinor: addPercentFee(resolved.money.baseAmountMinor, money.feeRate),
+    },
+  };
+}
+
+function convertMoney(
   money: MoneySnapshot,
   date: LocalDate,
   input: ReconvertInput,
@@ -131,7 +150,17 @@ function resolveMoney(
   }
 
   if (money.rateSource === 'manual') {
-    if (oldBase === newBase) return { money: { ...money, baseCurrency: newBase } };
+    if (oldBase === newBase) {
+      // Recomputed rather than kept, so the fee above lands on the converted
+      // amount once - never on a figure that already includes it.
+      return {
+        money: {
+          ...money,
+          baseCurrency: newBase,
+          baseAmountMinor: convertMinor(money.amountMinor, money.currency, newBase, money.rateUsed),
+        },
+      };
+    }
 
     // Preserve the deliberate figure by composing it with the bridge, rather
     // than replacing it with a provider rate the user did not choose.

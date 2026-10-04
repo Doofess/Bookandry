@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { isLocalDate } from '@/lib/dates';
 import { normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
 
+import { isExpiresMonth } from './cards';
+
 /**
  * The export document format.
  *
@@ -38,6 +40,10 @@ const moneySchema = z.object({
   rateUsed: z.string().min(1),
   rateDate: localDate,
   rateSource: z.enum(['frankfurter', 'erapi', 'manual', 'demo']),
+  feeRate: z
+    .string()
+    .refine((value) => normalizeAnnualRate(value) === value, 'not a fee rate')
+    .optional(),
 });
 
 /**
@@ -101,6 +107,33 @@ const categorySchema = z.intersection(
   ]),
 );
 
+const margin = z.string().refine((value) => normalizeRateMargin(value) === value, 'not a margin over prime');
+
+const rateTerm = z.discriminatedUnion('basis', [
+  z.object({ basis: z.literal('prime'), margin }),
+  z.object({ basis: z.literal('fixed'), rate: annualRate }),
+]);
+
+const shortText = z.string().trim().min(1).max(40);
+const minorAmount = z.number().int().nonnegative().max(1e12);
+
+/** What a card company shows about a card, never what identifies it (§12). */
+export const cardSchema = z.object({
+  issuer: z.enum(['isracard', 'cal', 'max', 'amex', 'diners', 'other']).optional(),
+  network: z.enum(['visa', 'mastercard', 'amex', 'diners', 'isracard']).optional(),
+  kind: z.enum(['bank', 'non_bank']).optional(),
+  bank: shortText.optional(),
+  tier: shortText.optional(),
+  club: shortText.optional(),
+  expiresMonth: z.string().refine(isExpiresMonth, 'not a YYYY-MM month').optional(),
+  billingDay: z.number().int().min(1).max(31).optional(),
+  creditLimitMinor: minorAmount.optional(),
+  monthlyFeeMinor: minorAmount.optional(),
+  fxFeeRate: annualRate.optional(),
+  creditPrimeMargin: margin.optional(),
+  lateRate: rateTerm.optional(),
+});
+
 const paymentMethodSchema = z.object({
   id: z.string().min(1),
   profileId: z.string().min(1),
@@ -120,6 +153,7 @@ const paymentMethodSchema = z.object({
   // The annual nominal interest the card charges on עסקת קרדיט. A rate, not a
   // credential: it identifies nothing about the card.
   creditAnnualRate: annualRate.optional(),
+  card: cardSchema.optional(),
   color: z.string().optional(),
   isArchived: z.union([z.literal(0), z.literal(1)]),
   archivedAt: isoInstant.optional(),

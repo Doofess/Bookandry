@@ -1,0 +1,136 @@
+import { describe, expect, it } from 'vitest';
+
+import type { PaymentMethod } from '@/types/domain';
+import type { IsoInstant } from '@/types/money';
+
+import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, parseExpires, type CardDraft } from './card-draft';
+
+const NOW = '2026-01-01T00:00:00.000Z' as IsoInstant;
+const method = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
+  id: 'visa',
+  profileId: 'p1',
+  type: 'credit_card',
+  label: 'Visa',
+  isArchived: 0,
+  createdAt: NOW,
+  updatedAt: NOW,
+  ...over,
+});
+
+const draft = (over: Partial<CardDraft> = {}): CardDraft => ({ ...EMPTY_CARD_DRAFT, ...over });
+
+describe('the card editor', () => {
+  it('reads the expiry the way the card prints it', () => {
+    expect(parseExpires('09/28')).toBe('2028-09');
+    expect(parseExpires('9/2028')).toBe('2028-09');
+    expect(parseExpires(' 12-30 ')).toBe('2030-12');
+    expect(parseExpires('')).toBe('');
+    for (const bad of ['13/28', '00/28', '0928', 'soon', '09/1999']) {
+      expect(parseExpires(bad), bad).toBeUndefined();
+    }
+  });
+
+  it('stores what was filled in, and nothing for what was not', () => {
+    const result = cardFromDraft(
+      draft({
+        issuer: 'max',
+        network: 'mastercard',
+        kind: 'non_bank',
+        bank: ' Leumi ',
+        tier: 'Platinum',
+        club: '  ',
+        expires: '04/29',
+        billingDay: '10',
+        creditLimit: '15,000',
+        monthlyFee: '14.90',
+        fxFee: '2.5',
+        credit: { basis: 'prime', value: '+3.5' },
+        late: { basis: 'fixed', value: '18' },
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      creditAnnualRate: null,
+      card: {
+        issuer: 'max',
+        network: 'mastercard',
+        kind: 'non_bank',
+        bank: 'Leumi',
+        tier: 'Platinum',
+        expiresMonth: '2029-04',
+        billingDay: 10,
+        creditLimitMinor: 1_500_000,
+        monthlyFeeMinor: 1_490,
+        fxFeeRate: '2.5',
+        creditPrimeMargin: '3.5',
+        lateRate: { basis: 'fixed', rate: '18' },
+      },
+    });
+  });
+
+  it('keeps a fixed קרדיט rate where it always was, on the method', () => {
+    expect(cardFromDraft(draft({ credit: { basis: 'fixed', value: '12' } }))).toEqual({
+      ok: true,
+      card: undefined,
+      creditAnnualRate: '12',
+    });
+    expect(cardFromDraft(draft({ late: { basis: 'prime', value: '-1' } }))).toMatchObject({
+      card: { lateRate: { basis: 'prime', margin: '-1' } },
+    });
+  });
+
+  it('names every field it cannot read', () => {
+    const result = cardFromDraft(
+      draft({
+        expires: '13/28',
+        billingDay: '32',
+        creditLimit: 'lots',
+        monthlyFee: '1.2.3',
+        fxFee: 'x',
+        credit: { basis: 'prime', value: '--1' },
+        late: { basis: 'fixed', value: '-3' },
+      }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      invalid: ['expires', 'billingDay', 'creditLimit', 'monthlyFee', 'fxFee', 'credit', 'late'],
+    });
+  });
+
+  it('opens a saved card as it was saved', () => {
+    const saved = method({
+      card: {
+        issuer: 'cal',
+        expiresMonth: '2028-11',
+        billingDay: 2,
+        creditLimitMinor: 1_200_000,
+        monthlyFeeMinor: 990,
+        fxFeeRate: '3',
+        creditPrimeMargin: '4',
+        lateRate: { basis: 'prime', margin: '8' },
+      },
+    });
+    const opened = cardDraftOf(saved);
+    expect(opened).toMatchObject({
+      issuer: 'cal',
+      expires: '11/28',
+      billingDay: '2',
+      creditLimit: '12000.00',
+      monthlyFee: '9.90',
+      fxFee: '3',
+      credit: { basis: 'prime', value: '4' },
+      late: { basis: 'prime', value: '8' },
+    });
+    // And round-trips.
+    expect(cardFromDraft(opened)).toMatchObject({ ok: true, card: saved.card });
+
+    expect(
+      cardDraftOf(method({ creditAnnualRate: '12', card: { lateRate: { basis: 'fixed', rate: '18' } } })),
+    ).toMatchObject({
+      credit: { basis: 'fixed', value: '12' },
+      late: { basis: 'fixed', value: '18' },
+    });
+    expect(cardDraftOf(method())).toEqual({ ...EMPTY_CARD_DRAFT });
+    expect(cardDraftOf(undefined)).toBe(EMPTY_CARD_DRAFT);
+  });
+});

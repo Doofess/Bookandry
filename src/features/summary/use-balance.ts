@@ -3,8 +3,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
 import { availableBalance, balanceParts, type BalanceParts } from '@/domain/calculators';
+import { billingDayOf, splitBySettlement } from '@/domain/cards';
 import { expandOccurrences } from '@/domain/occurrences';
-import { compareLocal } from '@/lib/dates';
+import { addMonthsClamped, compareLocal, startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Profile } from '@/types/domain';
 import type { Currency, LocalDate, Minor } from '@/types/money';
 
@@ -85,7 +86,13 @@ export function useBalance(profileId: string, today: LocalDate, baseCurrency: Cu
       };
     }
 
-    const transactions = await findCandidates(db, { profileId, from: since, to: today });
+    const methods = new Map((await db.paymentMethods.toArray()).map((m) => [m.id, m]));
+    // A card's purchases are debited the month after: last month's are on a
+    // bill that may fall inside the window, so the window reaches back to them.
+    const anyBillingCard = [...methods.values()].some((m) => billingDayOf(m) !== undefined);
+    const from = anyBillingCard ? startOfMonth(addMonthsClamped(since, -1, 1)) : since;
+
+    const transactions = await findCandidates(db, { profileId, from, to: today });
     const overrides = await findOverrides(
       db,
       transactions.map((t) => t.id),
@@ -99,22 +106,26 @@ export function useBalance(profileId: string, today: LocalDate, baseCurrency: Cu
 
     const cutoffs = new Map(profiles.map((p) => [p.id, p.openingBalanceDate]));
 
-    const occurrences = transactions.flatMap((tx) =>
-      expandOccurrences(tx, byTransaction.get(tx.id) ?? [], since, today, {
-        today,
-        // Each profile's cutoff applies to ITS OWN rows only. A shared cutoff
-        // would either discard a second profile's history or resurrect the
-        // first profile's.
-        openingBalanceDate: cutoffs.get(tx.profileId),
-      }),
+    const expanded = transactions.flatMap((tx) =>
+      expandOccurrences(tx, byTransaction.get(tx.id) ?? [], from, today, { today }),
     );
+    /*
+     * Counted on the day the money leaves the account: a card purchase on its
+     * card's next billing day, everything else on its own date. Each
+     * profile's cutoff applies to ITS OWN rows only - a shared cutoff would
+     * either discard a second profile's history or resurrect the first's.
+     */
+    const { settled: occurrences, pendingOnCards } = splitBySettlement(expanded, methods, today, cutoffs);
 
     return {
       status: 'ready',
       minor: availableBalance({ profiles, occurrences, baseCurrency }),
       since,
       profiles,
-      parts: balanceParts(profiles, occurrences),
+      parts: {
+        ...balanceParts(profiles, occurrences),
+        cardPendingMinor: pendingOnCards.reduce((sum, o) => sum + o.money.baseAmountMinor, 0),
+      },
     };
   }, [profileId, today, baseCurrency]);
 

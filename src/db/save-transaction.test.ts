@@ -92,6 +92,16 @@ describe('buildMoney', () => {
     expect(() => buildMoney(input({ parsed: form({ currency: 'ILS' }), rate: undefined }))).not.toThrow();
   });
 
+  it('adds a card’s foreign-currency fee to the converted amount, and keeps the rate it used', () => {
+    // 45.00 EUR at 3.9644 = 178.40 ILS; plus 2.5% = 182.86.
+    expect(buildMoney(input({ feeRate: '2.5' }))).toMatchObject({
+      amountMinor: 4500,
+      baseAmountMinor: 18_286,
+      feeRate: '2.5',
+    });
+    expect(buildMoney(input())).not.toHaveProperty('feeRate');
+  });
+
   it('carries a manual rate and its date through unchanged', () => {
     const money = buildMoney(input({ rate: { rate: '4.05', rateDate: TODAY, rateSource: 'manual' } }));
 
