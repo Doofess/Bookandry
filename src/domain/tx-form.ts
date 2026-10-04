@@ -443,6 +443,62 @@ export function firstOccurrenceDate(date: LocalDate, recurrence: Recurrence): Lo
 }
 
 /**
+ * The payments a repeating rule that STARTS IN THE PAST has already made, up
+ * to and including today: "11 payments, November 2025 to September 2026".
+ *
+ * Nothing is written for them - the rule produces every month from its start,
+ * as it always has, and they appear in their months by themselves. This only
+ * says so before saving, so starting a הוראת קבע a year back reads as filling
+ * that year in rather than as a mistake.
+ *
+ * Open-ended rules only: an instalment plan is a purchase with its own count.
+ */
+export function pastPayments(
+  date: LocalDate,
+  recurrence: Recurrence,
+  today: LocalDate,
+): { readonly count: number; readonly first: LocalDate; readonly last: LocalDate } | undefined {
+  if (recurrence.type === 'one_time') return undefined;
+  if (recurrence.type === 'monthly' && recurrence.installments !== undefined) return undefined;
+  const until = recurrence.endDate !== undefined && recurrence.endDate < today ? recurrence.endDate : today;
+
+  let count = 0;
+  let first: LocalDate | undefined;
+  let last: LocalDate | undefined;
+  // Bounded: a rule started in 1900 still stops looking after a century of months.
+  for (let k = 0; k < 1200; k++) {
+    const slot =
+      recurrence.type === 'yearly'
+        ? yearlySlot(parseLocalDate(date).year + k, recurrence.month, recurrence.day)
+        : addMonthsClamped(date, k, recurrence.dayOfMonth);
+    if (compareLocal(slot, date) < 0) continue;
+    if (compareLocal(slot, until) > 0) break;
+    first ??= slot;
+    last = slot;
+    count++;
+  }
+  return first === undefined || last === undefined ? undefined : { count, first, last };
+}
+
+/**
+ * `pastPayments` for the form as it stands, or undefined while it does not yet
+ * describe an open-ended rule: a one-off, a plan, a standing order whose
+ * frequency is still unanswered, a date or day still being typed.
+ */
+export function pastPaymentsOf(values: TxFormValues, today: LocalDate): ReturnType<typeof pastPayments> {
+  const repeating =
+    values.mode === 'monthly' ||
+    values.mode === 'yearly' ||
+    (values.mode === 'standing_order' && values.frequency !== '');
+  if (!repeating || !isLocalDate(values.date)) return undefined;
+  const day = Number(values.dayOfMonth);
+  if (values.mode !== 'yearly' && values.frequency !== 'yearly' && !(day >= 1 && day <= LAST_DAY_OF_MONTH)) {
+    return undefined;
+  }
+  return pastPayments(values.date, toRecurrence(values, values.date), today);
+}
+
+/**
  * The final payment of an instalment plan, for the "last payment July 2027" line.
  *
  * Anchored on `date`, like every index expansion produces - not chained off the

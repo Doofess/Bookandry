@@ -7,6 +7,7 @@ import {
   defaultFormValues,
   defaultRecurringDay,
   firstOccurrenceDate,
+  pastPayments,
   isLastDayChoice,
   lastInstallmentDate,
   MAX_INSTALLMENTS,
@@ -556,5 +557,39 @@ describe('עסקת קרדיט interest', () => {
       expect(recurrenceDefaults(mode, wasCredit).annualRate, mode).toBe('');
     }
     expect(recurrenceDefaults('credit', wasCredit)).not.toHaveProperty('annualRate');
+  });
+});
+
+describe('pastPayments', () => {
+  const today = d('2026-10-04');
+
+  it('counts the months a standing order started in the past has already paid', () => {
+    expect(pastPayments(d('2025-11-01'), { type: 'monthly', dayOfMonth: 1 }, today)).toEqual({
+      count: 12,
+      first: '2025-11-01',
+      last: '2026-10-01',
+    });
+  });
+
+  it('starts at the first real payment and stops at an end date', () => {
+    expect(
+      pastPayments(d('2025-11-15'), { type: 'monthly', dayOfMonth: 31, endDate: d('2026-03-31') }, today),
+    ).toEqual({ count: 5, first: '2025-11-30', last: '2026-03-31' });
+  });
+
+  it('counts years for a yearly one', () => {
+    expect(pastPayments(d('2024-01-15'), { type: 'yearly', month: 1, day: 15 }, today)).toEqual({
+      count: 3,
+      first: '2024-01-15',
+      last: '2026-01-15',
+    });
+  });
+
+  it('has nothing to say about the future, a one-off or an instalment plan', () => {
+    expect(pastPayments(d('2026-11-01'), { type: 'monthly', dayOfMonth: 1 }, today)).toBeUndefined();
+    expect(pastPayments(d('2025-11-01'), { type: 'one_time' }, today)).toBeUndefined();
+    expect(
+      pastPayments(d('2025-11-01'), { type: 'monthly', dayOfMonth: 1, installments: 12 }, today),
+    ).toBeUndefined();
   });
 });

@@ -278,3 +278,41 @@ export function toPickerDate(date: LocalDate): Date {
 export function fromPickerDate(value: Date): LocalDate {
   return makeLocalDate(value.getFullYear(), value.getMonth() + 1, value.getDate());
 }
+
+/**
+ * The order a date is typed in: month first in English, as Americans write
+ * it (11/01/2025 is November 1st); day first in Hebrew, as Israelis do
+ * (01/11/2025 is the 1st of November).
+ */
+export type DateOrder = 'mdy' | 'dmy';
+
+export const dateOrderFor = (language: string): DateOrder => (language.startsWith('en') ? 'mdy' : 'dmy');
+
+const two = (n: number): string => String(n).padStart(2, '0');
+
+/** A date as it is typed: 11/01/2025 or 01/11/2025, always with slashes and a full year. */
+export function formatTypedDate(date: LocalDate, order: DateOrder): string {
+  const { year, month, day } = parseLocalDate(date);
+  return order === 'mdy'
+    ? `${two(month)}/${two(day)}/${String(year)}`
+    : `${two(day)}/${two(month)}/${String(year)}`;
+}
+
+/**
+ * A typed date, or undefined if it is not one.
+ *
+ * Lenient about how it is written - slashes, dots or dashes, one or two
+ * digits, a two-digit year read as 20xx - and strict about what it says: no
+ * 31st of April, no thirteenth month, nothing outside 1900-2100.
+ */
+export function parseTypedDate(text: string, order: DateOrder): LocalDate | undefined {
+  const parts = /^\s*(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2}|\d{4})\s*$/.exec(text);
+  if (parts === null) return undefined;
+  // The pattern matched, so all three groups are there.
+  const [first, second, yearText] = [Number(parts[1]), Number(parts[2]), String(parts[3])];
+  const [month, day] = order === 'mdy' ? [first, second] : [second, first];
+  const year = yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1) return undefined;
+  if (day > daysInMonth(year, month)) return undefined;
+  return makeLocalDate(year, month, day);
+}

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from 'cn';
-import { Sparkles } from 'lucide-react';
+import { History, Sparkles } from 'lucide-react';
 import { useCallback, useId, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +31,7 @@ import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } f
 import {
   defaultFormValues,
   firstOccurrenceDate,
+  pastPaymentsOf,
   MAX_INSTALLMENTS,
   MIN_INSTALLMENTS,
   NOTE_MAX_LENGTH,
@@ -41,7 +42,7 @@ import {
 import { categoriesFor, methodFits } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
-import { isLocalDate, monthsBetween } from '@/lib/dates';
+import { formatLocalDate, isLocalDate, monthsBetween, parseLocalDate } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import { toDecimalString, toMinor } from '@/lib/money';
 import type { Category, PaymentMethod, Profile } from '@/types/domain';
@@ -275,7 +276,7 @@ function TransactionForm({
   readonly onSaved: (date: LocalDate) => void;
   readonly onCancel: () => void;
 }) {
-  const { t } = useTranslation(['common', 'categories', 'profiles']);
+  const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
 
   /*
@@ -325,6 +326,10 @@ function TransactionForm({
    */
   const values = useWatch({ control: form.control, defaultValue: initial }) as TxFormValues;
   const amountMinor = parseAmount(values.amount, values.currency);
+  /** A rule that repeats on its own, whose date is therefore its first payment. */
+  const repeats = values.mode === 'monthly' || values.mode === 'yearly' || values.mode === 'standing_order';
+  // Only for a new rule: an edit already shows its past in the feed.
+  const past = editing === undefined ? pastPaymentsOf(values, today) : undefined;
 
   const rateField = useRateField({
     amount: values.amount,
@@ -778,14 +783,23 @@ function TransactionForm({
       ) : null}
 
       <div className="space-y-1.5">
-        <Label id={dateId}>{t('tx.date')}</Label>
+        <Label id={dateId}>{repeats ? t('tx.dateFirst') : t('tx.date')}</Label>
         <Controller
           control={form.control}
           name="date"
           render={({ field }) => (
             <DateField
               value={field.value as LocalDate}
-              onChange={field.onChange}
+              onChange={(next) => {
+                field.onChange(next);
+                // A date picked for a repeating rule is its first payment, so
+                // the day it repeats on follows it: a standing order from
+                // 01/11/2025 is paid on the 1st. Still its own field, for a
+                // rule that does land elsewhere.
+                if (values.mode !== 'one_time') {
+                  setValue('dayOfMonth', String(parseLocalDate(next).day), { shouldValidate: true });
+                }
+              }}
               labelledBy={dateId}
               invalid={errors.date !== undefined}
               // Moving a date means moving ONE occurrence. Applied to a rule it
@@ -795,6 +809,17 @@ function TransactionForm({
             />
           )}
         />
+        {/* Starting in the past fills the past in; said before saving, not discovered after. */}
+        {past === undefined ? null : (
+          <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+            <History className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            {t('tx.pastPayments', {
+              count: past.count,
+              from: formatLocalDate(past.first, i18n.language, { month: 'long', year: 'numeric' }),
+              to: formatLocalDate(past.last, i18n.language, { month: 'long', year: 'numeric' }),
+            })}
+          </p>
+        )}
       </div>
 
       {isPlan ? (

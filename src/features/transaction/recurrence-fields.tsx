@@ -157,7 +157,8 @@ export function RecurrenceFields({
             ]}
             size="sm"
           />
-          {errors.frequency === undefined || !submitted ? (
+          {/* Asked until answered: once monthly or yearly is chosen there is nothing left to say. */}
+          {values.frequency !== '' ? null : errors.frequency === undefined || !submitted ? (
             <p className="text-xs text-muted-foreground">{t('tx.frequencyHint')}</p>
           ) : (
             <p className="text-xs text-destructive">{errors.frequency}</p>

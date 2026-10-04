@@ -10,6 +10,9 @@ import {
   compareLocal,
   daysBetween,
   daysInMonth,
+  dateOrderFor,
+  formatTypedDate,
+  parseTypedDate,
   endOfMonth,
   formatLocalDate,
   fromPickerDate,
@@ -345,5 +348,44 @@ describe('the date-picker bridge', () => {
     // Local midnight does not exist at all on some transition days; noon leaves
     // twelve hours of headroom instead of one.
     expect(toPickerDate(assertLocalDate('2026-01-31')).getHours()).toBe(12);
+  });
+});
+
+describe('typed dates', () => {
+  it('reads month first in English and day first in Hebrew', () => {
+    expect(dateOrderFor('en')).toBe('mdy');
+    expect(dateOrderFor('he')).toBe('dmy');
+    expect(parseTypedDate('11/01/2025', 'mdy')).toBe('2025-11-01');
+    expect(parseTypedDate('01/11/2025', 'dmy')).toBe('2025-11-01');
+  });
+
+  it('writes them back the same way, padded, with a full year', () => {
+    expect(formatTypedDate('2025-11-01' as LocalDate, 'mdy')).toBe('11/01/2025');
+    expect(formatTypedDate('2025-11-01' as LocalDate, 'dmy')).toBe('01/11/2025');
+  });
+
+  it('takes the ways people actually type a date', () => {
+    expect(parseTypedDate('1.11.2025', 'dmy')).toBe('2025-11-01');
+    expect(parseTypedDate(' 1-11-25 ', 'dmy')).toBe('2025-11-01');
+    expect(parseTypedDate('2/29/2028', 'mdy')).toBe('2028-02-29');
+  });
+
+  it('refuses what is not a date', () => {
+    for (const text of [
+      '',
+      '11/2025',
+      '31/04/2026',
+      '13/13/2026',
+      '29/02/2027',
+      '01/11/1800',
+      '01/01/2101',
+      '00/01/2026',
+      '01/00/2026',
+      'abc',
+      '1/1/202',
+    ]) {
+      expect(parseTypedDate(text, 'dmy')).toBeUndefined();
+    }
+    expect(parseTypedDate('13/01/2026', 'mdy')).toBeUndefined();
   });
 });

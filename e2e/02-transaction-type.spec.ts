@@ -40,6 +40,11 @@ const COPY = {
     methodRate: 'Annual credit interest',
     cash: 'Cash',
     cheque: 'Cheque',
+    firstPayment: 'First payment',
+    day: 'On day',
+    typed: '11/01/2025',
+    readout: /November 1, 2025/,
+    past: /Starts in the past: \d+ payments, November 2025 to/,
   },
   he: {
     regular: 'עסקה רגילה',
@@ -59,6 +64,11 @@ const COPY = {
     methodRate: 'ריבית שנתית לעסקאות קרדיט',
     cash: 'מזומן',
     cheque: "צ'ק",
+    firstPayment: 'תשלום ראשון',
+    day: 'ביום',
+    typed: '01/11/2025',
+    readout: /1 בנובמבר 2025/,
+    past: /מתחיל בעבר: \d+ תשלומים, מ־נובמבר 2025 עד/,
   },
 } as const;
 
@@ -237,6 +247,29 @@ for (const lang of ['en', 'he'] as const) {
       expect(forCredit).toContain('Visa');
       expect(forCredit).not.toContain(copy.cash);
       expect(forCredit).not.toContain(copy.cheque);
+    });
+
+    test('starts a standing order in the past, typed the way the language writes dates', async ({ page }) => {
+      await openAddSheet(page, lang);
+      await page.getByLabel(copy.amount, { exact: true }).fill('3200');
+      await page.getByRole('radio', { name: copy.standing, exact: true }).click();
+      await page.getByRole('radio', { name: copy.monthly, exact: true }).click();
+
+      // November 1st 2025: 11/01 in English, 01/11 in Hebrew - and spelled out
+      // underneath, so the order it was read in is never a guess.
+      const date = page.getByLabel(copy.firstPayment, { exact: true });
+      await date.fill(copy.typed);
+      await date.press('Enter');
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(sheet).toContainText(copy.readout);
+
+      // The day it repeats on follows the first payment.
+      await expect(page.getByLabel(copy.day, { exact: true })).toHaveValue('1');
+      // And the months since are said to be filled in, before saving.
+      await expect(sheet).toContainText(copy.past);
+
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 
     test('refuses a rate that is not one, and says why', async ({ page }) => {

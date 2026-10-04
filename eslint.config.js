@@ -19,6 +19,8 @@ export default tseslint.config(
       'test-results',
       'node_modules',
       'src/test/fixtures',
+      // A Claude Code plugin's session notes, not part of the app.
+      '.remember',
       // Deno, for Supabase Edge Functions: its own runtime and imports.
       'supabase/functions',
       // Tooling config that no tsconfig covers. Lighthouse reads it with its own
