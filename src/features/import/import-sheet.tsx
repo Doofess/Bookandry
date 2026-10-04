@@ -43,7 +43,13 @@ import { addDays, formatLocalDate, isLocalDate, maxDate, minDate, todayLocal } f
 import { newId } from '@/lib/id';
 import { toMinor } from '@/lib/money';
 import { browserImageOps, MAX_FILES, prepareFiles } from '@/services/ai-import/prepare-files';
-import { ALL_PROFILES, type Category, type PaymentMethod, type Profile } from '@/types/domain';
+import {
+  ALL_PROFILES,
+  isActiveMethod,
+  type Category,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 import { readSession, writeSession, type ImportSession } from './import-session';
@@ -167,7 +173,7 @@ export function ImportSheet(props: ImportSheetProps) {
 
     // The household, as the reader is told about it: short aliases, names as the person sees them.
     const cats = props.categories.filter((c) => c.isArchived === 0).slice(0, 80);
-    const methods = props.paymentMethods.filter((m) => m.isArchived === 0).slice(0, 40);
+    const methods = props.paymentMethods.filter(isActiveMethod).slice(0, 40);
     const aliases: Aliases = {
       categories: new Map(cats.map((c, i) => [`c${String(i + 1)}`, c.id])),
       methods: new Map(methods.map((m, i) => [`p${String(i + 1)}`, m.id])),

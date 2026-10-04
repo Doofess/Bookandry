@@ -4,7 +4,7 @@ import '@/lib/zod-jitless';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 
 import '@fontsource-variable/inter';
 import '@fontsource-variable/heebo';
@@ -27,6 +27,7 @@ import { ensureSettings } from '@/db/repos/settings';
 import { startSweeper } from '@/db/sweeper';
 import { AccountScreen } from '@/features/account/account-screen';
 import { SecurityScreen } from '@/features/account/security-screen';
+import { BankAccountsScreen } from '@/features/bank-accounts/bank-accounts-screen';
 import { CardsScreen } from '@/features/cards/cards-screen';
 import { ChartScreen } from '@/features/chart/chart-screen';
 import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
@@ -35,7 +36,6 @@ import { FirstRun } from '@/features/first-run/first-run';
 import { ProfilesScreen } from '@/features/profiles/profiles-screen';
 import { CategoriesScreen } from '@/features/settings/categories-screen';
 import { DataScreen } from '@/features/settings/data-screen';
-import { PaymentMethodsScreen } from '@/features/settings/payment-methods-screen';
 import { PreferencesScreen } from '@/features/settings/preferences-screen';
 import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
@@ -66,7 +66,8 @@ const router = createBrowserRouter([
       { path: SETTINGS_ROUTES.data, element: <DataScreen /> },
       { path: LINKED_ROUTES.commitments, element: <CommitmentsScreen /> },
       { path: LINKED_ROUTES.categories, element: <CategoriesScreen /> },
-      { path: LINKED_ROUTES.paymentMethods, element: <PaymentMethodsScreen /> },
+      { path: LINKED_ROUTES.paymentMethods, element: <Navigate to={ROUTES.cards} replace /> },
+      { path: LINKED_ROUTES.bankAccounts, element: <BankAccountsScreen /> },
     ],
   },
 ]);

@@ -45,7 +45,7 @@ const COPY = {
     amount: 'Amount',
     paidWith: 'Paid with',
     rate: 'Annual interest',
-    addMethod: 'Add a payment method',
+    addMethod: 'Add a card',
     methodLabel: 'Label',
     methodRate: 'Credit (קרדיט) interest',
     cash: 'Cash',
@@ -81,7 +81,7 @@ const COPY = {
     amount: 'סכום',
     paidWith: 'אמצעי תשלום',
     rate: 'ריבית שנתית',
-    addMethod: 'הוספת אמצעי תשלום',
+    addMethod: 'הוספת כרטיס',
     methodLabel: 'תווית',
     methodRate: 'ריבית קרדיט',
     cash: 'מזומן',
@@ -195,7 +195,7 @@ for (const lang of ['en', 'he'] as const) {
        */
       await completeFirstRun(page, lang, { demo: false });
 
-      await page.goto('/payment-methods');
+      await page.goto('/cards');
       await page.getByRole('button', { name: copy.addMethod, exact: true }).click();
       await page.getByLabel(copy.methodLabel, { exact: true }).fill('Visa');
       // A fixed rate here; prime-linked is the card editor's default.
@@ -301,7 +301,7 @@ for (const lang of ['en', 'he'] as const) {
 
     test('pays by cheque once or in instalments, and a קרדיט only by credit card', async ({ page }) => {
       await completeFirstRun(page, lang, { demo: false });
-      await page.goto('/payment-methods');
+      await page.goto('/cards');
       await page.getByRole('button', { name: copy.addMethod, exact: true }).click();
       await page.getByLabel(copy.methodLabel, { exact: true }).fill('Visa');
       await page.getByRole('button', { name: copy.save, exact: true }).click();

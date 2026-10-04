@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
@@ -20,7 +20,7 @@ test.beforeEach(({}, testInfo) => {
 const COPY = {
   en: {
     nav: 'Cards',
-    title: 'Cards and accounts',
+    title: 'Credit cards',
     add: 'Add a card',
     label: 'Label',
     max: 'Max',
@@ -44,7 +44,7 @@ const COPY = {
   },
   he: {
     nav: 'כרטיסים',
-    title: 'כרטיסים וחשבונות',
+    title: 'כרטיסי אשראי',
     add: 'הוספת כרטיס',
     label: 'תווית',
     max: 'מקס',
@@ -222,9 +222,16 @@ test.describe('@cards bank accounts', () => {
     test.skip(testInfo.project.name !== 'he', 'Hebrew: the language the account is written in.');
   });
 
+  /** From the account menu, where the household's setup lives. */
+  const openAccounts = async (page: Page) => {
+    await page.getByRole('button', { name: 'חשבון והגדרות' }).click();
+    await page.getByRole('menuitem', { name: 'חשבונות בנק' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'חשבונות בנק' })).toBeVisible();
+  };
+
   test('adds an account by its number, names its branch, and offers it to a new card', async ({ page }) => {
     await completeFirstRun(page, 'he', { demo: false });
-    await page.getByRole('link', { name: 'כרטיסים' }).click();
+    await openAccounts(page);
 
     // Pasted whole, the way a cheque prints it: bank, branch and number fill in.
     await page.getByRole('button', { name: 'הוספת חשבון בנק' }).click();
@@ -248,6 +255,7 @@ test.describe('@cards bank accounts', () => {
     await expect(account).toContainText('10,000');
 
     // A new card is offered the account it is paid from.
+    await page.getByRole('link', { name: 'כרטיסים' }).click();
     await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
     await page.getByLabel('תווית', { exact: true }).fill('Visa');
     await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
@@ -257,13 +265,16 @@ test.describe('@cards bank accounts', () => {
       .click();
     await page.getByRole('button', { name: 'שמירה', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The Cards screen is about cards: the accounts are not on it.
+    await expect(page.getByRole('heading', { name: 'חשבונות בנק' })).toHaveCount(0);
+    await openAccounts(page);
     await expect(account).toContainText('חיובי כרטיסים שיורדים מהחשבון');
     await expect(account).toContainText('Visa');
   });
 
   test('finds the Arab banks by their Arabic name', async ({ page }) => {
     await completeFirstRun(page, 'he', { demo: false });
-    await page.getByRole('link', { name: 'כרטיסים' }).click();
+    await openAccounts(page);
     await page.getByRole('button', { name: 'הוספת חשבון בנק' }).click();
     await page.getByRole('combobox', { name: /בנק/ }).click();
     await page.getByPlaceholder('חיפוש לפי שם או קוד').fill('بنك فلسطين');

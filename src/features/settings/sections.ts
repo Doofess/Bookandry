@@ -1,6 +1,7 @@
 import {
   CreditCard,
   DatabaseBackup,
+  Landmark,
   Repeat,
   ShieldCheck,
   SlidersHorizontal,
@@ -11,7 +12,7 @@ import type { ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useAccount } from '@/app/account';
-import { LINKED_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 
 /**
  * Every place a setting lives, once: the account menu and the Settings page
@@ -32,7 +33,7 @@ export function useSettingsSections(): {
   /** About the app and what is in it. */
   readonly app: readonly SettingsSection[];
 } {
-  const { t } = useTranslation(['common', 'categories']);
+  const { t } = useTranslation(['common', 'categories', 'cards']);
   const signedIn = useAccount().status === 'signed_in';
 
   const account: SettingsSection[] = signedIn
@@ -77,11 +78,18 @@ export function useSettingsSections(): {
       hint: t('categories:manage.open'),
     },
     {
-      key: 'paymentMethods',
-      to: LINKED_ROUTES.paymentMethods,
+      key: 'bankAccounts',
+      to: LINKED_ROUTES.bankAccounts,
+      icon: Landmark,
+      label: t('cards:accounts.title'),
+      hint: t('cards:accounts.open'),
+    },
+    {
+      key: 'cards',
+      to: ROUTES.cards,
       icon: CreditCard,
-      label: t('categories:manage.methodsTitle'),
-      hint: t('categories:manage.methodsOpen'),
+      label: t('cards:menu.label'),
+      hint: t('cards:menu.hint'),
     },
     {
       key: 'data',

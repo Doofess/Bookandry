@@ -1,74 +1,85 @@
 import { Landmark, Pencil, Plus } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useToday } from '@/app/app-context';
+import { useBaseCurrency, useToday } from '@/app/app-context';
 import { Avatar } from '@/components/avatars/avatar';
 import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
+import { MethodEditor } from '@/features/cards/method-editor';
+import { useBranch } from '@/features/cards/use-branch';
+import { useCardsData } from '@/features/cards/use-cards-data';
 import { compareLocal, formatLocalDate } from '@/lib/dates';
 import type { Occurrence, PaymentMethod, Profile } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
-import { useBranch } from './use-branch';
-
 /**
  * The household's bank accounts: which bank and branch, whose, how far below
  * zero each may go, and the card bills each one pays.
+ *
+ * Its own page, reached from the account menu with the other things the
+ * household is set up with - not a tab: an account is set up once and looked
+ * at now and then, while the cards' bills are looked at every week.
  */
-export function AccountsSection({
-  accounts,
-  cards,
-  occurrences,
-  profiles,
-  onAdd,
-  onEdit,
-}: {
-  readonly accounts: readonly PaymentMethod[];
-  readonly cards: readonly PaymentMethod[];
-  readonly occurrences: readonly Occurrence[];
-  readonly profiles: ReadonlyMap<string, Profile>;
-  readonly onAdd: () => void;
-  readonly onEdit: (account: PaymentMethod) => void;
-}) {
+export function BankAccountsScreen() {
   const { t } = useTranslation('cards');
+  const today = useToday();
+  const baseCurrency = useBaseCurrency();
+  const data = useCardsData(today, baseCurrency);
+  const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
+  const accounts = data?.accounts ?? [];
+
   return (
-    <section aria-labelledby="bank-accounts" className="space-y-3">
+    <section className="mx-auto max-w-4xl space-y-5 px-4 py-6 pb-24 lg:pb-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 id="bank-accounts" className="text-xl font-semibold tracking-tight">
-            {t('accounts.title')}
-          </h2>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('accounts.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('accounts.body')}</p>
         </div>
-        <Button type="button" variant="outline" onClick={onAdd}>
+        <Button
+          type="button"
+          onClick={() => {
+            setEditing('new');
+          }}
+        >
           <Plus className="size-4" aria-hidden="true" />
           {t('accounts.add')}
         </Button>
       </header>
 
-      {accounts.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-          {t('accounts.empty')}
-        </p>
+      {data === undefined ? null : accounts.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+          <Landmark className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+          <p className="mt-3 text-sm text-muted-foreground">{t('accounts.empty')}</p>
+        </div>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
           {accounts.map((account) => (
             <li key={account.id}>
               <AccountPanel
                 account={account}
-                cards={cards.filter((card) => card.card?.accountId === account.id)}
-                occurrences={occurrences}
-                profiles={profiles}
+                cards={data.cards.filter((card) => card.card?.accountId === account.id)}
+                occurrences={data.occurrences}
+                profiles={data.profiles}
                 onEdit={() => {
-                  onEdit(account);
+                  setEditing(account);
                 }}
               />
             </li>
           ))}
         </ul>
       )}
+
+      <MethodEditor
+        target={editing}
+        profiles={data === undefined ? [] : [...data.profiles.values()]}
+        onOpenChange={(open) => {
+          if (!open) setEditing(undefined);
+        }}
+        newType="bank_account"
+      />
     </section>
   );
 }
@@ -110,9 +121,9 @@ function AccountPanel({
             <Landmark className="size-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h3 id={titleId} className="truncate font-semibold">
+            <h2 id={titleId} className="truncate font-semibold">
               {account.label}
-            </h3>
+            </h2>
             {bank === undefined ? null : (
               <p className="truncate text-sm text-muted-foreground">
                 {bankName(bank, i18n.language)}

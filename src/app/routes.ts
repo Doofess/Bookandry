@@ -29,7 +29,9 @@ export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'cards', 'profil
 export const LINKED_ROUTES = {
   commitments: '/commitments',
   categories: '/categories',
+  /** The old payment-method list, now the Cards screen's: kept so its links still land. */
   paymentMethods: '/payment-methods',
+  bankAccounts: '/bank-accounts',
 } as const;
 
 /** Settings, one page per subject. `/settings` itself lists them. */

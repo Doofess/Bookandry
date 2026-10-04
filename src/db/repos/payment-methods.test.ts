@@ -219,14 +219,18 @@ describe('cash is built in', () => {
     expect(row?.profileId).toBe(SHARED_OWNER);
   });
 
-  it('can still be archived, like a built-in category', async () => {
-    // Someone who never carries cash should be able to put it away. That is a
-    // different thing from removing it, and it is reversible.
+  it('cannot be put away either: cash and cheques are always there', async () => {
     await seedCash();
-    await setPaymentMethodArchived(handle.db, CASH_METHOD_ID, true, NOW);
+    await expect(setPaymentMethodArchived(handle.db, CASH_METHOD_ID, true, NOW)).rejects.toThrow(/built in/);
+    await expect(setPaymentMethodArchived(handle.db, CHEQUE_METHOD_ID, true, NOW)).rejects.toThrow(
+      /built in/,
+    );
+  });
 
-    expect((await handle.db.paymentMethods.get(CASH_METHOD_ID))?.isArchived).toBe(1);
-    expect((await listPaymentMethods(handle.db)).map((m) => m.id)).toEqual([CHEQUE_METHOD_ID]);
+  it('is offered even when an older install archived it', async () => {
+    await seedCash();
+    await handle.db.paymentMethods.update(CASH_METHOD_ID, { isArchived: 1 });
+    expect((await listPaymentMethods(handle.db)).map((m) => m.id)).toContain(CASH_METHOD_ID);
   });
 
   it('leaves every other method deletable', async () => {

@@ -22,6 +22,14 @@ export function isBuiltinPaymentMethod(id: string): boolean {
   return id === CASH_METHOD_ID || id === CHEQUE_METHOD_ID;
 }
 
+/**
+ * Whether a method is offered: not archived - and cash and cheques always,
+ * whatever an older install or another device recorded about them.
+ */
+export function isActiveMethod(method: { readonly id: string; readonly isArchived: 0 | 1 }): boolean {
+  return method.isArchived === 0 || isBuiltinPaymentMethod(method.id);
+}
+
 /** The merged view. A literal union with string collapses, so name the sentinel. */
 export const ALL_PROFILES = 'all';
 

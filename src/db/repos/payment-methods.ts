@@ -4,6 +4,7 @@ import { accountSchema, cardSchema } from '@/domain/transfer-schema';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
 import {
+  isActiveMethod,
   isBuiltinPaymentMethod,
   redirectId,
   SHARED_OWNER,
@@ -35,7 +36,7 @@ export async function listPaymentMethods(
   const rows = await db.paymentMethods.toArray();
   return rows
     .filter((m) => {
-      if (query.includeArchived !== true && m.isArchived === 1) return false;
+      if (query.includeArchived !== true && !isActiveMethod(m)) return false;
       if (query.profileId === undefined) return true;
       return m.profileId === query.profileId || m.profileId === SHARED_OWNER;
     })
@@ -161,6 +162,8 @@ export async function setPaymentMethodArchived(
   archived: boolean,
   now: IsoInstant,
 ): Promise<void> {
+  // Cash and cheques are always there: nobody can be left without them.
+  if (isBuiltinPaymentMethod(id)) throw new Error(`${id} is built in and is always available`);
   await db.paymentMethods.update(id, {
     isArchived: archived ? 1 : 0,
     archivedAt: archived ? now : undefined,

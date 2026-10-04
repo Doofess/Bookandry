@@ -86,7 +86,8 @@ describe('the account menu', () => {
       'Preferences',
       'Recurring commitments',
       'Categories',
-      'Payment methods',
+      'Bank accounts',
+      'Cards and payment methods',
       'Backup and data',
     ])
       expect(items).toContain(label);

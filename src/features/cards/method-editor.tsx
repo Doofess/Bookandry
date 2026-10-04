@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Archive, ArchiveRestore, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Banknote, Pencil, Plus, ScrollText, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -30,12 +30,13 @@ import {
 import { accountDraftOf, accountFromDraft, type AccountDraft } from '@/domain/account-draft';
 import { bankByCode, bankName } from '@/domain/banks';
 import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, type CardDraft } from '@/domain/card-draft';
-import { AccountFields } from '@/features/cards/account-fields';
-import { CardFields } from '@/features/cards/card-fields';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
 import {
+  CASH_METHOD_ID,
+  CHEQUE_METHOD_ID,
+  isActiveMethod,
   isBuiltinPaymentMethod,
   SHARED_OWNER,
   type PaymentMethod,
@@ -43,14 +44,20 @@ import {
   type Profile,
 } from '@/types/domain';
 
+import { AccountFields } from './account-fields';
+import { CardFields } from './card-fields';
+
 /**
- * The payment-method manager.
+ * The payment-method editor, and the list of the ways to pay that are not cards.
  *
  * What it stores is a LABEL the user chose and, for a credit card, what the
  * card company shows about it - billing day, fees, interest, the month it
  * expires. Never anything that identifies or charges the card: no number, no
  * code from the back, and that is not a convention anyone has to remember - `gate:pci` fails
  * the build on those field names anywhere in src or e2e, with no escape hatch.
+ *
+ * Cash and cheques are built in: every install has them, for every profile,
+ * and they can be neither deleted nor put away (`isActiveMethod`).
  *
  * Methods belong to a profile or to the household. The shared owner is a real
  * indexable sentinel rather than a null, because IndexedDB cannot index null -
@@ -93,8 +100,14 @@ const TYPE_KEY: Record<PaymentMethodType, string> = {
   other: 'profiles:method.other',
 };
 
-export function PaymentMethodsScreen() {
-  const { t } = useTranslation(['common', 'categories', 'profiles']);
+/**
+ * Every way to pay that is not a credit card or a bank account - debit cards,
+ * wallets, transfers, standing orders - under the cards, where the household
+ * looks for how it pays. Cash and cheques head the list: built in, there for
+ * everyone, and never put away or deleted.
+ */
+export function OtherMethods() {
+  const { t } = useTranslation(['common', 'categories', 'profiles', 'cards']);
   const displayName = (method: PaymentMethod): string => methodDisplayName(method, t);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
   const [deleting, setDeleting] = useState<PaymentMethod | undefined>(undefined);
@@ -117,8 +130,13 @@ export function PaymentMethodsScreen() {
     };
   }, []);
 
-  const methods = data?.methods ?? [];
+  const all = data?.methods ?? [];
   const profiles = data?.profiles ?? [];
+  // Cash first, then cheques: the order they are reached for.
+  const builtins = BUILTIN_ORDER.flatMap((id) => all.filter((m) => m.id === id));
+  const others = all.filter(
+    (m) => !isBuiltinPaymentMethod(m.id) && m.type !== 'credit_card' && m.type !== 'bank_account',
+  );
 
   const ownerName = (profileId: string): string =>
     profileId === SHARED_OWNER
@@ -126,110 +144,109 @@ export function PaymentMethodsScreen() {
       : (profiles.find((p) => p.id === profileId)?.name ?? profileId);
 
   return (
-    <section className="mx-auto max-w-2xl space-y-4 px-4 py-6 pb-24 lg:pb-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('categories:manage.methodsTitle')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('categories:manage.methodsBody')}</p>
+    <section aria-labelledby="other-methods" className="space-y-3">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 id="other-methods" className="text-xl font-semibold tracking-tight">
+            {t('cards:other.title')}
+          </h2>
+          <p className="text-sm text-muted-foreground">{t('cards:other.body')}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={profiles.length === 0}
+          onClick={() => {
+            setEditing('new');
+          }}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          {t('cards:other.add')}
+        </Button>
       </header>
 
-      {methods.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('categories:manage.methodEmpty')}</p>
-      ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border">
-          {methods.map((method) => {
-            const archived = method.isArchived === 1;
-            const profile = profiles.find((p) => p.id === method.profileId);
-            return (
-              <li key={method.id} className={`flex items-center gap-3 p-3 ${archived ? 'opacity-60' : ''}`}>
-                {profile === undefined ? (
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-                    {/* The household, which has no avatar of its own. */}
-                    {t('categories:manage.methodShared').slice(0, 2)}
-                  </span>
-                ) : (
-                  <Avatar avatar={profile.avatar} color={profile.color} size="sm" />
-                )}
-
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{displayName(method)}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {t(TYPE_KEY[method.type] as MethodTypeKey)} · {ownerName(method.profileId)}
-                    {archived ? ` · ${t('categories:manage.archived')}` : ''}
-                  </span>
+      <ul className="divide-y divide-border rounded-xl border border-border">
+        {builtins.map((method) => (
+          <li key={method.id} className="flex min-h-14 items-center gap-3 p-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              {method.id === CASH_METHOD_ID ? (
+                <Banknote className="size-4" aria-hidden="true" />
+              ) : (
+                <ScrollText className="size-4" aria-hidden="true" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">{displayName(method)}</span>
+              <span className="block text-xs text-muted-foreground">{t('cards:other.builtin')}</span>
+            </span>
+          </li>
+        ))}
+        {others.map((method) => {
+          const archived = method.isArchived === 1;
+          const profile = profiles.find((p) => p.id === method.profileId);
+          return (
+            <li key={method.id} className={`flex items-center gap-3 p-3 ${archived ? 'opacity-60' : ''}`}>
+              {profile === undefined ? (
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                  {/* The household, which has no avatar of its own. */}
+                  {t('categories:manage.methodShared').slice(0, 2)}
                 </span>
+              ) : (
+                <Avatar avatar={profile.avatar} color={profile.color} size="sm" />
+              )}
 
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-11"
-                  aria-label={`${archived ? t('categories:manage.unarchive') : t('categories:manage.archive')}: ${displayName(method)}`}
-                  onClick={() => {
-                    void setPaymentMethodArchived(db, method.id, !archived, systemClock.nowIso());
-                  }}
-                >
-                  {archived ? (
-                    <ArchiveRestore className="size-4" aria-hidden="true" />
-                  ) : (
-                    <Archive className="size-4" aria-hidden="true" />
-                  )}
-                </Button>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{displayName(method)}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t(TYPE_KEY[method.type] as MethodTypeKey)} · {ownerName(method.profileId)}
+                  {archived ? ` · ${t('categories:manage.archived')}` : ''}
+                </span>
+              </span>
 
-                {/*
-                  Archive stays; rename and delete do not.
-                  
-                  The same rule the built-in categories follow: someone who
-                  never carries cash can put it away, but nobody can leave the
-                  install without the one method every profile shares and no
-                  screen can recreate.
-                */}
-                {isBuiltinPaymentMethod(method.id) ? null : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-11"
-                      aria-label={`${t('categories:manage.methodEdit')}: ${method.label}`}
-                      onClick={() => {
-                        setEditing(method);
-                      }}
-                    >
-                      <Pencil className="size-4" aria-hidden="true" />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 text-destructive"
-                      aria-label={t('categories:manage.methodDeleteTitle', { name: method.label })}
-                      onClick={() => {
-                        setDeleting(method);
-                      }}
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                    </Button>
-                  </>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11"
+                aria-label={`${archived ? t('categories:manage.unarchive') : t('categories:manage.archive')}: ${displayName(method)}`}
+                onClick={() => {
+                  void setPaymentMethodArchived(db, method.id, !archived, systemClock.nowIso());
+                }}
+              >
+                {archived ? (
+                  <ArchiveRestore className="size-4" aria-hidden="true" />
+                ) : (
+                  <Archive className="size-4" aria-hidden="true" />
                 )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        disabled={profiles.length === 0}
-        onClick={() => {
-          setEditing('new');
-        }}
-      >
-        <Plus className="size-4" aria-hidden="true" />
-        {t('categories:manage.methodAdd')}
-      </Button>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11"
+                aria-label={`${t('categories:manage.methodEdit')}: ${method.label}`}
+                onClick={() => {
+                  setEditing(method);
+                }}
+              >
+                <Pencil className="size-4" aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11 text-destructive"
+                aria-label={t('categories:manage.methodDeleteTitle', { name: method.label })}
+                onClick={() => {
+                  setDeleting(method);
+                }}
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
 
       <MethodEditor
         target={editing}
@@ -237,11 +254,12 @@ export function PaymentMethodsScreen() {
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
         }}
+        newType="debit_card"
       />
 
       <DeleteMethodDialog
         method={deleting}
-        others={methods.filter((m) => m.id !== deleting?.id && m.isArchived === 0)}
+        others={all.filter((m) => m.id !== deleting?.id && isActiveMethod(m))}
         count={deleting === undefined ? 0 : (data?.counts.get(deleting.id) ?? 0)}
         onOpenChange={(open) => {
           if (!open) setDeleting(undefined);
@@ -250,6 +268,9 @@ export function PaymentMethodsScreen() {
     </section>
   );
 }
+
+/** The built-in methods, in the order they are listed. */
+const BUILTIN_ORDER = [CASH_METHOD_ID, CHEQUE_METHOD_ID];
 
 export function MethodEditor({
   target,

@@ -284,6 +284,14 @@ household's accounts first, and each account shows the card bills it is about
 to pay. Paying straight from an account is any method but תשלומים and קרדיט,
 which are a card's. Not modelled: an account's balance.
 
+**One place for how the household pays.** The account menu lists _Bank
+accounts_ (`/bank-accounts`) and _Cards and payment methods_ - the Cards
+screen, which holds the credit cards and, under them, every other way to pay:
+debit cards, wallets, transfers, standing orders. `/payment-methods` sends
+there. Cash and cheques are built in: every install has them, for everyone,
+and they can be neither deleted, renamed nor put away (`isActiveMethod` offers
+them even where an older install archived one).
+
 **"Add with AI" reads files into transactions, and code checks the reading.**
 The + button opens a menu: _Add manually_, or _Add with AI_, which takes
 screenshots (a Bit or bank notification), photos, PDFs, Excel/CSV and Word

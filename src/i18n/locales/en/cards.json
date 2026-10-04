@@ -1,6 +1,6 @@
 {
-  "title": "Cards and accounts",
-  "subtitle": "What is on each card, when the bank is charged for it, and the accounts that pay.",
+  "title": "Credit cards",
+  "subtitle": "What is on each card, and when the bank is charged for it.",
   "add": "Add a card",
   "emptyTitle": "No credit cards yet",
   "emptyBody": "Add a card with its billing day, and purchases on it count on the day the bank is charged.",
@@ -168,6 +168,17 @@
       "otherHoldersPlaceholder": "e.g. a business partner",
       "overdraft": "Overdraft limit (מסגרת עו״ש)",
       "overdraftHint": "How far below zero the bank lets the account go. Leave empty if it has none."
-    }
+    },
+    "open": "Banks, branches and overdraft limits"
+  },
+  "menu": {
+    "label": "Cards and payment methods",
+    "hint": "Credit cards, cash, cheques and the rest"
+  },
+  "other": {
+    "title": "Other ways to pay",
+    "body": "Debit cards, wallets, transfers and standing orders. Cash and cheques are built in, for everyone.",
+    "add": "Add a way to pay",
+    "builtin": "Built in: always there, for everyone"
   }
 }

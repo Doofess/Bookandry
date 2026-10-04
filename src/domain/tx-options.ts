@@ -1,4 +1,4 @@
-import { SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
+import { isActiveMethod, SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
 import type { Kind } from '@/types/money';
 
 import type { RecurrenceMode } from './tx-form';
@@ -82,7 +82,7 @@ export function methodsFor(
       (method) =>
         methodOwnedBy(method, profileId) &&
         (method.id === keepId ||
-          (method.isArchived === 0 && (mode === undefined || methodFits(method, mode)))),
+          (isActiveMethod(method) && (mode === undefined || methodFits(method, mode)))),
     )
     .sort((a, b) => a.label.localeCompare(b.label));
 }
