@@ -84,11 +84,11 @@ describe('Fab', () => {
 
 describe('Fab geometry', () => {
   it('declares equal width and height so it renders a CIRCLE, not an oval', () => {
-    // Regression: `w-max` alongside `size-14` overrode the width and produced a
+    // Regression: `w-max` alongside the size class overrode the width and produced a
     // visibly squashed oval. Caught in a screenshot, pinned here.
     renderWithProviders(<Fab onClick={() => undefined} />);
     const cls = screen.getByTestId('fab').className;
-    expect(cls).toContain('size-14');
+    expect(cls).toContain('size-12');
     expect(cls).toContain('rounded-full');
     expect(cls).not.toMatch(/(^|\s)w-(max|min|fit|auto|\d)/);
     expect(cls).not.toMatch(/(^|\s)h-(max|min|fit|auto|\d)/);

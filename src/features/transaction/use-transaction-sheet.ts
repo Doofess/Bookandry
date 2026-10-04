@@ -30,16 +30,32 @@ const ADD = 'add';
 const EDIT = 'edit';
 /** The ORIGINAL slot date - the Override key, not the moved date. */
 const AT = 'at';
+/** "Add with AI": `1`, or `shared` when files arrived from the phone's Share menu. */
+const IMPORT = 'import';
+/** Files shared to the app, waiting in the service worker's cache under this id. */
+const SHARED_ID = 'id';
+/** The found transaction being edited inside the import sheet, by its index. */
+const ROW = 'row';
 
 export type SheetTarget =
   | { readonly mode: 'closed' }
   | { readonly mode: 'add' }
-  | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate };
+  | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate }
+  | {
+      readonly mode: 'import';
+      /** The share's id when files came from the Share menu. */
+      readonly sharedId?: string;
+      /** A found transaction open for editing, so Back returns to the list. */
+      readonly row?: number;
+    };
 
 export type TransactionSheetApi = {
   readonly target: SheetTarget;
   readonly openAdd: () => void;
   readonly openEdit: (occurrence: Occurrence) => void;
+  readonly openImport: (sharedId?: string) => void;
+  /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
+  readonly openImportRow: (row: number | undefined) => void;
   readonly close: () => void;
   /** For `onOpenChange`, which a backdrop click or Escape also drives. */
   readonly setOpen: (open: boolean) => void;
@@ -50,6 +66,16 @@ export function useTransactionSheet(): TransactionSheetApi {
 
   const target = useMemo<SheetTarget>(() => {
     if (params.get(ADD) === '1') return { mode: 'add' };
+    const importing = params.get(IMPORT);
+    if (importing === '1' || importing === 'shared') {
+      const sharedId = importing === 'shared' ? (params.get(SHARED_ID) ?? undefined) : undefined;
+      const row = Number(params.get(ROW) ?? '');
+      return {
+        mode: 'import',
+        ...(sharedId === undefined || sharedId === '' ? {} : { sharedId }),
+        ...(params.get(ROW) !== null && Number.isInteger(row) && row >= 0 ? { row } : {}),
+      };
+    }
     const transactionId = params.get(EDIT);
     const at = params.get(AT);
     // Both halves or neither: an edit target without its slot cannot be
@@ -61,13 +87,21 @@ export function useTransactionSheet(): TransactionSheetApi {
   }, [params]);
 
   const write = useCallback(
-    (next: SheetTarget) => {
+    (next: SheetTarget, replace = next.mode === 'closed') => {
       const updated = new URLSearchParams(params);
       updated.delete(ADD);
       updated.delete(EDIT);
       updated.delete(AT);
+      updated.delete(IMPORT);
+      updated.delete(SHARED_ID);
+      updated.delete(ROW);
 
       if (next.mode === 'add') updated.set(ADD, '1');
+      if (next.mode === 'import') {
+        updated.set(IMPORT, next.sharedId === undefined ? '1' : 'shared');
+        if (next.sharedId !== undefined) updated.set(SHARED_ID, next.sharedId);
+        if (next.row !== undefined) updated.set(ROW, String(next.row));
+      }
       if (next.mode === 'edit') {
         updated.set(EDIT, next.transactionId);
         updated.set(AT, next.at);
@@ -86,7 +120,7 @@ export function useTransactionSheet(): TransactionSheetApi {
        * walks out of the app entirely when the sheet was reached by a direct
        * link, which is the worse failure of the two.
        */
-      setParams(updated, { replace: next.mode === 'closed' });
+      setParams(updated, { replace });
     },
     [params, setParams],
   );
@@ -105,6 +139,16 @@ export function useTransactionSheet(): TransactionSheetApi {
           transactionId: occurrence.transaction.id,
           at: occurrence.originalDate,
         });
+      },
+      openImport: (sharedId?: string) => {
+        write({ mode: 'import', ...(sharedId === undefined ? {} : { sharedId }) });
+      },
+      openImportRow: (row: number | undefined) => {
+        if (target.mode !== 'import') return;
+        const { row: _open, ...rest } = target;
+        // Back to the list replaces, like closing does, so Back never reopens the row.
+        if (row === undefined) write(rest, true);
+        else write({ ...rest, row });
       },
       close: () => {
         write({ mode: 'closed' });

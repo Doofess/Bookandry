@@ -27,6 +27,12 @@
     "retry": "נסה שוב",
     "addTransaction": "הוספת תנועה"
   },
+  "addMenu": {
+    "manual": "הוספה ידנית",
+    "ai": "הוספה עם AI",
+    "aiHint": "תמונות, PDF, אקסל, צילומי מסך",
+    "aiUnavailable": "דורש חשבון Bookandry"
+  },
   "theme": {
     "label": "ערכת נושא",
     "light": "בהיר",

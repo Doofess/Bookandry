@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { openAddSheet as openForm } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -98,7 +99,7 @@ const COPY = {
 
 async function openAddSheet(page: Page, lang: 'en' | 'he'): Promise<void> {
   await completeFirstRun(page, lang);
-  await page.getByTestId('fab').click();
+  await openForm(page);
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
@@ -207,7 +208,7 @@ for (const lang of ['en', 'he'] as const) {
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
       await page.goto('/');
-      await page.getByTestId('fab').click();
+      await openForm(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('1200');
       await page.getByRole('radio', { name: copy.credit, exact: true }).click();
       await page.getByLabel(copy.count, { exact: true }).fill('6');
@@ -241,7 +242,7 @@ for (const lang of ['en', 'he'] as const) {
        * ₪466,279.60 of it interest - said before saving, in money.
        */
       await completeFirstRun(page, lang, { demo: false });
-      await page.getByTestId('fab').click();
+      await openForm(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('500000');
       await page.getByRole('radio', { name: copy.loan, exact: true }).click();
       await page.getByLabel(copy.loanCount, { exact: true }).fill('360');
@@ -279,7 +280,7 @@ for (const lang of ['en', 'he'] as const) {
       await expect(strip).toContainText('4.75%');
       await expect(strip).toContainText('3.25%');
 
-      await page.getByTestId('fab').click();
+      await openForm(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('500000');
       await page.getByRole('radio', { name: copy.loan, exact: true }).click();
       await page.getByLabel(copy.loanCount, { exact: true }).fill('360');
@@ -307,7 +308,7 @@ for (const lang of ['en', 'he'] as const) {
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
       await page.goto('/');
-      await page.getByTestId('fab').click();
+      await openForm(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('4500');
       const paidWith = page.getByRole('combobox', { name: new RegExp(copy.paidWith) });
       const offered = async (): Promise<string[]> => {
@@ -373,7 +374,7 @@ for (const lang of ['en', 'he'] as const) {
        * month's 30 days, so ₪150 then, and ₪300 from 1 December.
        */
       await completeFirstRun(page, lang, { demo: false });
-      await page.getByTestId('fab').click();
+      await openForm(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('300');
       await page.getByRole('radio', { name: copy.standing, exact: true }).click();
       await page.getByRole('radio', { name: copy.monthly, exact: true }).click();

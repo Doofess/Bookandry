@@ -2,11 +2,11 @@ import { cn } from 'cn';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-export type FabProps = {
-  onClick: () => void;
-  className?: string;
-  disabled?: boolean;
-};
+/**
+ * A plain button's props: the FAB is also a menu trigger (`AddMenu`), and the
+ * menu passes its handlers, ARIA state and ref straight through to it.
+ */
+export type FabProps = React.ComponentProps<'button'>;
 
 /**
  * The add-transaction button.
@@ -23,28 +23,28 @@ export type FabProps = {
  * safe-area inset, which only resolves to a real value because index.html sets
  * `viewport-fit=cover`.
  */
-export function Fab({ onClick, className, disabled = false }: FabProps) {
+export function Fab({ className, disabled = false, ...props }: FabProps) {
   const { t } = useTranslation();
 
   return (
     <button
       type="button"
-      onClick={onClick}
       disabled={disabled}
       aria-label={t('action.addTransaction')}
       data-testid="fab"
+      {...props}
       className={cn(
         'fixed z-50 grid place-items-center rounded-full',
-        'size-14 shadow-lg',
+        'size-12 shadow-lg',
         'bg-fab text-fab-foreground ring-2 ring-fab-rim',
-        // 44x44 is the WCAG 2.2 target-size floor; 56 is comfortably past it.
+        // 44x44 is the WCAG 2.2 target-size floor; 48 clears it.
         'transition-transform duration-[90ms] ease-out',
         'hover:brightness-[1.06] active:scale-[0.94]',
         'focus-visible:ring-4 focus-visible:ring-ring focus-visible:outline-none',
         'disabled:pointer-events-none disabled:opacity-50',
         'motion-reduce:transition-none motion-reduce:active:scale-100',
         // Mobile: centred horizontally, clearing the tab bar and the home indicator.
-        // NB: no `w-max` here - it would override size-14's width and render an
+        // NB: no `w-max` here - it would override size-12's width and render an
         // oval. `start-0 end-0` plus `mx-auto` centres a fixed-width element.
         // NOT `inset-inline-0`: that is not a Tailwind utility, emits no CSS at
         // all, and left the button sitting at its static position - which looked
@@ -57,7 +57,7 @@ export function Fab({ onClick, className, disabled = false }: FabProps) {
       )}
     >
       {/* Plus is non-directional: it must NOT carry rtl:rotate-180. */}
-      <Plus className="size-7" strokeWidth={2.75} aria-hidden="true" />
+      <Plus className="size-6" strokeWidth={2.75} aria-hidden="true" />
     </button>
   );
 }

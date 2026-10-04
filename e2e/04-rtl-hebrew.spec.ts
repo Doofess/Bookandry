@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -180,7 +181,7 @@ test.describe('@rtl sheets open on the right edge', () => {
      */
     await completeFirstRun(page, 'he');
 
-    await page.getByRole('button', { name: 'הוספת תנועה' }).click();
+    await openAddSheet(page);
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();

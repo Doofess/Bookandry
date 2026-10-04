@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -110,7 +111,7 @@ for (const lang of ['en', 'he'] as const) {
       const beforeText = await balance.textContent();
 
       // A purchase on it, today.
-      await page.getByTestId('fab').click();
+      await openAddSheet(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('250');
       await page.getByRole('combobox', { name: new RegExp(copy.paidWith) }).click();
       await page.getByRole('option', { name: /Visa/ }).click();
@@ -194,7 +195,7 @@ test.describe('@cards what a card is committed to', () => {
 
     // ₪1,200 over 6 at 12%: six payments of ₪207.06, ₪1,242.36 in all.
     await page.goto('/');
-    await page.getByTestId('fab').click();
+    await openAddSheet(page);
     await page.getByLabel('סכום', { exact: true }).fill('1200');
     await page.getByRole('radio', { name: 'עסקת קרדיט', exact: true }).click();
     await page.getByLabel('מספר תשלומים', { exact: true }).fill('6');

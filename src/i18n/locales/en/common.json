@@ -27,6 +27,12 @@
     "retry": "Try again",
     "addTransaction": "Add transaction"
   },
+  "addMenu": {
+    "manual": "Add manually",
+    "ai": "Add with AI",
+    "aiHint": "Photos, PDF, Excel, screenshots",
+    "aiUnavailable": "Needs a Bookandry account"
+  },
   "theme": {
     "label": "Theme",
     "light": "Light",

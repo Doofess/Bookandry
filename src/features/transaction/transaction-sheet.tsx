@@ -154,7 +154,7 @@ export function TransactionSheet({
   );
 
   const isAdd = target.mode === 'add';
-  const open = target.mode !== 'closed';
+  const open = target.mode === 'add' || target.mode === 'edit';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

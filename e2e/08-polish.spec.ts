@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { ADD_MANUALLY } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -269,7 +270,19 @@ test.describe('@keyboard walkthrough', () => {
   test('opens and closes the add sheet without a pointer', async ({ page }) => {
     await completeFirstRun(page, 'en');
 
-    await page.getByTestId('fab').focus();
+    // The + opens its menu with focus on the first item, "Add manually".
+    const fab = page.getByTestId('fab');
+    await fab.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: ADD_MANUALLY })).toBeFocused();
+    // Escape closes the menu and hands focus back to the button.
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(fab).toBeFocused();
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: ADD_MANUALLY })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toBeVisible();
 
@@ -284,6 +297,8 @@ test.describe('@keyboard walkthrough', () => {
     await completeFirstRun(page, 'en');
 
     await page.getByTestId('fab').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: ADD_MANUALLY })).toBeFocused();
     await page.keyboard.press('Enter');
 
     const dialog = page.getByRole('dialog');

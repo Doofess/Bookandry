@@ -17,7 +17,7 @@ import { toastPosition } from '@/lib/rtl';
  *  - THE OFFSET CLEARS THE FAB AND THE TAB BAR. §8 says to move the toast
  *    rather than the button: the FAB is the primary action and a toast that
  *    covers it blocks the thing people came to do. 3.5rem of tab bar, plus the
- *    FAB's 3.5rem disc and its gap, plus the home-indicator inset.
+ *    FAB's 3rem disc and its gap, plus the home-indicator inset.
  */
 export function Toaster() {
   const { i18n } = useTranslation();
@@ -27,7 +27,7 @@ export function Toaster() {
     <Sonner
       dir={dir}
       position={toastPosition(dir)}
-      mobileOffset={{ bottom: 'calc(8.5rem + env(safe-area-inset-bottom, 0px))' }}
+      mobileOffset={{ bottom: 'calc(8rem + env(safe-area-inset-bottom, 0px))' }}
       offset={{ bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}
       // The default 4s is short for a sentence plus a decision. Six matches the
       // undo window the plan specifies, and the row survives for 24 hours

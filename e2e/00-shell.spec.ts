@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { openAddSheet } from './support/add';
 import { bootAs, completeFirstRun } from './support/seed';
 
 /**
@@ -368,9 +369,22 @@ test.describe('@fab add button', () => {
      */
     await expect(page.getByRole('button', { name: /add transaction/i })).toBeVisible();
 
-    await page.getByTestId('fab').click();
+    await openAddSheet(page);
 
     await expect(page.getByRole('dialog')).toBeVisible();
+  });
+
+  test('offers adding by hand or with AI, and says why AI is unavailable here', async ({ page }) => {
+    // This build has no account server, so the AI cannot be reached: the item
+    // is there, disabled, with the reason in words rather than only greyed out.
+    await page.getByTestId('fab').click();
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    const ai = menu.getByRole('menuitem', { name: /Add with AI|הוספה עם AI/ });
+    await expect(ai).toHaveAttribute('aria-disabled', 'true');
+    await expect(ai).toContainText(/Needs a Bookandry account|דורש חשבון Bookandry/);
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
   });
 });
 

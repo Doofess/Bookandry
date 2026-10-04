@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
+import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
-import { Fab } from '@/components/fab';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
@@ -14,6 +14,7 @@ import { methodDisplayName } from '@/i18n/method-name';
 import { startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Occurrence } from '@/types/domain';
 
+import { AddMenu } from './add-menu';
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
 import { FilterBar } from './filter-bar';
@@ -33,6 +34,9 @@ import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing
 import { TransactionSheet } from '../transaction/transaction-sheet';
 import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 
+/** "Add with AI": its own chunk, fetched the first time it is opened. */
+const ImportSheet = lazy(() => import('../import/import-sheet').then((m) => ({ default: m.ImportSheet })));
+
 type Breakdown = 'balance' | 'expense' | undefined;
 
 export function FeedScreen() {
@@ -41,6 +45,7 @@ export function FeedScreen() {
   const settings = useSettings();
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
   const sheet = useTransactionSheet();
+  const account = useAccount();
   const navigate = useNavigate();
   const [breakdown, setBreakdown] = useState<Breakdown>(undefined);
   /*
@@ -152,7 +157,14 @@ export function FeedScreen() {
         a button that opens a sheet you cannot complete is worse than one that
         is visibly unavailable.
       */}
-      <Fab onClick={sheet.openAdd} disabled={(lookups?.profiles.length ?? 0) === 0} />
+      <AddMenu
+        disabled={(lookups?.profiles.length ?? 0) === 0}
+        aiAvailable={account.status !== 'unavailable'}
+        onAddManually={sheet.openAdd}
+        onAddWithAi={() => {
+          sheet.openImport();
+        }}
+      />
 
       {headerCollapsed ? (
         <CollapsedSummaryBar
@@ -249,6 +261,26 @@ export function FeedScreen() {
             setMonth(startOfMonth(date));
           }}
         />
+      )}
+
+      {lookups === undefined || sheet.target.mode !== 'import' ? null : (
+        <Suspense fallback={null}>
+          <ImportSheet
+            target={sheet.target}
+            onOpenChange={sheet.setOpen}
+            onOpenRow={sheet.openImportRow}
+            profiles={lookups.profiles}
+            categories={[...lookups.categories.values()]}
+            paymentMethods={[...lookups.paymentMethods.values()]}
+            activeProfileId={filters.profileId}
+            baseCurrency={settings.defaultCurrency}
+            today={today}
+            onSaved={(date) => {
+              sheet.close();
+              setMonth(startOfMonth(date));
+            }}
+          />
+        </Suspense>
       )}
 
       <RowActionsSheet
