@@ -323,7 +323,18 @@
     "deletedBody": "Deleted transactions stay here for {{count}} hours, then go for good.",
     "deletedEmpty": "Nothing deleted in the last 24 hours.",
     "deletedRestore": "Restore",
-    "deletedAgo": "Deleted {{when}}"
+    "deletedAgo": "Deleted {{when}}",
+    "loanInterest": "Interest",
+    "basisPrime": "Prime +",
+    "basisFixed": "Fixed",
+    "prime": "Prime",
+    "primeMargin": "On top of prime",
+    "primeMarginHint": "From the loan agreement. For a rate below prime, use a minus sign, e.g. -0.5.",
+    "primeSource": "Set by the Bank of Israel: its rate of <boi></boi> plus 1.5, updated automatically.",
+    "primeNextDecision": "Next decision {{date}}.",
+    "primeBuiltIn": "As of {{date}}; it updates once the app is online.",
+    "primeTotal": "This loan: <rate></rate> a year.",
+    "errMarginInvalid": "Enter a number, like 1.5 or -0.5."
   },
   "commitments": {
     "title": "Recurring commitments",
@@ -559,5 +570,11 @@
   },
   "menu": {
     "label": "Account and settings"
+  },
+  "prime": {
+    "title": "Prime rate",
+    "detail": "Bank of Israel <boi></boi> + 1.5%",
+    "next": "Next decision {{date}}",
+    "asOf": "As of {{date}}"
   }
 }

@@ -329,7 +329,18 @@
     "deletedBody": "תנועות שנמחקו נשמרות כאן {{count}} שעות ואז נמחקות לתמיד.",
     "deletedEmpty": "לא נמחק כלום ב-24 השעות האחרונות.",
     "deletedRestore": "שחזר",
-    "deletedAgo": "נמחק {{when}}"
+    "deletedAgo": "נמחק {{when}}",
+    "loanInterest": "ריבית",
+    "basisPrime": "פריים +",
+    "basisFixed": "קבועה",
+    "prime": "פריים",
+    "primeMargin": "מעל הפריים",
+    "primeMarginHint": "מתוך הסכם ההלוואה. לריבית מתחת לפריים הוסיפו מינוס, למשל ⁦-0.5⁩.",
+    "primeSource": "נקבע לפי בנק ישראל: הריבית שלו, <boi></boi>, ועוד 1.5. מתעדכן אוטומטית.",
+    "primeNextDecision": "ההחלטה הבאה ב־{{date}}.",
+    "primeBuiltIn": "נכון ל־{{date}}; יתעדכן כשהאפליקציה תהיה מחוברת.",
+    "primeTotal": "ריבית ההלוואה: <rate></rate> לשנה.",
+    "errMarginInvalid": "הזינו מספר, למשל 1.5 או ⁦-0.5⁩."
   },
   "commitments": {
     "title": "התחייבויות קבועות",
@@ -567,5 +578,11 @@
   },
   "menu": {
     "label": "חשבון והגדרות"
+  },
+  "prime": {
+    "title": "ריבית הפריים",
+    "detail": "בנק ישראל <boi></boi> + 1.5%",
+    "next": "ההחלטה הבאה ב־{{date}}",
+    "asOf": "נכון ל־{{date}}"
   }
 }

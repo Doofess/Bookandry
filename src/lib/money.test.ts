@@ -19,6 +19,8 @@ import {
   multiplyRates,
   normalizeAmountInput,
   normalizeAnnualRate,
+  normalizeRateMargin,
+  addRates,
   rateDeviationExceeds,
   rateFromAmounts,
   spitzerPayment,
@@ -659,5 +661,39 @@ describe('prorateMinor', () => {
     expect(() => prorateMinor(100, 1, 0)).toThrow(RangeError);
     expect(() => prorateMinor(100, -1, 30)).toThrow(RangeError);
     expect(() => prorateMinor(1.5, 1, 30)).toThrow(RangeError);
+  });
+});
+
+describe('normalizeRateMargin', () => {
+  it.each([
+    ['1.5', '1.5'],
+    ['+2', '2'],
+    ['-0.5', '-0.5'],
+    [' -.25 ', '-.25'],
+    ['', '0'],
+    ['  ', '0'],
+    ['100', '100'],
+    ['-100', '-100'],
+  ])('reads %j as %j', (input, expected) => {
+    expect(normalizeRateMargin(input)).toBe(expected);
+  });
+
+  it.each(['1.2.3', '--1', '1e1', 'abc', '100.5', '-101', '+'])('refuses %j', (input) => {
+    expect(normalizeRateMargin(input)).toBeUndefined();
+  });
+});
+
+describe('addRates', () => {
+  it.each([
+    ['4.75', '1.5', '6.25'],
+    ['4.75', '-0.4', '4.35'],
+    ['4.75', '-4.75', '0'],
+    ['3.25', '1.5', '4.75'],
+    ['0.5', '-1', '-0.5'],
+    ['4', '0', '4'],
+    ['4.', '.125', '4.125'],
+    ['0.05', '0.05', '0.1'],
+  ])('%s + %s = %s, exactly', (a, b, expected) => {
+    expect(addRates(a, b)).toBe(expected);
   });
 });

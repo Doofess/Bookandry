@@ -6,6 +6,8 @@ import { d, makeTx } from './test-factories';
 import {
   chargesInterest,
   defaultFormValues,
+  effectiveRate,
+  isPrimeLinked,
   defaultRecurringDay,
   firstOccurrenceDate,
   firstPartialPeriod,
@@ -572,7 +574,14 @@ describe('a loan', () => {
    * 5% is ₪2,684.11 a month - the number the bank debits, so the number stored.
    */
   const loan = (over: Partial<TxFormValues> = {}) =>
-    values({ mode: 'loan', amount: '500000', installmentCount: '360', annualRate: '5', ...over });
+    values({
+      mode: 'loan',
+      rateBasis: 'fixed',
+      amount: '500000',
+      installmentCount: '360',
+      annualRate: '5',
+      ...over,
+    });
 
   it('stores the repayments, a plan that says it is a loan, and its rate', () => {
     const parsed = parse(loan());
@@ -622,6 +631,68 @@ describe('a loan', () => {
   });
 });
 
+describe('a loan at prime plus a margin', () => {
+  /*
+   * Prime is the Bank of Israel's 3.25 plus 1.5: 4.75. A loan at P+1.5 is
+   * priced at 6.25%, which on ₪500,000 over 30 years is ₪3,078.59 a month.
+   */
+  const loan = (over: Partial<TxFormValues> = {}) =>
+    values({
+      mode: 'loan',
+      amount: '500000',
+      installmentCount: '360',
+      primeRate: '4.75',
+      primeMargin: '1.5',
+      ...over,
+    });
+
+  it('is prime-linked unless said otherwise', () => {
+    expect(isPrimeLinked(loan())).toBe(true);
+    expect(isPrimeLinked(loan({ rateBasis: 'fixed' }))).toBe(false);
+    expect(isPrimeLinked(loan({ mode: 'credit' }))).toBe(false);
+  });
+
+  it('prices at prime plus the margin, and keeps how', () => {
+    const parsed = parse(loan());
+    expect(parsed.installmentTotalMinor).toBe(307_859 * 360);
+    expect(parsed.recurrence).toMatchObject({
+      plan: 'loan',
+      creditAnnualRate: '6.25',
+      rateBasis: 'prime',
+      primeMargin: '1.5',
+    });
+  });
+
+  it('takes a margin below prime, and none at all', () => {
+    expect(effectiveRate(loan({ primeMargin: '-0.5' }))).toBe('4.25');
+    expect(parse(loan({ primeMargin: '-0.5' })).installmentTotalMinor).toBe(245_970 * 360);
+    expect(effectiveRate(loan({ primeMargin: '' }))).toBe('4.75');
+    expect(parse(loan({ primeMargin: '+2' })).recurrence).toMatchObject({ primeMargin: '2' });
+  });
+
+  it('never reads the typed rate on a prime-linked loan', () => {
+    expect(effectiveRate(loan({ annualRate: '99' }))).toBe('6.25');
+    expect(issuesFor(loan({ annualRate: '1.2.3' }), 'annualRate')).toEqual([]);
+  });
+
+  it('says what is wrong with the margin, beside the margin', () => {
+    expect(issuesFor(loan({ primeMargin: '1.2.3' }), 'primeMargin')).toEqual(['margin_invalid']);
+    // Prime minus more than prime is no rate at all.
+    expect(issuesFor(loan({ primeMargin: '-5' }), 'primeMargin')).toEqual(['rate_out_of_range']);
+    expect(planTotal(loan({ primeMargin: '-5' }))).toBeUndefined();
+  });
+
+  it('cannot be priced without prime', () => {
+    expect(effectiveRate(loan({ primeRate: '' }))).toBeUndefined();
+    expect(issuesFor(loan({ primeRate: '' }), 'primeMargin')).toEqual(['rate_out_of_range']);
+  });
+
+  it('has no rate at all outside the priced modes', () => {
+    expect(effectiveRate(loan({ mode: 'installments' }))).toBe('');
+    expect(effectiveRate(loan({ rateBasis: 'fixed', annualRate: '' }))).toBe('');
+  });
+});
+
 describe('pastPayments', () => {
   const today = d('2026-10-04');
 
@@ -647,8 +718,9 @@ describe('pastPayments', () => {
     });
   });
 
-  it('has nothing to say about the future or a one-off', () => {
+  it('has nothing to say about the future, today or a one-off', () => {
     expect(pastPayments(d('2026-11-01'), { type: 'monthly', dayOfMonth: 1 }, today)).toBeUndefined();
+    expect(pastPayments(today, { type: 'monthly', dayOfMonth: 4 }, today)).toBeUndefined();
     expect(pastPayments(d('2025-11-01'), { type: 'one_time' }, today)).toBeUndefined();
   });
 

@@ -226,6 +226,27 @@ describe('referential integrity', () => {
     expect(validateEnvelope(loan(361, '2056-03-12')).ok).toBe(false);
   });
 
+  it('accepts a loan at prime plus a margin, and refuses a margin that is not one', () => {
+    const loan = (primeMargin: string) =>
+      withTx({
+        recurrence: {
+          type: 'monthly',
+          dayOfMonth: 12,
+          installments: 6,
+          plan: 'loan',
+          creditAnnualRate: '6.25',
+          rateBasis: 'prime',
+          primeMargin,
+        },
+        seriesEnd: '2026-08-12',
+      });
+    expect(validateEnvelope(loan('1.5')).ok).toBe(true);
+    expect(validateEnvelope(loan('-0.5')).ok).toBe(true);
+    for (const bad of ['', '+1', '1e1', 'x']) {
+      expect(validateEnvelope(loan(bad)).ok, bad).toBe(false);
+    }
+  });
+
   it('rejects an impossible calendar date', () => {
     // A regex alone would wave 2026-02-30 through, and it would only surface
     // much later inside occurrence expansion.

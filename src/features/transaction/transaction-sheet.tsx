@@ -5,6 +5,7 @@ import { useCallback, useId, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
+import { usePrime } from '@/app/prime';
 import { AmountInput } from '@/components/amount-input';
 import { CurrencySelect } from '@/components/currency-select';
 import { Money } from '@/components/money';
@@ -123,6 +124,7 @@ export function TransactionSheet({
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const titleId = useId();
   const editing = useEditTarget(target, today);
+  const prime = usePrime();
 
   // A transaction must belong to ONE profile, so the merged "All" view cannot
   // seed it; the first profile is the sensible default and the field is shown
@@ -135,10 +137,15 @@ export function TransactionSheet({
 
   const adding = useMemo<TxFormValues>(
     () => ({
-      ...defaultFormValues({ profileId: defaultProfileId, currency: baseCurrency, today }),
+      ...defaultFormValues({
+        profileId: defaultProfileId,
+        currency: baseCurrency,
+        today,
+        primeRate: prime.primeRate,
+      }),
       categoryId: categoriesFor(categories, 'expense')[0]?.id ?? '',
     }),
-    [defaultProfileId, baseCurrency, today, categories],
+    [defaultProfileId, baseCurrency, today, categories, prime.primeRate],
   );
 
   const isAdd = target.mode === 'add';
@@ -294,6 +301,7 @@ function TransactionForm({
    * of 'all' quietly rewrites a year of history on a typo fix.
    */
   const [scope, setScope] = useState<EditScope>('one');
+  const prime = usePrime();
   /** A rule change that would discard per-occurrence edits, awaiting a yes. */
   const [pendingDrop, setPendingDrop] = useState<{ count: number; run: () => void } | undefined>(undefined);
 
@@ -434,6 +442,8 @@ function TransactionForm({
           });
         case 'rate_out_of_range':
           return t('tx.errRateOutOfRange');
+        case 'margin_invalid':
+          return t('tx.errMarginInvalid');
         case 'frequency_required':
           return t('tx.errFrequencyRequired');
         case 'end_before_start':
@@ -921,6 +931,11 @@ function TransactionForm({
             } else if (patch.annualRate !== undefined) {
               setValue('annualRate', patch.annualRate, { shouldValidate: true });
             }
+            if (patch.rateBasis !== undefined)
+              setValue('rateBasis', patch.rateBasis, { shouldValidate: true });
+            if (patch.primeMargin !== undefined) {
+              setValue('primeMargin', patch.primeMargin, { shouldValidate: true });
+            }
             if (patch.frequency !== undefined) {
               // Validated on change, not on blur: it is a segmented control, so
               // there is no blur to wait for, and the error would otherwise sit
@@ -933,6 +948,7 @@ function TransactionForm({
           currency={values.currency}
           amountMinor={amountMinor}
           errors={errors}
+          prime={prime}
         />
       )}
 

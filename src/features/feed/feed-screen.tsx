@@ -23,6 +23,7 @@ import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
+import { PrimeStrip } from '../summary/prime-strip';
 import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
@@ -189,6 +190,8 @@ export function FeedScreen() {
             }}
           />
         </div>
+
+        <PrimeStrip />
       </div>
 
       <div className="mt-4">

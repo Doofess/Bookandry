@@ -9,7 +9,14 @@ import {
   makeLocalDate,
   parseLocalDate,
 } from '@/lib/dates';
-import { creditSchedule, normalizeAnnualRate, prorateMinor, toMinor } from '@/lib/money';
+import {
+  addRates,
+  creditSchedule,
+  normalizeAnnualRate,
+  normalizeRateMargin,
+  prorateMinor,
+  toMinor,
+} from '@/lib/money';
 import type { Recurrence } from '@/types/domain';
 import type { Kind, LocalDate, Minor } from '@/types/money';
 
@@ -92,6 +99,45 @@ export function chargesInterest(mode: RecurrenceMode): boolean {
   return mode === 'credit' || mode === 'loan';
 }
 
+/** What a loan's interest follows: prime plus a margin, or a fixed rate. */
+export type RateBasis = 'prime' | 'fixed';
+
+type RateInputs = {
+  readonly mode: RecurrenceMode;
+  readonly annualRate: string;
+  readonly rateBasis?: RateBasis;
+  readonly primeMargin?: string;
+  readonly primeRate?: string;
+};
+
+/**
+ * Whether this is a loan whose interest is prime plus a margin - the usual
+ * Israeli arrangement, and so the default for a loan.
+ */
+export function isPrimeLinked(values: RateInputs): boolean {
+  return values.mode === 'loan' && (values.rateBasis ?? 'prime') === 'prime';
+}
+
+/**
+ * The annual rate a plan is priced at: '' for none, undefined while it cannot
+ * be worked out.
+ *
+ * For a prime-linked loan that is prime - the Bank of Israel's, never typed -
+ * plus the margin the agreement adds (which may be negative: prime minus half
+ * a point is an ordinary mortgage track). Otherwise it is the rate as typed.
+ */
+export function effectiveRate(values: RateInputs): string | undefined {
+  if (!chargesInterest(values.mode)) return '';
+  if (!isPrimeLinked(values)) {
+    return values.annualRate.trim() === '' ? '' : normalizeAnnualRate(values.annualRate);
+  }
+  const margin = normalizeRateMargin(values.primeMargin ?? '');
+  const prime = normalizeAnnualRate(values.primeRate ?? '');
+  if (margin === undefined || prime === undefined) return undefined;
+  // Below zero is not a rate any lender charges.
+  return normalizeAnnualRate(addRates(prime, margin));
+}
+
 /** How many payments a plan may have: a card's plans stop at 60, a mortgage does not. */
 export function maxPaymentsFor(mode: RecurrenceMode): number {
   return mode === 'loan' ? MAX_LOAN_PAYMENTS : MAX_INSTALLMENTS;
@@ -148,6 +194,16 @@ export const txFormSchema = z
      * to תשלומים rather than an error.
      */
     annualRate: z.string(),
+    /** A loan's interest: prime plus `primeMargin`, or the fixed `annualRate`. */
+    rateBasis: z.enum(['prime', 'fixed']).default('prime'),
+    /** What the loan adds to prime, as typed: "1.5", "-0.4", or '' for prime itself. */
+    primeMargin: z.string().default(''),
+    /**
+     * Prime when the form was filled in, from the Bank of Israel (the sheet
+     * supplies it; nobody types it). Here so the schema prices the loan with
+     * the same figure the form showed.
+     */
+    primeRate: z.string().default(''),
     /**
      * A monthly rule whose first payment falls between two billing days pays
      * only for the days it covers first (`firstPartialPeriod`). Turned on when
@@ -194,7 +250,14 @@ export const txFormSchema = z
     // An upper bound as well as a lower one: a mistyped "1200" is a plan whose
     // payments are absurd, and absurd is easier to catch here than in the feed
     // six months later.
-    if (
+    if (isPrimeLinked(values)) {
+      // The margin is the only part typed, so it is where any problem is said.
+      if (normalizeRateMargin(values.primeMargin) === undefined) {
+        ctx.addIssue({ code: 'custom', path: ['primeMargin'], message: 'margin_invalid' });
+      } else if (effectiveRate(values) === undefined) {
+        ctx.addIssue({ code: 'custom', path: ['primeMargin'], message: 'rate_out_of_range' });
+      }
+    } else if (
       chargesInterest(values.mode) &&
       values.annualRate !== '' &&
       normalizeAnnualRate(values.annualRate) === undefined
@@ -289,8 +352,7 @@ function toRecurrence(
     endDate: string;
     installmentCount: string;
     frequency: StandingOrderFrequency;
-    annualRate: string;
-  },
+  } & RateInputs,
   date: LocalDate,
 ): Recurrence {
   const endDate = isLocalDate(values.endDate) ? values.endDate : undefined;
@@ -344,11 +406,7 @@ function toRecurrence(
         dayOfMonth: parseLocalDate(date).day,
         installments: Number(values.installmentCount),
         plan: values.mode,
-        // Snapshotted, like an exchange rate: the card's rate can change next
-        // year and this plan's payments cannot.
-        ...(chargesInterest(values.mode) && values.annualRate !== ''
-          ? { creditAnnualRate: values.annualRate.trim() }
-          : {}),
+        ...rateFields(values),
       };
 
     case 'yearly': {
@@ -365,13 +423,13 @@ function toRecurrence(
  * inputs are not yet valid - the schema reports those, and pricing a
  * half-typed form would be answering a question nobody asked.
  */
-export function planTotal(values: {
-  mode: RecurrenceMode;
-  amount: string;
-  currency: string;
-  installmentCount: string;
-  annualRate: string;
-}): Minor | undefined {
+export function planTotal(
+  values: {
+    amount: string;
+    currency: string;
+    installmentCount: string;
+  } & RateInputs,
+): Minor | undefined {
   if (!isInstallmentMode(values.mode)) return undefined;
 
   const principal = parseAmount(values.amount, values.currency);
@@ -382,13 +440,27 @@ export function planTotal(values: {
     return undefined;
   }
 
-  // תשלומים, or קרדיט or a loan at no interest: the payments sum to the amount.
-  if (!chargesInterest(values.mode) || values.annualRate === '') return principal;
-
-  const rate = normalizeAnnualRate(values.annualRate);
+  const rate = effectiveRate(values);
   if (rate === undefined) return undefined;
+  // תשלומים, or קרדיט or a loan at no interest: the payments sum to the amount.
+  if (rate === '') return principal;
 
   return creditSchedule(principal, rate, count).totalMinor;
+}
+
+/**
+ * The rate a plan keeps, snapshotted like an exchange rate: the card's rate
+ * can change next year, and prime at the next decision, and this plan's
+ * payments do not. A prime-linked loan also keeps HOW it was priced - the
+ * margin over prime - so the row can say so.
+ */
+function rateFields(
+  values: RateInputs,
+): Pick<Extract<Recurrence, { type: 'monthly' }>, 'creditAnnualRate' | 'rateBasis' | 'primeMargin'> {
+  const rate = effectiveRate(values);
+  const priced = rate === undefined || rate === '' ? {} : { creditAnnualRate: rate };
+  if (!isPrimeLinked(values)) return priced;
+  return { ...priced, rateBasis: 'prime', primeMargin: normalizeRateMargin(values.primeMargin ?? '') ?? '0' };
 }
 
 function parseAmount(display: string, currency: string): Minor | undefined {
@@ -411,6 +483,8 @@ export function defaultFormValues(input: {
   readonly profileId: string;
   readonly currency: string;
   readonly today: LocalDate;
+  /** Prime today, for a loan priced on it. */
+  readonly primeRate?: string;
 }): TxFormValues {
   return {
     profileId: input.profileId,
@@ -427,6 +501,9 @@ export function defaultFormValues(input: {
     installmentCount: '',
     frequency: '',
     annualRate: '',
+    rateBasis: 'prime',
+    primeMargin: '',
+    primeRate: input.primeRate ?? '',
     // Off until a first payment is actually chosen (the sheet turns it on
     // then): today's date and the last-day default are not a person saying
     // "it started mid-month", and rent entered on the 4th is not a part-month.
@@ -497,6 +574,8 @@ export function pastPayments(
   today: LocalDate,
 ): { readonly count: number; readonly first: LocalDate; readonly last: LocalDate } | undefined {
   if (recurrence.type === 'one_time') return undefined;
+  // Starting today is not starting in the past: there is nothing behind it.
+  if (compareLocal(date, today) >= 0) return undefined;
   const limit = recurrence.type === 'monthly' ? (recurrence.installments ?? Infinity) : Infinity;
   const until = recurrence.endDate !== undefined && recurrence.endDate < today ? recurrence.endDate : today;
 

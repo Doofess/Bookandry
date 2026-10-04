@@ -3,13 +3,16 @@ import { useId } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { Money } from '@/components/money';
+import { Percent } from '@/components/percent';
 import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { splitInstallments } from '@/domain/calculators';
+import type { PrimeView } from '@/domain/prime';
 import {
   chargesInterest,
+  effectiveRate,
   firstOccurrenceDate,
   isInstallmentMode,
   isLastDayChoice,
@@ -18,6 +21,7 @@ import {
   MIN_INSTALLMENTS,
   planTotal,
   recurrenceDefaults,
+  type RateBasis,
   type RecurrenceMode,
   type StandingOrderFrequency,
   type TxFormValues,
@@ -60,6 +64,7 @@ export function RecurrenceFields({
   currency,
   amountMinor,
   errors,
+  prime,
 }: {
   readonly values: TxFormValues;
   readonly onChange: (patch: Partial<TxFormValues>) => void;
@@ -79,13 +84,14 @@ export function RecurrenceFields({
   /** The parsed amount, for the instalment preview. Undefined while unparseable. */
   readonly amountMinor: Minor | undefined;
   readonly errors: Readonly<Partial<Record<keyof TxFormValues, string>>>;
+  /** Prime from the Bank of Israel, for a loan priced on it. */
+  readonly prime: PrimeView;
 }) {
   const { t, i18n } = useTranslation();
   const modeLabelId = useId();
   const freqLabelId = useId();
   const dayId = useId();
   const countId = useId();
-  const rateId = useId();
   const endId = useId();
 
   const mode = values.mode;
@@ -237,39 +243,17 @@ export function RecurrenceFields({
           <p id={`${countId}-hint`} className="text-xs text-muted-foreground">
             {mode === 'loan' ? t('tx.loanTotalHint') : t('tx.installmentsTotalHint')}
           </p>
-          {chargesInterest(mode) ? (
-            <div className="space-y-1.5 pt-2">
-              <Label htmlFor={rateId}>{t('tx.annualRate')}</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id={rateId}
-                  type="text"
-                  inputMode="decimal"
-                  value={values.annualRate}
-                  onChange={(event) => {
-                    // Digits and points only. A second point is left for the
-                    // schema to report rather than eaten mid-keystroke, and a
-                    // number input would swallow "12." on the way to "12.5".
-                    onChange({ annualRate: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) });
-                  }}
-                  aria-invalid={errors.annualRate !== undefined}
-                  aria-describedby={`${rateId}-hint`}
-                  className="h-11 w-24"
-                />
-                <span className="text-sm text-muted-foreground">{t('tx.annualRateUnit')}</span>
-              </div>
-              <p id={`${rateId}-hint`} className="text-xs text-muted-foreground">
-                {/* A card's rate is filled in from the card; a loan's is the agreement's. */}
-                {errors.annualRate === undefined
-                  ? mode === 'loan'
-                    ? t('tx.loanRateHint')
-                    : t('tx.annualRateHint')
-                  : ''}
-              </p>
-              {errors.annualRate === undefined ? null : (
-                <p className="text-xs text-destructive">{errors.annualRate}</p>
-              )}
-            </div>
+          {mode === 'loan' ? (
+            <LoanRate values={values} onChange={onChange} errors={errors} prime={prime} />
+          ) : chargesInterest(mode) ? (
+            <AnnualRateField
+              value={values.annualRate}
+              onChange={(annualRate) => {
+                onChange({ annualRate });
+              }}
+              hint={t('tx.annualRateHint')}
+              error={errors.annualRate}
+            />
           ) : null}
 
           {errors.installmentCount === undefined ? (
@@ -278,7 +262,7 @@ export function RecurrenceFields({
               count={Number(values.installmentCount)}
               principalMinor={amountMinor}
               totalMinor={planTotal(values)}
-              annualRate={chargesInterest(mode) ? values.annualRate : ''}
+              annualRate={effectiveRate(values) ?? ''}
               maxCount={maxPaymentsFor(mode)}
               currency={currency}
             />
@@ -434,6 +418,172 @@ function InstallmentPreview({
         </>
       )}
     </p>
+  );
+}
+
+/** A rate typed as it is: a card's, or a fixed-rate loan's. */
+function AnnualRateField({
+  value,
+  onChange,
+  hint,
+  error,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly hint: string;
+  readonly error: string | undefined;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  return (
+    <div className="space-y-1.5 pt-2">
+      <Label htmlFor={id}>{t('tx.annualRate')}</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          dir="ltr"
+          value={value}
+          onChange={(event) => {
+            // Digits and points only. A second point is left for the schema
+            // to report rather than eaten mid-keystroke, and a number input
+            // would swallow "12." on the way to "12.5".
+            onChange(event.target.value.replace(/[^\d.]/g, '').slice(0, 6));
+          }}
+          aria-invalid={error !== undefined}
+          aria-describedby={`${id}-hint`}
+          className="h-11 w-24"
+        />
+        <span className="text-sm text-muted-foreground">{t('tx.annualRateUnit')}</span>
+      </div>
+      <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+        {error === undefined ? hint : ''}
+      </p>
+      {error === undefined ? null : <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * A loan's interest: prime plus a margin, or fixed.
+ *
+ * Prime is the Bank of Israel's - its rate plus 1.5 - and is shown, never
+ * typed: it is the same number for every loan in the country, and a field
+ * that could be edited is a field somebody would get wrong. What the loan
+ * adds on top (the agreement's "P+1.5", or "P-0.5" on a mortgage track) is
+ * the part that is the borrower's own.
+ */
+function LoanRate({
+  values,
+  onChange,
+  errors,
+  prime,
+}: {
+  readonly values: TxFormValues;
+  readonly onChange: (patch: Partial<TxFormValues>) => void;
+  readonly errors: Readonly<Partial<Record<keyof TxFormValues, string>>>;
+  readonly prime: PrimeView;
+}) {
+  const { t, i18n } = useTranslation();
+  const basisId = useId();
+  const primeId = useId();
+  const marginId = useId();
+  const basis = values.rateBasis ?? 'prime';
+  const rate = effectiveRate(values);
+  const day = (date: LocalDate) => formatLocalDate(date, i18n.language, { dateStyle: 'medium' });
+
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="space-y-1.5">
+        <Label id={basisId}>{t('tx.loanInterest')}</Label>
+        <Segmented<RateBasis>
+          value={basis}
+          labelledBy={basisId}
+          onChange={(rateBasis) => {
+            onChange({ rateBasis });
+          }}
+          options={[
+            { value: 'prime', label: t('tx.basisPrime') },
+            { value: 'fixed', label: t('tx.basisFixed') },
+          ]}
+          size="sm"
+        />
+      </div>
+
+      {basis === 'fixed' ? (
+        <AnnualRateField
+          value={values.annualRate}
+          onChange={(annualRate) => {
+            onChange({ annualRate });
+          }}
+          hint={t('tx.loanRateHint')}
+          error={errors.annualRate}
+        />
+      ) : (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={primeId}>{t('tx.prime')}</Label>
+              <div className="flex items-center gap-2">
+                {/* Read-only, not disabled: still reachable and read out, just not editable. */}
+                <Input
+                  id={primeId}
+                  readOnly
+                  dir="ltr"
+                  value={values.primeRate ?? ''}
+                  aria-describedby={`${primeId}-source`}
+                  className="h-11 w-24 bg-muted text-muted-foreground"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            </div>
+            <span className="pb-3 text-sm text-muted-foreground" aria-hidden="true">
+              +
+            </span>
+            <div className="space-y-1.5">
+              <Label htmlFor={marginId}>{t('tx.primeMargin')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id={marginId}
+                  type="text"
+                  inputMode="decimal"
+                  dir="ltr"
+                  placeholder="0"
+                  value={values.primeMargin ?? ''}
+                  onChange={(event) => {
+                    // A sign may lead: prime minus half a point is a margin of -0.5.
+                    onChange({ primeMargin: event.target.value.replace(/[^\d.+-]/g, '').slice(0, 7) });
+                  }}
+                  aria-invalid={errors.primeMargin !== undefined}
+                  aria-describedby={`${marginId}-hint`}
+                  className="h-11 w-24"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            </div>
+          </div>
+          <p id={`${primeId}-source`} className="text-xs text-muted-foreground">
+            <Trans i18nKey="tx.primeSource" components={{ boi: <Percent rate={prime.boiRate} /> }} />{' '}
+            {prime.source.kind === 'built_in'
+              ? t('tx.primeBuiltIn', { date: day(prime.source.asOf) })
+              : prime.nextDecision === undefined
+                ? null
+                : t('tx.primeNextDecision', { date: day(prime.nextDecision) })}
+          </p>
+          <p id={`${marginId}-hint`} className="text-xs text-muted-foreground">
+            {t('tx.primeMarginHint')}
+          </p>
+          {errors.primeMargin !== undefined ? (
+            <p className="text-xs text-destructive">{errors.primeMargin}</p>
+          ) : rate === undefined || rate === '' ? null : (
+            <p className="text-sm font-medium">
+              <Trans i18nKey="tx.primeTotal" components={{ rate: <Percent rate={rate} /> }} />
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

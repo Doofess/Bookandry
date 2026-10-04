@@ -177,6 +177,15 @@ export type Recurrence =
        * interest-free.
        */
       readonly creditAnnualRate?: string;
+      /**
+       * A loan priced at prime plus a margin, rather than at a fixed rate.
+       * `creditAnnualRate` is still the rate it was priced at - prime on the
+       * day, plus `primeMargin` - so nothing that reads a plan needs to know
+       * what prime was.
+       */
+      readonly rateBasis?: 'prime';
+      /** What the loan adds to prime, as a signed decimal string ("1.5", "-0.4"). */
+      readonly primeMargin?: string;
     }
   | {
       readonly type: 'yearly';

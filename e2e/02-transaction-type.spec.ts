@@ -31,6 +31,11 @@ const COPY = {
     loanCount: 'Number of monthly payments',
     loansCategory: 'Loans',
     loanRow: 'Loan 1 of 360',
+    fixed: 'Fixed',
+    prime: 'Prime',
+    margin: 'On top of prime',
+    primeTitle: 'Prime rate',
+    primeLoan: /This loan: 6\.25% a year/,
     count: 'Number of payments',
     frequency: 'How often',
     monthly: 'Monthly',
@@ -62,6 +67,11 @@ const COPY = {
     loanCount: 'מספר החזרים חודשיים',
     loansCategory: 'הלוואות',
     loanRow: 'הלוואה 1 מתוך 360',
+    fixed: 'קבועה',
+    prime: 'פריים',
+    margin: 'מעל הפריים',
+    primeTitle: 'ריבית הפריים',
+    primeLoan: /ריבית ההלוואה: 6\.25% לשנה/,
     count: 'מספר תשלומים',
     frequency: 'כל כמה זמן',
     monthly: 'חודשי',
@@ -230,6 +240,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByLabel(copy.amount, { exact: true }).fill('500000');
       await page.getByRole('radio', { name: copy.loan, exact: true }).click();
       await page.getByLabel(copy.loanCount, { exact: true }).fill('360');
+      await page.getByRole('radio', { name: copy.fixed, exact: true }).click();
       await page.getByLabel(copy.rate, { exact: true }).fill('5');
 
       const sheet = page.locator('[data-slot="sheet-content"]');
@@ -246,6 +257,40 @@ for (const lang of ['en', 'he'] as const) {
       const row = page.getByRole('listitem').filter({ hasText: copy.loanRow });
       await expect(row).toBeVisible();
       await expect(row).toContainText('2,684.11');
+    });
+
+    test('prices a loan at prime plus its margin, prime being the Bank of Israel’s', async ({ page }) => {
+      /*
+       * The Bank of Israel at 3.25 makes prime 4.75. A loan at P+1.5 is 6.25%:
+       * ₪500,000 over 30 years is ₪3,078.59 a month. Prime is shown, not typed.
+       */
+      // This build has no relay (no Supabase), so prime is the build's own
+      // figure - the Bank of Israel at 3.25 - shown with its date.
+      await completeFirstRun(page, lang, { demo: false });
+
+      // On the main screen.
+      const strip = page.getByTestId('prime-strip');
+      await expect(strip).toContainText(copy.primeTitle);
+      await expect(strip).toContainText('4.75%');
+      await expect(strip).toContainText('3.25%');
+
+      await page.getByTestId('fab').click();
+      await page.getByLabel(copy.amount, { exact: true }).fill('500000');
+      await page.getByRole('radio', { name: copy.loan, exact: true }).click();
+      await page.getByLabel(copy.loanCount, { exact: true }).fill('360');
+
+      const prime = page.getByLabel(copy.prime, { exact: true });
+      await expect(prime).toHaveValue('4.75');
+      await expect(prime).toHaveAttribute('readonly', '');
+      await page.getByLabel(copy.margin, { exact: true }).fill('1.5');
+
+      const sheet = page.locator('[data-slot="sheet-content"]');
+      await expect(sheet).toContainText(copy.primeLoan);
+      await expect(sheet).toContainText('3,078.59');
+
+      await page.getByRole('button', { name: copy.save, exact: true }).click();
+      await expect(sheet).toHaveCount(0);
+      await expect(page.getByRole('listitem').filter({ hasText: copy.loanRow })).toContainText('3,078.59');
     });
 
     test('pays by cheque once or in instalments, and a קרדיט only by credit card', async ({ page }) => {

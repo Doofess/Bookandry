@@ -231,8 +231,18 @@ taken from a card, up to 360 payments so a mortgage fits, and paid with any
 method — the bank's debit, cheques, cash. Its repayments are filed under the
 built-in Loans category unless one is picked by hand, and have their own group
 in the month's breakdown. The money received is not recorded: the feed tracks
-what leaves the account. Variable-rate (prime-linked) and CPI-linked loans are
-not modelled; the rate is fixed at what was entered.
+what leaves the account. CPI-linked (צמוד מדד) loans are not modelled.
+
+**Prime is fetched, never typed.** Israeli prime is the Bank of Israel's rate
+plus 1.5. The app keeps the Bank's rate on the device (`meta`, not synced),
+asks the `prime-rate` relay for it at start, when the app comes back into view
+or online, and hourly, and asks again on the day a decision is due; the relay
+caches for fifteen minutes. A build ships its own last-known figure for a device
+that has never been online, shown with its date. A loan is priced at prime plus
+its margin (signed: P−0.5 is ordinary) or at a fixed rate, and keeps the rate it
+was priced at, like an exchange rate. A prime-linked loan does **not** re-price
+itself when prime moves: its stored repayments stay as entered, and the margin
+is kept on the plan so a future version can.
 
 What is not modelled: issuer fees, and rates that differ from the nominal
 annual rate divided by twelve. The payment shown is the textbook one; a
@@ -433,6 +443,10 @@ Configuration that lives in the dashboard, not in this repo:
   typed ("Claude Max Plan" → AI & software). Entered here only. Without it
   the function answers 503 and the person picks the category, as before.
   Optional `CATEGORIZE_MODEL` overrides the model (Claude Haiku 4.5).
+- **Edge Function `prime-rate`** (`supabase/functions/prime-rate/`), deployed
+  with `--no-verify-jwt`: public data, no secrets. It relays the Bank of
+  Israel's rate (its public API, with the SDMX statistics series as a
+  fallback), because the Bank's API sends no CORS headers.
 - **Authentication → URL Configuration**: Site URL `https://bookandry.com`;
   redirect URLs `https://bookandry.com/settings` (plus a localhost one for
   development only).

@@ -16,6 +16,7 @@ import { AccountGate } from '@/app/account-gate';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { AppDirection } from '@/app/direction-provider';
+import { startPrimeWatcher } from '@/app/prime';
 import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
@@ -114,6 +115,10 @@ async function bootstrap(): Promise<void> {
    * first paint.
    */
   startSweeper(db, () => systemClock.nowMs());
+
+  // Israeli prime, kept current from the Bank of Israel. Unawaited: the app
+  // has a figure to show from the first paint, and a fresher one replaces it.
+  startPrimeWatcher();
 
   /*
    * Accounts are optional. This loads nothing unless there is a session to

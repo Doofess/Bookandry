@@ -117,6 +117,10 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
      * an edit of a plan never rewrites.
      */
     annualRate: '',
+    // Read-only once saved, like the rate: a fixed basis prices nothing here.
+    rateBasis: 'fixed',
+    primeMargin: '',
+    primeRate: '',
     // A saved rule's first month is behind it: nothing to split.
     partialFirst: false,
   };

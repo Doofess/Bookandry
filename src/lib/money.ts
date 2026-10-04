@@ -459,3 +459,39 @@ export function normalizeAnnualRate(input: string): string | undefined {
   const rate = decimalToRational(trimmed);
   return rate.n > BigInt(MAX_ANNUAL_RATE) * rate.d ? undefined : trimmed;
 }
+
+const RATE_MARGIN_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+/**
+ * A margin over prime as typed - "1.5", "+2", "-0.4" - or undefined if it is
+ * not one. Empty is no margin at all: a loan at prime.
+ *
+ * Signed, unlike a rate: a mortgage track at prime minus half a point is
+ * ordinary. No exponent, for the same reason a rate has none.
+ */
+export function normalizeRateMargin(input: string): string | undefined {
+  const trimmed = input.trim();
+  if (trimmed === '') return '0';
+  if (!RATE_MARGIN_RE.test(trimmed)) return undefined;
+  const margin = decimalToRational(trimmed);
+  const size = margin.n < 0n ? -margin.n : margin.n;
+  if (size > BigInt(MAX_ANNUAL_RATE) * margin.d) return undefined;
+  return trimmed.startsWith('+') ? trimmed.slice(1) : trimmed;
+}
+
+/**
+ * Two rates added exactly, as a plain decimal string: prime at 4.75 with a
+ * margin of -0.4 is "4.35", never 4.3500000000000005.
+ */
+export function addRates(a: string, b: string): string {
+  const x = decimalToRational(a);
+  const y = decimalToRational(b);
+  // Both denominators are powers of ten, so the larger is a common one.
+  const d = x.d > y.d ? x.d : y.d;
+  const n = x.n * (d / x.d) + y.n * (d / y.d);
+  const places = d.toString().length - 1;
+  const digits = (n < 0n ? -n : n).toString().padStart(places + 1, '0');
+  const whole = digits.slice(0, digits.length - places);
+  const fraction = digits.slice(digits.length - places).replace(/0+$/, '');
+  return (n < 0n ? '-' : '') + whole + (fraction === '' ? '' : `.${fraction}`);
+}

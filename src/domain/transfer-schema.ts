@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { isLocalDate } from '@/lib/dates';
-import { normalizeAnnualRate } from '@/lib/money';
+import { normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
 
 /**
  * The export document format.
@@ -58,6 +58,11 @@ const recurrenceSchema = z.discriminatedUnion('type', [
     // תשלומים by construction, because it was the only plan the form could make.
     plan: z.enum(['installments', 'credit', 'loan']).optional(),
     creditAnnualRate: annualRate.optional(),
+    rateBasis: z.literal('prime').optional(),
+    primeMargin: z
+      .string()
+      .refine((value) => normalizeRateMargin(value) === value, 'not a margin over prime')
+      .optional(),
   }),
   z.object({
     type: z.literal('yearly'),
