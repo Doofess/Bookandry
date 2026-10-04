@@ -30,14 +30,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   /*
-   * Only a share: the phone's Share menu, never another website.
+   * Turn away what is visibly another website's form.
    *
-   * Any page can submit a form to this address, and without this check a
-   * stranger's page could plant files in the import sheet - a made-up
-   * "statement" waiting to be read and added. A share from the system comes
-   * from no page at all (Sec-Fetch-Site "none", no referrer); a form posted by
-   * another site says "cross-site", or names that site as its referrer. Those
-   * are turned away, and nothing they sent is kept.
+   * Any page can submit a form to this address. A share from the system comes
+   * from no page (no referrer; Sec-Fetch-Site "none" where the browser shows it
+   * here); a form that names another site as its referrer, or says
+   * "cross-site", is refused and nothing it sent is kept.
+   *
+   * This is NOT the safeguard, only a first filter: a hostile page can send no
+   * referrer, and a service worker does not always see Sec-Fetch-Site, so such
+   * a form can still get through. What stops it is that a share is never acted
+   * on by itself - the app lists the files as shared from another app, reads
+   * them only when the person taps Read, and adds nothing before they have
+   * reviewed every row and tapped Add.
    */
   const site = event.request.headers.get('sec-fetch-site');
   const referrer = event.request.referrer;

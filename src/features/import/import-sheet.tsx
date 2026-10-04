@@ -552,6 +552,7 @@ function Picker({
       {files.length === 0 ? null : (
         <div className="space-y-2">
           <p className="text-sm font-medium">{shared ? t('shared') : t('picked', { count: files.length })}</p>
+          {shared ? <p className="text-xs text-muted-foreground">{t('sharedCheck')}</p> : null}
           <ul className="divide-y divide-border rounded-xl border border-border text-sm">
             {files.map((file, i) => (
               <li
