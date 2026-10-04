@@ -276,6 +276,9 @@ for (const lang of ['en', 'he'] as const) {
 
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
+
+      // And the feed says what it is, not only what it cost.
+      await expect(page.getByRole('listitem').filter({ hasText: copy.standing }).first()).toBeVisible();
     });
 
     test('charges a first month that starts mid-month only for its days', async ({ page }) => {

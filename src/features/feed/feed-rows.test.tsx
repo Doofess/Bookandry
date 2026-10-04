@@ -154,6 +154,98 @@ describe('TransactionRow', () => {
     expect(document.querySelectorAll('svg[role="presentation"]').length).toBeGreaterThan(0);
   });
 
+  it('says nothing about type for a regular one-off', () => {
+    render(<TransactionRow occurrence={occurrence()} context={context()} position={1} setSize={1} />);
+    // Most of the feed; a chip on every row would drown the ones that matter.
+    expect(screen.getByRole('button', { name: /^Sep 10, 2026, Groceries$/ })).toBeInTheDocument();
+  });
+
+  it('marks a standing order', () => {
+    const tx = makeTx({ id: 't1', date: d('2026-03-10'), recurrence: { type: 'monthly', dayOfMonth: 10 } });
+    render(
+      <TransactionRow
+        occurrence={occurrence({ transaction: tx })}
+        context={context()}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByText('Standing order')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Standing order$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('numbers an instalment by its slot, not its moved date', () => {
+    const tx = makeTx({
+      id: 't1',
+      date: d('2026-07-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10, installments: 12 },
+    });
+    render(
+      <TransactionRow
+        // The September payment, moved into October: still payment 3.
+        occurrence={occurrence({ transaction: tx, date: d('2026-10-02'), originalDate: d('2026-09-10') })}
+        context={context()}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByText('Payment 3 of 12')).toBeInTheDocument();
+  });
+
+  it('tells a credit plan from an interest-free one', () => {
+    const tx = makeTx({
+      id: 't1',
+      date: d('2026-09-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10, installments: 6, plan: 'credit' },
+    });
+    render(
+      <TransactionRow
+        occurrence={occurrence({ transaction: tx })}
+        context={context()}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByText('Credit 1 of 6')).toBeInTheDocument();
+  });
+
+  it('calls repeating income monthly or yearly, never a standing order', () => {
+    const monthly = makeTx({
+      id: 't1',
+      kind: 'income',
+      date: d('2026-01-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10 },
+    });
+    const { rerender } = render(
+      <TransactionRow
+        occurrence={occurrence({ transaction: monthly })}
+        context={context()}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByText('Monthly')).toBeInTheDocument();
+
+    const yearly = makeTx({
+      id: 't1',
+      kind: 'income',
+      date: d('2026-09-10'),
+      recurrence: { type: 'yearly', month: 9, day: 10 },
+    });
+    rerender(
+      <TransactionRow
+        occurrence={occurrence({ transaction: yearly })}
+        context={context()}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByText('Yearly')).toBeInTheDocument();
+    expect(screen.queryByText('Standing order')).not.toBeInTheDocument();
+  });
+
   it('falls back to the category id when the category is gone', () => {
     render(
       <TransactionRow

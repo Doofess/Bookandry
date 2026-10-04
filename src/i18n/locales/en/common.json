@@ -148,7 +148,12 @@
     "emptyResultsBody": "Nothing in {{month}} matches these filters.",
     "clearFilters": "Clear filters",
     "skipped": "Skipped",
-    "restore": "Restore"
+    "restore": "Restore",
+    "typeStandingOrder": "Standing order",
+    "typeInstallment": "Payment {{index}} of {{count}}",
+    "typeCredit": "Credit {{index}} of {{count}}",
+    "typeMonthly": "Monthly",
+    "typeYearly": "Yearly"
   },
   "breakdown": {
     "balanceBody": "Everything counted since {{date}}.",

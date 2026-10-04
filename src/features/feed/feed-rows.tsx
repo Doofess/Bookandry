@@ -1,5 +1,6 @@
 import { cn } from 'cn';
-import { MoreHorizontal } from 'lucide-react';
+import type { TFunction } from 'i18next';
+import { Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,8 +8,9 @@ import { Avatar } from '@/components/avatars/avatar';
 import { CategoryIcon } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
+import { recurrenceModeOf } from '@/domain/tx-edit';
 import { categoryDisplayName } from '@/i18n/category-name';
-import { formatLocalDate } from '@/lib/dates';
+import { formatLocalDate, monthsBetween } from '@/lib/dates';
 import type { Category, Occurrence, Profile } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
@@ -67,6 +69,35 @@ export function DayHeader({
 }
 
 /**
+ * What kind of transaction a row belongs to, in the words the form used to make
+ * it: "Standing order", "Payment 3 of 12", "Credit 3 of 12".
+ *
+ * Nothing for a regular one-off - it is most of the feed, and a chip on every
+ * row would drown the few that say something. The payment number is counted
+ * from the slot, not the moved date: payment 3 moved into next month is still
+ * payment 3.
+ */
+function rowType(
+  occurrence: Occurrence,
+  t: TFunction<['common', 'categories']>,
+): { readonly label: string; readonly icon: typeof Repeat } | undefined {
+  const { recurrence, kind, date } = occurrence.transaction;
+  const mode = recurrenceModeOf(recurrence, kind);
+  if (mode === 'one_time' || recurrence.type === 'one_time') return undefined;
+  if (mode === 'installments' || mode === 'credit') {
+    const values = {
+      index: monthsBetween(date, occurrence.originalDate) + 1,
+      count: recurrence.type === 'monthly' ? (recurrence.installments ?? 0) : 0,
+    };
+    return mode === 'credit'
+      ? { label: t('feed.typeCredit', values), icon: Percent }
+      : { label: t('feed.typeInstallment', values), icon: Layers };
+  }
+  if (mode === 'standing_order') return { label: t('feed.typeStandingOrder'), icon: Repeat };
+  return { label: t(mode === 'yearly' ? 'feed.typeYearly' : 'feed.typeMonthly'), icon: Repeat };
+}
+
+/**
  * One occurrence.
  *
  * `memo` is load-bearing, not decoration: `effectiveTransaction` returns the
@@ -104,6 +135,7 @@ export const TransactionRow = memo(function TransactionRow({
 
   const profile = context.profiles.get(occurrence.transaction.profileId);
   const isIncome = occurrence.transaction.kind === 'income';
+  const type = rowType(occurrence, t);
   const signed = isIncome ? occurrence.money.baseAmountMinor : -occurrence.money.baseAmountMinor;
 
   // The date is part of the NAME, so the row is self-describing when the
@@ -112,7 +144,13 @@ export const TransactionRow = memo(function TransactionRow({
   // The profile is named only when its avatar is actually shown. Announcing
   // "Dana" while nothing on screen says Dana describes a different interface
   // from the one the sighted user is looking at.
-  const label = [dateLabel, categoryName, occurrence.note, context.showProfile ? profile?.name : undefined]
+  const label = [
+    dateLabel,
+    categoryName,
+    occurrence.note,
+    type?.label,
+    context.showProfile ? profile?.name : undefined,
+  ]
     .filter(Boolean)
     .join(', ');
 
@@ -144,6 +182,12 @@ export const TransactionRow = memo(function TransactionRow({
           <span className="block truncate text-sm font-medium">{occurrence.note ?? categoryName}</span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {occurrence.note === undefined ? null : <span className="truncate">{categoryName}</span>}
+            {type === undefined ? null : (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px]">
+                <type.icon className="size-3" aria-hidden="true" />
+                {type.label}
+              </span>
+            )}
             {occurrence.isProjected ? (
               // Muted grey is not an explanation for an 18,000 salary sitting in
               // the feed and not in the balance.

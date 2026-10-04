@@ -149,7 +149,12 @@
     "emptyResultsBody": "שום דבר ב{{month}} לא תואם לסינון הזה.",
     "clearFilters": "ניקוי הסינון",
     "skipped": "דולג",
-    "restore": "שחזור"
+    "restore": "שחזור",
+    "typeStandingOrder": "הוראת קבע",
+    "typeInstallment": "תשלום {{index}} מתוך {{count}}",
+    "typeCredit": "קרדיט {{index}} מתוך {{count}}",
+    "typeMonthly": "חודשי",
+    "typeYearly": "שנתי"
   },
   "breakdown": {
     "balanceBody": "כל מה שנספר מ-{{date}}.",
