@@ -48,6 +48,9 @@ export function CardFields({
     otherDay: useId(),
     limit: useId(),
     fee: useId(),
+    discountSpend: useId(),
+    discountPercent: useId(),
+    discountUntil: useId(),
     fx: useId(),
   };
   const dayChoice = other ? OTHER_DAY : common.includes(draft.billingDay) ? draft.billingDay : '';
@@ -208,10 +211,74 @@ export function CardFields({
           label={t('edit.monthlyFee')}
           value={draft.monthlyFee}
           invalid={bad('monthlyFee')}
+          hint={t('edit.monthlyFeeHint')}
           onChange={(monthlyFee) => {
             onChange({ monthlyFee });
           }}
         />
+        {/* Only with a fee: a discount on nothing is not a question worth asking. */}
+        {draft.monthlyFee.trim() === '' ? null : (
+          <div className="space-y-3 rounded-lg bg-muted/50 p-3">
+            <p className="text-sm font-medium">{t('edit.discount')}</p>
+            <MoneyField
+              id={ids.discountSpend}
+              label={t('edit.discountSpend')}
+              value={draft.discountSpend}
+              invalid={bad('discountSpend')}
+              onChange={(discountSpend) => {
+                onChange({ discountSpend });
+              }}
+            />
+            <div className="flex flex-wrap gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor={ids.discountPercent}>{t('edit.discountPercent')}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id={ids.discountPercent}
+                    dir="ltr"
+                    inputMode="decimal"
+                    value={draft.discountPercent}
+                    onChange={(event) => {
+                      onChange({ discountPercent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) });
+                    }}
+                    aria-invalid={bad('discountPercent')}
+                    className="h-11 w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={ids.discountUntil}>{t('edit.discountUntil')}</Label>
+                <Input
+                  id={ids.discountUntil}
+                  dir="ltr"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="MM/YY"
+                  value={draft.discountUntil}
+                  onChange={(event) => {
+                    onChange({ discountUntil: event.target.value.replace(/[^\d/]/g, '').slice(0, 7) });
+                  }}
+                  aria-invalid={bad('discountUntil')}
+                  className="h-11 w-28"
+                />
+              </div>
+            </div>
+            <p
+              className={
+                bad('discountPercent') || bad('discountUntil')
+                  ? 'text-xs text-destructive'
+                  : 'text-xs text-muted-foreground'
+              }
+            >
+              {bad('discountPercent')
+                ? t('edit.discountPercentInvalid')
+                : bad('discountUntil')
+                  ? t('edit.expiresInvalid')
+                  : t('edit.discountHint')}
+            </p>
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor={ids.fx}>{t('edit.fxFee')}</Label>
           <div className="flex items-center gap-2">
@@ -292,12 +359,14 @@ function MoneyField({
   label,
   value,
   invalid,
+  hint,
   onChange,
 }: {
   readonly id: string;
   readonly label: string;
   readonly value: string;
   readonly invalid: boolean;
+  readonly hint?: string;
   readonly onChange: (value: string) => void;
 }) {
   const { t } = useTranslation('cards');
@@ -318,7 +387,11 @@ function MoneyField({
           className="h-11 w-36"
         />
       </div>
-      {invalid ? <p className="text-xs text-destructive">{t('edit.amountInvalid')}</p> : null}
+      {invalid ? (
+        <p className="text-xs text-destructive">{t('edit.amountInvalid')}</p>
+      ) : hint === undefined ? null : (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
     </div>
   );
 }

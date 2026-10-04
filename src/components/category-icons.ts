@@ -7,6 +7,7 @@ import {
   CircleMinus,
   CirclePlus,
   Clapperboard,
+  CreditCard,
   Gift,
   GraduationCap,
   HandCoins,
@@ -68,6 +69,7 @@ export const ICONS: Readonly<Record<string, LucideIcon>> = {
   Baby,
   PawPrint,
   HandCoins,
+  CreditCard,
   CircleMinus,
 };
 

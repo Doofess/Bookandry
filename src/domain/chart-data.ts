@@ -116,6 +116,12 @@ export type BalancePoint = {
 
 export type ChartInput = {
   readonly occurrences: readonly Occurrence[];
+  /**
+   * What the balance LINE is drawn from, when that differs from the dots:
+   * occurrences re-dated to the day the money left the account (a card
+   * purchase on its bill). Absent: the dots themselves.
+   */
+  readonly balanceOccurrences?: readonly Occurrence[];
   readonly from: LocalDate;
   readonly to: LocalDate;
   /**
@@ -248,17 +254,20 @@ export function shouldAggregate(count: number): boolean {
 export function buildChartData(input: ChartInput): ChartData {
   const { from, to, openingMinor } = input;
 
-  const rows = input.occurrences
-    .filter((o) => isWithin(o.date, from, to))
-    .slice()
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key.localeCompare(b.key)));
+  const inWindow = (list: readonly Occurrence[]) =>
+    list
+      .filter((o) => isWithin(o.date, from, to))
+      .slice()
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key.localeCompare(b.key)));
+  const rows = inWindow(input.occurrences);
+  const lineRows = input.balanceOccurrences === undefined ? rows : inWindow(input.balanceOccurrences);
 
   const mode = input.mode ?? 'auto';
   const aggregated = mode === 'auto' ? shouldAggregate(rows.length) : mode === 'aggregated';
 
   const points = buildPoints(rows, aggregated);
   const lineThrough = minDate(input.lineThrough ?? to, to);
-  const balance = buildBalance(rows, openingMinor, aggregated, lineThrough);
+  const balance = buildBalance(lineRows, openingMinor, aggregated, lineThrough);
 
   const magnitudes = points.map((p) => p.magnitudeMinor).sort((a, b) => a - b);
   const zMax = Math.max(percentile(magnitudes, MAGNITUDE_PERCENTILE), 1);

@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PaymentMethod } from '@/types/domain';
+import type { CardDetails, PaymentMethod } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, parseExpires, type CardDraft } from './card-draft';
+import {
+  cardDraftOf,
+  cardFromDraft as fromDraft,
+  EMPTY_CARD_DRAFT,
+  parseExpires,
+  type CardDraft,
+} from './card-draft';
+
+const cardFromDraft = (value: CardDraft, previous?: CardDetails) =>
+  fromDraft(value, { month: '2026-10', ...(previous === undefined ? {} : { previous }) });
 
 const NOW = '2026-01-01T00:00:00.000Z' as IsoInstant;
 const method = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
@@ -61,6 +70,7 @@ describe('the card editor', () => {
         billingDay: 10,
         creditLimitMinor: 1_500_000,
         monthlyFeeMinor: 1_490,
+        feeSince: '2026-10',
         fxFeeRate: '2.5',
         creditPrimeMargin: '3.5',
         lateRate: { basis: 'fixed', rate: '18' },
@@ -105,6 +115,8 @@ describe('the card editor', () => {
         billingDay: 2,
         creditLimitMinor: 1_200_000,
         monthlyFeeMinor: 990,
+        feeSince: '2026-04',
+        feeDiscount: { minSpendMinor: 300_000, percent: '50', until: '2027-09' },
         fxFeeRate: '3',
         creditPrimeMargin: '4',
         lateRate: { basis: 'prime', margin: '8' },
@@ -121,8 +133,9 @@ describe('the card editor', () => {
       credit: { basis: 'prime', value: '4' },
       late: { basis: 'prime', value: '8' },
     });
-    // And round-trips.
-    expect(cardFromDraft(opened)).toMatchObject({ ok: true, card: saved.card });
+    expect(opened).toMatchObject({ discountSpend: '3000.00', discountPercent: '50', discountUntil: '09/27' });
+    // And round-trips, keeping the month the fee started.
+    expect(cardFromDraft(opened, saved.card)).toMatchObject({ ok: true, card: saved.card });
 
     expect(
       cardDraftOf(method({ creditAnnualRate: '12', card: { lateRate: { basis: 'fixed', rate: '18' } } })),
@@ -132,5 +145,43 @@ describe('the card editor', () => {
     });
     expect(cardDraftOf(method())).toEqual({ ...EMPTY_CARD_DRAFT });
     expect(cardDraftOf(undefined)).toBe(EMPTY_CARD_DRAFT);
+  });
+
+  it('starts the fee this month, keeps that month after, and takes a discount only with a fee', () => {
+    const withFee = draft({
+      monthlyFee: '14.90',
+      discountSpend: '3,000',
+      discountPercent: '',
+      discountUntil: '10/27',
+    });
+    expect(cardFromDraft(withFee)).toMatchObject({
+      ok: true,
+      card: {
+        monthlyFeeMinor: 1_490,
+        feeSince: '2026-10',
+        feeDiscount: { minSpendMinor: 300_000, percent: '100', until: '2027-10' },
+      },
+    });
+    expect(cardFromDraft(withFee, { monthlyFeeMinor: 990, feeSince: '2025-01' })).toMatchObject({
+      card: { feeSince: '2025-01' },
+    });
+    // No end date: for good.
+    expect(cardFromDraft(draft({ monthlyFee: '9.90', discountSpend: '1000' }))).toMatchObject({
+      card: { feeDiscount: { minSpendMinor: 100_000, percent: '100' } },
+    });
+    // A zero fee is no fee, and no discount without one.
+    expect(cardFromDraft(draft({ monthlyFee: '0', discountSpend: '1000' }))).toEqual({
+      ok: true,
+      card: undefined,
+      creditAnnualRate: null,
+    });
+    expect(
+      cardFromDraft(
+        draft({ monthlyFee: '9', discountSpend: 'x', discountPercent: '101', discountUntil: '13/27' }),
+      ),
+    ).toEqual({
+      ok: false,
+      invalid: ['discountSpend', 'discountPercent', 'discountUntil'],
+    });
   });
 });

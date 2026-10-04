@@ -501,6 +501,11 @@ export function addRates(a: string, b: string): string {
  * ₪100.00 at 2.5% is ₪102.50. Exact, and rounded once (half away from zero).
  */
 export function addPercentFee(minor: Minor, percent: string): Minor {
+  return minor + percentOf(minor, percent);
+}
+
+/** A percentage of an amount, exact and rounded once: 2.5% of ₪100.00 is ₪2.50. */
+export function percentOf(minor: Minor, percent: string): Minor {
   const rate = decimalToRational(percent);
-  return toSafeNumber(BigInt(minor) + divRound(BigInt(minor) * rate.n, rate.d * 100n));
+  return toSafeNumber(divRound(BigInt(minor) * rate.n, rate.d * 100n));
 }

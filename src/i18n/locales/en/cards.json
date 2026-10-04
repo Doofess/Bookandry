@@ -84,6 +84,21 @@
     "basisFixed": "Fixed",
     "marginLabel": "{{label}}, on top of prime",
     "rateInvalid": "Enter a rate, like 1.5 (or -0.5 below prime).",
-    "amountInvalid": "Enter an amount in shekels."
-  }
+    "amountInvalid": "Enter an amount in shekels.",
+    "monthlyFeeHint": "Leave empty if the card has no fee. Charged on the card each month from now on.",
+    "discount": "Discount on the fee",
+    "discountSpend": "Monthly spend that earns it",
+    "discountPercent": "Discount",
+    "discountUntil": "Until",
+    "discountHint": "100% waives the fee. Usually for a year from when the card was issued; leave Until empty if it has no end.",
+    "discountPercentInvalid": "A percentage, 0 to 100."
+  },
+  "feeLine": "Card fee",
+  "feeThisMonth": "Card fee for {{month}}",
+  "discountProgress": "Spending toward the fee discount",
+  "discountEarned": "Spent <spent></spent> of <target></target>: <percent></percent> off the fee this month.",
+  "discountToGo": "Spent <spent></spent> of <target></target> for <percent></percent> off the fee.",
+  "discountUntil": "Discount until {{date}}.",
+  "discountNoEnd": "The discount has no end date.",
+  "discountEnded": "The fee discount has ended."
 }

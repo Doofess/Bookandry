@@ -532,6 +532,13 @@ export function buildDemoData(input: DemoInput): DemoData {
         expiresMonth: '2029-04',
         creditLimitMinor: 1_500_000,
         monthlyFeeMinor: 1_490,
+        feeSince: openingDate.slice(0, 7),
+        // Free in any month the card is used for ₪3,000, for a year.
+        feeDiscount: {
+          minSpendMinor: 300_000,
+          percent: '100',
+          until: addMonthsClamped(today, 12).slice(0, 7),
+        },
         fxFeeRate: '2.5',
         creditPrimeMargin: '3.5',
         lateRate: { basis: 'prime', margin: '8' },
@@ -566,6 +573,7 @@ export function buildDemoData(input: DemoInput): DemoData {
         expiresMonth: '2030-01',
         creditLimitMinor: 2_500_000,
         monthlyFeeMinor: 990,
+        feeSince: openingDate.slice(0, 7),
         fxFeeRate: '2.5',
         creditPrimeMargin: '3',
       },

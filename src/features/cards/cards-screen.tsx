@@ -3,7 +3,7 @@ import { ChevronDown, CreditCard, Pencil, Plus, TriangleAlert } from 'lucide-rea
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { useToday } from '@/app/app-context';
+import { useBaseCurrency, useToday } from '@/app/app-context';
 import { usePrime } from '@/app/prime';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
@@ -13,6 +13,8 @@ import {
   CARD_CURRENCY,
   cardBills,
   cardCreditRate,
+  cardFeeFor,
+  isCardFee,
   chargeDate,
   expiryStatus,
   limitUsedMinor,
@@ -23,7 +25,7 @@ import { MethodEditor } from '@/features/settings/payment-methods-screen';
 import { ordinalDay } from '@/i18n/ordinal';
 import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
 import { SHARED_OWNER, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import type { Currency, LocalDate } from '@/types/money';
 
 import { useCardsData } from './use-cards-data';
 
@@ -40,7 +42,8 @@ import { useCardsData } from './use-cards-data';
 export function CardsScreen() {
   const { t } = useTranslation('cards');
   const today = useToday();
-  const data = useCardsData(today);
+  const baseCurrency = useBaseCurrency();
+  const data = useCardsData(today, baseCurrency);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
 
   return (
@@ -76,6 +79,7 @@ export function CardsScreen() {
                 owner={data.profiles.get(card.profileId)}
                 occurrences={data.occurrences}
                 today={today}
+                baseCurrency={baseCurrency}
                 onEdit={() => {
                   setEditing(card);
                 }}
@@ -112,12 +116,14 @@ function CardPanel({
   owner,
   occurrences,
   today,
+  baseCurrency,
   onEdit,
 }: {
   readonly card: PaymentMethod;
   readonly owner: Profile | undefined;
   readonly occurrences: readonly Occurrence[];
   readonly today: LocalDate;
+  readonly baseCurrency: Currency;
   readonly onEdit: () => void;
 }) {
   const { t, i18n } = useTranslation('cards');
@@ -240,6 +246,11 @@ function CardPanel({
       {limit === undefined ? null : <LimitBar used={used} limit={limit} />}
 
       <ChargesList card={card} />
+
+      {/* Fee lines exist only in a shekel base (`cardFeeOccurrences`); say nothing otherwise. */}
+      {baseCurrency === CARD_CURRENCY ? (
+        <FeeStatus card={card} occurrences={occurrences} today={today} />
+      ) : null}
 
       {past.length === 0 && upcoming.length === 0 ? null : (
         <BillList bills={[...upcoming.slice(0, 2).reverse(), ...past]} today={today} />
@@ -365,6 +376,79 @@ function RateValue({ margin, rate }: { readonly margin: string | undefined; read
   );
 }
 
+/**
+ * This month's fee, and how close the card is to earning its discount - the
+ * thing worth knowing before the month ends, not after.
+ */
+function FeeStatus({
+  card,
+  occurrences,
+  today,
+}: {
+  readonly card: PaymentMethod;
+  readonly occurrences: readonly Occurrence[];
+  readonly today: LocalDate;
+}) {
+  const { t, i18n } = useTranslation('cards');
+  const month = startOfMonth(today);
+  const fee = cardFeeFor(card, month, occurrences);
+  const terms = card.card?.feeDiscount;
+  if (fee === undefined) return null;
+  const until =
+    terms?.until === undefined
+      ? undefined
+      : formatLocalDate(`${terms.until}-01` as LocalDate, i18n.language, { month: 'long', year: 'numeric' });
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border p-3 text-sm" data-testid="fee-status">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-muted-foreground">
+          {t('feeThisMonth', { month: formatLocalDate(month, i18n.language, { month: 'long' }) })}
+        </span>
+        <Money minor={fee.feeMinor} currency={CARD_CURRENCY} className="font-medium" />
+      </div>
+      {terms === undefined ? null : fee.discount === undefined ? (
+        <p className="text-xs text-muted-foreground">{t('discountEnded')}</p>
+      ) : (
+        <>
+          <div
+            className="h-1.5 overflow-hidden rounded-full bg-muted"
+            role="meter"
+            aria-label={t('discountProgress')}
+            aria-valuemin={0}
+            aria-valuemax={fee.discount.minSpendMinor}
+            aria-valuenow={Math.min(fee.spentMinor, fee.discount.minSpendMinor)}
+          >
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{
+                width: `${String(Math.round(earnedShare(fee.spentMinor, fee.discount.minSpendMinor) * 1000) / 10)}%`,
+              }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            <Trans
+              i18nKey={fee.discount.earned ? 'discountEarned' : 'discountToGo'}
+              ns="cards"
+              components={{
+                spent: <Money minor={fee.spentMinor} currency={CARD_CURRENCY} />,
+                target: <Money minor={fee.discount.minSpendMinor} currency={CARD_CURRENCY} />,
+                percent: <Percent rate={fee.discount.percent} />,
+              }}
+            />{' '}
+            {until === undefined ? t('discountNoEnd') : t('discountUntil', { date: until })}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** How far toward the discount's spend this month is, from 0 to 1. */
+function earnedShare(spent: number, target: number): number {
+  return target <= 0 ? 1 : Math.min(1, spent / target);
+}
+
 function BillList({ bills, today }: { readonly bills: readonly CardBill[]; readonly today: LocalDate }) {
   const { t, i18n } = useTranslation('cards');
   const [open, setOpen] = useState<LocalDate | undefined>(undefined);
@@ -412,7 +496,7 @@ function BillList({ bills, today }: { readonly bills: readonly CardBill[]; reado
                         <span className="text-xs text-muted-foreground">
                           {formatLocalDate(o.date, i18n.language, { day: 'numeric', month: 'short' })}
                         </span>{' '}
-                        {o.note ?? t('unnamed')}
+                        {isCardFee(o) ? t('feeLine') : (o.note ?? t('unnamed'))}
                       </span>
                       <Money minor={o.money.baseAmountMinor} currency={CARD_CURRENCY} />
                     </li>

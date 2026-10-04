@@ -25,6 +25,7 @@
     "kids": "Kids",
     "pets": "Pets",
     "loans": "Loans",
+    "cardFees": "Card fees",
     "otherExpense": "Other"
   },
   "manage": {

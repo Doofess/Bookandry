@@ -248,9 +248,14 @@ the converted amount when a purchase in another currency is saved, and kept on
 the money snapshot (`feeRate`) so a reconversion applies it again. The Cards
 screen shows each card's next bill, the month building up, past bills with
 their purchases, and how much of the limit is used - including every
-instalment still to come, as the card company counts it. Not modelled: the card
-fee as a charge (it is shown, not booked), and cycles that close on a day other
-than the end of the month.
+instalment still to come, as the card company counts it. The monthly card fee
+(דמי כרטיס) is a line on the card at each month's end, from the month it was
+set - worked out, not saved, so it is changed on the card - with an optional
+discount for a month the card is used for at least a set amount (100% waives
+it), usually for a year (`until`). It is in the feed, the balance (on the bill)
+and the chart, in a shekel base only; a shared card's fee is in the
+household's view. Not modelled: cycles that close on a day other than the end
+of the month.
 
 **Prime is fetched, never typed.** Israeli prime is the Bank of Israel's rate
 plus 1.5. The app keeps the Bank's rate on the device (`meta`, not synced),

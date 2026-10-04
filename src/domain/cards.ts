@@ -1,6 +1,12 @@
-import { addMonthsClamped, compareLocal, parseLocalDate, startOfMonth } from '@/lib/dates';
-import { addRates, normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
-import type { Occurrence, PaymentMethod, RateTerm } from '@/types/domain';
+import { addMonthsClamped, compareLocal, endOfMonth, parseLocalDate, startOfMonth } from '@/lib/dates';
+import { addRates, normalizeAnnualRate, normalizeRateMargin, percentOf } from '@/lib/money';
+import {
+  SHARED_OWNER,
+  type Occurrence,
+  type PaymentMethod,
+  type RateTerm,
+  type Transaction,
+} from '@/types/domain';
 import type { Currency, LocalDate, Minor } from '@/types/money';
 
 import { isInstallmentPlan } from './tx-edit';
@@ -182,4 +188,154 @@ export function splitBySettlement(
     else if (compareLocal(occurrence.date, today) <= 0) pendingOnCards.push(occurrence);
   }
   return { settled, pendingOnCards };
+}
+
+/** The series id every card-fee line carries: `cardfee:<card id>`. */
+export const CARD_FEE_PREFIX = 'cardfee:';
+
+/** The built-in category card fees are filed under. */
+export const CARD_FEES_CATEGORY_ID = 'cat.cardFees';
+
+/** Whether an occurrence is a card's monthly fee - worked out, not a row anyone saved. */
+export function isCardFee(occurrence: Pick<Occurrence, 'seriesId'>): boolean {
+  return occurrence.seriesId.startsWith(CARD_FEE_PREFIX);
+}
+
+export type CardFeeMonth = {
+  /** What the bill charges for the card this month. */
+  readonly feeMinor: number;
+  /** The fee before any discount. */
+  readonly fullMinor: number;
+  /** What was spent on the card that month, which the discount is earned by. */
+  readonly spentMinor: number;
+  /** The month's discount terms, when they apply to it at all (earned or not). */
+  readonly discount?: { readonly minSpendMinor: number; readonly percent: string; readonly earned: boolean };
+};
+
+/**
+ * A card's fee for one month: the full fee, or less in a month the card was
+ * used enough to earn its discount - while the discount lasts. Undefined for
+ * a card without a fee, or a month before the fee was set.
+ */
+export function cardFeeFor(
+  card: PaymentMethod,
+  month: LocalDate,
+  occurrences: readonly Occurrence[],
+): CardFeeMonth | undefined {
+  const fee = card.card?.monthlyFeeMinor;
+  const since = card.card?.feeSince;
+  if (card.type !== 'credit_card' || fee === undefined || fee <= 0) return undefined;
+  const key = month.slice(0, 7);
+  if (since !== undefined && key < since) return undefined;
+
+  const spentMinor = occurrences
+    .filter(
+      (o) =>
+        o.paymentMethodId === card.id &&
+        !o.isSkipped &&
+        !isCardFee(o) &&
+        o.transaction.kind === 'expense' &&
+        o.date.slice(0, 7) === key,
+    )
+    .reduce((sum, o) => sum + o.money.baseAmountMinor, 0);
+
+  const terms = card.card?.feeDiscount;
+  if (terms === undefined || (terms.until !== undefined && key > terms.until)) {
+    return { feeMinor: fee, fullMinor: fee, spentMinor };
+  }
+  const earned = spentMinor >= terms.minSpendMinor;
+  return {
+    feeMinor: earned ? Math.max(0, fee - percentOf(fee, terms.percent)) : fee,
+    fullMinor: fee,
+    spentMinor,
+    discount: { minSpendMinor: terms.minSpendMinor, percent: terms.percent, earned },
+  };
+}
+
+/**
+ * Every card's monthly fee as a line on the card, one per month in
+ * [from, to] - dated the month's last day, so it rides on that month's bill
+ * like any purchase - computed from the purchases in `occurrences`.
+ *
+ * Only in a shekel base: the fee is in shekels and nothing converts it here.
+ * A shared card's fee belongs to no one profile, so it is in the household's
+ * view (`profileId` ALL) only. A waived month has no line at all.
+ */
+export function cardFeeOccurrences(input: {
+  readonly cards: readonly PaymentMethod[];
+  readonly occurrences: readonly Occurrence[];
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+  readonly today: LocalDate;
+  readonly baseCurrency: Currency;
+  /** The profile being looked at, or ALL. */
+  readonly profileId: string;
+  readonly allProfiles: string;
+}): Occurrence[] {
+  if (input.baseCurrency !== CARD_CURRENCY) return [];
+  const out: Occurrence[] = [];
+  for (const card of input.cards) {
+    if (input.profileId !== input.allProfiles && card.profileId !== input.profileId) continue;
+    if (card.profileId === SHARED_OWNER && input.profileId !== input.allProfiles) continue;
+    const fee = card.card?.monthlyFeeMinor;
+    if (card.type !== 'credit_card' || card.isArchived === 1 || fee === undefined || fee <= 0) continue;
+
+    for (
+      let month = startOfMonth(input.from);
+      compareLocal(month, input.to) <= 0;
+      month = addMonthsClamped(month, 1, 1)
+    ) {
+      const date = endOfMonth(month);
+      if (compareLocal(date, input.from) < 0 || compareLocal(date, input.to) > 0) continue;
+      const charge = cardFeeFor(card, month, input.occurrences);
+      if (charge === undefined || charge.feeMinor === 0) continue;
+      out.push(feeOccurrence(card, date, charge.feeMinor, input.today));
+    }
+  }
+  return out;
+}
+
+function feeOccurrence(card: PaymentMethod, date: LocalDate, feeMinor: number, today: LocalDate): Occurrence {
+  const id = `${CARD_FEE_PREFIX}${card.id}`;
+  const money = {
+    amountMinor: feeMinor,
+    currency: CARD_CURRENCY,
+    baseCurrency: CARD_CURRENCY,
+    baseAmountMinor: feeMinor,
+    rateUsed: '1',
+    rateDate: date,
+    rateSource: 'manual' as const,
+  };
+  const transaction: Transaction = {
+    id,
+    profileId: card.profileId,
+    kind: 'expense',
+    categoryId: CARD_FEES_CATEGORY_ID,
+    paymentMethodId: card.id,
+    money,
+    recurrence: { type: 'one_time' },
+    date,
+    note: card.label,
+    seriesStart: date,
+    seriesEnd: date,
+    isDeleted: 0,
+    seriesRootId: id,
+    createdAt: card.createdAt,
+    updatedAt: card.updatedAt,
+  };
+  return {
+    transaction,
+    seriesId: id,
+    date,
+    originalDate: date,
+    key: `${id}@${date}`,
+    money,
+    categoryId: CARD_FEES_CATEGORY_ID,
+    paymentMethodId: card.id,
+    note: card.label,
+    isOverridden: false,
+    isMoved: false,
+    isSkipped: false,
+    isProjected: compareLocal(date, today) > 0,
+  };
 }

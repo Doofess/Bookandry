@@ -3,12 +3,21 @@ import { useDeferredValue, useMemo } from 'react';
 
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
+import { cardFeeOccurrences } from '@/domain/cards';
 import { applyFeedFilters, flattenFeed, type FeedRow } from '@/domain/feed';
 import type { FeedFilters } from '@/domain/feed-filters';
 import { expandOccurrences } from '@/domain/occurrences';
 import { endOfMonth, startOfMonth } from '@/lib/dates';
-import type { Category, Occurrence, Override, PaymentMethod, Profile, Transaction } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import {
+  ALL_PROFILES,
+  type Category,
+  type Occurrence,
+  type Override,
+  type PaymentMethod,
+  type Profile,
+  type Transaction,
+} from '@/types/domain';
+import type { Currency, LocalDate } from '@/types/money';
 
 /**
  * Three memo layers with DELIBERATELY different dependency sets.
@@ -38,6 +47,8 @@ export function monthWindow(month: LocalDate): FeedWindow {
 export type FeedCandidates = {
   readonly transactions: readonly Transaction[];
   readonly overrides: readonly Override[];
+  /** Credit cards, whose monthly fees are lines in the feed too. */
+  readonly cards?: readonly PaymentMethod[];
 };
 
 /**
@@ -54,7 +65,8 @@ export function useCandidates(profileId: string, window: FeedWindow): FeedCandid
       db,
       transactions.map((t) => t.id),
     );
-    return { transactions, overrides };
+    const cards = (await db.paymentMethods.toArray()).filter((m) => m.type === 'credit_card');
+    return { transactions, overrides, cards };
   }, [profileId, window.from, window.to]);
 }
 
@@ -63,6 +75,9 @@ export function useOccurrences(
   candidates: FeedCandidates | undefined,
   window: FeedWindow,
   today: LocalDate,
+  /** The profile looked at and the base currency, for the cards' fees; without them, none. */
+  profileId?: string,
+  baseCurrency?: Currency,
 ): readonly Occurrence[] | undefined {
   return useMemo(() => {
     if (candidates === undefined) return undefined;
@@ -74,10 +89,25 @@ export function useOccurrences(
       else list.push(override);
     }
 
-    return candidates.transactions.flatMap((tx) =>
+    const occurrences = candidates.transactions.flatMap((tx) =>
       expandOccurrences(tx, byTransaction.get(tx.id) ?? [], window.from, window.to, { today }),
     );
-  }, [candidates, window.from, window.to, today]);
+    if (profileId === undefined || baseCurrency === undefined || candidates.cards === undefined) {
+      return occurrences;
+    }
+    // Each card's fee for the month, worked out from its purchases in it.
+    const fees = cardFeeOccurrences({
+      cards: candidates.cards,
+      occurrences,
+      from: window.from,
+      to: window.to,
+      today,
+      baseCurrency,
+      profileId,
+      allProfiles: ALL_PROFILES,
+    });
+    return fees.length === 0 ? occurrences : [...occurrences, ...fees];
+  }, [candidates, window.from, window.to, today, profileId, baseCurrency]);
 }
 
 export type FeedLookups = {

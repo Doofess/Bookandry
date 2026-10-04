@@ -3,10 +3,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
 import { availableBalance } from '@/domain/calculators';
+import { billingDayOf, cardFeeOccurrences, settleDate } from '@/domain/cards';
 import { buildChartData, rangeWindow, type ChartData, type ChartRange } from '@/domain/chart-data';
 import { expandOccurrences } from '@/domain/occurrences';
-import { compareLocal, minDate } from '@/lib/dates';
-import { ALL_PROFILES, type Occurrence, type Override } from '@/types/domain';
+import { addMonthsClamped, compareLocal, minDate, startOfMonth } from '@/lib/dates';
+import { ALL_PROFILES, type Override } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 export type ChartWindow = { readonly from: LocalDate; readonly to: LocalDate };
@@ -63,7 +64,12 @@ export function useChartData(
     // unconverted opening balance is a confident picture of the wrong thing.
     if (missing.length > 0) return { status: 'blocked', currencies: missing };
 
-    const queryFrom = minDate(earliest, window.from);
+    const methods = new Map((await db.paymentMethods.toArray()).map((m) => [m.id, m]));
+    // A card's purchases are debited the month after: the line reaches back
+    // one more month for the bill that falls at its start.
+    const anyBillingCard = [...methods.values()].some((m) => billingDayOf(m) !== undefined);
+    const firstDay = minDate(earliest, window.from);
+    const queryFrom = anyBillingCard ? startOfMonth(addMonthsClamped(firstDay, -1, 1)) : firstDay;
     const transactions = await findCandidates(db, { profileId, from: queryFrom, to: window.to });
     const overrides = await findOverrides(
       db,
@@ -79,27 +85,53 @@ export function useChartData(
 
     const cutoffs = new Map(profiles.map((p) => [p.id, p.openingBalanceDate]));
 
-    const occurrences = transactions.flatMap((tx) =>
-      expandOccurrences(tx, byTransaction.get(tx.id) ?? [], queryFrom, window.to, {
-        today,
-        // Each profile's cutoff applies to its own rows only, exactly as the
-        // balance card does it - the two figures have to agree.
-        openingBalanceDate: cutoffs.get(tx.profileId),
-      }),
+    const purchases = transactions.flatMap((tx) =>
+      expandOccurrences(tx, byTransaction.get(tx.id) ?? [], queryFrom, window.to, { today }),
     );
+    const everything = [
+      ...purchases,
+      ...cardFeeOccurrences({
+        cards: [...methods.values()],
+        occurrences: purchases,
+        from: queryFrom,
+        to: window.to,
+        today,
+        baseCurrency,
+        profileId,
+        allProfiles: ALL_PROFILES,
+      }),
+    ];
 
-    const before: Occurrence[] = [];
-    const inside: Occurrence[] = [];
-    for (const occurrence of occurrences) {
-      if (compareLocal(occurrence.date, window.from) < 0) before.push(occurrence);
-      else inside.push(occurrence);
-    }
+    // The dots: when it was bought, from each profile's own opening date.
+    const inside = everything.filter((o) => {
+      const cutoff = cutoffs.get(o.transaction.profileId);
+      return (
+        compareLocal(o.date, window.from) >= 0 && (cutoff === undefined || compareLocal(o.date, cutoff) >= 0)
+      );
+    });
+    /*
+     * The line: when it left the account - a card purchase on its bill - by
+     * the same rule as the balance card, so the line ends where that figure
+     * is. Each profile's cutoff applies to its own rows only.
+     */
+    const settled = everything
+      .map((o) => {
+        const date = settleDate(o, methods);
+        return date === o.date ? o : { ...o, date };
+      })
+      .filter((o) => {
+        const cutoff = cutoffs.get(o.transaction.profileId);
+        return cutoff === undefined || compareLocal(o.date, cutoff) >= 0;
+      });
+    const before = settled.filter((o) => compareLocal(o.date, window.from) < 0);
+    const lineInside = settled.filter((o) => compareLocal(o.date, window.from) >= 0);
 
     return {
       status: 'ready',
       window,
       data: buildChartData({
         occurrences: inside,
+        balanceOccurrences: lineInside,
         from: window.from,
         to: window.to,
         // Opening balances plus everything that happened before the window.

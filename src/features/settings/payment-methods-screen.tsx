@@ -286,7 +286,10 @@ export function MethodEditor({
     setAttempted(false);
   }
 
-  const parsedCard = cardFromDraft(card);
+  const parsedCard = cardFromDraft(card, {
+    previous: existing?.card,
+    month: systemClock.today().slice(0, 7),
+  });
   const cardInvalid = type === 'credit_card' && !parsedCard.ok;
 
   const save = async (): Promise<void> => {

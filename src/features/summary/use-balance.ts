@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
 import { availableBalance, balanceParts, type BalanceParts } from '@/domain/calculators';
-import { billingDayOf, splitBySettlement } from '@/domain/cards';
+import { billingDayOf, cardFeeOccurrences, splitBySettlement } from '@/domain/cards';
 import { expandOccurrences } from '@/domain/occurrences';
 import { addMonthsClamped, compareLocal, startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Profile } from '@/types/domain';
@@ -106,9 +106,23 @@ export function useBalance(profileId: string, today: LocalDate, baseCurrency: Cu
 
     const cutoffs = new Map(profiles.map((p) => [p.id, p.openingBalanceDate]));
 
-    const expanded = transactions.flatMap((tx) =>
+    const purchases = transactions.flatMap((tx) =>
       expandOccurrences(tx, byTransaction.get(tx.id) ?? [], from, today, { today }),
     );
+    // Each card's monthly fee rides on its bill like a purchase.
+    const expanded = [
+      ...purchases,
+      ...cardFeeOccurrences({
+        cards: [...methods.values()],
+        occurrences: purchases,
+        from,
+        to: today,
+        today,
+        baseCurrency,
+        profileId,
+        allProfiles: ALL_PROFILES,
+      }),
+    ];
     /*
      * Counted on the day the money leaves the account: a card purchase on its
      * card's next billing day, everything else on its own date. Each

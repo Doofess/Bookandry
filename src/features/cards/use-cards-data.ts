@@ -2,10 +2,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
+import { cardFeeOccurrences } from '@/domain/cards';
 import { expandOccurrences } from '@/domain/occurrences';
 import { addMonthsClamped, endOfMonth, startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import type { Currency, LocalDate } from '@/types/money';
 
 /** How far back the bill history goes. */
 const HISTORY_MONTHS = 6;
@@ -23,7 +24,7 @@ export type CardsData = {
 };
 
 /** The household's credit cards, and what has been and will be charged to them. */
-export function useCardsData(today: LocalDate): CardsData | undefined {
+export function useCardsData(today: LocalDate, baseCurrency: Currency): CardsData | undefined {
   return useLiveQuery(async () => {
     const methods = await db.paymentMethods.toArray();
     const cards = methods
@@ -40,7 +41,7 @@ export function useCardsData(today: LocalDate): CardsData | undefined {
       db,
       transactions.map((t) => t.id),
     );
-    const occurrences = transactions
+    const purchases = transactions
       .flatMap((tx) =>
         expandOccurrences(
           tx,
@@ -51,7 +52,18 @@ export function useCardsData(today: LocalDate): CardsData | undefined {
         ),
       )
       .filter((o) => o.paymentMethodId !== undefined && ids.has(o.paymentMethodId));
+    // Each card's monthly fee, on its bills like a purchase.
+    const fees = cardFeeOccurrences({
+      cards,
+      occurrences: purchases,
+      from,
+      to,
+      today,
+      baseCurrency,
+      profileId: ALL_PROFILES,
+      allProfiles: ALL_PROFILES,
+    });
 
-    return { cards, profiles, occurrences };
-  }, [today]);
+    return { cards, profiles, occurrences: [...purchases, ...fees] };
+  }, [today, baseCurrency]);
 }

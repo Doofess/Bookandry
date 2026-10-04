@@ -130,3 +130,32 @@ for (const lang of ['en', 'he'] as const) {
     });
   });
 }
+
+test.describe('@cards the monthly fee', () => {
+  // A shekel base: the fee is in shekels, so the Hebrew project is the one.
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'he', 'The fee is charged in a shekel base.');
+  });
+
+  test('charges the fee on the card each month, and says how close the discount is', async ({ page }) => {
+    await completeFirstRun(page, 'he', { demo: false });
+    await page.getByRole('link', { name: 'כרטיסים' }).click();
+    await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
+    await page.getByLabel('תווית', { exact: true }).fill('Visa');
+    await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
+    await page.getByLabel('דמי כרטיס, לחודש', { exact: true }).fill('14.90');
+    await page.getByLabel('סכום שימוש חודשי לקבלת ההנחה', { exact: true }).fill('3,000');
+    await page.getByRole('button', { name: 'שמירה', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const status = page.getByTestId('fee-status');
+    await expect(status).toContainText('14.90');
+    await expect(status).toContainText('3,000.00');
+    await expect(page.getByRole('meter', { name: 'ההוצאה לקראת ההנחה בדמי הכרטיס' })).toBeVisible();
+
+    // And in the feed, as a line on the card at the month's end.
+    await page.getByRole('link', { name: 'תנועות' }).click();
+    await expect(page.getByRole('listitem').filter({ hasText: 'דמי כרטיס' })).toContainText('14.90');
+  });
+});

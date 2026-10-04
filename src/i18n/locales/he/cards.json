@@ -86,6 +86,21 @@
     "basisFixed": "קבועה",
     "marginLabel": "{{label}}, מעל הפריים",
     "rateInvalid": "הזינו ריבית, למשל 1.5 (או ⁦-0.5⁩ מתחת לפריים).",
-    "amountInvalid": "הזינו סכום בשקלים."
-  }
+    "amountInvalid": "הזינו סכום בשקלים.",
+    "monthlyFeeHint": "השאירו ריק אם אין לכרטיס דמי כרטיס. יחויבו בכרטיס בכל חודש מעכשיו.",
+    "discount": "הנחה בדמי הכרטיס",
+    "discountSpend": "סכום שימוש חודשי לקבלת ההנחה",
+    "discountPercent": "גובה ההנחה",
+    "discountUntil": "עד",
+    "discountHint": "‏100% פוטר מדמי הכרטיס. בדרך כלל לשנה מהנפקת הכרטיס; השאירו את ״עד״ ריק אם אין לה סוף.",
+    "discountPercentInvalid": "אחוז, 0 עד 100."
+  },
+  "feeLine": "דמי כרטיס",
+  "feeThisMonth": "דמי כרטיס ל{{month}}",
+  "discountProgress": "ההוצאה לקראת ההנחה בדמי הכרטיס",
+  "discountEarned": "הוצאתם <spent></spent> מתוך <target></target>: <percent></percent> הנחה בדמי הכרטיס החודש.",
+  "discountToGo": "הוצאתם <spent></spent> מתוך <target></target> להנחה של <percent></percent> בדמי הכרטיס.",
+  "discountUntil": "ההנחה בתוקף עד {{date}}.",
+  "discountNoEnd": "להנחה אין תאריך סיום.",
+  "discountEnded": "ההנחה בדמי הכרטיס הסתיימה."
 }

@@ -129,6 +129,14 @@ export const cardSchema = z.object({
   billingDay: z.number().int().min(1).max(31).optional(),
   creditLimitMinor: minorAmount.optional(),
   monthlyFeeMinor: minorAmount.optional(),
+  feeSince: z.string().refine(isExpiresMonth, 'not a YYYY-MM month').optional(),
+  feeDiscount: z
+    .object({
+      minSpendMinor: minorAmount,
+      percent: annualRate,
+      until: z.string().refine(isExpiresMonth, 'not a YYYY-MM month').optional(),
+    })
+    .optional(),
   fxFeeRate: annualRate.optional(),
   creditPrimeMargin: margin.optional(),
   lateRate: rateTerm.optional(),

@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 import { useSettings, useToday } from '@/app/app-context';
+import { ROUTES } from '@/app/routes';
 import { Fab } from '@/components/fab';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
+import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -38,6 +41,7 @@ export function FeedScreen() {
   const settings = useSettings();
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
   const sheet = useTransactionSheet();
+  const navigate = useNavigate();
   const [breakdown, setBreakdown] = useState<Breakdown>(undefined);
   /*
    * The row whose menu is open, held here rather than in the URL.
@@ -55,7 +59,7 @@ export function FeedScreen() {
   // Layers A and B: neither depends on the filters, so typing in the search box
   // touches neither IndexedDB nor the expansion.
   const candidates = useCandidates(filters.profileId, window);
-  const occurrences = useOccurrences(candidates, window, today);
+  const occurrences = useOccurrences(candidates, window, today, filters.profileId, settings.defaultCurrency);
   const lookups = useFeedLookups();
 
   const translateCategory = useMemo(
@@ -212,8 +216,16 @@ export function FeedScreen() {
             // Both the row body and its always-present menu open the editor.
             // The menu will grow skip/delete next; until it does, pointing it
             // at the same place is honest, where a dead button is not.
-            onOpen={sheet.openEdit}
-            onMenu={setMenuFor}
+            // A card's fee is worked out from the card, not a row anyone saved:
+            // it is changed where the card is, so it opens the Cards screen.
+            onOpen={(occurrence) => {
+              if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+              else sheet.openEdit(occurrence);
+            }}
+            onMenu={(occurrence) => {
+              if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+              else setMenuFor(occurrence);
+            }}
           />
         )}
       </div>

@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
 import { endOfMonth, startOfMonth } from '@/lib/dates';
-import type { CardDetails, Occurrence, PaymentMethod, Transaction } from '@/types/domain';
+import {
+  SHARED_OWNER,
+  type CardDetails,
+  type Occurrence,
+  type PaymentMethod,
+  type Transaction,
+} from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
 import {
   billingDayOf,
+  CARD_FEES_CATEGORY_ID,
   cardBills,
+  cardFeeFor,
+  cardFeeOccurrences,
   cardCreditRate,
   chargeDate,
   expiryStatus,
   fxFeeFor,
+  isCardFee,
   isExpiresMonth,
   limitUsedMinor,
   rateOf,
@@ -241,5 +251,86 @@ describe('the balance, by when money leaves the account', () => {
     // September, after it, so it counts; an August cash one does not.
     const { settled } = splitBySettlement(list, all, today, new Map([['p1', d('2026-09-01')]]));
     expect(settled.map((o) => o.seriesId)).toEqual(['aug']);
+  });
+});
+
+describe('the monthly card fee', () => {
+  const feeCard = (over: Partial<CardDetails> = {}) =>
+    card({
+      billingDay: 10,
+      monthlyFeeMinor: 1_490,
+      feeSince: '2026-08',
+      feeDiscount: { minSpendMinor: 300_000, percent: '100', until: '2026-12' },
+      ...over,
+    });
+  const spend = (id: string, date: string, amount: number) => occurrences(purchase(id, date), amount);
+
+  it('is waived in a month the card was used enough, and charged in full otherwise', () => {
+    const list = [...spend('big', '2026-09-05', 300_000), ...spend('small', '2026-10-05', 1_000)];
+    expect(cardFeeFor(feeCard(), d('2026-09-01'), list)).toEqual({
+      feeMinor: 0,
+      fullMinor: 1_490,
+      spentMinor: 300_000,
+      discount: { minSpendMinor: 300_000, percent: '100', earned: true },
+    });
+    expect(cardFeeFor(feeCard(), d('2026-10-01'), list)).toMatchObject({
+      feeMinor: 1_490,
+      spentMinor: 1_000,
+    });
+  });
+
+  it('takes a partial discount, ends when the discount does, and starts when the fee was set', () => {
+    const list = spend('big', '2026-09-05', 500_000);
+    expect(
+      cardFeeFor(feeCard({ feeDiscount: { minSpendMinor: 100_000, percent: '50' } }), d('2026-09-01'), list)
+        ?.feeMinor,
+    ).toBe(745);
+    const ended = cardFeeFor(feeCard(), d('2027-01-01'), spend('jan', '2027-01-05', 500_000));
+    expect(ended).toEqual({ feeMinor: 1_490, fullMinor: 1_490, spentMinor: 500_000 });
+    expect(cardFeeFor(feeCard(), d('2026-07-01'), list)).toBeUndefined();
+    expect(cardFeeFor(card({ billingDay: 10 }), d('2026-09-01'), list)).toBeUndefined();
+    expect(cardFeeFor(feeCard({ feeSince: undefined }), d('2020-01-01'), [])).toMatchObject({
+      feeMinor: 1_490,
+    });
+  });
+
+  const fees = (over: Partial<Parameters<typeof cardFeeOccurrences>[0]> = {}) =>
+    cardFeeOccurrences({
+      cards: [feeCard()],
+      occurrences: spend('big', '2026-09-05', 300_000),
+      from: d('2026-07-01'),
+      to: d('2026-11-30'),
+      today: TODAY,
+      baseCurrency: 'ILS',
+      profileId: 'all',
+      allProfiles: 'all',
+      ...over,
+    });
+
+  it('is a line on the card at each month’s end, from the month it was set, and none when waived', () => {
+    const list = fees();
+    expect(list.map((o) => [o.date, o.money.baseAmountMinor, o.isProjected])).toEqual([
+      ['2026-08-31', 1_490, false],
+      ['2026-10-31', 1_490, true],
+      ['2026-11-30', 1_490, true],
+    ]);
+    const [first] = list;
+    expect(first).toMatchObject({ paymentMethodId: 'visa', categoryId: CARD_FEES_CATEGORY_ID, note: 'Visa' });
+    expect(isCardFee(first!)).toBe(true);
+    // It rides on the next month's bill like any purchase.
+    expect(settleDate(first!, methods(feeCard()))).toBe('2026-09-10');
+    expect(isCardFee(spend('big', '2026-09-05', 1)[0]!)).toBe(false);
+  });
+
+  it('is in a shekel base only, for its owner or the household, and never for a closed card', () => {
+    expect(fees({ baseCurrency: 'USD' })).toEqual([]);
+    expect(fees({ profileId: 'p1' })).toHaveLength(3);
+    expect(fees({ profileId: 'p2' })).toEqual([]);
+    expect(fees({ cards: [{ ...feeCard(), profileId: SHARED_OWNER }], profileId: 'p1' })).toEqual([]);
+    expect(fees({ cards: [{ ...feeCard(), profileId: SHARED_OWNER }] })).toHaveLength(3);
+    expect(fees({ cards: [{ ...feeCard(), isArchived: 1 }] })).toEqual([]);
+    expect(fees({ cards: [card({ billingDay: 10 })] })).toEqual([]);
+    // Only whole month-ends inside the window.
+    expect(fees({ from: d('2026-08-31'), to: d('2026-09-15') }).map((o) => o.date)).toEqual(['2026-08-31']);
   });
 });

@@ -19,13 +19,28 @@ export type CardDraft = {
   readonly billingDay: string;
   readonly creditLimit: string;
   readonly monthlyFee: string;
+  /** Spend that earns the fee discount, in shekels; '' for no discount. */
+  readonly discountSpend: string;
+  /** Percent off the fee once earned; "100" waives it. */
+  readonly discountPercent: string;
+  /** MM/YY: the last month the discount applies; '' for no end. */
+  readonly discountUntil: string;
   readonly fxFee: string;
   readonly credit: RateDraft;
   readonly late: RateDraft;
 };
 
 export type CardDraftField =
-  'expires' | 'billingDay' | 'creditLimit' | 'monthlyFee' | 'fxFee' | 'credit' | 'late';
+  | 'expires'
+  | 'billingDay'
+  | 'creditLimit'
+  | 'monthlyFee'
+  | 'discountSpend'
+  | 'discountPercent'
+  | 'discountUntil'
+  | 'fxFee'
+  | 'credit'
+  | 'late';
 
 export const EMPTY_CARD_DRAFT: CardDraft = {
   issuer: '',
@@ -38,6 +53,9 @@ export const EMPTY_CARD_DRAFT: CardDraft = {
   billingDay: '',
   creditLimit: '',
   monthlyFee: '',
+  discountSpend: '',
+  discountPercent: '100',
+  discountUntil: '',
   fxFee: '',
   credit: { basis: 'prime', value: '' },
   late: { basis: 'prime', value: '' },
@@ -66,6 +84,9 @@ export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
     billingDay: card?.billingDay === undefined ? '' : String(card.billingDay),
     creditLimit: money(card?.creditLimitMinor),
     monthlyFee: money(card?.monthlyFeeMinor),
+    discountSpend: money(card?.feeDiscount?.minSpendMinor),
+    discountPercent: card?.feeDiscount?.percent ?? '100',
+    discountUntil: card?.feeDiscount?.until === undefined ? '' : printed(card.feeDiscount.until),
     fxFee: card?.fxFeeRate ?? '',
     credit:
       card?.creditPrimeMargin !== undefined
@@ -80,6 +101,11 @@ export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
           ? { basis: 'prime', value: card.lateRate.margin }
           : { basis: 'fixed', value: card.lateRate.rate },
   };
+}
+
+/** "2028-09" as a card prints it: "09/28". */
+function printed(month: string): string {
+  return `${month.slice(5, 7)}/${month.slice(2, 4)}`;
 }
 
 /** "09/28" or "9/2028" to "2028-09"; '' stays ''; anything else is undefined. */
@@ -131,8 +157,16 @@ export type CardDraftResult =
     }
   | { readonly ok: false; readonly invalid: readonly CardDraftField[] };
 
-/** The card details to store, or which fields cannot be read. */
-export function cardFromDraft(draft: CardDraft): CardDraftResult {
+/**
+ * The card details to store, or which fields cannot be read.
+ *
+ * `previous` and `month` place the fee in time: it is charged from the month
+ * it was first set, kept across later edits, and gone with the fee.
+ */
+export function cardFromDraft(
+  draft: CardDraft,
+  context: { readonly previous?: CardDetails; readonly month: string },
+): CardDraftResult {
   const invalid: CardDraftField[] = [];
 
   const expiresMonth = parseExpires(draft.expires);
@@ -145,6 +179,15 @@ export function cardFromDraft(draft: CardDraft): CardDraftResult {
   if (creditLimitMinor === null) invalid.push('creditLimit');
   const monthlyFeeMinor = amount(draft.monthlyFee);
   if (monthlyFeeMinor === null) invalid.push('monthlyFee');
+
+  const discountSpend = amount(draft.discountSpend);
+  if (discountSpend === null) invalid.push('discountSpend');
+  const discountPercent = normalizeAnnualRate(
+    draft.discountPercent.trim() === '' ? '100' : draft.discountPercent,
+  );
+  if (discountPercent === undefined) invalid.push('discountPercent');
+  const discountUntil = parseExpires(draft.discountUntil);
+  if (discountUntil === undefined) invalid.push('discountUntil');
 
   const fxFeeRate = draft.fxFee.trim() === '' ? undefined : normalizeAnnualRate(draft.fxFee);
   if (draft.fxFee.trim() !== '' && fxFeeRate === undefined) invalid.push('fxFee');
@@ -166,7 +209,21 @@ export function cardFromDraft(draft: CardDraft): CardDraftResult {
     ...(expiresMonth === '' || expiresMonth === undefined ? {} : { expiresMonth }),
     ...(day === undefined ? {} : { billingDay: day }),
     ...(creditLimitMinor === undefined || creditLimitMinor === null ? {} : { creditLimitMinor }),
-    ...(monthlyFeeMinor === undefined || monthlyFeeMinor === null ? {} : { monthlyFeeMinor }),
+    ...(monthlyFeeMinor === undefined || monthlyFeeMinor === null || monthlyFeeMinor === 0
+      ? {}
+      : {
+          monthlyFeeMinor,
+          feeSince: context.previous?.feeSince ?? context.month,
+          ...(discountSpend === undefined || discountSpend === null || discountPercent === undefined
+            ? {}
+            : {
+                feeDiscount: {
+                  minSpendMinor: discountSpend,
+                  percent: discountPercent,
+                  ...(discountUntil === undefined || discountUntil === '' ? {} : { until: discountUntil }),
+                },
+              }),
+        }),
     ...(fxFeeRate === undefined ? {} : { fxFeeRate }),
     ...(credit?.basis === 'prime' ? { creditPrimeMargin: credit.margin } : {}),
     ...(late === undefined || late === null ? {} : { lateRate: late }),

@@ -144,8 +144,26 @@ export type CardDetails = {
   readonly billingDay?: number;
   /** מסגרת אשראי. */
   readonly creditLimitMinor?: number;
-  /** דמי כרטיס, a month. */
+  /**
+   * דמי כרטיס, a month. Charged on the card itself - a line on each month's
+   * bill, worked out rather than typed (`cardFeeOccurrences`) - from
+   * `feeSince`. Absent: the card has no fee, as many do not.
+   */
   readonly monthlyFeeMinor?: number;
+  /** YYYY-MM: the first month the fee is charged - when it was set, so entering it never bills the past. */
+  readonly feeSince?: string;
+  /**
+   * A discount on the fee in any month the card is used for at least
+   * `minSpendMinor`: often the whole fee (100%), usually for a year, sometimes
+   * longer, sometimes for good.
+   */
+  readonly feeDiscount?: {
+    readonly minSpendMinor: number;
+    /** Percent off the fee: "100" waives it. */
+    readonly percent: string;
+    /** YYYY-MM: the last month it applies. Absent: no end. */
+    readonly until?: string;
+  };
   /**
    * עמלת עסקה במטבע חוץ: the percentage added to every purchase in a
    * currency other than the shekel. Snapshotted onto each purchase when it is

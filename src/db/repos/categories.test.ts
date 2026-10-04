@@ -163,6 +163,7 @@ describe('the built-in categories on an older install', () => {
       'cat.kids',
       'cat.pets',
       'cat.loans',
+      'cat.cardFees',
     ]) {
       await handle.db.categories.delete(id);
     }
@@ -172,13 +173,14 @@ describe('the built-in categories on an older install', () => {
     await ensureBuiltinCategories(handle.db, NOW);
 
     const names = (await listCategories(handle.db, { kind: 'expense' })).map((c) => c.id);
-    expect(names.slice(-7)).toEqual([
+    expect(names.slice(-8)).toEqual([
       'cat.aiSoftware',
       'cat.phoneInternet',
       'cat.travel',
       'cat.kids',
       'cat.pets',
       'cat.loans',
+      'cat.cardFees',
       'cat.otherExpense',
     ]);
     expect(await handle.db.outbox.toArray()).toEqual([]);
