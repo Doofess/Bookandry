@@ -248,7 +248,14 @@ the converted amount when a purchase in another currency is saved, and kept on
 the money snapshot (`feeRate`) so a reconversion applies it again. The Cards
 screen shows each card's next bill, the month building up, past bills with
 their purchases, and how much of the limit is used - including every
-instalment still to come, as the card company counts it. The monthly card fee
+instalment still to come, as the card company counts it. That same money is
+the card's **total commitments** (סך הכל התחייבויות בכרטיס): purchases waiting
+for their bill plus every remaining payment of its תשלומים, קרדיט and loan
+plans, as charged, with the interest inside them shown apart - the present
+value of each plan's remaining payments at its own rate is the principal still
+owed, and the rest is interest. The household's total across all its cards,
+and each card's share of it, heads the screen. Plans are followed to their
+last payment, however far off. The monthly card fee
 (דמי כרטיס) is a line on the card at each month's end, from the month it was
 set - worked out, not saved, so it is changed on the card - with an optional
 discount for a month the card is used for at least a set amount (100% waives

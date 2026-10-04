@@ -21,6 +21,7 @@ import {
   normalizeAnnualRate,
   normalizeRateMargin,
   addRates,
+  presentValueMinor,
   addPercentFee,
   rateDeviationExceeds,
   rateFromAmounts,
@@ -580,6 +581,52 @@ describe('לוח שפיצר', () => {
     // An implementation that rounded the monthly rate first, or divided in
     // steps, drifts by an agora on exactly this kind of input.
     expect(spitzerPayment(333_333, '7.35', 17)).toBe(reference(333_333, 7.35, 17));
+  });
+});
+
+describe('presentValueMinor', () => {
+  it('gives back the principal of a whole Spitzer plan', () => {
+    // Six payments of 207.06 at 12% are worth the ₪1,200 they were priced from,
+    // to within the agora the payment was rounded by.
+    expect(
+      presentValueMinor(
+        Array.from({ length: 6 }, () => 20_706),
+        '12',
+      ),
+    ).toBe(120_001);
+    const payment = spitzerPayment(1_000_000, '9.9', 36);
+    expect(
+      Math.abs(
+        presentValueMinor(
+          Array.from({ length: 36 }, () => payment),
+          '9.9',
+        ) - 1_000_000,
+      ),
+    ).toBeLessThanOrEqual(18);
+  });
+
+  it('is what is still owed part-way through', () => {
+    // After two of six at 1% a month, four payments remain: 207.06 × (1 − 1.01⁻⁴) / 0.01.
+    const left = presentValueMinor([20_706, 20_706, 20_706, 20_706], '12');
+    const reference = Math.round((20_706 * (1 - 1.01 ** -4)) / 0.01); // money-allow: a float reference, on purpose.
+    expect(left).toBe(reference);
+  });
+
+  it('discounts each payment by its own month, uneven ones too', () => {
+    // 10,100 a month away at 1% a month is worth 10,000; 10,201 two months away likewise.
+    expect(presentValueMinor([10_100], '12')).toBe(10_000);
+    expect(presentValueMinor([10_100, 10_201], '12')).toBe(20_000);
+  });
+
+  it('is the plain sum with no interest, or no payments', () => {
+    expect(presentValueMinor([100, 200, 300], '0')).toBe(600);
+    expect(presentValueMinor([], '12')).toBe(0);
+  });
+
+  it('refuses inputs that have no answer', () => {
+    expect(() => presentValueMinor([100], '-1')).toThrow(RangeError);
+    expect(() => presentValueMinor([-1 as Minor], '12')).toThrow(RangeError);
+    expect(() => presentValueMinor([0.5], '12')).toThrow(RangeError);
   });
 });
 

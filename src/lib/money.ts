@@ -435,6 +435,45 @@ export function creditSchedule(
   return { paymentMinor, totalMinor, interestMinor: totalMinor - principalMinor };
 }
 
+/**
+ * What a run of monthly payments is worth today at an annual rate: each one
+ * discounted by the months until it falls due, the first a month away.
+ *
+ *   PV = Σ p_j / (1+r)^j,  j = 1..m,  r = annual / 12
+ *
+ * Applied to the payments a לוח שפיצר still has to go, it is the principal
+ * still owed - the balance an issuer quotes for paying a plan off early - so
+ * what is left of the payments minus it is the interest still in them. That
+ * holds without knowing what the plan was first priced at, which is not
+ * stored: only what it charges is.
+ *
+ * Exact, with one rounding, like `spitzerPayment`: (1+r)^j = (b+a)^j / b^j
+ * puts every term over (b+a)^m, and the numerator is built in one pass.
+ */
+export function presentValueMinor(paymentsMinor: readonly Minor[], annualRatePercent: string): Minor {
+  for (const payment of paymentsMinor) {
+    if (!Number.isSafeInteger(payment) || payment < 0) {
+      throw new RangeError('payments must be non-negative safe integers');
+    }
+  }
+  const rate = decimalToRational(annualRatePercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  const total = paymentsMinor.reduce((sum, payment) => sum + BigInt(payment), 0n);
+  if (rate.n === 0n || paymentsMinor.length === 0) return toSafeNumber(total);
+
+  const a = rate.n;
+  const b = rate.d * 1200n;
+  const grown = b + a;
+  // Σ p_j · b^j · (b+a)^(m-j), by Horner's rule over (b+a).
+  let numerator = 0n;
+  let bPower = 1n;
+  for (const payment of paymentsMinor) {
+    bPower *= b;
+    numerator = numerator * grown + BigInt(payment) * bPower;
+  }
+  return toSafeNumber(divRound(numerator, grown ** BigInt(paymentsMinor.length)));
+}
+
 /** Rates above this are a typo, not a loan. */
 export const MAX_ANNUAL_RATE = 100;
 

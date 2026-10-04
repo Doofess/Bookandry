@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ChevronDown, CreditCard, Pencil, Plus, TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { useBaseCurrency, useToday } from '@/app/app-context';
@@ -12,14 +12,16 @@ import {
   billingDayOf,
   CARD_CURRENCY,
   cardBills,
+  cardCommitments,
   cardCreditRate,
   cardFeeFor,
   isCardFee,
   chargeDate,
   expiryStatus,
-  limitUsedMinor,
+  householdCommitments,
   rateOf,
   type CardBill,
+  type CardCommitments,
 } from '@/domain/cards';
 import { MethodEditor } from '@/features/settings/payment-methods-screen';
 import { ordinalDay } from '@/i18n/ordinal';
@@ -45,6 +47,14 @@ export function CardsScreen() {
   const baseCurrency = useBaseCurrency();
   const data = useCardsData(today, baseCurrency);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
+  // Each card's commitments, worked out once: its panel and the household's total both read them.
+  const commitments = useMemo(
+    () =>
+      new Map(
+        (data?.cards ?? []).map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)]),
+      ),
+    [data, today],
+  );
 
   return (
     <section className="mx-auto max-w-4xl space-y-5 px-4 py-6 pb-24 lg:pb-8">
@@ -71,22 +81,26 @@ export function CardsScreen() {
           <p className="mt-1 text-sm text-muted-foreground">{t('emptyBody')}</p>
         </div>
       ) : (
-        <ul className="grid gap-6 md:grid-cols-2">
-          {data.cards.map((card) => (
-            <li key={card.id}>
-              <CardPanel
-                card={card}
-                owner={data.profiles.get(card.profileId)}
-                occurrences={data.occurrences}
-                today={today}
-                baseCurrency={baseCurrency}
-                onEdit={() => {
-                  setEditing(card);
-                }}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          <HouseholdCommitments cards={data.cards} commitments={commitments} />
+          <ul className="grid gap-6 md:grid-cols-2">
+            {data.cards.map((card) => (
+              <li key={card.id}>
+                <CardPanel
+                  card={card}
+                  owner={data.profiles.get(card.profileId)}
+                  occurrences={data.occurrences}
+                  commitments={commitments.get(card.id)}
+                  today={today}
+                  baseCurrency={baseCurrency}
+                  onEdit={() => {
+                    setEditing(card);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <MethodEditor
@@ -115,6 +129,7 @@ function CardPanel({
   card,
   owner,
   occurrences,
+  commitments,
   today,
   baseCurrency,
   onEdit,
@@ -122,6 +137,7 @@ function CardPanel({
   readonly card: PaymentMethod;
   readonly owner: Profile | undefined;
   readonly occurrences: readonly Occurrence[];
+  readonly commitments: CardCommitments | undefined;
   readonly today: LocalDate;
   readonly baseCurrency: Currency;
   readonly onEdit: () => void;
@@ -144,7 +160,8 @@ function CardPanel({
           totalMinor: 0,
           occurrences: [],
         } satisfies CardBill));
-  const used = limitUsedMinor(occurrences, card, today);
+  // What is held against the limit is what the card is committed to charge.
+  const used = day === undefined ? 0 : (commitments?.totalMinor ?? 0);
   const limit = details?.creditLimitMinor;
   const expiry = expiryStatus(details?.expiresMonth, today);
   const date = (value: LocalDate) =>
@@ -245,6 +262,8 @@ function CardPanel({
 
       {limit === undefined ? null : <LimitBar used={used} limit={limit} />}
 
+      {commitments === undefined ? null : <CardCommitmentsBox commitments={commitments} />}
+
       <ChargesList card={card} />
 
       {/* Fee lines exist only in a shekel base (`cardFeeOccurrences`); say nothing otherwise. */}
@@ -261,6 +280,156 @@ function CardPanel({
         {t('edit.open')}
       </Button>
     </article>
+  );
+}
+
+/**
+ * סך הכל התחייבויות בכרטיסים: what every card in the household will still
+ * charge the bank, and how much of it is on each card.
+ */
+function HouseholdCommitments({
+  cards,
+  commitments,
+}: {
+  readonly cards: readonly PaymentMethod[];
+  readonly commitments: ReadonlyMap<string, CardCommitments>;
+}) {
+  const { t } = useTranslation('cards');
+  const total = householdCommitments([...commitments.values()]);
+  return (
+    <section
+      className="space-y-3 rounded-2xl border border-border bg-card p-4"
+      aria-labelledby="household-commitments"
+      data-testid="household-commitments"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div>
+          <h2 id="household-commitments" className="font-semibold">
+            {t('commitments.householdTitle')}
+          </h2>
+          <p className="max-w-prose text-sm text-muted-foreground">{t('commitments.householdBody')}</p>
+        </div>
+        <Money minor={total.totalMinor} currency={CARD_CURRENCY} className="text-2xl font-semibold" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <CommitmentRows commitments={total} />
+        {cards.length < 2 ? null : (
+          <div>
+            <h3 className="mb-1 text-xs text-muted-foreground">{t('commitments.byCard')}</h3>
+            <dl className="divide-y divide-border text-sm">
+              {cards.map((card) => (
+                <div key={card.id} className="flex items-baseline justify-between gap-3 py-1.5">
+                  <dt className="min-w-0 truncate">{card.label}</dt>
+                  <dd>
+                    <Money minor={commitments.get(card.id)?.totalMinor ?? 0} currency={CARD_CURRENCY} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** One card's סך הכל התחייבויות בכרטיס, and the plans behind it. */
+function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitments }) {
+  const { t, i18n } = useTranslation('cards');
+  const [open, setOpen] = useState(false);
+  const date = (value: LocalDate) =>
+    formatLocalDate(value, i18n.language, { month: 'short', year: 'numeric' });
+  return (
+    <div className="rounded-xl border border-border" data-testid="card-commitments">
+      <div className="flex items-baseline justify-between gap-3 border-b border-border px-3 py-2">
+        <h3 className="text-sm font-medium">{t('commitments.title')}</h3>
+        <Money minor={commitments.totalMinor} currency={CARD_CURRENCY} className="font-semibold" />
+      </div>
+      <div className="px-3 py-2">
+        <CommitmentRows commitments={commitments} />
+      </div>
+      {commitments.plans.length === 0 ? null : (
+        <>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(!open);
+            }}
+            className="flex w-full items-center justify-between gap-3 border-t border-border px-3 py-2 text-start text-sm hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <span>
+              {t('commitments.plans')} ({commitments.plans.length})
+            </span>
+            <ChevronDown
+              className={cn('size-4 transition-transform', open && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </button>
+          {open ? (
+            <ul className="divide-y divide-border bg-muted/40 text-sm">
+              {commitments.plans.map((plan) => (
+                <li key={plan.seriesId} className="flex items-baseline justify-between gap-3 px-3 py-2">
+                  <span className="min-w-0">
+                    <span className="block truncate">
+                      {plan.transaction.note ?? t('unnamed')}{' '}
+                      <span className="text-xs text-muted-foreground">({t(`commitments.${plan.plan}`)})</span>
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('commitments.planLeft', {
+                        left: plan.remaining,
+                        count: plan.count,
+                        date: date(plan.last.date),
+                      })}
+                    </span>
+                  </span>
+                  <Money minor={plan.remainingMinor} currency={CARD_CURRENCY} className="shrink-0" />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The parts of a commitments total that are not zero, and the interest inside them. */
+function CommitmentRows({ commitments }: { readonly commitments: CardCommitments }) {
+  const { t } = useTranslation('cards');
+  const rows = (
+    [
+      ['purchases', commitments.purchasesMinor],
+      ['installments', commitments.byPlan.installments],
+      ['credit', commitments.byPlan.credit],
+      ['loan', commitments.byPlan.loan],
+    ] as const
+  ).filter(([, minor]) => minor > 0);
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">{t('commitments.none')}</p>;
+  return (
+    <div className="space-y-1">
+      <dl className="space-y-1 text-sm">
+        {rows.map(([key, minor]) => (
+          <div key={key} className="flex items-baseline justify-between gap-3">
+            <dt className="text-muted-foreground">{t(`commitments.${key}`)}</dt>
+            <dd>
+              <Money minor={minor} currency={CARD_CURRENCY} />
+            </dd>
+          </div>
+        ))}
+        {commitments.interestMinor === 0 ? null : (
+          <div className="flex items-baseline justify-between gap-3 text-xs">
+            <dt className="text-muted-foreground">{t('commitments.interest')}</dt>
+            <dd>
+              <Money minor={commitments.interestMinor} currency={CARD_CURRENCY} />
+            </dd>
+          </div>
+        )}
+      </dl>
+      {commitments.byPlan.credit + commitments.byPlan.loan === 0 ? null : (
+        <p className="text-xs text-muted-foreground">{t('commitments.interestHint')}</p>
+      )}
+    </div>
   );
 }
 

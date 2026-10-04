@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { endOfMonth, startOfMonth } from '@/lib/dates';
+import { presentValueMinor } from '@/lib/money';
 import {
   SHARED_OWNER,
   type CardDetails,
@@ -14,12 +15,14 @@ import {
   billingDayOf,
   CARD_FEES_CATEGORY_ID,
   cardBills,
+  cardCommitments,
   cardFeeFor,
   cardFeeOccurrences,
   cardCreditRate,
   chargeDate,
   expiryStatus,
   fxFeeFor,
+  householdCommitments,
   isCardFee,
   isExpiresMonth,
   limitUsedMinor,
@@ -199,6 +202,122 @@ describe('the credit limit', () => {
     // oct 3,000 + tv 2 × 10,000 + gym's October 20,000.
     expect(limitUsedMinor(list, visa, d('2026-10-12'))).toBe(43_000);
     expect(limitUsedMinor(list, card({}), TODAY)).toBe(0);
+  });
+});
+
+describe('the commitments on a card', () => {
+  const visa = card();
+  /** Every occurrence of `tx` through 2029: long enough for a loan to run out. */
+  const whole = (tx: Transaction, amountMinor: number) =>
+    expandOccurrences(tx, [], d('2026-01-01'), d('2029-12-31'), { today: TODAY }).map((o) => ({
+      ...o,
+      money: { ...o.money, amountMinor, baseAmountMinor: amountMinor },
+    }));
+  const plan = (
+    id: string,
+    date: string,
+    recurrence: Partial<Extract<Transaction['recurrence'], { type: 'monthly' }>>,
+  ) =>
+    purchase(id, date, {
+      recurrence: { type: 'monthly', dayOfMonth: Number(date.slice(8)), ...recurrence },
+    });
+
+  const list = [
+    // Charged on 10 September: done.
+    ...whole(purchase('aug', '2026-08-15'), 1_000),
+    // On the bill of 10 October, and November's.
+    ...whole(purchase('sept', '2026-09-15'), 5_000),
+    ...whole(purchase('oct', '2026-10-02'), 3_000),
+    // Not bought yet.
+    ...whole(purchase('later', '2026-10-20'), 9_000),
+    // A standing order: September's and October's are bought; the rest are not yet.
+    ...whole(purchase('gym', '2026-08-01', { recurrence: { type: 'monthly', dayOfMonth: 1 } }), 20_000),
+    // תשלומים: 3 × 100 from September, none charged yet.
+    ...whole(plan('tv', '2026-09-20', { installments: 3 }), 10_000),
+    // קרדיט: 6 × 207.06 at 12% from July; July's and August's are paid.
+    ...whole(plan('sofa', '2026-07-05', { installments: 6, plan: 'credit', creditAnnualRate: '12' }), 20_706),
+    // A loan on the card: 24 × 500 at 6%, from September.
+    ...whole(plan('car', '2026-09-25', { installments: 24, plan: 'loan', creditAnnualRate: '6' }), 50_000),
+    // Not this card's, not an expense, and a skipped payment: none of them count.
+    ...whole(purchase('other', '2026-10-01', { paymentMethodId: 'amex' }), 7_000),
+    ...whole(purchase('refund', '2026-10-01', { kind: 'income' }), 7_000),
+    ...whole(purchase('skipped', '2026-10-01'), 7_000).map((o) => ({ ...o, isSkipped: true })),
+  ];
+
+  it('adds up what is bought and not yet billed, and every plan payment still to come', () => {
+    const result = cardCommitments(list, visa, TODAY);
+    // sept 5,000 + oct 3,000 + the gym's September and October.
+    expect(result.purchasesMinor).toBe(48_000);
+    expect(result.byPlan).toEqual({ installments: 30_000, credit: 4 * 20_706, loan: 24 * 50_000 });
+    expect(result.totalMinor).toBe(48_000 + 30_000 + 4 * 20_706 + 24 * 50_000);
+    // The same money the card holds against its limit.
+    expect(result.totalMinor).toBe(limitUsedMinor(list, visa, TODAY));
+  });
+
+  it('says how much of the plans is interest, on each plan’s own rate', () => {
+    const result = cardCommitments(list, visa, TODAY);
+    const [tv, sofa, car] = result.plans;
+    expect(tv).toMatchObject({
+      seriesId: expect.stringContaining('tv'),
+      plan: 'installments',
+      remaining: 3,
+      count: 3,
+    });
+    expect(tv?.interestMinor).toBe(0);
+    expect(sofa).toMatchObject({ plan: 'credit', remaining: 4, count: 6, remainingMinor: 82_824 });
+    // Four payments of 207.06 at 1% a month are ₪807.94 of principal; the rest is interest.
+    expect(sofa?.interestMinor).toBe(82_824 - 80_794);
+    expect(car).toMatchObject({ plan: 'loan', remaining: 24, count: 24 });
+    expect(car?.interestMinor).toBe(
+      24 * 50_000 -
+        presentValueMinor(
+          Array.from({ length: 24 }, () => 50_000),
+          '6',
+        ),
+    );
+    expect(result.interestMinor).toBe((sofa?.interestMinor ?? 0) + (car?.interestMinor ?? 0));
+    // The one ending soonest first, with its next and last payment.
+    expect(car?.next.date).toBe('2026-09-25');
+    expect(car?.last.date).toBe('2028-08-25');
+    expect(sofa?.next.date).toBe('2026-09-05');
+  });
+
+  it('on a card without a billing day, is only the plans’ payments still ahead', () => {
+    const result = cardCommitments(list, card({}), TODAY);
+    expect(result.purchasesMinor).toBe(0);
+    // The tv's October and November; the sofa's October to December; the car's last 23.
+    expect(result.byPlan).toEqual({ installments: 20_000, credit: 3 * 20_706, loan: 23 * 50_000 });
+  });
+
+  it('adds the household’s cards up', () => {
+    const amex = card({ billingDay: 2 }, { id: 'amex', label: 'Amex' });
+    const visaPart = cardCommitments(list, visa, TODAY);
+    const amexPart = cardCommitments(list, amex, TODAY);
+    // Amex: the 'other' purchase of 1 October, on the bill of 2 November.
+    expect(amexPart.totalMinor).toBe(7_000);
+    const both = householdCommitments([visaPart, amexPart]);
+    expect(both.totalMinor).toBe(visaPart.totalMinor + 7_000);
+    expect(both.purchasesMinor).toBe(48_000 + 7_000);
+    expect(both.byPlan).toEqual(visaPart.byPlan);
+    expect(both.interestMinor).toBe(visaPart.interestMinor);
+    expect(both.plans.map((p) => p.plan)).toEqual(['installments', 'credit', 'loan']);
+    expect(householdCommitments([]).totalMinor).toBe(0);
+  });
+
+  it('takes a plan without a rate, or written before plans had kinds, as interest-free תשלומים', () => {
+    const old = cardCommitments(
+      whole(plan('tv', '2026-10-20', { installments: 2, creditAnnualRate: 'x' }), 10_000),
+      visa,
+      TODAY,
+    );
+    expect(old.plans[0]).toMatchObject({ plan: 'installments', interestMinor: 0 });
+    expect(cardCommitments([], visa, TODAY)).toEqual({
+      totalMinor: 0,
+      purchasesMinor: 0,
+      byPlan: { installments: 0, credit: 0, loan: 0 },
+      interestMinor: 0,
+      plans: [],
+    });
   });
 });
 

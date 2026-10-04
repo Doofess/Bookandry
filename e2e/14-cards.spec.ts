@@ -38,6 +38,8 @@ const COPY = {
     // currency, so its 2.5% foreign-currency fee is on top.
     charge: '256.25',
     demoCards: ['Max', 'Cal', 'Isracard'],
+    household: 'Total commitments on the cards',
+    commitments: 'Total commitments on the card',
   },
   he: {
     nav: 'כרטיסים',
@@ -58,6 +60,8 @@ const COPY = {
     nextBill: /החיוב הבא/,
     charge: '250.00',
     demoCards: ['מקס', 'כאל', 'ישראכרט'],
+    household: 'סך הכל התחייבויות בכרטיסים',
+    commitments: 'סך הכל התחייבויות בכרטיס',
   },
 } as const;
 
@@ -78,6 +82,9 @@ for (const lang of ['en', 'he'] as const) {
       }
       // A limit, as a meter.
       await expect(page.getByRole('meter', { name: copy.limit }).first()).toBeVisible();
+      // What the household's cards still have to charge, and each card's own.
+      await expect(page.getByRole('heading', { level: 2, name: copy.household })).toBeVisible();
+      await expect(page.getByTestId('card-commitments').first()).toContainText(copy.commitments);
     });
 
     test('charges a card purchase on the billing day, not the day it was made', async ({ page }) => {
@@ -127,6 +134,9 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('link', { name: copy.nav }).click();
       await expect(tile).toContainText(copy.nextBill);
       await expect(tile).toContainText(copy.charge);
+      // A commitment until it is charged: on the card, and in the household's total.
+      await expect(tile.getByTestId('card-commitments')).toContainText(copy.charge);
+      await expect(page.getByTestId('household-commitments')).toContainText(copy.charge);
     });
   });
 }
@@ -157,5 +167,50 @@ test.describe('@cards the monthly fee', () => {
     // And in the feed, as a line on the card at the month's end.
     await page.getByRole('link', { name: 'תנועות' }).click();
     await expect(page.getByRole('listitem').filter({ hasText: 'דמי כרטיס' })).toContainText('14.90');
+  });
+});
+
+test.describe('@cards what a card is committed to', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'he', 'Shekels on a shekel card: covered in Hebrew.');
+  });
+
+  test('counts a קרדיט plan’s every payment, interest included, on the card and in the household', async ({
+    page,
+  }) => {
+    await completeFirstRun(page, 'he', { demo: false });
+    await page.getByRole('link', { name: 'כרטיסים' }).click();
+    await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
+    await page.getByLabel('תווית', { exact: true }).fill('Visa');
+    await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
+    await page
+      .getByRole('radiogroup', { name: 'ריבית קרדיט', exact: true })
+      .getByRole('radio', { name: 'קבועה', exact: true })
+      .click();
+    await page.getByRole('textbox', { name: 'ריבית קרדיט', exact: true }).fill('12');
+    await page.getByRole('button', { name: 'שמירה', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    // ₪1,200 over 6 at 12%: six payments of ₪207.06, ₪1,242.36 in all.
+    await page.goto('/');
+    await page.getByTestId('fab').click();
+    await page.getByLabel('סכום', { exact: true }).fill('1200');
+    await page.getByRole('radio', { name: 'עסקת קרדיט', exact: true }).click();
+    await page.getByLabel('מספר תשלומים', { exact: true }).fill('6');
+    await page.getByRole('combobox', { name: /אמצעי תשלום/ }).click();
+    await page.getByRole('option', { name: /Visa/ }).click();
+    const sheet = page.locator('[data-slot="sheet-content"]');
+    await page.getByRole('button', { name: 'שמירה', exact: true }).click();
+    await expect(sheet).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'כרטיסים' }).click();
+    const box = page.getByTestId('card-commitments');
+    await expect(box).toContainText('סך הכל התחייבויות בכרטיס');
+    await expect(box).toContainText('1,242.36');
+    await expect(box).toContainText('מתוכם ריבית');
+    await box.getByRole('button', { name: /עסקאות תשלומים והלוואות בכרטיס/ }).click();
+    await expect(box).toContainText('נותרו 6 מתוך 6 תשלומים');
+    await expect(page.getByTestId('household-commitments')).toContainText('1,242.36');
   });
 });

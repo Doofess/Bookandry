@@ -4,17 +4,22 @@ import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
 import { cardFeeOccurrences } from '@/domain/cards';
 import { expandOccurrences } from '@/domain/occurrences';
-import { addMonthsClamped, endOfMonth, startOfMonth } from '@/lib/dates';
+import { isInstallmentPlan } from '@/domain/tx-edit';
+import { MAX_LOAN_PAYMENTS } from '@/domain/tx-form';
+import { addMonthsClamped, compareLocal, endOfMonth, startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 /** How far back the bill history goes. */
 const HISTORY_MONTHS = 6;
-/**
- * How far ahead: far enough for the longest plan a card writes - 60
- * instalments - since every payment still to come counts against the limit.
- */
+/** How far ahead the bills go. */
 const AHEAD_MONTHS = 60;
+/**
+ * How far ahead a plan is followed: to its last payment, since every payment
+ * still to come is a commitment and counts against the limit - and a loan
+ * charged to a card can run to 360.
+ */
+const PLAN_AHEAD_MONTHS = MAX_LOAN_PAYMENTS;
 
 export type CardsData = {
   readonly cards: readonly PaymentMethod[];
@@ -36,7 +41,10 @@ export function useCardsData(today: LocalDate, baseCurrency: Currency): CardsDat
     const ids = new Set(cards.map((c) => c.id));
     const from = startOfMonth(addMonthsClamped(today, -HISTORY_MONTHS, 1));
     const to = endOfMonth(addMonthsClamped(today, AHEAD_MONTHS, 1));
-    const transactions = await findCandidates(db, { profileId: ALL_PROFILES, from, to });
+    const planTo = endOfMonth(addMonthsClamped(today, PLAN_AHEAD_MONTHS, 1));
+    const transactions = (await findCandidates(db, { profileId: ALL_PROFILES, from, to: planTo })).filter(
+      (tx) => isInstallmentPlan(tx.recurrence) || compareLocal(tx.seriesStart, to) <= 0,
+    );
     const overrides = await findOverrides(
       db,
       transactions.map((t) => t.id),
@@ -47,7 +55,7 @@ export function useCardsData(today: LocalDate, baseCurrency: Currency): CardsDat
           tx,
           overrides.filter((o) => o.transactionId === tx.id),
           from,
-          to,
+          isInstallmentPlan(tx.recurrence) ? planTo : to,
           { today },
         ),
       )

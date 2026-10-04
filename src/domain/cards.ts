@@ -1,7 +1,14 @@
 import { addMonthsClamped, compareLocal, endOfMonth, parseLocalDate, startOfMonth } from '@/lib/dates';
-import { addRates, normalizeAnnualRate, normalizeRateMargin, percentOf } from '@/lib/money';
+import {
+  addRates,
+  normalizeAnnualRate,
+  normalizeRateMargin,
+  percentOf,
+  presentValueMinor,
+} from '@/lib/money';
 import {
   SHARED_OWNER,
+  type InstallmentPlan,
   type Occurrence,
   type PaymentMethod,
   type RateTerm,
@@ -141,6 +148,131 @@ export function limitUsedMinor(
         (compareLocal(o.date, today) <= 0 || isInstallmentPlan(o.transaction.recurrence)),
     )
     .reduce((sum, o) => sum + o.money.baseAmountMinor, 0);
+}
+
+/** One plan on the card - instalments, קרדיט or a loan - and what it still has to charge. */
+export type CardPlan = {
+  readonly seriesId: string;
+  readonly plan: InstallmentPlan;
+  readonly transaction: Transaction;
+  /** Payments not yet charged to the bank. */
+  readonly remaining: number;
+  /** How many payments the plan has in all. */
+  readonly count: number;
+  /** What the remaining payments come to, as the card will charge them. */
+  readonly remainingMinor: Minor;
+  /** The interest inside `remainingMinor`; what is left is principal. */
+  readonly interestMinor: Minor;
+  /** The next payment still to be charged. */
+  readonly next: Occurrence;
+  /** The plan's last payment. */
+  readonly last: Occurrence;
+};
+
+/**
+ * Everything the card is committed to charge the bank and has not yet - what
+ * a card company's app calls סך הכל התחייבויות בכרטיס.
+ */
+export type CardCommitments = {
+  readonly totalMinor: Minor;
+  /** Ordinary purchases (and fees) already made, waiting for their bill. */
+  readonly purchasesMinor: Minor;
+  /** What the remaining payments of each kind of plan come to. */
+  readonly byPlan: Readonly<Record<InstallmentPlan, Minor>>;
+  /** The interest inside the plans' remaining payments, on the plans' own rates. */
+  readonly interestMinor: Minor;
+  /** The plans, the one ending soonest first. */
+  readonly plans: readonly CardPlan[];
+};
+
+/**
+ * What the card will still take from the bank: every purchase made and not
+ * yet billed, and every payment still to come on an instalment plan, a קרדיט
+ * plan or a loan charged to it - the same money `limitUsedMinor` holds
+ * against the limit, broken down. Amounts are as charged, interest included;
+ * how much of that is interest is worked out from each plan's own rate, as
+ * the present value of what is left of it (`presentValueMinor`).
+ *
+ * A standing order is not a commitment until its month comes, and a card
+ * without a billing day has nothing waiting for a bill: a purchase on it is
+ * paid on its own day, so only its plans' future payments are left.
+ */
+export function cardCommitments(
+  occurrences: readonly Occurrence[],
+  card: PaymentMethod,
+  today: LocalDate,
+): CardCommitments {
+  const day = billingDayOf(card);
+  const charged = (o: Occurrence) => (day === undefined ? o.date : chargeDate(o.date, day));
+  let purchasesMinor = 0;
+  const series = new Map<string, Occurrence[]>();
+  for (const o of occurrences) {
+    if (o.paymentMethodId !== card.id || o.isSkipped || o.transaction.kind !== 'expense') continue;
+    if (compareLocal(charged(o), today) <= 0) continue;
+    if (isInstallmentPlan(o.transaction.recurrence)) {
+      const list = series.get(o.seriesId);
+      if (list === undefined) series.set(o.seriesId, [o]);
+      else list.push(o);
+    } else if (compareLocal(o.date, today) <= 0) {
+      purchasesMinor += o.money.baseAmountMinor;
+    }
+  }
+
+  const plans: CardPlan[] = [];
+  for (const [seriesId, list] of series) {
+    const payments = [...list].sort((a, b) => compareLocal(a.date, b.date));
+    const next = payments[0];
+    const last = payments.at(-1);
+    const recurrence = next?.transaction.recurrence;
+    /* v8 ignore next -- a series is only listed with a payment, and isInstallmentPlan let only monthly plans in */
+    if (next === undefined || last === undefined || recurrence?.type !== 'monthly') continue;
+    const amounts = payments.map((o) => o.money.baseAmountMinor);
+    const remainingMinor = amounts.reduce((sum, amount) => sum + amount, 0);
+    const rate = recurrence.creditAnnualRate;
+    const principal =
+      rate === undefined || normalizeAnnualRate(rate) === undefined
+        ? remainingMinor
+        : presentValueMinor(amounts, rate);
+    plans.push({
+      seriesId,
+      plan: recurrence.plan ?? 'installments',
+      transaction: next.transaction,
+      remaining: payments.length,
+      count: recurrence.installments ?? payments.length,
+      remainingMinor,
+      interestMinor: Math.max(0, remainingMinor - principal),
+      next,
+      last,
+    });
+  }
+  return commitmentsOf(purchasesMinor, plans);
+}
+
+/** The household's commitments: every card's, added up, with all their plans. */
+export function householdCommitments(cards: readonly CardCommitments[]): CardCommitments {
+  return commitmentsOf(
+    cards.reduce((sum, card) => sum + card.purchasesMinor, 0),
+    cards.flatMap((card) => card.plans),
+  );
+}
+
+function commitmentsOf(purchasesMinor: Minor, list: readonly CardPlan[]): CardCommitments {
+  const plans = [...list].sort(
+    (a, b) => compareLocal(a.last.date, b.last.date) || b.remainingMinor - a.remainingMinor,
+  );
+  const byPlan: Record<InstallmentPlan, Minor> = { installments: 0, credit: 0, loan: 0 };
+  let interestMinor = 0;
+  for (const plan of plans) {
+    byPlan[plan.plan] += plan.remainingMinor;
+    interestMinor += plan.interestMinor;
+  }
+  return {
+    totalMinor: purchasesMinor + byPlan.installments + byPlan.credit + byPlan.loan,
+    purchasesMinor,
+    byPlan,
+    interestMinor,
+    plans,
+  };
 }
 
 export type ExpiryStatus = 'expired' | 'soon' | 'valid';

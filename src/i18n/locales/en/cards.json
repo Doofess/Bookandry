@@ -30,6 +30,22 @@
   "billUpcoming_one": "Coming up, 1 purchase",
   "billUpcoming_other": "Coming up, {{count}} purchases",
   "unnamed": "Unnamed purchase",
+  "commitments": {
+    "title": "Total commitments on the card",
+    "householdTitle": "Total commitments on the cards",
+    "householdBody": "Everything the household's cards will still charge the bank: purchases waiting for their bill, and every payment still to come on instalments, credit and loans.",
+    "total": "Still to be charged",
+    "purchases": "Purchases not yet charged",
+    "installments": "Instalments",
+    "credit": "Credit",
+    "loan": "Loans",
+    "interest": "Of which interest",
+    "interestHint": "As the card charges them, interest included.",
+    "byCard": "By card",
+    "plans": "Payment plans on the card",
+    "planLeft": "{{left}} of {{count}} payments left, the last on {{date}}",
+    "none": "Nothing left to charge."
+  },
   "issuer": {
     "isracard": "Isracard",
     "cal": "Cal",
