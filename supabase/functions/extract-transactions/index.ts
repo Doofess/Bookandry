@@ -208,6 +208,39 @@ async function ask(request: WireRequest, key: string): Promise<ModelAnswer> {
   }
 }
 
+/**
+ * The body as JSON, read no further than `MAX_BODY` bytes. Content-Length is
+ * the caller's claim - a chunked request has none - so the bytes are counted
+ * as they arrive and reading stops at the limit, before any of it is parsed.
+ */
+async function readBody(req: Request): Promise<unknown | 'too_large'> {
+  const reader = req.body?.getReader();
+  if (reader === undefined) return undefined;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY) {
+      await reader.cancel();
+      return 'too_large';
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return undefined;
+  }
+}
+
 function check(request: WireRequest, json: unknown): unknown {
   if (request.mode === 'extract') return cleanExtract(json, request.sources.length, request.ctx);
   if (request.mode === 'map') {
@@ -229,13 +262,16 @@ export default {
     if (req.method === 'OPTIONS') return new Response('ok', { headers });
     if (req.method !== 'POST') return Response.json({ error: 'method' }, { status: 405, headers });
 
+    // A claim, checked early and cheaply; `readBody` enforces the same limit on what actually arrives.
     const length = Number(req.headers.get('content-length') ?? '0');
     if (length > MAX_BODY) return Response.json({ error: 'too_large' }, { status: 413, headers });
 
     const { data: ctx, error } = await createSupabaseContext(req, { auth: 'user' });
     if (error || !ctx?.userClaims) return Response.json({ error: 'unauthorized' }, { status: 401, headers });
 
-    const request = parseWireRequest(await req.json().catch(() => undefined));
+    const body = await readBody(req);
+    if (body === 'too_large') return Response.json({ error: 'too_large' }, { status: 413, headers });
+    const request = parseWireRequest(body);
     if (request === undefined) return Response.json({ error: 'invalid' }, { status: 400, headers });
 
     const key = Deno.env.get('ANTHROPIC_API_KEY');
@@ -247,8 +283,8 @@ export default {
       global: { headers: { Authorization: req.headers.get('authorization') ?? '' } },
       auth: { persistSession: false },
     });
-    const followup = request.mode === 'verify' || (request.mode === 'extract' && request.continueAfter > 0);
-    const quota = await db.rpc('ai_take_quota', { p_followup: followup });
+    // Every call counts the same: whether one is a "follow-up" is only the caller's word.
+    const quota = await db.rpc('ai_take_quota', { p_followup: false });
     if (quota.error !== null) return Response.json({ error: 'upstream' }, { status: 502, headers });
     if (quota.data === null) return Response.json({ error: 'quota' }, { status: 429, headers });
 
