@@ -23,6 +23,8 @@ export default tseslint.config(
       '.remember',
       // Deno, for Supabase Edge Functions: its own runtime and imports.
       'supabase/functions',
+      // A service-worker script served as is (the Share menu's receiver), outside every tsconfig.
+      'public/share-target-sw.js',
       // Tooling config that no tsconfig covers. Lighthouse reads it with its own
       // loader, so type-aware linting has no project to resolve it against.
       'lighthouserc.cjs',

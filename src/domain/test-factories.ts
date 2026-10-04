@@ -2,6 +2,8 @@ import { assertLocalDate, SERIES_MAX } from '@/lib/dates';
 import type { Override, Recurrence, Transaction } from '@/types/domain';
 import type { IsoInstant, LocalDate, MoneySnapshot } from '@/types/money';
 
+import type { WireRow } from './import-wire';
+
 /** Test-only builders. Kept beside the domain so the shapes cannot drift apart. */
 
 export const d = (s: string): LocalDate => assertLocalDate(s);
@@ -82,3 +84,24 @@ export function modify(
     updatedAt: ts('2026-01-01T00:00:00.000Z'),
   };
 }
+
+/** A transcribed row, as the reader would send it: a plain purchase unless told otherwise. */
+export const wireRow = (over: Partial<WireRow> = {}): WireRow => ({
+  s: 0,
+  p: null,
+  k: 'e',
+  st: 'posted',
+  fee: false,
+  d: '03/10/26',
+  a: '120.50',
+  c: '₪',
+  sg: null,
+  ca: null,
+  cc: null,
+  cd: null,
+  m: 'שופרסל',
+  cat: null,
+  pm: null,
+  pl: null,
+  ...over,
+});

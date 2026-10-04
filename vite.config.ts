@@ -26,6 +26,15 @@ const RATE_PROVIDER_HOSTS = /^https:\/\/(api\.frankfurter\.dev|open\.er-api\.com
 const SUPABASE_HOSTS = /^https:\/\/[a-z0-9-]+\.supabase\.co\//;
 
 /**
+ * The file readers "Add with AI" loads - SheetJS, pdf.js, pdf-lib, mammoth -
+ * are megabytes the app never needs to open, so they are kept out of the
+ * install: named `import-*` here, left out of the precache, and fetched the
+ * first time someone reads a file (which needs the network anyway), then
+ * kept by a runtime cache.
+ */
+const IMPORT_READERS = /node_modules\/(xlsx|pdfjs-dist|pdf-lib|mammoth)\//;
+
+/**
  * Writes dist/_headers - the CSP and friends - for Cloudflare, hashing
  * the inline scripts of the index.html actually being shipped. See
  * src/lib/security-headers.ts.
@@ -54,6 +63,16 @@ function securityHeaders(supabaseUrl: string | undefined): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
+  build: {
+    rollupOptions: {
+      output: {
+        chunkFileNames: (chunk) =>
+          chunk.moduleIds.some((id) => IMPORT_READERS.test(id))
+            ? 'assets/import-[name]-[hash].js'
+            : 'assets/[name]-[hash].js',
+      },
+    },
+  },
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
@@ -79,6 +98,36 @@ export default defineConfig(({ mode }) => ({
         start_url: '/',
         scope: '/',
         display: 'standalone',
+        // "Add with AI" from the phone's Share menu: a screenshot or a statement
+        // shared to the installed app lands in its import sheet
+        // (public/share-target-sw.js receives it). Android only; iOS has none.
+        share_target: {
+          action: '/share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            files: [
+              {
+                name: 'files',
+                accept: [
+                  'image/*',
+                  'application/pdf',
+                  '.xlsx',
+                  '.xls',
+                  '.csv',
+                  '.docx',
+                  '.txt',
+                  'text/csv',
+                  'text/comma-separated-values',
+                  'text/plain',
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  'application/vnd.ms-excel',
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ],
+              },
+            ],
+          },
+        },
         background_color: '#ffffff',
         theme_color: '#ffffff',
         icons: [
@@ -92,7 +141,9 @@ export default defineConfig(({ mode }) => ({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         // Images for the account's emails (scripts/emails.mjs): read by mail
         // clients from the site, never by the app, so not worth a download.
-        globIgnores: ['email/**'],
+        globIgnores: ['email/**', 'assets/import-*'],
+        // Runs before Workbox's own routes: it answers the Share menu's POST and nothing else.
+        importScripts: ['share-target-sw.js'],
         cleanupOutdatedCaches: true,
         // A new version takes over as soon as it is downloaded; open pages reload
         // into it when nothing is lost by doing so (src/app/sw-update.ts).
@@ -104,6 +155,11 @@ export default defineConfig(({ mode }) => ({
         runtimeCaching: [
           { urlPattern: RATE_PROVIDER_HOSTS, handler: 'NetworkOnly' },
           { urlPattern: SUPABASE_HOSTS, handler: 'NetworkOnly' },
+          {
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/import-/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: { cacheName: 'import-readers', expiration: { maxEntries: 20 } },
+          },
         ],
       },
       devOptions: {
@@ -133,7 +189,7 @@ export default defineConfig(({ mode }) => ({
         test: {
           name: 'db',
           environment: 'node',
-          include: ['src/{db,services}/**/*.test.ts'],
+          include: ['src/{db,services,features}/**/*.test.ts', 'supabase/functions/_shared/**/*.test.ts'],
           setupFiles: ['./src/test/setup.db.ts'],
         },
       },

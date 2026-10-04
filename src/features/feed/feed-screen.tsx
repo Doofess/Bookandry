@@ -1,16 +1,20 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
+import { pendingShares, sweepShared } from '@/app/shared-files';
+import { db } from '@/db/db';
+import { sweepImportCache } from '@/db/import-cache';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
+import { systemClock } from '@/lib/clock';
 import { startOfMonth } from '@/lib/dates';
 import { ALL_PROFILES, type Occurrence } from '@/types/domain';
 
@@ -66,6 +70,27 @@ export function FeedScreen() {
   const candidates = useCandidates(filters.profileId, window);
   const occurrences = useOccurrences(candidates, window, today, filters.profileId, settings.defaultCurrency);
   const lookups = useFeedLookups();
+
+  /*
+   * Files shared from the phone wait in the service worker's cache: open the
+   * import sheet on the newest share once there is a profile to file it under
+   * - also after signing in, which lands elsewhere first. Stale shares and
+   * old reads are swept on the way.
+   */
+  const shareChecked = useRef(false);
+  const hasProfiles = (lookups?.profiles.length ?? 0) > 0;
+  const openImport = sheet.openImport;
+  const sheetMode = sheet.target.mode;
+  useEffect(() => {
+    if (!hasProfiles || shareChecked.current) return;
+    shareChecked.current = true;
+    void (async () => {
+      const now = systemClock.nowMs();
+      await Promise.all([sweepShared(now), sweepImportCache(db, now)]).catch(() => undefined);
+      const [latest] = await pendingShares().catch(() => []);
+      if (latest !== undefined && sheetMode === 'closed') openImport(latest);
+    })();
+  }, [hasProfiles, openImport, sheetMode]);
 
   const translateCategory = useMemo(
     () => (category: Parameters<typeof categoryDisplayName>[0]) => categoryDisplayName(category, t),

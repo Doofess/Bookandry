@@ -264,6 +264,41 @@ and the chart, in a shekel base only; a shared card's fee is in the
 household's view. Not modelled: cycles that close on a day other than the end
 of the month.
 
+**"Add with AI" reads files into transactions, and code checks the reading.**
+The + button opens a menu: _Add manually_, or _Add with AI_, which takes
+screenshots (a Bit or bank notification), photos, PDFs, Excel/CSV and Word
+files - picked, pasted, dropped, or shared from the phone (the installed
+app is an Android share target; `public/share-target-sw.js` keeps the files
+until the person says "Read"). Nothing is added before a review list: each
+row ticked or not, with its reason in words, and editable. Accuracy and
+cost come from doing as little as possible with the model:
+
+- **Code first.** Spreadsheets are read by code from a dictionary of the
+  headers Israeli exports use (`import-sheet-map.ts`); the model only names
+  the columns of one it does not know, from its first rows. A PDF with a
+  text layer goes as text. Only scans and screenshots go as images, sized to
+  the largest the model reads without enlarging, long captures sliced.
+- **Transcribe, never compute.** The model copies amounts, dates and
+  currency marks exactly as printed (short keys, structured output); the
+  app's own parsers turn them into money (`parseStatementAmount`, which
+  refuses an ambiguous "1.234" rather than guess) and dates (day first).
+- **Checks after the first read** (`import-check.ts`): a text source's
+  amounts must be printed in it; a document's rows must add up to the total
+  it prints - and a difference is traced to the row it points at (a missing
+  or doubled row, a moved decimal point, swapped digits); an image with no
+  total is read a second time by a cheaper model and the reads compared. One
+  correction call re-reads only the rows that failed; a correction is taken
+  only when it is printed (text) or makes the sums meet exactly. What is
+  still in doubt stays unticked.
+- **The household's own data**: rows already there (any occurrence of the
+  same kind and amount within two days, a plan already running, a card's fee
+  the app already charges) are grouped as "looks already added"; a category
+  comes from the household's own history for that name first.
+- **One call per request, a daily cap per person** (`ai_take_quota`), every
+  request and answer checked by `import-wire.ts` - shared verbatim with the
+  function - with card and account numbers masked. A file read before
+  (by its SHA-256, 30 days, on the device) is never sent again.
+
 **Prime is fetched, never typed.** Israeli prime is the Bank of Israel's rate
 plus 1.5. The app keeps the Bank's rate on the device (`meta`, not synced),
 asks the `prime-rate` relay for it at start, when the app comes back into view
@@ -474,6 +509,16 @@ Configuration that lives in the dashboard, not in this repo:
   typed ("Claude Max Plan" → AI & software). Entered here only. Without it
   the function answers 503 and the person picks the category, as before.
   Optional `CATEGORIZE_MODEL` overrides the model (Claude Haiku 4.5).
+- **Edge Function `extract-transactions`** (`supabase/functions/extract-transactions/`,
+  with `_shared/import-wire.ts`, a copy of `src/domain/import-wire.ts` that a
+  test keeps identical): "Add with AI". Same `ANTHROPIC_API_KEY`. Optional
+  `EXTRACT_MODEL` (Claude Sonnet 5.5), `CHECK_MODEL` (Claude Haiku 4.5, the
+  second read) and `VERIFY_MODEL` (Claude Opus 5.5, the correction), each
+  only from an allow-list. Its daily cap is the migration
+  `20261004000100_ai_usage_one_cap.sql` (80 calls a person a day).
+- **SheetJS** is pinned to its own CDN's tarball
+  (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`); the npm `xlsx`
+  package is years behind and unmaintained. `pnpm outdated` does not track it.
 - **Edge Function `prime-rate`** (`supabase/functions/prime-rate/`), deployed
   with `--no-verify-jwt`: public data, no secrets. It relays the Bank of
   Israel's rate (its public API, with the SDMX statistics series as a
@@ -487,6 +532,11 @@ Configuration that lives in the dashboard, not in this repo:
 
 ### Known limitations
 
+- "Add with AI" from the Share menu is Android's, for the installed app, and
+  needs the service worker installed (open the app once); iPhone has no
+  share target, so there it is the file picker. Its accuracy has been checked
+  on the checks' own test cases, not yet measured on a set of real
+  statements and notifications.
 - Instalment plans are read-only in the editor. Re-splitting an existing plan
   would break the sum-to-total invariant.
 - Built-in categories can be archived but not renamed or deleted: they store an

@@ -1,0 +1,117 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { readRow } from '@/domain/import-check';
+import { d, wireRow } from '@/domain/test-factories';
+import { txFormSchema, type TxFormValues } from '@/domain/tx-form';
+import { counterIdFactory } from '@/lib/id';
+import { freshDb, type TestDb } from '@/test/db-harness';
+import type { IsoInstant, LocalDate } from '@/types/money';
+
+import { cachedRead, rememberRead, sweepImportCache } from './import-cache';
+import { redoImport, saveImported, undoImport } from './import-transactions';
+
+const NOW = '2026-10-04T10:00:00.000Z' as IsoInstant;
+const DAY = 24 * 60 * 60 * 1000;
+
+let handle: TestDb;
+beforeEach(() => {
+  handle = freshDb();
+});
+afterEach(async () => {
+  await handle.dispose();
+});
+
+function parsed(over: Partial<TxFormValues> = {}) {
+  return txFormSchema.parse({
+    profileId: 'p1',
+    kind: 'expense',
+    categoryId: 'cat.groceries',
+    paymentMethodId: '',
+    amount: '45',
+    currency: 'ILS',
+    date: d('2026-10-03'),
+    note: 'שופרסל',
+    mode: 'one_time',
+    dayOfMonth: '3',
+    endDate: '',
+    installmentCount: '',
+    frequency: '',
+    annualRate: '',
+    ...over,
+  });
+}
+
+describe('saving what was found', () => {
+  it('saves every row through the form’s own path, in one go', async () => {
+    const ids = await saveImported(
+      handle.db,
+      [
+        { parsed: parsed() },
+        { parsed: parsed({ amount: '1200', mode: 'installments', installmentCount: '6' }) },
+        {
+          parsed: parsed({ amount: '45.99', currency: 'USD' }),
+          rate: { rate: '3.7464666232', rateDate: d('2026-10-03'), rateSource: 'manual' },
+        },
+      ],
+      { baseCurrency: 'ILS', now: NOW, newId: counterIdFactory('tx') },
+    );
+    expect(ids).toHaveLength(3);
+    const saved = await handle.db.transactions.bulkGet(ids);
+    expect(saved.map((t) => t?.money.baseAmountMinor)).toEqual([4_500, 20_000, 17_230]);
+    // The plan's odd agorot are on its first payment, as the form would have it.
+    expect(await handle.db.overrides.count()).toBe(0);
+  });
+
+  it('saves nothing when one row cannot be saved', async () => {
+    await expect(
+      saveImported(handle.db, [{ parsed: parsed() }, { parsed: parsed({ currency: 'USD' }) }], {
+        baseCurrency: 'ILS',
+        now: NOW,
+        newId: counterIdFactory('tx'),
+      }),
+    ).rejects.toThrow();
+    expect(await handle.db.transactions.count()).toBe(0);
+  });
+
+  it('undoes the whole import in one step, and brings it back', async () => {
+    const ids = await saveImported(handle.db, [{ parsed: parsed() }, { parsed: parsed({ amount: '10' }) }], {
+      baseCurrency: 'ILS',
+      now: NOW,
+      newId: counterIdFactory('tx'),
+    });
+    await undoImport(handle.db, ids, NOW);
+    expect((await handle.db.transactions.bulkGet(ids)).map((t) => t?.isDeleted)).toEqual([1, 1]);
+    await redoImport(handle.db, ids, NOW);
+    expect((await handle.db.transactions.bulkGet(ids)).map((t) => t?.isDeleted)).toEqual([0, 0]);
+  });
+});
+
+describe('files already read', () => {
+  const row = readRow(wireRow(), 'r0', {
+    file: 3,
+    base: 'ILS',
+    known: new Set(['ILS']),
+    anchor: '2026-10-04' as LocalDate,
+    today: '2026-10-04' as LocalDate,
+  });
+
+  it('are remembered on this device by their fingerprint, for 30 days', async () => {
+    const at = Date.parse(NOW);
+    await rememberRead(handle.db, 'abc', { rows: [row], totals: [] }, at);
+    const cached = await cachedRead(handle.db, 'abc', at + DAY);
+    expect(cached?.rows).toHaveLength(1);
+    // Stored without the file's place in this pick: the next pick puts its own.
+    expect(cached?.rows[0]?.file).toBe(0);
+    expect(await cachedRead(handle.db, 'abc', at + 31 * DAY)).toBeUndefined();
+    expect(await cachedRead(handle.db, 'other', at)).toBeUndefined();
+  });
+
+  it('are swept once they are a month old', async () => {
+    const at = Date.parse(NOW);
+    await rememberRead(handle.db, 'old', { rows: [row], totals: [] }, at - 40 * DAY);
+    await rememberRead(handle.db, 'new', { rows: [row], totals: [] }, at);
+    await sweepImportCache(handle.db, at);
+    expect(await handle.db.meta.get('importCache:old')).toBeUndefined();
+    expect(await handle.db.meta.get('importCache:new')).toBeDefined();
+  });
+});

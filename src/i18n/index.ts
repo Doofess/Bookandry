@@ -5,10 +5,12 @@ import { readBootMirror, type Language } from './boot';
 import enCards from './locales/en/cards.json';
 import enCategories from './locales/en/categories.json';
 import enCommon from './locales/en/common.json';
+import enImport from './locales/en/import.json';
 import enProfiles from './locales/en/profiles.json';
 import heCards from './locales/he/cards.json';
 import heCategories from './locales/he/categories.json';
 import heCommon from './locales/he/common.json';
+import heImport from './locales/he/import.json';
 import heProfiles from './locales/he/profiles.json';
 
 export const defaultNS = 'common' as const;
@@ -21,7 +23,7 @@ export const defaultNS = 'common' as const;
  * (`globPatterns` covers js/css/html), so switching to Hebrew while offline
  * would fail — unacceptable for an offline-first app.
  */
-export const NAMESPACES = ['common', 'categories', 'profiles', 'cards'] as const;
+export const NAMESPACES = ['common', 'categories', 'profiles', 'cards', 'import'] as const;
 
 /**
  * Several namespaces, not one. (`cards` is only the credit-cards screen's own
@@ -34,8 +36,8 @@ export const NAMESPACES = ['common', 'categories', 'profiles', 'cards'] as const
  * points at.
  */
 export const resources = {
-  en: { common: enCommon, categories: enCategories, profiles: enProfiles, cards: enCards },
-  he: { common: heCommon, categories: heCategories, profiles: heProfiles, cards: heCards },
+  en: { common: enCommon, categories: enCategories, profiles: enProfiles, cards: enCards, import: enImport },
+  he: { common: heCommon, categories: heCategories, profiles: heProfiles, cards: heCards, import: heImport },
 } as const;
 
 /**

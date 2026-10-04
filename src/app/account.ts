@@ -4,6 +4,7 @@ import type { BookandryDB } from '@/db/db';
 import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
 import { loadKeys } from '@/db/sync/keystore';
+import type { WireRequest } from '@/domain/import-wire';
 import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 import type { AuthFailure, AuthResult, Enrollment, Passkey, SecondStep } from '@/services/supabase/auth';
@@ -17,6 +18,7 @@ import {
   storedSessionUser,
   type Session,
 } from '@/services/supabase/client';
+import type { ExtractOutcome } from '@/services/supabase/extract';
 import { takeArrival, type Arrival } from '@/services/supabase/id-token';
 import {
   deleteMyAccount,
@@ -31,6 +33,7 @@ import type { Kind } from '@/types/money';
 
 import { forgetAvatar, readAvatarVersion, storeAvatar } from './avatar-store';
 import { idleExpired, touch, watchIdle, type IdleWatch } from './idle-lock';
+import { clearShared } from './shared-files';
 import { startSyncRunner, type SyncRunner, type SyncState } from './sync-runner';
 
 /**
@@ -686,6 +689,21 @@ export class AccountController {
   }
 
   /**
+   * One call to "Add with AI"'s reader (services/supabase/extract.ts). Only
+   * while signed in: the server reads for nobody else, and counts each call
+   * against the person's daily cap.
+   */
+  async extractTransactions(request: WireRequest, signal?: AbortSignal): Promise<ExtractOutcome> {
+    if (this.view.status !== 'signed_in') return { ok: false, error: 'unauthorized' };
+    try {
+      const { callExtract } = await import('@/services/supabase/extract');
+      return await callExtract(await getSupabase(), request, signal);
+    } catch {
+      return { ok: false, error: signal?.aborted === true ? 'aborted' : 'offline' };
+    }
+  }
+
+  /**
    * Keeps the account's emails in the language the person uses here: on
    * every sign-in, and whenever they switch. Started without waiting, so
    * nothing may escape - the next sign-in tries again.
@@ -726,6 +744,8 @@ export class AccountController {
   private async clearDevice(): Promise<void> {
     this.leaving = true;
     this.stop();
+    // Files shared to the app and not yet read are the person's too.
+    await clearShared().catch(() => undefined);
     await this.db.delete();
     this.restart();
   }
