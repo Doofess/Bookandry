@@ -123,6 +123,100 @@ export function toMinor(display: string, currency: Currency): Minor {
   return toSafeNumber(divRound(n * 10n ** BigInt(exponentOf(currency)), d));
 }
 
+/** How a statement writes its decimal point, when a column has already shown which. */
+export type DecimalMark = '.' | ',';
+
+const STATEMENT_NOISE = /[\u200E\u200F\u061C\u2066-\u2069\u202A-\u202E\s\u00A0\u202F]/g;
+
+/**
+ * An amount as a bank, card company or wallet printed it, in minor units -
+ * signed, so a credit or a refund comes back negative - or undefined when the
+ * text cannot be read without guessing.
+ *
+ * Stricter than `normalizeAmountInput`, which serves a person typing into the
+ * form and may read "0,5" as a half. A statement is read by a machine and
+ * nobody is there to see the guess:
+ *  - "-150", "150-", "(150)" and "−150" are all negative; the currency, the
+ *    bidi marks a Hebrew page carries and any spaces are ignored.
+ *  - With both separators the last one is the decimal point ("1.234,56").
+ *  - One separator used more than once groups thousands ("1,234,567").
+ *  - A lone "," before exactly three digits groups ("1,234" is 1,234), and a
+ *    lone "." before exactly three digits is ambiguous in a two-decimal
+ *    currency - 1.234 or 1,234? - and is refused rather than guessed.
+ *  - More decimals than the currency has are refused, never rounded.
+ * A `decimal` mark already known for the column (a spreadsheet's) decides
+ * instead of all that.
+ */
+export function parseStatementAmount(
+  text: string,
+  currency: Currency,
+  decimal?: DecimalMark,
+): Minor | undefined {
+  let body = text.replace(STATEMENT_NOISE, '').replace(/\u2212/g, '-');
+  let negative = false;
+  if (/^\(.*\)$/.test(body)) {
+    negative = true;
+    body = body.slice(1, -1);
+  }
+  body = body.replace(/^[^\d.,+-]+|[^\d.,+-]+$/g, '');
+  if (body.startsWith('-') || body.endsWith('-')) {
+    negative = true;
+    body = body.startsWith('-') ? body.slice(1) : body.slice(0, -1);
+  } else if (body.startsWith('+')) {
+    body = body.slice(1);
+  }
+  body = body.replace(/^[^\d.,]+|[^\d.,]+$/g, '');
+  if (!/^[\d.,]*\d[\d.,]*$/.test(body)) return undefined;
+
+  const exponent = exponentOf(currency);
+  const mark = decimal ?? decimalMarkOf(body, exponent);
+  if (mark === null) return undefined;
+  // The other separator groups thousands; with no decimal point, whichever one is there.
+  const group = mark === '.' ? ',' : mark === ',' ? '.' : body.includes(',') ? ',' : '.';
+  const point = mark === undefined ? -1 : body.lastIndexOf(mark);
+  if (mark !== undefined && body.indexOf(mark) !== point) return undefined;
+  // ".5" is half: an empty whole part is zero.
+  const whole = point === -1 ? body : body.slice(0, point) || '0';
+  const frac = point === -1 ? '' : body.slice(point + 1);
+  if (frac.includes(group) || frac.length > exponent) return undefined;
+  const grouped = group === ',' ? /^\d{1,3}(,\d{3})+$/ : /^\d{1,3}(\.\d{3})+$/;
+  if (!(/^\d+$/.test(whole) || grouped.test(whole))) return undefined;
+
+  const minor =
+    BigInt(whole.split(group).join('')) * 10n ** BigInt(exponent) +
+    (frac === '' ? 0n : BigInt(frac.padEnd(exponent, '0')));
+  return toSafeNumber(negative ? -minor : minor);
+}
+
+/**
+ * Which separator is the decimal point in a statement amount: '.' or ',',
+ * undefined for none, or null when it cannot be told.
+ */
+function decimalMarkOf(body: string, exponent: number): DecimalMark | undefined | null {
+  const commas = body.split(',').length - 1;
+  const dots = body.split('.').length - 1;
+  if (commas === 0 && dots === 0) return undefined;
+  if (commas > 0 && dots > 0) return body.lastIndexOf(',') > body.lastIndexOf('.') ? ',' : '.';
+  const mark: DecimalMark = commas > 0 ? ',' : '.';
+  // Used more than once, it can only be grouping thousands.
+  if (commas + dots > 1) return undefined;
+  const after = body.length - body.indexOf(mark) - 1;
+  if (after !== 3) return mark;
+  if (mark === ',') return exponent === 3 ? null : undefined;
+  if (exponent === 3) return '.';
+  return exponent === 0 ? undefined : null;
+}
+
+/**
+ * A spreadsheet's numeric cell in minor units, rounded once. The cell is a
+ * double already - this is where its binary noise (1234.5000000001) stops.
+ */
+export function minorFromNumber(value: number, currency: Currency): Minor | undefined {
+  if (!Number.isFinite(value)) return undefined;
+  const { n, d } = decimalToRational(String(value));
+  return toSafeNumber(divRound(n * 10n ** BigInt(exponentOf(currency)), d));
+}
+
 /** Minor units back to a plain decimal string, for populating an input. */
 export function toDecimalString(minor: Minor, currency: Currency): string {
   if (!Number.isSafeInteger(minor)) throw new RangeError('minor must be a safe integer');

@@ -22,6 +22,8 @@ import {
   normalizeRateMargin,
   addRates,
   presentValueMinor,
+  parseStatementAmount,
+  minorFromNumber,
   addPercentFee,
   rateDeviationExceeds,
   rateFromAmounts,
@@ -627,6 +629,83 @@ describe('presentValueMinor', () => {
     expect(() => presentValueMinor([100], '-1')).toThrow(RangeError);
     expect(() => presentValueMinor([-1 as Minor], '12')).toThrow(RangeError);
     expect(() => presentValueMinor([0.5], '12')).toThrow(RangeError);
+  });
+});
+
+describe('parseStatementAmount', () => {
+  it.each([
+    ['1,234', 123_400],
+    ['1,234.50', 123_450],
+    ['1.234,56', 123_456],
+    ['1,234,567', 123_456_700],
+    ['1.234.567', 123_456_700],
+    ['12.5', 1_250],
+    ['12,5', 1_250],
+    ['12,50', 1_250],
+    ['.5', 50],
+    ['0', 0],
+    ['₪ 1,234.50', 123_450],
+    ['\u200F₪1,234', 123_400],
+    ['1,234.50 ש"ח', 123_450],
+    ['USD 45.99', 4_599],
+    ['+20', 2_000],
+    ['1\u00A0234,00', 123_400],
+  ])('reads %j', (text, minor) => {
+    expect(parseStatementAmount(text, 'ILS')).toBe(minor);
+  });
+
+  it.each([
+    ['-150.00', -15_000],
+    ['150.00-', -15_000],
+    ['(150.00)', -15_000],
+    ['\u2212150', -15_000],
+    ['(-150)', -15_000],
+    ['₪-1,234.50', -123_450],
+  ])('reads %j as money going the other way', (text, minor) => {
+    expect(parseStatementAmount(text, 'ILS')).toBe(minor);
+  });
+
+  it.each([
+    '',
+    'abc',
+    '1.234',
+    '1,2,3',
+    '12,34,567',
+    '1.2.3,4.5',
+    '12.345',
+    '1,234.5.6',
+    '₪',
+    '--',
+    '1,23,456.00',
+  ])('refuses %j rather than guess', (text) => {
+    expect(parseStatementAmount(text, 'ILS')).toBeUndefined();
+  });
+
+  it('follows the currency: three decimals, or none', () => {
+    expect(parseStatementAmount('1.234', 'KWD')).toBe(1_234);
+    expect(parseStatementAmount('1,234', 'KWD')).toBeUndefined();
+    expect(parseStatementAmount('1.234', 'JPY')).toBe(1_234);
+    expect(parseStatementAmount('1,234', 'JPY')).toBe(1_234);
+    expect(parseStatementAmount('12.5', 'JPY')).toBeUndefined();
+  });
+
+  it('takes the decimal mark a column has already shown', () => {
+    expect(parseStatementAmount('1.234', 'ILS', ',')).toBe(123_400);
+    expect(parseStatementAmount('1,234', 'ILS', '.')).toBe(123_400);
+    expect(parseStatementAmount('1234,5', 'ILS', ',')).toBe(123_450);
+    expect(parseStatementAmount('1234.56', 'ILS', ',')).toBeUndefined();
+    expect(parseStatementAmount('1,2,3', 'ILS', ',')).toBeUndefined();
+  });
+});
+
+describe('minorFromNumber', () => {
+  it('stops a cell’s binary noise at the minor unit, rounding once', () => {
+    expect(minorFromNumber(1234.5000000001, 'ILS')).toBe(123_450);
+    expect(minorFromNumber(-0.005, 'ILS')).toBe(-1);
+    expect(minorFromNumber(1e-7, 'ILS')).toBe(0);
+    expect(minorFromNumber(42, 'JPY')).toBe(42);
+    expect(minorFromNumber(Number.NaN, 'ILS')).toBeUndefined();
+    expect(minorFromNumber(Number.POSITIVE_INFINITY, 'ILS')).toBeUndefined();
   });
 });
 

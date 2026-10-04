@@ -316,3 +316,114 @@ export function parseTypedDate(text: string, order: DateOrder): LocalDate | unde
   if (day > daysInMonth(year, month)) return undefined;
   return makeLocalDate(year, month, day);
 }
+
+/** A date read off a statement, and whether any of it had to be worked out. */
+export type StatementDate = { readonly date: LocalDate; readonly inferred: boolean };
+
+const MONTH_NAMES: ReadonlyMap<string, number> = new Map([
+  ['jan', 1],
+  ['feb', 2],
+  ['mar', 3],
+  ['apr', 4],
+  ['may', 5],
+  ['jun', 6],
+  ['jul', 7],
+  ['aug', 8],
+  ['sep', 9],
+  ['oct', 10],
+  ['nov', 11],
+  ['dec', 12],
+  ['ינו', 1],
+  ['פבר', 2],
+  ['מרץ', 3],
+  ['מרס', 3],
+  ['אפר', 4],
+  ['מאי', 5],
+  ['יונ', 6],
+  ['יול', 7],
+  ['אוג', 8],
+  ['ספט', 9],
+  ['אוק', 10],
+  ['נוב', 11],
+  ['דצמ', 12],
+] as const);
+
+const TODAY_WORDS = new Set(['היום', 'today']);
+const YESTERDAY_WORDS = new Set(['אתמול', 'yesterday']);
+
+/**
+ * A date as a bank, a card statement or a phone notification printed it.
+ *
+ * Israeli material writes the day first whatever language the app is in, so
+ * "03/04/26" is the 3rd of April - always. ISO dates are read as they are.
+ * What is missing is worked out from `anchor` (when the file was made, or
+ * today) and flagged `inferred`: a date with no year takes the latest year
+ * that does not put it after the anchor - or the statement's period, when one
+ * is known - and "today" / "yesterday" (היום / אתמול) count back from the
+ * anchor. A time of day is ignored. Undefined for anything else.
+ */
+export function parseStatementDate(
+  text: string,
+  anchor: LocalDate,
+  period?: { readonly from: LocalDate; readonly to: LocalDate },
+): StatementDate | undefined {
+  const cleaned = text
+    .replace(/[\u200E\u200F\u061C\u2066-\u2069\u202A-\u202E]/g, '')
+    .replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, '')
+    .replace(/[,׳']/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (TODAY_WORDS.has(cleaned)) return { date: anchor, inferred: true };
+  if (YESTERDAY_WORDS.has(cleaned)) return { date: addDays(anchor, -1), inferred: true };
+
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(cleaned);
+  if (iso !== null) return checked(Number(iso[1]), Number(iso[2]), Number(iso[3]), false);
+
+  const numeric = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2}|\d{4}))?$/.exec(cleaned);
+  if (numeric !== null) return withYear(Number(numeric[1]), Number(numeric[2]), numeric[3]);
+
+  // "12 Nov 2026", "12 בנובמבר", "12 בנוב׳ 26".
+  const named = /^(\d{1,2})\s+ב?([a-z\u05D0-\u05EA]+)\.?(?:\s+(\d{2}|\d{4}))?$/.exec(cleaned);
+  if (named !== null) {
+    const month = MONTH_NAMES.get(String(named[2]).slice(0, 3));
+    return month === undefined ? undefined : withYear(Number(named[1]), month, named[3]);
+  }
+  return undefined;
+
+  function withYear(day: number, month: number, yearText: string | undefined): StatementDate | undefined {
+    if (yearText !== undefined) {
+      return checked(yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText), month, day, false);
+    }
+    const latest = period?.to ?? anchor;
+    const { year } = parseLocalDate(latest);
+    const sameYear = checked(year, month, day, true);
+    if (sameYear !== undefined && sameYear.date <= latest) return sameYear;
+    return checked(year - 1, month, day, true);
+  }
+}
+
+function checked(year: number, month: number, day: number, inferred: boolean): StatementDate | undefined {
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1) return undefined;
+  if (day > daysInMonth(year, month)) return undefined;
+  return { date: makeLocalDate(year, month, day), inferred };
+}
+
+/** 1899-12-30: day 0 of Excel's 1900 system, once its phantom 29 Feb 1900 is allowed for. */
+const EXCEL_1900_EPOCH = '1899-12-30' as LocalDate;
+const EXCEL_1904_EPOCH = '1904-01-01' as LocalDate;
+
+/**
+ * The day an Excel date serial stands for; the time of day is dropped.
+ *
+ * In the 1900 system Excel keeps Lotus 1-2-3's bug: it counts a 29 February
+ * 1900 that never was, as serial 60. Serials from 61 on are therefore a day
+ * ahead of a plain count from 1899-12-31, and day 60 itself is no date at all.
+ * Workbooks saved on old Macs count from 1904-01-01 instead (`date1904`).
+ */
+export function dateFromExcelSerial(serial: number, date1904: boolean): LocalDate | undefined {
+  if (!Number.isFinite(serial)) return undefined;
+  const days = Math.floor(serial);
+  if (date1904) return days < 0 || days > 2_957_003 ? undefined : addDays(EXCEL_1904_EPOCH, days);
+  if (days < 1 || days === 60 || days > 2_958_465) return undefined;
+  return addDays(EXCEL_1900_EPOCH, days < 60 ? days + 1 : days);
+}

@@ -36,6 +36,8 @@ import {
   toUtcInstant,
   toPickerDate,
   msUntilNextLocalMidnight,
+  parseStatementDate,
+  dateFromExcelSerial,
 } from './dates';
 
 const d = (s: string): LocalDate => assertLocalDate(s);
@@ -387,5 +389,76 @@ describe('typed dates', () => {
       expect(parseTypedDate(text, 'dmy')).toBeUndefined();
     }
     expect(parseTypedDate('13/01/2026', 'mdy')).toBeUndefined();
+  });
+});
+
+describe('parseStatementDate', () => {
+  const anchor = '2026-10-04' as LocalDate;
+
+  it('reads the day first, as Israeli statements write it', () => {
+    expect(parseStatementDate('03/04/26', anchor)).toEqual({ date: '2026-04-03', inferred: false });
+    expect(parseStatementDate('3.4.2026', anchor)).toEqual({ date: '2026-04-03', inferred: false });
+    expect(parseStatementDate('\u200F03-04-2026 21:40', anchor)).toEqual({
+      date: '2026-04-03',
+      inferred: false,
+    });
+    expect(parseStatementDate('2026-04-03', anchor)).toEqual({ date: '2026-04-03', inferred: false });
+  });
+
+  it('reads a month by name, in English or Hebrew', () => {
+    expect(parseStatementDate('12 Nov 2025', anchor)).toEqual({ date: '2025-11-12', inferred: false });
+    expect(parseStatementDate('12 בנובמבר 2025', anchor)).toEqual({ date: '2025-11-12', inferred: false });
+    expect(parseStatementDate('1 בספט׳ 26', anchor)).toEqual({ date: '2026-09-01', inferred: false });
+    expect(parseStatementDate('5 במרץ', anchor)).toEqual({ date: '2026-03-05', inferred: true });
+    expect(parseStatementDate('5 Smarch', anchor)).toBeUndefined();
+  });
+
+  it('works out a missing year, never landing after the anchor or the period', () => {
+    expect(parseStatementDate('12/03', anchor)).toEqual({ date: '2026-03-12', inferred: true });
+    // December has not come yet in October: last December.
+    expect(parseStatementDate('20/12', anchor)).toEqual({ date: '2025-12-20', inferred: true });
+    expect(
+      parseStatementDate('20/12', anchor, { from: '2026-12-01' as LocalDate, to: '2026-12-31' as LocalDate }),
+    ).toEqual({ date: '2026-12-20', inferred: true });
+    // 29 February with no year: neither this year nor last has one.
+    expect(parseStatementDate('29/02', anchor)).toBeUndefined();
+  });
+
+  it('counts today and yesterday back from the anchor', () => {
+    expect(parseStatementDate('היום', anchor)).toEqual({ date: anchor, inferred: true });
+    expect(parseStatementDate('אתמול 21:40', anchor)).toEqual({ date: '2026-10-03', inferred: true });
+    expect(parseStatementDate('Yesterday', anchor)).toEqual({ date: '2026-10-03', inferred: true });
+  });
+
+  it.each(['', 'soon', '31/04/26', '13/13/26', '00/01/26', '1/1/1800', '2026-02-30'])(
+    'refuses %j',
+    (text) => {
+      expect(parseStatementDate(text, anchor)).toBeUndefined();
+    },
+  );
+});
+
+describe('dateFromExcelSerial', () => {
+  it('counts the 1900 system the way Excel does, phantom leap day and all', () => {
+    expect(dateFromExcelSerial(1, false)).toBe('1900-01-01');
+    expect(dateFromExcelSerial(59, false)).toBe('1900-02-28');
+    expect(dateFromExcelSerial(60, false)).toBeUndefined();
+    expect(dateFromExcelSerial(61, false)).toBe('1900-03-01');
+    expect(dateFromExcelSerial(45_000, false)).toBe('2023-03-15');
+    // The time of day is dropped.
+    expect(dateFromExcelSerial(45_000.75, false)).toBe('2023-03-15');
+  });
+
+  it('counts the 1904 system from its own start', () => {
+    expect(dateFromExcelSerial(0, true)).toBe('1904-01-01');
+    expect(dateFromExcelSerial(43_538, true)).toBe('2023-03-15');
+  });
+
+  it('refuses what no day matches', () => {
+    expect(dateFromExcelSerial(0, false)).toBeUndefined();
+    expect(dateFromExcelSerial(-1, true)).toBeUndefined();
+    expect(dateFromExcelSerial(3_000_000, false)).toBeUndefined();
+    expect(dateFromExcelSerial(3_000_000, true)).toBeUndefined();
+    expect(dateFromExcelSerial(Number.NaN, false)).toBeUndefined();
   });
 });
