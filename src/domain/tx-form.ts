@@ -138,7 +138,7 @@ export const txFormSchema = z
      * a first payment is picked, and only ever offered, and applied, when the
      * dates actually leave a part-month.
      */
-    partialFirst: z.boolean(),
+    partialFirst: z.boolean().default(false),
   })
   .superRefine((values, ctx) => {
     const amountMinor = parseAmount(values.amount, values.currency);

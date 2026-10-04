@@ -473,8 +473,10 @@ describe('signing out', () => {
     await vi.waitFor(async () => {
       expect(await c.unsavedChanges()).toBe(0);
     });
-    await device.db.outbox.put({ tbl: 'profiles', id: 'p-late' });
+    // Offline FIRST: the other way round, a background sync can upload the
+    // change in the moment between the two lines and leave nothing to count.
     fake.rpc = () => Promise.reject(new Error('offline'));
+    await device.db.outbox.put({ tbl: 'profiles', id: 'p-late' });
     expect(await c.unsavedChanges(200)).toBeGreaterThan(0);
   });
 });

@@ -921,7 +921,7 @@ function TransactionForm({
             <Label htmlFor={partialId}>{t('tx.partialFirst')}</Label>
             <p className="text-xs text-muted-foreground">
               <Trans
-                i18nKey={values.partialFirst ? 'tx.partialFirstOn' : 'tx.partialFirstOff'}
+                i18nKey={values.partialFirst === true ? 'tx.partialFirstOn' : 'tx.partialFirstOff'}
                 values={{
                   days: partMonth.days,
                   period: partMonth.periodDays,
@@ -942,7 +942,7 @@ function TransactionForm({
           </div>
           <Switch
             id={partialId}
-            checked={values.partialFirst}
+            checked={values.partialFirst === true}
             onCheckedChange={(on) => {
               setValue('partialFirst', on);
             }}
