@@ -64,7 +64,7 @@ export function CollapsedSummaryBar({
         // The card it stands in for lives inside `main`, which clears the
         // desktop nav rail. Without this the collapsed balance jumps ~112px to
         // the inline-start of the column it replaced.
-        'lg:ps-56',
+        'lg:ps-56 xl:pe-56',
       )}
     >
       <button
