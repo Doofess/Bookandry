@@ -1,11 +1,18 @@
 import { rowSchemas, syncedSettingsSchema } from '@/domain/transfer-schema';
 import { instantFromMs } from '@/lib/dates';
 import { nextRev, ZERO_REV, type Rev } from '@/lib/rev';
-import type { Override } from '@/types/domain';
+import { SHARED_OWNER, type Override } from '@/types/domain';
 
 import { withoutTracking, type BookandryDB } from '../db';
 import type { SyncRecord } from './protocol';
-import { SYNC_CURSOR_KEY as CURSOR_KEY, SYNCED_TABLES, type OutboxRow } from './tables';
+import {
+  cursorKeyOf,
+  EVERYWHERE,
+  REPLICATED_TABLES,
+  SYNCED_TABLES,
+  type OutboxRow,
+  type SyncStateRow,
+} from './tables';
 import { DEFAULT_SETTINGS } from '../repos/settings';
 
 export { SYNC_CURSOR_KEY as CURSOR_KEY } from './tables';
@@ -38,6 +45,8 @@ export async function applyPage(
   db: BookandryDB,
   records: readonly SyncRecord[],
   cursor: number,
+  /** The linked account's space the page came from; undefined for this account's own. */
+  space?: string,
 ): Promise<ApplyReport> {
   // From SYNCED_TABLES, never a hand-written list: a new synced table that
   // this list forgot would make every page containing it fail to apply.
@@ -50,12 +59,12 @@ export async function applyPage(
 
     for (const record of records) {
       const local = await db.syncState.get([record.tbl, record.id]);
-      if (local !== undefined && record.rev <= local.rev) {
+      if (local !== undefined && !supersedes(record, local)) {
         skipped += 1;
         continue;
       }
 
-      const outcome = await applyOne(db, record);
+      const outcome = await applyOne(db, record, space);
       if (outcome === 'rejected') {
         rejected += 1;
         continue;
@@ -63,15 +72,51 @@ export async function applyPage(
       applied += 1;
     }
 
-    await db.meta.put({ key: CURSOR_KEY, value: cursor });
+    await db.meta.put({ key: cursorKeyOf(space), value: cursor });
     return { applied, skipped, rejected };
   });
 }
 
-async function applyOne(db: BookandryDB, record: SyncRecord): Promise<'applied' | 'rejected'> {
+/**
+ * Whether a pulled record replaces what this device holds: a newer rev - or
+ * the SAME rev, live, over a deletion.
+ *
+ * The same rev arrives twice only when a row moved from one linked account's
+ * space to another's: the move files it live in the new space and as a
+ * tombstone in the old, at one rev (see deliveries()). Whichever space is
+ * pulled first, the live one must win, or a device that met the tombstone
+ * first would lose the row.
+ */
+function supersedes(record: SyncRecord, local: SyncStateRow): boolean {
+  if (record.rev !== local.rev) return record.rev > local.rev;
+  return !record.deleted && local.deleted === 1;
+}
+
+/**
+ * Where a pulled row lives: the household's structure and joint cards
+ * everywhere, anything else in the space it came from.
+ */
+function homeOfPulled(record: SyncRecord, space: string | undefined): string | undefined {
+  if (REPLICATED_TABLES.has(record.tbl)) return space === undefined ? undefined : EVERYWHERE;
+  if (
+    record.tbl === 'paymentMethods' &&
+    !record.deleted &&
+    (record.row as { profileId?: unknown } | null)?.profileId === SHARED_OWNER
+  ) {
+    return EVERYWHERE;
+  }
+  return space;
+}
+
+async function applyOne(
+  db: BookandryDB,
+  record: SyncRecord,
+  space: string | undefined,
+): Promise<'applied' | 'rejected'> {
+  const home = homeOfPulled(record, space);
   if (record.tbl === 'settings') {
     // Settings are never deleted; the only thing that syncs is the currency.
-    if (record.deleted) return settle(db, record);
+    if (record.deleted) return settle(db, record, home);
     const parsed = syncedSettingsSchema.safeParse(record.row);
     if (!parsed.success) return 'rejected';
     const current = await db.settings.get(record.id);
@@ -79,13 +124,13 @@ async function applyOne(db: BookandryDB, record: SyncRecord): Promise<'applied' 
       ...(current ?? { ...DEFAULT_SETTINGS, updatedAt: instantFromMs(0) }),
       defaultCurrency: parsed.data.defaultCurrency,
     });
-    return settle(db, record);
+    return settle(db, record, home);
   }
 
   const table = db.table(record.tbl);
   if (record.deleted) {
     await table.delete(record.id);
-    return settle(db, record);
+    return settle(db, record, home);
   }
 
   const parsed = rowSchemas[record.tbl].safeParse(record.row);
@@ -106,19 +151,20 @@ async function applyOne(db: BookandryDB, record: SyncRecord): Promise<'applied' 
    * untouched instead - found by the convergence property test.
    */
   await table.put(record.row);
-  return settle(db, record);
+  return settle(db, record, home);
 }
 
 /**
  * Record that this device now holds `record`'s rev, and drop any local edit
  * of the same row that it supersedes.
  */
-async function settle(db: BookandryDB, record: SyncRecord): Promise<'applied'> {
+async function settle(db: BookandryDB, record: SyncRecord, home: string | undefined): Promise<'applied'> {
   await db.syncState.put({
     tbl: record.tbl,
     id: record.id,
     rev: record.rev,
     deleted: record.deleted ? 1 : 0,
+    ...(home === undefined ? {} : { home }),
   });
   await db.outbox.delete([record.tbl, record.id]);
   return 'applied';

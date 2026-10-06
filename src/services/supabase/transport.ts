@@ -28,7 +28,19 @@ export type ServerErrorCode =
   | 'malformed_pull'
   | 'push_too_large'
   | 'too_many_wraps'
-  | 'quota_exceeded';
+  | 'quota_exceeded'
+  | 'not_linked'
+  | 'malformed_invite'
+  | 'malformed_member'
+  | 'invite_self'
+  | 'invite_invalid'
+  | 'invite_wrong_account'
+  | 'already_member'
+  | 'already_linked'
+  | 'household_full'
+  | 'too_many_invites'
+  | 'currency_mismatch'
+  | 'not_owner';
 
 const KNOWN: ReadonlySet<string> = new Set<ServerErrorCode>([
   'not_signed_in',
@@ -44,6 +56,18 @@ const KNOWN: ReadonlySet<string> = new Set<ServerErrorCode>([
   'push_too_large',
   'too_many_wraps',
   'quota_exceeded',
+  'not_linked',
+  'malformed_invite',
+  'malformed_member',
+  'invite_self',
+  'invite_invalid',
+  'invite_wrong_account',
+  'already_member',
+  'already_linked',
+  'household_full',
+  'too_many_invites',
+  'currency_mismatch',
+  'not_owner',
 ]);
 
 export class ServerError extends Error {

@@ -3,10 +3,13 @@ import type { IsoInstant } from '@/types/money';
 import type { BookandryDB } from '../db';
 import { repairIntegrity, type RepairReport } from '../integrity';
 import { LOCK_SYNC, withLock } from '../lock';
-import { applyPage, CURSOR_KEY } from './apply';
-import { acknowledge, collectOutgoing } from './outbox';
-import type { SyncTransport } from './protocol';
+import { applyPage } from './apply';
+import { acknowledge, collectOutgoing, type Outgoing } from './outbox';
+import type { PushResult, SyncRecord, SyncTransport } from './protocol';
 import { rebaseStaleRows, type RebaseDeps, type RebaseReport } from './rebase';
+import { deliveries, homeOf, storedHomeValue, type Spaces } from './route';
+import { shareWith } from './spaces';
+import { cursorKeyOf } from './tables';
 import { purgeExpiredDeletions } from '../repos/transactions';
 
 /** When this device last saw everything the server had. */
@@ -36,6 +39,18 @@ export type SyncReport = {
   readonly repair: RepairReport;
 };
 
+/** One account's space, and the way to it. */
+export type SyncSpace = { readonly id: string; readonly transport: SyncTransport };
+
+/**
+ * Every space a sync cycle keeps in step: this account's own, and each linked
+ * account's (see route.ts for which rows live where).
+ */
+export type SyncSpaces = { readonly own: SyncSpace; readonly linked: readonly SyncSpace[] };
+
+/** Standing in for the account's id when a caller passes one bare transport. */
+const SELF = '~self';
+
 const DEFAULT_BATCH = 500;
 /**
  * A cycle that keeps finding more to push or pull is a bug or an attack, not a
@@ -59,27 +74,37 @@ const MAX_ROUNDS = 1_000;
  */
 export function syncOnce(
   db: BookandryDB,
-  transport: SyncTransport,
+  target: SyncTransport | SyncSpaces,
   options: SyncOptions,
 ): Promise<SyncReport> {
   const batch = options.batchSize ?? DEFAULT_BATCH;
+  const set: SyncSpaces = 'own' in target ? target : { own: { id: SELF, transport: target }, linked: [] };
 
   return withLock(LOCK_SYNC, async () => {
-    const first = await pushAll(db, transport, batch);
+    // A linked account this device has never pulled from gets the household's
+    // structure first, so its space holds everything its rows rely on.
+    for (const space of set.linked) await shareWith(db, space.id);
+
+    const first = await pushAll(db, set, batch);
 
     let applied = 0;
     let skipped = 0;
     let rejected = 0;
-    let cursor = await readCursor(db);
-    for (let round = 0; ; round += 1) {
-      if (round >= MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
-      const page = await transport.pull(cursor, batch);
-      const report = await applyPage(db, page.records, page.cursor);
-      applied += report.applied;
-      skipped += report.skipped;
-      rejected += report.rejected;
-      cursor = page.cursor;
-      if (!page.hasMore) break;
+    // This account's own space first: its rows are the ones a person is
+    // waiting to see on a new device.
+    for (const space of [set.own, ...set.linked]) {
+      const id = space === set.own ? undefined : space.id;
+      let cursor = await readCursor(db, id);
+      for (let round = 0; ; round += 1) {
+        if (round >= MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
+        const page = await space.transport.pull(cursor, batch);
+        const report = await applyPage(db, page.records, page.cursor, id);
+        applied += report.applied;
+        skipped += report.skipped;
+        rejected += report.rejected;
+        cursor = page.cursor;
+        if (!page.hasMore) break;
+      }
     }
     await db.meta.put({ key: PULLED_TO_HEAD_KEY, value: options.now });
 
@@ -94,7 +119,7 @@ export function syncOnce(
 
     const repair = await repairIntegrity(db, options.now);
     // Repairs, and deletions decided while applying, are ordinary queued edits.
-    const second = await pushAll(db, transport, batch);
+    const second = await pushAll(db, set, batch);
 
     return {
       pushed: first.pushed + second.pushed,
@@ -109,11 +134,18 @@ export function syncOnce(
   });
 }
 
+/**
+ * Send every queued change to the space it lives in - several, for the
+ * household's structure, a deletion or a move - and take it off the queue only
+ * once every one of them has it.
+ */
 async function pushAll(
   db: BookandryDB,
-  transport: SyncTransport,
+  set: SyncSpaces,
   batch: number,
 ): Promise<{ pushed: number; stale: number }> {
+  const spaces: Spaces = { own: set.own.id, all: [set.own.id, ...set.linked.map((s) => s.id)] };
+  const transports = new Map([set.own, ...set.linked].map((s) => [s.id, s.transport]));
   let pushed = 0;
   let stale = 0;
   for (let round = 0; ; round += 1) {
@@ -121,8 +153,36 @@ async function pushAll(
     const outgoing = await collectOutgoing(db, batch);
     if (outgoing.length === 0) return { pushed, stale };
 
-    const results = await transport.push(outgoing);
-    await acknowledge(db, results);
+    const plans: Plan[] = [];
+    for (const o of outgoing) plans.push(await plan(db, o, spaces));
+    const bySpace = new Map<string, SyncRecord[]>();
+    for (const { sends } of plans) {
+      for (const { space, record } of sends) {
+        const list = bySpace.get(space) ?? [];
+        list.push(record);
+        bySpace.set(space, list);
+      }
+    }
+
+    // Every answer, by space and row: a row is done when all its spaces answered.
+    const answers = new Map<string, PushResult['status']>();
+    for (const [space, records] of bySpace) {
+      const transport = transports.get(space);
+      if (transport === undefined) continue;
+      for (const r of await transport.push(records)) answers.set(answerKey(space, r), r.status);
+    }
+
+    const results: PushResult[] = [];
+    const homes = new Map<string, string | undefined>();
+    for (const { record, home, sends } of plans) {
+      const statuses = sends.map((s) => answers.get(answerKey(s.space, s.record)));
+      if (statuses.some((s) => s === undefined)) continue;
+      const status = statuses.every((s) => s === 'stored') ? 'stored' : 'stale';
+      results.push({ tbl: record.tbl, id: record.id, rev: record.rev, status });
+      if (home !== false) homes.set(`${record.tbl}/${record.id}`, home);
+    }
+
+    await acknowledge(db, results, homes);
     pushed += results.filter((r) => r.status === 'stored').length;
     stale += results.filter((r) => r.status === 'stale').length;
 
@@ -131,7 +191,31 @@ async function pushAll(
   }
 }
 
-async function readCursor(db: BookandryDB): Promise<number> {
-  const row = await db.meta.get(CURSOR_KEY);
+const answerKey = (space: string, r: { tbl: string; id: string; rev: string }): string =>
+  `${space}/${r.tbl}/${r.id}/${r.rev}`;
+
+type Plan = {
+  readonly record: SyncRecord;
+  /**
+   * Where the row lives once sent, to remember: undefined for this account's
+   * own space, false to leave what was remembered (a deletion).
+   */
+  readonly home: string | undefined | false;
+  readonly sends: readonly { readonly space: string; readonly record: SyncRecord }[];
+};
+
+async function plan(db: BookandryDB, outgoing: Outgoing, spaces: Spaces): Promise<Plan> {
+  const { home: previous, ...record } = outgoing;
+  if (record.deleted) return { record, home: false, sends: deliveries(record, spaces.own, previous, spaces) };
+  const home = await homeOf(db, record.tbl, record.row, spaces);
+  return {
+    record,
+    home: storedHomeValue(home, spaces),
+    sends: deliveries(record, home, previous, spaces),
+  };
+}
+
+async function readCursor(db: BookandryDB, space: string | undefined): Promise<number> {
+  const row = await db.meta.get(cursorKeyOf(space));
   return typeof row?.value === 'number' ? row.value : 0;
 }
