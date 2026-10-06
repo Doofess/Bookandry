@@ -7,7 +7,7 @@ import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
 import { pendingShares, sweepShared } from '@/app/shared-files';
 import { db } from '@/db/db';
-import { sweepImportCache } from '@/db/import-cache';
+import { forgetImportReads } from '@/db/import-cache';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
@@ -86,7 +86,7 @@ export function FeedScreen() {
     shareChecked.current = true;
     void (async () => {
       const now = systemClock.nowMs();
-      await Promise.all([sweepShared(now), sweepImportCache(db, now)]).catch(() => undefined);
+      await Promise.all([sweepShared(now), forgetImportReads(db)]).catch(() => undefined);
       const [latest] = await pendingShares().catch(() => []);
       if (latest !== undefined && sheetMode === 'closed') openImport(latest);
     })();

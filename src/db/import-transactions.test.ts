@@ -7,11 +7,10 @@ import { counterIdFactory } from '@/lib/id';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
-import { cachedRead, rememberRead, sweepImportCache } from './import-cache';
+import { forgetImportReads } from './import-cache';
 import { redoImport, saveImported, undoImport } from './import-transactions';
 
 const NOW = '2026-10-04T10:00:00.000Z' as IsoInstant;
-const DAY = 24 * 60 * 60 * 1000;
 
 let handle: TestDb;
 beforeEach(() => {
@@ -95,23 +94,12 @@ describe('files already read', () => {
     today: '2026-10-04' as LocalDate,
   });
 
-  it('are remembered on this device by their fingerprint, for 30 days', async () => {
-    const at = Date.parse(NOW);
-    await rememberRead(handle.db, 'abc', { rows: [row], totals: [], cards: [], accounts: [] }, at);
-    const cached = await cachedRead(handle.db, 'abc', at + DAY);
-    expect(cached?.rows).toHaveLength(1);
-    // Stored without the file's place in this pick: the next pick puts its own.
-    expect(cached?.rows[0]?.file).toBe(0);
-    expect(await cachedRead(handle.db, 'abc', at + 31 * DAY)).toBeUndefined();
-    expect(await cachedRead(handle.db, 'other', at)).toBeUndefined();
-  });
-
-  it('are swept once they are a month old', async () => {
-    const at = Date.parse(NOW);
-    await rememberRead(handle.db, 'old', { rows: [row], totals: [], cards: [], accounts: [] }, at - 40 * DAY);
-    await rememberRead(handle.db, 'new', { rows: [row], totals: [], cards: [], accounts: [] }, at);
-    await sweepImportCache(handle.db, at);
-    expect(await handle.db.meta.get('importCache:old')).toBeUndefined();
-    expect(await handle.db.meta.get('importCache:new')).toBeDefined();
+  it('kept by older versions are cleared, and nothing else with them', async () => {
+    await handle.db.meta.put({ key: 'importCache:abc', value: { v: 3, at: 0, rows: [row] } });
+    await handle.db.meta.put({ key: 'importDraft:card:3200', value: {} });
+    await forgetImportReads(handle.db);
+    expect(await handle.db.meta.get('importCache:abc')).toBeUndefined();
+    // Cards and accounts still to finish stay until they are finished or deleted.
+    expect(await handle.db.meta.get('importDraft:card:3200')).toBeDefined();
   });
 });

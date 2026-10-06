@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
-import { cachedRead, rememberRead } from '@/db/import-cache';
 import {
   dropUnfinished,
   keepUnfinished,
@@ -291,10 +290,6 @@ export function ImportSheet(props: ImportSheetProps) {
         {
           signal: controller.signal,
           onFile: update,
-          cache: {
-            get: (hash) => cachedRead(db, hash, systemClock.nowMs()),
-            put: (hash, value) => rememberRead(db, hash, value, systemClock.nowMs()),
-          },
         },
       );
       const rows = await flagAgainstHousehold(
