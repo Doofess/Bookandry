@@ -13,7 +13,7 @@ export type ImportItem = {
 };
 
 /**
- * Every row "Add with AI" found and the person kept, saved through the same
+ * Every row "Smart import" found and the person kept, saved through the same
  * path the form uses - all of them, or none. Rates are resolved before this
  * is called: a network wait inside a Dexie transaction lets it commit early.
  */

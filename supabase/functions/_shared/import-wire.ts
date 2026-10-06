@@ -1,5 +1,5 @@
 /**
- * "Add with AI": what the app sends the `extract-transactions` function, what
+ * "Smart import": what the app sends the `extract-transactions` function, what
  * the model is made to answer, and the checks every answer passes before
  * anything reads it.
  *

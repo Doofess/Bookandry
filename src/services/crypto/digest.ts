@@ -1,7 +1,7 @@
 /**
  * A file's fingerprint: its SHA-256, as hex.
  *
- * Not key material - "Add with AI" uses it to know a file it has already read
+ * Not key material - "Smart import" uses it to know a file it has already read
  * (and not pay to read it again), and to send a duplicate image once. It lives
  * here because every `crypto.subtle` call does.
  */

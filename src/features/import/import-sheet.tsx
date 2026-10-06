@@ -126,7 +126,7 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
 });
 
 /**
- * "Add with AI": pick files, let them be read, check what was found, add it.
+ * "Smart import": pick files, let them be read, check what was found, add it.
  *
  * Nothing is added until the person says so. What was found is listed in
  * three groups - what needs a look, what is ready, what looks like it is

@@ -295,7 +295,7 @@ there. Cash and cheques are built in: every install has them, for everyone,
 and they can be neither deleted, renamed nor put away (`isActiveMethod` offers
 them even where an older install archived one).
 
-**"Add with AI" reads files into transactions, and code checks the reading.**
+**"Smart import" reads files into transactions, and code checks the reading.**
 It also reads the **cards and bank accounts** a file shows - a card company's
 list of cards and their rates, a statement's header (`import-cards.ts`): a
 card's name, last four digits, network, issuer, קרדיט rate (kept as prime plus
@@ -308,7 +308,7 @@ its billing day, an account without its branch) opens in the card or account
 editor with what it did show filled in, for the person to finish; when that is
 all the files held, the editor opens straight away. A statement row's card is
 the one whose last four digits are printed beside it.
-The + button opens a menu: _Add manually_, or _Add with AI_, which takes
+The + button opens a menu: _Add manually_, or _Smart import_, which takes
 screenshots (a Bit or bank notification), photos, PDFs, Excel/CSV and Word
 files - picked, pasted, dropped, or shared from the phone (the installed
 app is an Android share target; `public/share-target-sw.js` keeps the files
@@ -555,7 +555,7 @@ Configuration that lives in the dashboard, not in this repo:
   Optional `CATEGORIZE_MODEL` overrides the model (Claude Haiku 4.5).
 - **Edge Function `extract-transactions`** (`supabase/functions/extract-transactions/`,
   with `_shared/import-wire.ts`, a copy of `src/domain/import-wire.ts` that a
-  test keeps identical): "Add with AI". Same `ANTHROPIC_API_KEY`. Optional
+  test keeps identical): "Smart import". Same `ANTHROPIC_API_KEY`. Optional
   `EXTRACT_MODEL` (Claude Sonnet 5.5), `CHECK_MODEL` (Claude Haiku 4.5, the
   second read) and `VERIFY_MODEL` (Claude Opus 5.5, the correction), each
   only from an allow-list. Its daily cap is the migration
@@ -576,7 +576,7 @@ Configuration that lives in the dashboard, not in this repo:
 
 ### Known limitations
 
-- "Add with AI" from the Share menu is Android's, for the installed app, and
+- "Smart import" from the Share menu is Android's, for the installed app, and
   needs the service worker installed (open the app once); iPhone has no
   share target, so there it is the file picker. Its accuracy has been checked
   on the checks' own test cases, not yet measured on a set of real

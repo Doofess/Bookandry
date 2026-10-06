@@ -5,7 +5,7 @@ import type { Currency, LocalDate } from '@/types/money';
 import type { WireRow, WireTotal } from './import-wire';
 
 /**
- * The mistake-correction stage of "Add with AI": what the model transcribed,
+ * The mistake-correction stage of "Smart import": what the model transcribed,
  * read into money and dates by the app's own parsers, and checked.
  *
  * The model is asked to copy text, never to compute, so every number here is

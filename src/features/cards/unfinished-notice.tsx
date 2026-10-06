@@ -9,7 +9,7 @@ import { db } from '@/db/db';
 import { listUnfinished } from '@/db/import-drafts';
 
 /**
- * Cards or accounts "Add with AI" found only part of, waiting to be finished:
+ * Cards or accounts "Smart import" found only part of, waiting to be finished:
  * said where the household's cards and accounts are, with the way back to
  * them - straight to the one, when there is one.
  */

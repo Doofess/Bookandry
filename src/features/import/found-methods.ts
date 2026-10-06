@@ -9,7 +9,7 @@ import type { PaymentMethod } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 /**
- * The cards and bank accounts "Add with AI" found: listed above the
+ * The cards and bank accounts "Smart import" found: listed above the
  * transactions, each new, an update to one the household has, or - when the
  * file did not show all of it - opened in the card or account editor with
  * what it did show already filled in, for the person to finish.

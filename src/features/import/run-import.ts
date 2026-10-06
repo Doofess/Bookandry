@@ -54,7 +54,7 @@ import type { ExtractError, ExtractOutcome } from '@/services/supabase/extract';
 import type { Currency, LocalDate } from '@/types/money';
 
 /**
- * "Add with AI", start to finish: every prepared file read, checked and,
+ * "Smart import", start to finish: every prepared file read, checked and,
  * where a check fails, looked at again - one model call at a time, so each is
  * small and its cost known.
  *

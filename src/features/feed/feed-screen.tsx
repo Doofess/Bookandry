@@ -38,7 +38,7 @@ import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing
 import { TransactionSheet } from '../transaction/transaction-sheet';
 import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 
-/** "Add with AI": its own chunk, fetched the first time it is opened. */
+/** "Smart import": its own chunk, fetched the first time it is opened. */
 const ImportSheet = lazy(() => import('../import/import-sheet').then((m) => ({ default: m.ImportSheet })));
 
 type Breakdown = 'balance' | 'expense' | undefined;

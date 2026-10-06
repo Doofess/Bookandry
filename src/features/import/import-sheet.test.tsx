@@ -53,7 +53,7 @@ const profile: Profile = {
 } as unknown as Profile;
 const usage = { in: 10, out: 10, cacheRead: 0, cacheWrite: 0 };
 
-describe('Add with AI', () => {
+describe('Smart import', () => {
   beforeAll(async () => {
     await initTestI18n('en');
   });

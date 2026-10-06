@@ -1,5 +1,5 @@
 /**
- * "Add with AI": reads the documents a person picked or shared - statements,
+ * "Smart import": reads the documents a person picked or shared - statements,
  * receipts, wallet notifications - and transcribes the transactions in them.
  *
  * Runs here because it needs the Anthropic API key, which lives only in this

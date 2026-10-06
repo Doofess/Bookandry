@@ -29,7 +29,7 @@
   },
   "addMenu": {
     "manual": "Add manually",
-    "ai": "Add with AI",
+    "ai": "Smart import",
     "aiHint": "Photos, PDF, Excel, screenshots",
     "aiUnavailable": "Needs a Bookandry account"
   },

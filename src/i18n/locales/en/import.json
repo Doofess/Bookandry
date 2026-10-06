@@ -1,5 +1,5 @@
 {
-  "title": "Add with AI",
+  "title": "Smart import",
   "body": "Screenshots, photos, PDFs, Excel or Word. Nothing is added until you check it.",
   "choose": "Choose files",
   "drop": "Drop files here, or paste a screenshot",
@@ -150,7 +150,7 @@
     "body": "Your files showed only part of these. They stay here until you fill in the rest or delete them.",
     "delete": "Delete {{name}}",
     "deleted": "{{name}} deleted",
-    "waiting_one": "1 card or account is still to finish. It's waiting in Add with AI.",
-    "waiting_other": "{{count}} cards and accounts are still to finish. They're waiting in Add with AI."
+    "waiting_one": "1 card or account is still to finish. It's waiting in Smart import.",
+    "waiting_other": "{{count}} cards and accounts are still to finish. They're waiting in Smart import."
   }
 }
