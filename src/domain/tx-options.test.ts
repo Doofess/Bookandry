@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { categoriesFor, methodFits, methodOwnedBy, methodsFor } from './tx-options';
+import { categoriesFor, methodFits, methodOwnedBy, methodsFor, standingViaOf } from './tx-options';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
@@ -131,8 +131,25 @@ describe('what each kind of transaction can be paid with', () => {
     expect(offered('loan')).toEqual(['cash', 'cheque', 'debit', 'visa']);
   });
 
+  it('a standing order is charged to a card or taken from an account - never paid in cash', () => {
+    expect(offered('standing_order')).toEqual(['debit', 'visa']);
+  });
+
+  it('a standing order on a card offers only cards, and one from the bank only accounts', () => {
+    const all = [
+      method({ id: 'visa', type: 'credit_card' }),
+      method({ id: 'leumi', type: 'bank_account' }),
+      method({ id: 'order', type: 'standing_order' }),
+      method({ id: 'cash', type: 'cash' }),
+    ];
+    const ids = (via: 'card' | 'bank') => methodsFor(all, 'p1', '', 'standing_order', via).map((m) => m.id);
+    expect(ids('card')).toEqual(['visa']);
+    expect(ids('bank')).toEqual(['leumi', 'order']);
+    expect(standingViaOf({ type: 'cheque' })).toBeUndefined();
+  });
+
   it('everything else stays on offer outside a credit plan', () => {
-    expect(offered('standing_order')).toEqual(['cash', 'debit', 'visa']);
+    expect(offered('monthly')).toEqual(['cash', 'debit', 'visa']);
   });
 
   it('keeps what an old row already uses, even where it would not be offered now', () => {

@@ -44,7 +44,7 @@ import {
   type TxFormParsed,
   type TxFormValues,
 } from '@/domain/tx-form';
-import { categoriesFor, methodFits } from '@/domain/tx-options';
+import { categoriesFor, methodFits, standingViaOf, type StandingVia } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
 import { formatLocalDate, isLocalDate, monthsBetween, parseLocalDate } from '@/lib/dates';
@@ -372,6 +372,12 @@ function TransactionForm({
   });
 
   const { setValue } = form;
+  // A standing order's card or bank: what its method is, until the person picks the other.
+  const viaId = useId();
+  const [viaChoice, setVia] = useState<StandingVia | undefined>(undefined);
+  const chosenMethod = paymentMethods.find((m) => m.id === values.paymentMethodId);
+  const via: StandingVia =
+    viaChoice ?? (chosenMethod === undefined ? undefined : standingViaOf(chosenMethod)) ?? 'bank';
 
   /*
    * Changing income/expense invalidates the category.
@@ -787,6 +793,30 @@ function TransactionForm({
         )}
       </div>
 
+      {values.kind === 'expense' && values.mode === 'standing_order' ? (
+        <div className="space-y-1.5">
+          <Label id={viaId}>{t('tx.standingVia')}</Label>
+          <Segmented<StandingVia>
+            value={via}
+            labelledBy={viaId}
+            onChange={(next) => {
+              setVia(next);
+              // A card on a bank order, or an account on a card's: let go, as the picker no longer offers it.
+              const method = paymentMethods.find((m) => m.id === values.paymentMethodId);
+              if (method !== undefined && standingViaOf(method) !== next) setValue('paymentMethodId', '');
+            }}
+            options={[
+              { value: 'card', label: t('tx.standingViaCard') },
+              { value: 'bank', label: t('tx.standingViaBank') },
+            ]}
+            size="sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t(via === 'card' ? 'tx.standingViaCardHint' : 'tx.standingViaBankHint')}
+          </p>
+        </div>
+      ) : null}
+
       {values.kind === 'expense' ? (
         <div className="space-y-1.5">
           <Label id={methodId}>{t('tx.paymentMethod')}</Label>
@@ -818,6 +848,7 @@ function TransactionForm({
                 profileId={values.profileId}
                 mode={values.mode}
                 methods={paymentMethods}
+                {...(values.mode === 'standing_order' ? { via } : {})}
                 labelledBy={methodId}
               />
             )}
