@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { displayNameOf, useAccount } from '@/app/account';
 import { useToday } from '@/app/app-context';
 import { Logo } from '@/components/logo';
+import type { PersonLike } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
 import { completeFirstRun } from '@/db/first-run';
 import { isDemoSupported } from '@/domain/demo';
-import { initialDraft, isDraftValid, type FirstRunDraft } from '@/domain/first-run';
+import { FIRST_RUN_COLOR, initialDraft, personName, type FirstRunDraft } from '@/domain/first-run';
 import { detectLocaleDefaults, type Language } from '@/domain/locale-defaults';
 import i18n from '@/i18n';
 import { applyLanguage, readStoredBootMirror } from '@/i18n/boot';
@@ -18,9 +20,8 @@ import { newId } from '@/lib/id';
 
 import { StepBalance } from './step-balance';
 import { StepLocale } from './step-locale';
-import { StepPeople } from './step-people';
 
-const STEPS = ['locale', 'people', 'balance'] as const;
+const STEPS = ['locale', 'balance'] as const;
 
 /**
  * Progress as a committed table, not as arithmetic.
@@ -28,9 +29,9 @@ const STEPS = ['locale', 'people', 'balance'] as const;
  * `(index + 1) / STEPS.length * 100` is a percentage rather than money, but
  * `gate:money` cannot tell the difference and is right not to try - the rule
  * that catches a stray `* 100` on an amount is worth more than the convenience
- * of computing three constants.
+ * of computing two constants.
  */
-const STEP_PERCENT = [33, 66, 100] as const;
+const STEP_PERCENT = [50, 100] as const;
 type Step = (typeof STEPS)[number];
 
 /**
@@ -45,10 +46,19 @@ type Step = (typeof STEPS)[number];
  * With accounts, it is the setup of a NEW account: the account gate shows it
  * only once someone is signed in and the account has been fetched and found
  * empty. An account that already has data opens straight into the app.
+ *
+ * It makes ONE person, the account's own: named after the account and with
+ * the account's id, so it is the same person the household knows when the
+ * account links with others. Nothing about them is asked; the name can be
+ * changed later, like everything else here.
  */
 export function FirstRun({ languages }: { languages?: readonly string[] } = {}) {
   const { t } = useTranslation();
   const today = useToday();
+  const view = useAccount();
+  // Minted once: with no account (a device that never signed in), the person
+  // needs an id that does not change between renders.
+  const [localId] = useState(newId);
 
   const [draft, setDraft] = useState<FirstRunDraft>(() => {
     // Injected rather than read from the global, so a test can say "this is an
@@ -75,12 +85,24 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
     return initialDraft(language, detected.currency);
   });
   const [step, setStep] = useState<Step>('locale');
-  const [showErrors, setShowErrors] = useState(false);
   const [loadDemo, setLoadDemo] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const index = STEPS.indexOf(step);
-  const peopleValid = isDraftValid(draft);
+
+  /*
+   * A function, not a value: the fallback name is translated, and the language
+   * can change on the first step - so it is read when it is shown and when it
+   * is saved, both after the language is settled.
+   */
+  const person = (): PersonLike => {
+    const user = view.status === 'signed_in' ? view.user : undefined;
+    return {
+      id: user?.id ?? localId,
+      name: personName(user === undefined ? undefined : displayNameOf(user), t('firstRun.me')),
+      color: FIRST_RUN_COLOR,
+    };
+  };
 
   /**
    * Language applies immediately, not on finish.
@@ -97,11 +119,6 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
   };
 
   const next = (): void => {
-    if (step === 'people' && !peopleValid) {
-      setShowErrors(true);
-      return;
-    }
-    setShowErrors(false);
     const following = STEPS[index + 1];
     if (following !== undefined) setStep(following);
   };
@@ -112,15 +129,12 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
   };
 
   const finish = (): void => {
-    if (!peopleValid) {
-      setStep('people');
-      setShowErrors(true);
-      return;
-    }
+    const { id, name } = person();
     setSaving(true);
     void completeFirstRun(db, {
       draft,
-      ids: draft.people.map(() => newId()),
+      id,
+      name,
       today,
       now: systemClock.nowIso(),
       loadDemo,
@@ -131,12 +145,7 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
     });
   };
 
-  const title =
-    step === 'locale'
-      ? t('firstRun.localeTitle')
-      : step === 'people'
-        ? t('firstRun.peopleTitle')
-        : t('firstRun.balanceTitle');
+  const title = step === 'locale' ? t('firstRun.localeTitle') : t('firstRun.balanceTitle');
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-lg flex-col px-4 py-6">
@@ -166,11 +175,9 @@ export function FirstRun({ languages }: { languages?: readonly string[] } = {}) 
           />
         ) : null}
 
-        {step === 'people' ? <StepPeople draft={draft} onChange={setDraft} showErrors={showErrors} /> : null}
-
         {step === 'balance' ? (
           <>
-            <StepBalance draft={draft} today={today} onChange={setDraft} />
+            <StepBalance draft={draft} person={person()} today={today} onChange={setDraft} />
             <DemoOffer currency={draft.currency} checked={loadDemo} onChange={setLoadDemo} />
           </>
         ) : null}

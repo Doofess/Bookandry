@@ -5,6 +5,7 @@ import { useCallback, useId, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
+import { useAccount } from '@/app/account';
 import { usePrime } from '@/app/prime';
 import { AmountInput } from '@/components/amount-input';
 import { CurrencySelect } from '@/components/currency-select';
@@ -134,10 +135,15 @@ export function TransactionSheet({
   // A transaction must belong to ONE profile, so the merged "All" view cannot
   // seed it; the first profile is the sensible default and the field is shown
   // whenever there is a choice to make.
+  const account = useAccount();
+  const me = account.status === 'signed_in' ? account.user.id : undefined;
+  // Whoever is being looked at; looking at everyone, the person signed in.
   const defaultProfileId = useMemo(
     () =>
-      profiles.some((profile) => profile.id === activeProfileId) ? activeProfileId : (profiles[0]?.id ?? ''),
-    [profiles, activeProfileId],
+      profiles.some((profile) => profile.id === activeProfileId)
+        ? activeProfileId
+        : (profiles.find((profile) => profile.id === me)?.id ?? profiles[0]?.id ?? ''),
+    [profiles, activeProfileId, me],
   );
 
   const adding = useMemo<TxFormValues>(

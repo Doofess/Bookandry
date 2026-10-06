@@ -133,21 +133,6 @@ describe.each([
   });
 });
 
-describe('the avatars', () => {
-  it('holds its face contrast in both themes, structurally', () => {
-    /*
-     * Face mass is always paper, features always ink, in BOTH themes - the
-     * profile colour is the ring, never the face. That is what makes the
-     * palette free to be decorative: no swatch is ever load-bearing for
-     * legibility, so adding a twelfth colour cannot fail an audit.
-     */
-    for (const palette of [LIGHT, DARK]) {
-      const ratio = contrastRatio(get(palette, '--avatar-paper'), get(palette, '--avatar-ink'));
-      expect(ratio).toBeGreaterThan(14);
-    }
-  });
-});
-
 describe('the colour maths', () => {
   it('converts the OKLCH extremes to the sRGB ones', () => {
     expect(oklchToSrgb({ l: 0, c: 0, h: 0 })).toEqual([0, 0, 0]);

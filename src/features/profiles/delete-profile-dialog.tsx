@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Avatar } from '@/components/avatars/avatar';
+import { PersonAvatar } from '@/components/person-avatar';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -106,7 +106,7 @@ export function DeleteProfileDialog({
                       (selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted')
                     }
                   >
-                    <Avatar avatar={other.avatar} color={other.color} size="sm" />
+                    <PersonAvatar person={other} size="sm" />
                     <span className="truncate text-sm">{other.name}</span>
                   </button>
                 );

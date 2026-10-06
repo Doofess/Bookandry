@@ -107,11 +107,10 @@ beforeEach(async () => {
     'p1',
     {
       name: 'Dana',
-      avatar: 'fox',
       openingBalanceMinor: 0,
       openingBalanceCurrency: 'USD',
       openingBalanceDate: d('2026-01-01'),
-    } as never,
+    },
     now(),
   );
 });

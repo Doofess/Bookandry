@@ -19,7 +19,6 @@ let handle: TestDb;
 const profile = (id: string, over: Partial<Profile> = {}): Profile => ({
   id,
   name: id,
-  avatar: 'fox',
   color: PROFILE_PALETTE[0].hex,
   openingBalanceMinor: 0,
   openingBalanceCurrency: 'USD',

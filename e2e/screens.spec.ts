@@ -32,7 +32,7 @@ test.beforeEach(({}, testInfo) => {
 const ROUTES = [
   { name: 'feed', path: '/' },
   { name: 'chart', path: '/chart' },
-  { name: 'profiles', path: '/profiles' },
+  { name: 'household', path: '/household' },
   { name: 'settings', path: '/settings' },
 ] as const;
 

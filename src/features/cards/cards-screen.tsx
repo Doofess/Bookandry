@@ -3,11 +3,13 @@ import { ChevronDown, CreditCard, Pencil, Plus, TriangleAlert } from 'lucide-rea
 import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { useBaseCurrency, useToday } from '@/app/app-context';
+import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { usePrime } from '@/app/prime';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
+import { db } from '@/db/db';
+import { writeSettings } from '@/db/repos/settings';
 import {
   billingDayOf,
   CARD_CURRENCY,
@@ -23,9 +25,18 @@ import {
   type CardBill,
   type CardCommitments,
 } from '@/domain/cards';
+import { methodOwnedBy } from '@/domain/tx-options';
+import { ProfileSwitcher } from '@/features/feed/profile-switcher';
 import { ordinalDay } from '@/i18n/ordinal';
+import { systemClock } from '@/lib/clock';
 import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
-import { SHARED_OWNER, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
+import {
+  ALL_PROFILES,
+  SHARED_OWNER,
+  type Occurrence,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 import { cardGradient } from './card-colors';
@@ -50,13 +61,16 @@ export function CardsScreen() {
   const baseCurrency = useBaseCurrency();
   const data = useCardsData(today, baseCurrency);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
+  // Whose cards: the same choice as the feed's, so it follows the person between screens.
+  const whose = useSettings().activeProfileId;
+  const cards = useMemo(
+    () => (data?.cards ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
+    [data, whose],
+  );
   // Each card's commitments, worked out once: its panel and the household's total both read them.
   const commitments = useMemo(
-    () =>
-      new Map(
-        (data?.cards ?? []).map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)]),
-      ),
-    [data, today],
+    () => new Map(cards.map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)])),
+    [cards, data, today],
   );
 
   return (
@@ -79,7 +93,17 @@ export function CardsScreen() {
 
       <UnfinishedNotice kind="card" />
 
-      {data === undefined ? null : data.cards.length === 0 ? (
+      {data === undefined ? null : (
+        <ProfileSwitcher
+          profiles={[...data.profiles.values()]}
+          active={whose}
+          onSelect={(profileId) => {
+            void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+          }}
+        />
+      )}
+
+      {data === undefined ? null : cards.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center">
           <CreditCard className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
           <h2 className="mt-3 font-medium">{t('emptyTitle')}</h2>
@@ -87,9 +111,9 @@ export function CardsScreen() {
         </div>
       ) : (
         <>
-          <HouseholdCommitments cards={data.cards} commitments={commitments} />
+          <HouseholdCommitments cards={cards} commitments={commitments} />
           <ul className="grid gap-6 md:grid-cols-2">
-            {data.cards.map((card) => (
+            {cards.map((card) => (
               <li key={card.id}>
                 <CardPanel
                   card={card}

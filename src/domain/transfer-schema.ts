@@ -81,7 +81,8 @@ const recurrenceSchema = z.discriminatedUnion('type', [
 const profileSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1).max(40),
-  avatar: z.string().min(1),
+  // Legacy: no longer written, but a file from before still carries it.
+  avatar: z.string().min(1).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   openingBalanceMinor: z.number().int().max(1e15),
   openingBalanceCurrency: currency,

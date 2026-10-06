@@ -14,27 +14,6 @@
     "stone": "Stone",
     "slate": "Slate"
   },
-  "avatar": {
-    "label": "Avatar",
-    "fox": "Fox",
-    "cat": "Cat",
-    "panda": "Panda",
-    "owl": "Owl",
-    "frog": "Frog",
-    "koala": "Koala",
-    "penguin": "Penguin",
-    "bear": "Bear",
-    "bunny": "Bunny",
-    "sloth": "Sloth",
-    "whale": "Whale",
-    "hedgehog": "Hedgehog",
-    "otter": "Otter",
-    "duck": "Duck",
-    "monkey": "Monkey",
-    "robot": "Robot"
-  },
-  "household": "Household",
-  "limit": "Bookandry supports up to {{count}} profiles, one per colour.",
   "method": {
     "cash": "Cash",
     "cheque": "Cheque",

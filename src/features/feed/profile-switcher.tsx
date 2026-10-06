@@ -1,16 +1,24 @@
 import { cn } from 'cn';
+import { ChevronDown, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Avatar } from '@/components/avatars/avatar';
+import { useAccount } from '@/app/account';
+import { PersonAvatar } from '@/components/person-avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ALL_PROFILES, type Profile } from '@/types/domain';
 
 /**
- * The profile switcher.
+ * Whose money a screen shows: everyone's, this account's own, or one other
+ * person's - a small dropdown, not a row of chips, so it takes one line
+ * however many people the household has.
  *
- * Hidden entirely when there is one profile. A segmented control with a single
- * segment is not a choice; it is a control that teaches the user nothing and
- * takes a row of vertical space on a 375px screen to do it. The "All" chip goes
- * with it, because merging one profile is the same view under a second name.
+ * Hidden entirely with one person: a choice of one is not a choice.
  */
 export function ProfileSwitcher({
   profiles,
@@ -24,50 +32,68 @@ export function ProfileSwitcher({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const view = useAccount();
+  const me = view.status === 'signed_in' ? view.user.id : undefined;
   if (profiles.length < 2) return null;
 
-  const options = [
-    { id: ALL_PROFILES, name: t('profile.all'), profile: undefined },
-    ...profiles.map((p) => ({ id: p.id, name: p.name, profile: p })),
-  ];
+  // This account's own person first, as "Mine"; then everyone else by name.
+  const ordered = [...profiles.filter((p) => p.id === me), ...profiles.filter((p) => p.id !== me)];
+  const nameOf = (p: Profile): string => (p.id === me ? t('profile.mine') : p.name);
+  const current = profiles.find((p) => p.id === active);
 
   return (
-    <div
-      role="radiogroup"
-      aria-label={t('profile.switcher')}
-      className={cn('-mx-1 flex gap-1 overflow-x-auto px-1 pb-1', className)}
-    >
-      {options.map((option) => {
-        const selected = option.id === active;
-        return (
-          <button
-            key={option.id}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => {
-              onSelect(option.id);
+    <div className={cn('flex', className)}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`${t('profile.switcher')}: ${current === undefined ? t('profile.all') : nameOf(current)}`}
+          className={cn(
+            'flex h-9 items-center gap-2 rounded-full border border-border bg-card ps-1.5 pe-3 text-sm font-medium shadow-xs transition',
+            'hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+          )}
+        >
+          {current === undefined ? (
+            <Stack people={ordered} />
+          ) : (
+            <PersonAvatar person={current} size="sm" className="size-6 text-[10px]" />
+          )}
+          <span className="max-w-40 truncate">
+            {current === undefined ? t('profile.all') : nameOf(current)}
+          </span>
+          <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={6} className="w-56 p-1">
+          <DropdownMenuRadioGroup
+            value={current === undefined ? ALL_PROFILES : current.id}
+            onValueChange={(value: string) => {
+              onSelect(value);
             }}
-            className={cn(
-              'flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm transition',
-              'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-              selected
-                ? 'border-primary bg-accent font-medium text-accent-foreground'
-                : 'border-border text-muted-foreground hover:bg-muted',
-            )}
           >
-            {option.profile === undefined ? null : (
-              <Avatar
-                avatar={option.profile.avatar}
-                color={option.profile.color}
-                size="sm"
-                className="size-5"
-              />
-            )}
-            <span className="max-w-32 truncate">{option.name}</span>
-          </button>
-        );
-      })}
+            <DropdownMenuRadioItem value={ALL_PROFILES} className="gap-2.5 py-2">
+              <span className="flex size-6 items-center justify-center rounded-full bg-muted">
+                <Users className="size-3.5" aria-hidden="true" />
+              </span>
+              {t('profile.all')}
+            </DropdownMenuRadioItem>
+            {ordered.map((p) => (
+              <DropdownMenuRadioItem key={p.id} value={p.id} className="gap-2.5 py-2">
+                <PersonAvatar person={p} size="sm" className="size-6 text-[10px]" />
+                <span className="truncate">{nameOf(p)}</span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
+  );
+}
+
+/** Everyone, as overlapping pictures: up to three, the way a shared account looks. */
+function Stack({ people }: { readonly people: readonly Profile[] }) {
+  return (
+    <span className="flex -space-x-2 rtl:space-x-reverse">
+      {people.slice(0, 3).map((p) => (
+        <PersonAvatar key={p.id} person={p} size="sm" className="size-6 text-[10px] ring-2 ring-card" />
+      ))}
+    </span>
   );
 }

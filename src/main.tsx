@@ -33,7 +33,8 @@ import { ChartScreen } from '@/features/chart/chart-screen';
 import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
 import { FirstRun } from '@/features/first-run/first-run';
-import { ProfilesScreen } from '@/features/profiles/profiles-screen';
+import { HouseholdScreen } from '@/features/household/household-screen';
+import { LinkScreen } from '@/features/household/link-screen';
 import { CategoriesScreen } from '@/features/settings/categories-screen';
 import { DataScreen } from '@/features/settings/data-screen';
 import { PreferencesScreen } from '@/features/settings/preferences-screen';
@@ -58,7 +59,9 @@ const router = createBrowserRouter([
       { index: true, element: <FeedScreen /> },
       { path: ROUTES.chart, element: <ChartScreen /> },
       { path: ROUTES.cards, element: <CardsScreen /> },
-      { path: ROUTES.profiles, element: <ProfilesScreen /> },
+      { path: ROUTES.household, element: <HouseholdScreen /> },
+      { path: LINKED_ROUTES.profiles, element: <Navigate to={ROUTES.household} replace /> },
+      { path: LINKED_ROUTES.link, element: <LinkScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
       { path: SETTINGS_ROUTES.account, element: <AccountScreen /> },
       { path: SETTINGS_ROUTES.security, element: <SecurityScreen /> },

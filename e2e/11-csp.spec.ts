@@ -46,7 +46,7 @@ test('@csp the app runs under its own content security policy', async ({ page },
   });
 
   await completeFirstRun(page, 'en', { demo: true });
-  for (const path of ['/', '/chart', '/profiles', '/settings']) {
+  for (const path of ['/', '/chart', '/household', '/settings']) {
     await page.goto(path);
     await expect(page.locator('main')).toBeVisible();
   }

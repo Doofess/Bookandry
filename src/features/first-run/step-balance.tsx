@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
 import { AmountInput } from '@/components/amount-input';
-import { Avatar } from '@/components/avatars/avatar';
+import { PersonAvatar, type PersonLike } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
-import { updatePerson, type FirstRunDraft } from '@/domain/first-run';
+import type { FirstRunDraft } from '@/domain/first-run';
 import { formatLocalDate, startOfMonth } from '@/lib/dates';
-import type { LocalDate, Minor } from '@/types/money';
+import type { LocalDate } from '@/types/money';
 
 /**
  * The opening balance.
@@ -23,49 +23,50 @@ import type { LocalDate, Minor } from '@/types/money';
  * Skipping is a first-class option, not a hidden one. Someone who does not know
  * their balance to the shekel should not be blocked at the last step of setup,
  * and zero is an honest starting point.
+ *
+ * One person, one balance: the account's own. Linked accounts each answer
+ * this for themselves on their own first run.
  */
 export function StepBalance({
   draft,
+  person,
   today,
   onChange,
 }: {
   draft: FirstRunDraft;
+  person: PersonLike;
   today: LocalDate;
   onChange: (draft: FirstRunDraft) => void;
 }) {
   const { t, i18n } = useTranslation();
   const from = startOfMonth(today);
 
-  const set = (key: string, minor: Minor | undefined): void => {
-    onChange(updatePerson(draft, key, { openingBalanceMinor: minor }));
-  };
-
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">{t('firstRun.balanceBody')}</p>
 
-      <ul className="space-y-4">
-        {draft.people.map((p) => (
-          <li key={p.key} className="space-y-2">
-            <label htmlFor={`${p.key}-balance`} className="flex items-center gap-2 text-sm font-medium">
-              <Avatar avatar={p.avatar} color={p.color} size="sm" />
-              <span className="truncate">{p.name || t('firstRun.peopleName')}</span>
-            </label>
-            <AmountInput
-              id={`${p.key}-balance`}
-              value={p.openingBalanceMinor}
-              currency={draft.currency}
-              // An Israeli current account in מינוס is an ordinary negative
-              // balance; refusing it would make this screen unusable.
-              allowNegative
-              placeholder="0"
-              onChange={(minor) => {
-                set(p.key, minor);
-              }}
-            />
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-2">
+        {/* The picture beside the label, not inside it, so the field is
+            named by the person's name alone - not by their initials too. */}
+        <div className="flex items-center gap-2">
+          <PersonAvatar person={person} size="sm" />
+          <label htmlFor="first-run-balance" className="truncate text-sm font-medium">
+            {person.name}
+          </label>
+        </div>
+        <AmountInput
+          id="first-run-balance"
+          value={draft.openingBalanceMinor}
+          currency={draft.currency}
+          // An Israeli current account in מינוס is an ordinary negative
+          // balance; refusing it would make this screen unusable.
+          allowNegative
+          placeholder="0"
+          onChange={(minor) => {
+            onChange({ ...draft, openingBalanceMinor: minor });
+          }}
+        />
+      </div>
 
       <p className="text-sm text-muted-foreground">
         {t('firstRun.balanceFrom', {
@@ -78,10 +79,7 @@ export function StepBalance({
         variant="ghost"
         className="h-11 w-full"
         onClick={() => {
-          onChange({
-            ...draft,
-            people: draft.people.map((p) => ({ ...p, openingBalanceMinor: undefined })),
-          });
+          onChange({ ...draft, openingBalanceMinor: undefined });
         }}
       >
         {t('firstRun.balanceSkip')}

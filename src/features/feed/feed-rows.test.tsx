@@ -26,7 +26,6 @@ const category = (over: Partial<Category> = {}): Category =>
 const profile: Profile = {
   id: 'p1',
   name: 'Dana',
-  avatar: 'fox',
   color: '#16794a',
   openingBalanceMinor: 0,
   openingBalanceCurrency: 'USD',
@@ -141,7 +140,7 @@ describe('TransactionRow', () => {
     const { rerender } = render(
       <TransactionRow occurrence={occurrence()} context={context()} position={1} setSize={1} />,
     );
-    expect(document.querySelectorAll('svg[role="presentation"]').length).toBe(0);
+    expect(document.querySelector('[data-person="p1"]')).toBeNull();
 
     rerender(
       <TransactionRow
@@ -151,7 +150,7 @@ describe('TransactionRow', () => {
         setSize={1}
       />,
     );
-    expect(document.querySelectorAll('svg[role="presentation"]').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-person="p1"]')).not.toBeNull();
   });
 
   it('says nothing about type for a regular one-off', () => {

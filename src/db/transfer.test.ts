@@ -26,7 +26,6 @@ afterEach(async () => {
 const profile = (over: Partial<Profile> = {}): Profile => ({
   id: 'p1',
   name: 'Dana',
-  avatar: 'fox',
   color: '#16794a',
   openingBalanceMinor: 100_000,
   openingBalanceCurrency: 'USD',

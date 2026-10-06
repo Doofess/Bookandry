@@ -5,7 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { accountController } from '@/app/account';
+import { accountController, useAccount } from '@/app/account';
 import { usePrime } from '@/app/prime';
 import { forgetShared, readShared } from '@/app/shared-files';
 import { Money } from '@/components/money';
@@ -144,9 +144,12 @@ export function ImportSheet(props: ImportSheetProps) {
   const { t, i18n } = useTranslation(['import', 'common', 'categories', 'profiles']);
   const titleId = useId();
   const prime = usePrime();
+  const account = useAccount();
+  const me = account.status === 'signed_in' ? account.user.id : undefined;
+  // Whoever is being looked at; looking at everyone, the person signed in.
   const defaultProfileId = props.profiles.some((p) => p.id === props.activeProfileId)
     ? props.activeProfileId
-    : (props.profiles[0]?.id ?? '');
+    : (props.profiles.find((p) => p.id === me)?.id ?? props.profiles[0]?.id ?? '');
   const [session, setSession] = useState<ImportSession>(
     () => readSession() ?? EMPTY_SESSION(defaultProfileId),
   );

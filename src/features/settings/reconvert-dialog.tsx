@@ -53,14 +53,23 @@ export function ReconvertDialog({
   onOpenChange,
   currentCurrency,
   today,
+  fixedTarget,
+  onDone,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly currentCurrency: Currency;
   readonly today: LocalDate;
+  /**
+   * The currency to move to, not to be chosen: joining a household means
+   * keeping the books in the household's.
+   */
+  readonly fixedTarget?: Currency;
+  /** Called once everything is in the new currency. */
+  readonly onDone?: (currency: Currency) => void;
 }) {
   const { t } = useTranslation();
-  const [target, setTarget] = useState<Currency>(currentCurrency);
+  const [target, setTarget] = useState<Currency>(fixedTarget ?? currentCurrency);
   const [backedUp, setBackedUp] = useState(false);
   const [phase, setPhase] = useState<Phase>({ step: 'idle' });
 
@@ -108,6 +117,7 @@ export function ReconvertDialog({
 
       if (result.ok) {
         setPhase({ step: 'done', currency: target });
+        onDone?.(target);
         return;
       }
 
@@ -144,7 +154,7 @@ export function ReconvertDialog({
         if (!next) {
           setPhase({ step: 'idle' });
           setBackedUp(false);
-          setTarget(currentCurrency);
+          setTarget(fixedTarget ?? currentCurrency);
         }
         onOpenChange(next);
       }}
@@ -205,18 +215,20 @@ export function ReconvertDialog({
             </div>
           ) : (
             <>
-              <div className="space-y-1.5">
-                <Label htmlFor={pickerId} id={`${pickerId}-label`}>
-                  {t('reconvert.pick')}
-                </Label>
-                <CurrencySelect
-                  id={pickerId}
-                  value={target}
-                  onChange={setTarget}
-                  aria-labelledby={`${pickerId}-label`}
-                />
-                {isSame ? <p className="text-xs text-muted-foreground">{t('reconvert.same')}</p> : null}
-              </div>
+              {fixedTarget === undefined ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor={pickerId} id={`${pickerId}-label`}>
+                    {t('reconvert.pick')}
+                  </Label>
+                  <CurrencySelect
+                    id={pickerId}
+                    value={target}
+                    onChange={setTarget}
+                    aria-labelledby={`${pickerId}-label`}
+                  />
+                  {isSame ? <p className="text-xs text-muted-foreground">{t('reconvert.same')}</p> : null}
+                </div>
+              ) : null}
 
               <p className="text-xs text-muted-foreground">{t('reconvert.manualKept')}</p>
 

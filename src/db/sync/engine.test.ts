@@ -610,8 +610,8 @@ describe('repairs every device makes on its own', () => {
       createdAt: now(),
       updatedAt: now(),
     });
-    await a.db.profiles.put(profile('p-b') as never);
-    await b.db.profiles.put(profile('p-a') as never);
+    await a.db.profiles.put(profile('p-b'));
+    await b.db.profiles.put(profile('p-a'));
 
     await converge();
     const colors = async (db: BookandryDB) => (await db.profiles.toArray()).map((p) => [p.id, p.color]);

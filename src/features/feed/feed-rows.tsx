@@ -4,9 +4,9 @@ import { CreditCard, HandCoins, Layers, MoreHorizontal, Percent, Repeat } from '
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Avatar } from '@/components/avatars/avatar';
 import { CategoryIcon } from '@/components/category-icon';
 import { Money } from '@/components/money';
+import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
 import { recurrenceModeOf } from '@/domain/tx-edit';
 import { standingViaOf } from '@/domain/tx-options';
@@ -233,9 +233,7 @@ export const TransactionRow = memo(function TransactionRow({
           </span>
         </span>
 
-        {context.showProfile && profile !== undefined ? (
-          <Avatar avatar={profile.avatar} color={profile.color} size="sm" />
-        ) : null}
+        {context.showProfile && profile !== undefined ? <PersonAvatar person={profile} size="sm" /> : null}
 
         {/*
           The card under the amount, as a bank's app shows it - not among the

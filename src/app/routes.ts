@@ -2,7 +2,7 @@ export const ROUTES = {
   feed: '/',
   chart: '/chart',
   cards: '/cards',
-  profiles: '/profiles',
+  household: '/household',
   settings: '/settings',
 } as const;
 
@@ -17,7 +17,7 @@ export type RouteKey = keyof typeof ROUTES;
  * an app's settings are looked for. Every screen the app grows does not earn
  * a tab: a bar that scrolls is a bar nobody reads.
  */
-export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'cards', 'profiles'];
+export const NAV_ORDER: readonly RouteKey[] = ['feed', 'chart', 'cards', 'household'];
 
 /**
  * Routes reachable by link rather than by tab: from the account menu, and
@@ -32,6 +32,10 @@ export const LINKED_ROUTES = {
   /** The old payment-method list, now the Cards screen's: kept so its links still land. */
   paymentMethods: '/payment-methods',
   bankAccounts: '/bank-accounts',
+  /** The old people screen, now the household's: kept so its links still land. */
+  profiles: '/profiles',
+  /** Where an emailed invitation to link accounts lands. */
+  link: '/link',
 } as const;
 
 /** Settings, one page per subject. `/settings` itself lists them. */
