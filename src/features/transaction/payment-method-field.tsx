@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { RecurrenceMode } from '@/domain/tx-form';
-import { methodsFor } from '@/domain/tx-options';
+import { methodsFor, type StandingVia } from '@/domain/tx-options';
 import { methodDisplayName } from '@/i18n/method-name';
 import type { PaymentMethod } from '@/types/domain';
 
@@ -28,6 +28,7 @@ export function PaymentMethodField({
   profileId,
   mode,
   methods,
+  via,
   labelledBy,
   describedBy,
 }: {
@@ -37,6 +38,8 @@ export function PaymentMethodField({
   /** The kind of transaction: credit takes only cards, a cheque no standing order. */
   readonly mode: RecurrenceMode;
   readonly methods: readonly PaymentMethod[];
+  /** A standing order's card or bank account: only those are offered. */
+  readonly via?: StandingVia;
   readonly labelledBy: string;
   readonly describedBy?: string;
 }) {
@@ -47,7 +50,7 @@ export function PaymentMethodField({
       // "Not specified" is a real choice, listed rather than implied by an
       // empty field: a payment method is optional and the UI has to say so.
       { id: '', label: t('tx.paymentMethodNone') },
-      ...methodsFor(methods, profileId, value, mode).map((method) => ({
+      ...methodsFor(methods, profileId, value, mode, via).map((method) => ({
         id: method.id,
         label: methodDisplayName(method, t),
         hint: [
@@ -58,7 +61,7 @@ export function PaymentMethodField({
           .join(' '),
       })),
     ],
-    [methods, profileId, value, mode, t],
+    [methods, profileId, value, mode, via, t],
   );
 
   return (

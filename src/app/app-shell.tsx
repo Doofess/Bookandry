@@ -127,10 +127,15 @@ export function AppShell() {
 
       <PrimaryNav />
 
+      {/*
+        The rail's width is mirrored on the other side once the window is wide
+        enough to spare it, so a page is centred in the window - not in what
+        the rail leaves, which reads as pushed to one side in full screen.
+      */}
       <main
         id="main"
         tabIndex={-1}
-        className="pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:ps-56 lg:pb-0"
+        className="pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:ps-56 lg:pb-0 xl:pe-56"
       >
         <Outlet />
       </main>

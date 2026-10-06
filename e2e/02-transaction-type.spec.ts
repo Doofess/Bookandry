@@ -28,6 +28,7 @@ const COPY = {
     installments: 'Installment transaction',
     credit: 'Credit installment',
     standing: 'Standing order',
+    onCard: 'Credit card',
     loan: 'Loan',
     loanCount: 'Number of monthly payments',
     loansCategory: 'Loans',
@@ -64,6 +65,7 @@ const COPY = {
     installments: 'עסקת תשלומים',
     credit: 'עסקת קרדיט',
     standing: 'הוראת קבע',
+    onCard: 'כרטיס אשראי',
     loan: 'הלוואה',
     loanCount: 'מספר החזרים חודשיים',
     loansCategory: 'הלוואות',
@@ -327,12 +329,16 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('radio', { name: copy.installments, exact: true }).click();
       await expect(paidWith).toContainText(copy.cheque);
 
-      // A standing order is the bank paying by itself: the cheque goes, and is not offered.
+      // A standing order is charged to a card or taken from an account: the cheque goes, and
+      // neither it nor cash is offered.
       await page.getByRole('radio', { name: copy.standing, exact: true }).click();
       await expect(paidWith).not.toContainText(copy.cheque);
       const forStanding = (await offered()).join(' ');
       expect(forStanding).not.toContain(copy.cheque);
-      expect(forStanding).toContain(copy.cash);
+      expect(forStanding).not.toContain(copy.cash);
+      // הוראת קבע בכרטיס: the cards.
+      await page.getByRole('radio', { name: copy.onCard, exact: true }).click();
+      expect((await offered()).join(' ')).toContain('Visa');
 
       // קרדיט: the card's own arrangement, so the card and nothing else.
       await page.getByRole('radio', { name: copy.credit, exact: true }).click();

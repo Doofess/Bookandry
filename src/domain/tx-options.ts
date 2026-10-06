@@ -39,10 +39,39 @@ export function categoriesFor(categories: readonly Category[], kind: Kind, keepI
  */
 export function methodFits(method: Pick<PaymentMethod, 'type'>, mode: RecurrenceMode): boolean {
   if (mode === 'credit') return method.type === 'credit_card';
+  // A standing order is charged to a card or taken from an account - never cash.
+  if (mode === 'standing_order') return standingViaOf(method) !== undefined;
   if (method.type === 'cheque') return mode === 'one_time' || mode === 'installments' || mode === 'loan';
   // A bank account pays at once, by order or by debit - not in a card's תשלומים.
   if (method.type === 'bank_account') return mode !== 'installments';
   return true;
+}
+
+/**
+ * Where a standing order is charged.
+ *
+ * הוראת קבע בכרטיס: on a card, collected with the card's monthly bill like
+ * any purchase on it. הוראת קבע בבנק: taken from the bank account itself, on
+ * its own date.
+ */
+export type StandingVia = 'card' | 'bank';
+
+/** Which kind of standing order a method makes; undefined for one that cannot carry one. */
+export function standingViaOf(method: Pick<PaymentMethod, 'type'>): StandingVia | undefined {
+  switch (method.type) {
+    case 'credit_card':
+    case 'debit_card':
+    case 'digital_wallet':
+      return 'card';
+    case 'bank_account':
+    case 'bank_transfer':
+    case 'standing_order':
+      return 'bank';
+    case 'cash':
+    case 'cheque':
+    case 'other':
+      return undefined;
+  }
 }
 
 /**
@@ -76,13 +105,17 @@ export function methodsFor(
   profileId: string,
   keepId = '',
   mode?: RecurrenceMode,
+  /** A standing order's card or bank: only methods of that kind. */
+  via?: StandingVia,
 ): readonly PaymentMethod[] {
   return methods
     .filter(
       (method) =>
         methodOwnedBy(method, profileId) &&
         (method.id === keepId ||
-          (isActiveMethod(method) && (mode === undefined || methodFits(method, mode)))),
+          (isActiveMethod(method) &&
+            (mode === undefined || methodFits(method, mode)) &&
+            (via === undefined || standingViaOf(method) === via))),
     )
     .sort((a, b) => a.label.localeCompare(b.label));
 }

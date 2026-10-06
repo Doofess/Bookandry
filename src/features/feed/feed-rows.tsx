@@ -9,6 +9,7 @@ import { CategoryIcon } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
 import { recurrenceModeOf } from '@/domain/tx-edit';
+import { standingViaOf } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { formatLocalDate, monthsBetween } from '@/lib/dates';
 import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
@@ -82,6 +83,7 @@ export function DayHeader({
 function rowType(
   occurrence: Occurrence,
   t: TFunction<['common', 'categories']>,
+  methods: ReadonlyMap<string, PaymentMethod> | undefined,
 ): { readonly label: string; readonly icon: typeof Repeat } | undefined {
   const { recurrence, kind, date } = occurrence.transaction;
   const mode = recurrenceModeOf(recurrence, kind);
@@ -96,7 +98,12 @@ function rowType(
       ? { label: t('feed.typeCredit', values), icon: Percent }
       : { label: t('feed.typeInstallment', values), icon: Layers };
   }
-  if (mode === 'standing_order') return { label: t('feed.typeStandingOrder'), icon: Repeat };
+  if (mode === 'standing_order') {
+    // הוראת קבע בכרטיס is collected with the card's bill; one from the bank leaves on its own date.
+    const method = methods?.get(occurrence.transaction.paymentMethodId ?? '');
+    const onCard = method !== undefined && standingViaOf(method) === 'card';
+    return { label: t(onCard ? 'feed.typeCardStandingOrder' : 'feed.typeStandingOrder'), icon: Repeat };
+  }
   return { label: t(mode === 'yearly' ? 'feed.typeYearly' : 'feed.typeMonthly'), icon: Repeat };
 }
 
@@ -157,7 +164,7 @@ export const TransactionRow = memo(function TransactionRow({
 
   const profile = context.profiles.get(occurrence.transaction.profileId);
   const isIncome = occurrence.transaction.kind === 'income';
-  const type = rowType(occurrence, t);
+  const type = rowType(occurrence, t, context.methods);
   const card = cardOf(occurrence, context.methods, t);
   const signed = isIncome ? occurrence.money.baseAmountMinor : -occurrence.money.baseAmountMinor;
 
