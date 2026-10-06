@@ -339,8 +339,9 @@ cost come from doing as little as possible with the model:
   comes from the household's own history for that name first.
 - **One call per request, a daily cap per person** (`ai_take_quota`), every
   request and answer checked by `import-wire.ts` - shared verbatim with the
-  function - with card and account numbers masked. A file read before
-  (by its SHA-256, 30 days, on the device) is never sent again.
+  function - with card and account numbers masked. Every file is read
+  afresh - a file picked again too - so a fix to the reading reaches it;
+  readings older versions kept are cleared on boot (`forgetImportReads`).
 
 **Prime is fetched, never typed.** Israeli prime is the Bank of Israel's rate
 plus 1.5. The app keeps the Bank's rate on the device (`meta`, not synced),

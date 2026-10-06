@@ -6,7 +6,7 @@ import type { PreparedFile } from '@/services/ai-import/prepare-files';
 import type { ExtractOutcome } from '@/services/supabase/extract';
 import type { LocalDate } from '@/types/money';
 
-import { runImport, type FileRead, type FileState, type ImportContext, type ReadCache } from './run-import';
+import { runImport, type FileState, type ImportContext } from './run-import';
 
 const wire: WireContext = {
   today: '2026-10-04',
@@ -28,18 +28,6 @@ const ok = (result: unknown): ExtractOutcome => ({ ok: true, result, usage });
 const extract = (rows: WireRow[], over: Partial<WireExtract> = {}): ExtractOutcome =>
   ok({ r: rows, t: [], per: null, done: true, k: [], ba: [], pr: '', ...over });
 
-const memoryCache = (): ReadCache & { store: Map<string, unknown> } => {
-  const store = new Map<string, FileRead>();
-  return {
-    store,
-    get: (hash) => Promise.resolve(store.get(hash)),
-    put: (hash, read) => {
-      store.set(hash, read);
-      return Promise.resolve();
-    },
-  };
-};
-
 /** A fake reader: answers each request with the next scripted answer for its kind. */
 function reader(script: Record<string, ExtractOutcome[]>) {
   const calls: WireRequest[] = [];
@@ -52,15 +40,11 @@ function reader(script: Record<string, ExtractOutcome[]>) {
   return { call, calls };
 }
 
-async function run(
-  prepared: PreparedFile[],
-  script: Record<string, ExtractOutcome[]>,
-  cache = memoryCache(),
-) {
+async function run(prepared: PreparedFile[], script: Record<string, ExtractOutcome[]>) {
   const { call, calls } = reader(script);
   const states: FileState[] = [];
-  const result = await runImport(prepared, ctx, call, { onFile: (s) => states.push(s), cache });
-  return { result, calls, states, cache };
+  const result = await runImport(prepared, ctx, call, { onFile: (s) => states.push(s) });
+  return { result, calls, states };
 }
 
 const textFile = (text: string, hash = 't'): PreparedFile => ({
@@ -118,13 +102,11 @@ describe('a text file', () => {
     expect(result.rows[0]?.flags).toEqual(['amount_not_in_source']);
   });
 
-  it('is never read twice: the second time, it comes from the device', async () => {
-    const cache = memoryCache();
-    await run([textFile(text)], { 'extract:primary': [extract([wireRow({ a: '120.50' })])] }, cache);
-    const again = await run([textFile(text)], {}, cache);
-    expect(again.calls).toEqual([]);
+  it('is read afresh when picked again, so a better reading reaches it', async () => {
+    await run([textFile(text)], { 'extract:primary': [extract([wireRow({ a: '120.50' })])] });
+    const again = await run([textFile(text)], { 'extract:primary': [extract([wireRow({ a: '120.50' })])] });
+    expect(again.calls).toHaveLength(1);
     expect(again.result.rows.map((r) => r.amountMinor)).toEqual([12_050]);
-    expect(again.states.at(-1)).toMatchObject({ status: 'done', found: 1 });
   });
 
   it('carries on through a long document, and makes room when an answer is cut off', async () => {
@@ -213,7 +195,7 @@ describe('cards and bank accounts', () => {
   };
 
   it('in an image with no transactions are read twice, and the reads compared', async () => {
-    const { result, calls, states, cache } = await run([imageFile()], {
+    const { result, calls, states } = await run([imageFile()], {
       'extract:primary': [extract([], listed)],
       'extract:check': [
         extract([], {
@@ -232,10 +214,6 @@ describe('cards and bank accounts', () => {
     ]);
     // Something was found: not "nothing found".
     expect(states.at(-1)).toMatchObject({ status: 'done', found: 2 });
-    // And remembered, cards and all.
-    const again = await run([imageFile()], {}, cache);
-    expect(again.calls).toHaveLength(0);
-    expect(again.result.cards).toHaveLength(2);
   });
 
   it('in a text are found in it, and a bank account with them', async () => {

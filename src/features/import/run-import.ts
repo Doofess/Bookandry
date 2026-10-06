@@ -109,19 +109,6 @@ export type ImportContext = {
   readonly knownMerchant: (description: string) => Promise<boolean>;
 };
 
-/** What one file gave: kept by its hash, so it is never read twice. */
-export type FileRead = {
-  readonly rows: readonly FoundRow[];
-  readonly totals: readonly WireTotal[];
-  readonly cards: readonly FoundCard[];
-  readonly accounts: readonly FoundAccount[];
-};
-
-export type ReadCache = {
-  readonly get: (hash: string) => Promise<FileRead | undefined>;
-  readonly put: (hash: string, read: FileRead) => Promise<void>;
-};
-
 export type ImportResult = {
   readonly rows: readonly FoundRow[];
   readonly cards: readonly FoundCard[];
@@ -150,7 +137,6 @@ export async function runImport(
   options: {
     readonly signal?: AbortSignal;
     readonly onFile: (state: FileState) => void;
-    readonly cache: ReadCache;
   },
 ): Promise<ImportResult> {
   const usage = { input: 0, output: 0 };
@@ -175,25 +161,19 @@ export async function runImport(
     options.onFile(state);
   };
 
-  // Files read before: no call at all.
+  /*
+   * Every file is read afresh, a file picked again too: a reading kept from
+   * before would keep whatever the reading then got wrong, past every fix
+   * made to it since.
+   */
   const fresh: Exclude<PreparedFile, { kind: 'refused' }>[] = [];
   for (const p of prepared) {
     if (p.kind === 'refused') {
       report({ file: p.file, name: p.name, status: 'refused', reason: p.reason });
       continue;
     }
-    const cached = await options.cache.get(p.hash);
-    if (cached === undefined) {
-      fresh.push(p);
-      report({ file: p.file, name: p.name, status: 'reading' });
-      continue;
-    }
-    rows.push(...cached.rows.map((row) => ({ ...row, id: `f${String(p.file)}${row.id}`, file: p.file })));
-    totals.push(...cached.totals.map((t) => ({ ...t, file: p.file })));
-    cards.push(
-      ...cached.cards.map((card) => ({ ...card, id: `f${String(p.file)}${card.id}`, file: p.file })),
-    );
-    accounts.push(...cached.accounts.map((a) => ({ ...a, id: `f${String(p.file)}${a.id}`, file: p.file })));
+    fresh.push(p);
+    report({ file: p.file, name: p.name, status: 'reading' });
   }
 
   // Spreadsheets: by code.
@@ -308,29 +288,9 @@ export async function runImport(
   found = found.map((row) => (stillSuspect.has(row.id) ? withFlags(row, 'total_mismatch') : row));
   found = withStatementCards(found, cards);
 
-  // Report, and remember what was read in full.
+  // Report.
   for (const p of fresh) {
     if (failed.has(p.file)) continue;
-    const own = found.filter((row) => row.file === p.file);
-    const ownCards = cards.filter((card) => card.file === p.file);
-    const ownAccounts = accounts.filter((account) => account.file === p.file);
-    const count = own.length + ownCards.length + ownAccounts.length;
-    report(
-      count === 0
-        ? { file: p.file, name: p.name, status: 'empty' }
-        : { file: p.file, name: p.name, status: 'done', found: count, partial: partial.has(p.file) },
-    );
-    if (!partial.has(p.file)) {
-      await options.cache.put(p.hash, {
-        rows: own,
-        totals: totals.filter((t) => t.file === p.file),
-        cards: ownCards,
-        accounts: ownAccounts,
-      });
-    }
-  }
-  for (const p of prepared) {
-    if (p.kind === 'refused' || fresh.includes(p)) continue;
     const count =
       found.filter((row) => row.file === p.file).length +
       cards.filter((card) => card.file === p.file).length +
@@ -338,7 +298,7 @@ export async function runImport(
     report(
       count === 0
         ? { file: p.file, name: p.name, status: 'empty' }
-        : { file: p.file, name: p.name, status: 'done', found: count, partial: false },
+        : { file: p.file, name: p.name, status: 'done', found: count, partial: partial.has(p.file) },
     );
   }
   return { rows: found, cards: mergeCards(cards), accounts: mergeAccounts(accounts), reconciliations, usage };
