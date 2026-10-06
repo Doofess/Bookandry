@@ -217,6 +217,26 @@ describe('a found row as form values', () => {
     });
   });
 
+  it('saves a loan from a statement as a loan: its payments, interest and all', () => {
+    // A card company's loan: payment 3 of 24, and what was lent printed beside it.
+    const loan = readRow(
+      wire({ a: '512.40', m: 'הלוואה מקס', pl: { md: 'loan', n: 3, of: 24, tot: '11,000.00' } }),
+      'l',
+      ctx,
+    );
+    const draft = draftOf(loan, base);
+    expect(draft?.values).toMatchObject({
+      mode: 'loan',
+      installmentCount: '24',
+      // 24 × 512.40: what will be charged, not what was lent.
+      amount: '12297.60',
+      rateBasis: 'fixed',
+      annualRate: '',
+    });
+    expect(draft?.flags).toEqual([]);
+    expect(txFormSchema.safeParse(draft?.values).success).toBe(true);
+  });
+
   it('files money back with no payment method', () => {
     const refund = readRow(wire({ a: '-50.00' }), 'r', ctx);
     expect(draftOf(refund, base)?.values).toMatchObject({ kind: 'income', paymentMethodId: '' });

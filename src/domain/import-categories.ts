@@ -14,11 +14,16 @@ const LOAN_WORDS = /הלוו?א(?:ה|ות)|פי?רעון|\bloans?\b/i;
 
 /** A row's category from its own text, when it says one; undefined when it does not. */
 export function categoryFromText(
-  row: { readonly kind: 'expense' | 'income'; readonly description: string },
+  row: {
+    readonly kind: 'expense' | 'income';
+    readonly description: string;
+    readonly plan?: { readonly mode: string } | null;
+  },
   categories: readonly Category[],
 ): string | undefined {
   // A loan received is income, and Loans is where repayments go: only an expense is filed there.
-  if (row.kind !== 'expense' || !LOAN_WORDS.test(row.description)) return undefined;
+  const loan = row.plan?.mode === 'loan' || LOAN_WORDS.test(row.description);
+  if (row.kind !== 'expense' || !loan) return undefined;
   return categories.some((c) => c.id === LOANS_CATEGORY && c.kind === 'expense' && c.isArchived === 0)
     ? LOANS_CATEGORY
     : undefined;

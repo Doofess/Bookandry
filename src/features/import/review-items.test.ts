@@ -55,6 +55,19 @@ describe('rows and the card they were charged to', () => {
     expect(linkToCard([item('3214')], card({ card: {} }))[0]?.values?.paymentMethodId).toBe('');
   });
 
+  it("a statement's card takes its rows: by the digits in its header, else by its name", () => {
+    const byDigits = item('', {});
+    const header = {
+      ...byDigits,
+      found: { ...byDigits.found, statementCard: { label: 'Max', lastDigits: '3214' } },
+    };
+    expect(linkToCard([header], card())[0]?.values?.paymentMethodId).toBe('visa');
+    // A statement that names its card but not its digits: the card of that name, digits or none.
+    const byName = { ...byDigits, found: { ...byDigits.found, statementCard: { label: ' visa ' } } };
+    expect(linkToCard([byName], card({ card: {} }))[0]?.values?.paymentMethodId).toBe('visa');
+    expect(linkToCard([byName], card({ label: 'Cal' }))[0]?.values?.paymentMethodId).toBe('');
+  });
+
   it('the batch "Paid with" leaves a row whose card its digits name', () => {
     const visa = card();
     const [named, plain] = applyBatch(

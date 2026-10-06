@@ -184,7 +184,21 @@ export function draftOf(
   });
   const day = String(parseLocalDate(row.date).day);
   let planValues: Partial<TxFormValues> = {};
-  if (row.plan !== null) {
+  if (row.plan?.mode === 'loan') {
+    /*
+     * A loan's repayments, interest and all: the statement prints this
+     * payment, not the rate, and its total is usually what was lent. So the
+     * payments are what is saved - at no further interest, they sum to
+     * exactly what will be charged.
+     */
+    amountMinor *= row.plan.count;
+    planValues = {
+      mode: 'loan',
+      installmentCount: String(row.plan.count),
+      rateBasis: 'fixed',
+      annualRate: '',
+    };
+  } else if (row.plan !== null) {
     const total = row.plan.totalMinor ?? amountMinor * row.plan.count;
     if (row.plan.totalMinor === undefined) flags.push('total_estimated');
     amountMinor = total;

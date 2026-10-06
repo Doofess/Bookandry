@@ -57,7 +57,7 @@ export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
 ]);
 
 export type FoundPlan = {
-  readonly mode: 'installments' | 'credit';
+  readonly mode: 'installments' | 'credit' | 'loan';
   /** This payment's number, and the count. */
   readonly number: number;
   readonly count: number;
@@ -82,6 +82,11 @@ export type FoundRow = {
   readonly categoryAlias: string | null;
   readonly methodAlias: string | null;
   readonly plan: FoundPlan | null;
+  /**
+   * The card the whole file is for - a statement of one card - when the row
+   * itself does not say: how it is charged to that card.
+   */
+  readonly statementCard?: { readonly label: string; readonly lastDigits?: string };
   readonly cardFee: boolean;
   readonly flags: readonly Flag[];
   /** What was transcribed, kept for a second look. */

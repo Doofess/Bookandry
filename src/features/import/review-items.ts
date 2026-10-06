@@ -79,7 +79,7 @@ export async function buildReview(
       '';
 
     const named =
-      cardByDigits(row, ctx.methods)?.id ??
+      cardOf(row, ctx.methods)?.id ??
       (row.methodAlias === null ? undefined : ctx.aliases.methods.get(row.methodAlias));
     const method = ctx.methods.find((m) => m.id === (named ?? ctx.defaultMethodId));
     const owner = method !== undefined && method.profileId !== SHARED_OWNER ? method.profileId : undefined;
@@ -116,11 +116,23 @@ export async function buildReview(
   return items;
 }
 
-/** The household's card a row's printed last four digits belong to. */
-function cardByDigits(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
-  const digits = row.wire.l4;
-  if (digits === '') return undefined;
-  return methods.find((m) => m.type === 'credit_card' && m.card?.lastDigits === digits);
+const sameName = (name: string): string => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+
+/** The last four digits a row was charged to: printed beside it, or in its statement's header. */
+const rowDigits = (row: FoundRow): string => row.wire.l4 || (row.statementCard?.lastDigits ?? '');
+
+/**
+ * The household's card a row was charged to: the one with the last four
+ * digits printed beside it or in its statement's header, else - a statement
+ * that names its card but not its digits - the one of that name.
+ */
+function cardOf(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
+  const cards = methods.filter((m) => m.type === 'credit_card' && m.isArchived === 0);
+  const digits = rowDigits(row);
+  const byDigits = digits === '' ? undefined : cards.find((m) => m.card?.lastDigits === digits);
+  if (byDigits !== undefined) return byDigits;
+  const label = row.statementCard?.label;
+  return label === undefined ? undefined : cards.find((m) => sameName(m.label) === sameName(label));
 }
 
 /**
@@ -129,10 +141,11 @@ function cardByDigits(row: FoundRow, methods: readonly PaymentMethod[]): Payment
  * unless the person settled them otherwise.
  */
 export function linkToCard(items: readonly ReviewItem[], card: PaymentMethod): ReviewItem[] {
-  const digits = card.card?.lastDigits;
-  if (card.type !== 'credit_card' || digits === undefined) return [...items];
+  if (card.type !== 'credit_card') return [...items];
   return items.map((item) => {
-    if (item.confirmed || item.values?.kind !== 'expense' || item.found.wire.l4 !== digits) return item;
+    if (item.confirmed || item.values?.kind !== 'expense' || cardOf(item.found, [card]) === undefined) {
+      return item;
+    }
     const profileId = card.profileId === SHARED_OWNER ? item.values.profileId : card.profileId;
     return { ...item, values: { ...item.values, paymentMethodId: card.id, profileId } };
   });
@@ -147,7 +160,7 @@ export function applyBatch(
   const method = methods.find((m) => m.id === batch.methodId);
   return items.map((item) => {
     if (item.confirmed || item.values === undefined) return item;
-    const named = item.found.methodAlias !== null || cardByDigits(item.found, methods) !== undefined;
+    const named = item.found.methodAlias !== null || cardOf(item.found, methods) !== undefined;
     const paymentMethodId =
       item.values.kind === 'expense' && !named ? batch.methodId : item.values.paymentMethodId;
     // A card the document named keeps its owner; otherwise the batch card's owner, or the batch "For".

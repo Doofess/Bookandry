@@ -85,7 +85,7 @@ export type WireRequest = ExtractRequest | MapRequest | VerifyRequest;
 // ---------------------------------------------------------------------------
 
 export type WirePlan = {
-  readonly md: 'installments' | 'credit';
+  readonly md: 'installments' | 'credit' | 'loan';
   /** This payment's number, and how many there are. */
   readonly n: number;
   readonly of: number;
@@ -422,7 +422,14 @@ function alias(v: unknown, offered: readonly { readonly a: string }[]): string |
 
 function cleanPlan(v: unknown): WirePlan | null {
   if (!isObject(v)) return null;
-  const md = v.md === 'credit' ? 'credit' : v.md === 'installments' ? 'installments' : undefined;
+  const md =
+    v.md === 'credit'
+      ? 'credit'
+      : v.md === 'installments'
+        ? 'installments'
+        : v.md === 'loan'
+          ? 'loan'
+          : undefined;
   if (md === undefined || !isInt(v.of, 2, MAX_PLAN_PAYMENTS) || !isInt(v.n, 1, v.of)) return null;
   return { md, n: v.n, of: v.of, tot: optionalText(v.tot, LIMITS.field) ?? null };
 }
@@ -619,11 +626,11 @@ d: the transaction (purchase) date. cd: the debit date when printed separately.
 a, c: the transaction amount and its currency mark. On an Israeli card statement a foreign purchase shows the original amount (a, c) and the charged amount (ca, cc, סכום חיוב); copy both.
 sg: any sign or word that marks money coming back or in ("-", "זיכוי", "החזר", "credit"). k: "i" for money received (salary, refund, incoming transfer), otherwise "e".
 st: "pending" when marked pending or authorisation only (ממתין, בקליטה, עסקה בתהליך, הרשאה), otherwise "posted".
-pl: for instalments ("תשלום 3 מתוך 6"): n=3, of=6, md "installments", or "credit" for קרדיט. a is this payment. tot: the deal's whole amount if printed.
+pl: for instalments ("תשלום 3 מתוך 6"): n=3, of=6, md "installments", "credit" for קרדיט, or "loan" for a loan's repayment (הלוואה). a is this payment. tot: the deal's whole amount if printed.
 fee: true for the card's own monthly fee (דמי כרטיס).
 m: the merchant or counterparty as printed, short.
 cat: the best category alias from the list for the row's kind, or null. A loan's repayment (הלוואה, פירעון, loan) - a card company's own loan too, such as מקס איט פיננסים - takes the loans category; a card company or a bank is never a restaurant or a shop. pm: the payment method alias only when the document clearly names it, else null.
-l4: the last four digits of the card the row was charged to, when the document shows them (a card's section of a statement, a card column), else "".
+l4: the last four digits of the card the row was charged to, when the document shows them, else "". A statement for one card, or a card's section of one, shows them once in its header: every row in it takes them.
 k: cards the documents describe - a card company's list of cards, a card's terms or rates page, a statement's card header - even when there are no transactions. n: the card's name as printed; l4: its last four digits; nw: its network (Visa, Mastercard...); is: the company that issued it; cr: its קרדיט annual rate as printed, the nominal one (תעריפית) when both are shown; lim: its credit limit (מסגרת); bd: its billing day (מועד חיוב). "" for anything not printed.
 pr: the prime rate the documents say their rates are worked out from, as printed, else "".
 ba: bank accounts the documents show as the household's own (a bank statement's header, a cheque, account details) - not a merchant's or a payee's. n: the bank as printed; bk: its bank code if printed (the 12 in 12-689-123456); br: the branch number; no: the account number; h: the holders' names. "" for anything not printed.
@@ -671,7 +678,7 @@ function rowProperties(ctx: WireContext): Record<string, unknown> {
     pl: nullable({
       type: 'object',
       properties: {
-        md: { type: 'string', enum: ['installments', 'credit'] },
+        md: { type: 'string', enum: ['installments', 'credit', 'loan'] },
         n: { type: 'integer' },
         of: { type: 'integer' },
         tot: textOrNull,

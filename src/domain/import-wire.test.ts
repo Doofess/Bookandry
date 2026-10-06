@@ -193,6 +193,11 @@ describe('an answer', () => {
       of: 6,
       tot: '1,200',
     });
+    // A loan's repayment, up to a mortgage's 360.
+    expect(cleanRow(row({ pl: { md: 'loan', n: 3, of: 240, tot: null } }), 1, ctx)?.pl).toMatchObject({
+      md: 'loan',
+      of: 240,
+    });
     expect(cleanRow(row({ pl: { md: 'credit', n: 1, of: 12, tot: null } }), 1, ctx)?.pl).toMatchObject({
       md: 'credit',
     });

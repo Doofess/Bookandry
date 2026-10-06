@@ -15,8 +15,10 @@ const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 /**
  * What a read holds. 2: cards and bank accounts too. A read from before they
  * were looked for is read again - a card list read then was "nothing found".
+ * 3: loans as loans, and a one-card statement's card on every row - a
+ * statement read before was read with its loans as instalments.
  */
-const VERSION = 2;
+const VERSION = 3;
 
 export type CachedRead = {
   readonly v: number;
