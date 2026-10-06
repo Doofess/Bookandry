@@ -5,7 +5,7 @@ import type { ReviewItem } from './review-items';
 import type { FileState } from './run-import';
 
 /**
- * What an "Add with AI" session has so far - the files, how each read went,
+ * What an "Smart import" session has so far - the files, how each read went,
  * and what was found - kept outside the sheet, so it outlives the sheet
  * closing for a moment: Back from a row, a slip of the finger on the
  * backdrop, the phone turning. Never written anywhere: it is gone with the

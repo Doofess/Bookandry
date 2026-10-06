@@ -3,7 +3,7 @@ import type { FoundAccount, FoundCard } from '@/domain/import-cards';
 import type { BookandryDB } from './db';
 
 /**
- * Cards and bank accounts "Add with AI" found only part of, kept until the
+ * Cards and bank accounts "Smart import" found only part of, kept until the
  * person fills in the rest or deletes them - never with the reading they came
  * from, which is gone once the sheet closes, the page reloads or the rest of
  * what was found is added. Kept in `meta`, on this device, and cleared with it.

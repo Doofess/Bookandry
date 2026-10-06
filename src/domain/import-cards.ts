@@ -14,7 +14,7 @@ import type { FoundRow } from './import-check';
 import type { WireAccount, WireCard } from './import-wire';
 
 /**
- * Cards "Add with AI" found in a document - a card company's list of cards, a
+ * Cards "Smart import" found in a document - a card company's list of cards, a
  * card's rates page, a statement's header - read by the app from what the
  * model copied, checked, and matched to the household's own cards.
  *

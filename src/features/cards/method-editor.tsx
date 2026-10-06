@@ -312,8 +312,8 @@ export function MethodEditor({
 }
 
 /**
- * The editor's form, wherever it is shown: in its own sheet, or inside "Add
- * with AI", opened on what a document showed of a card or an account so only
+ * The editor's form, wherever it is shown: in its own sheet, or inside "Smart
+ * import", opened on what a document showed of a card or an account so only
  * the rest is left to fill in.
  */
 export function MethodForm({

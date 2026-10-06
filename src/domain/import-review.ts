@@ -7,7 +7,7 @@ import { withFlags, type Flag, type FoundRow } from './import-check';
 import { defaultFormValues, NOTE_MAX_LENGTH, type TxFormValues } from './tx-form';
 
 /**
- * What "Add with AI" found, made ready for the person to review: rows read
+ * What "Smart import" found, made ready for the person to review: rows read
  * twice where screenshots overlap folded into one, rows already in the
  * household flagged, and each row turned into the same form values a person
  * would have typed - so it is saved through the very same path.

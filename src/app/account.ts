@@ -689,7 +689,7 @@ export class AccountController {
   }
 
   /**
-   * One call to "Add with AI"'s reader (services/supabase/extract.ts). Only
+   * One call to "Smart import"'s reader (services/supabase/extract.ts). Only
    * while signed in: the server reads for nobody else, and counts each call
    * against the person's daily cap.
    */

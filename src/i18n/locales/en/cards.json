@@ -185,10 +185,10 @@
     "builtin": "Built in: always there, for everyone"
   },
   "unfinished": {
-    "cards_one": "1 card from Add with AI is still to finish.",
-    "cards_other": "{{count}} cards from Add with AI are still to finish.",
-    "accounts_one": "1 bank account from Add with AI is still to finish.",
-    "accounts_other": "{{count}} bank accounts from Add with AI are still to finish.",
+    "cards_one": "1 card from Smart import is still to finish.",
+    "cards_other": "{{count}} cards from Smart import are still to finish.",
+    "accounts_one": "1 bank account from Smart import is still to finish.",
+    "accounts_other": "{{count}} bank accounts from Smart import are still to finish.",
     "open": "Finish"
   },
   "color": {

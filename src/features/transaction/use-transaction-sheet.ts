@@ -30,7 +30,7 @@ const ADD = 'add';
 const EDIT = 'edit';
 /** The ORIGINAL slot date - the Override key, not the moved date. */
 const AT = 'at';
-/** "Add with AI": `1`, or `shared` when files arrived from the phone's Share menu. */
+/** "Smart import": `1`, or `shared` when files arrived from the phone's Share menu. */
 const IMPORT = 'import';
 /** Files shared to the app, waiting in the service worker's cache under this id. */
 const SHARED_ID = 'id';
