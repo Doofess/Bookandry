@@ -190,6 +190,14 @@ function CardPanel({
           )}
         </div>
         <div>
+          {details?.lastDigits === undefined ? null : (
+            <p
+              dir="ltr"
+              className="mb-1 font-mono text-base tracking-widest tabular-nums opacity-90 rtl:text-end"
+            >
+              •••• {details.lastDigits}
+            </p>
+          )}
           <h2 id={`card-${card.id}`} className="text-xl font-semibold">
             {card.label}
           </h2>

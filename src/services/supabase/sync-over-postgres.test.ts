@@ -159,6 +159,7 @@ describe('two devices through Postgres', () => {
     expect((await b.db.transactions.get('t1'))?.note).toBe('b is later');
   });
 
+  // 180 rows through an in-process Postgres: seconds alone, longer under the full run with coverage.
   it('pull many pages without losing a row', async () => {
     await a.db.transactions.bulkPut(
       Array.from({ length: 180 }, (_, i) => tx(`t${String(i)}`, `n${String(i)}`)),
@@ -166,7 +167,7 @@ describe('two devices through Postgres', () => {
     await a.sync();
     await b.sync();
     expect(await b.db.transactions.count()).toBe(180);
-  });
+  }, 30_000);
 
   it('hold a stale device at the rotation barrier until it unlocks, then deliver its edit', async () => {
     await a.db.transactions.put(tx('t1', 'before'));

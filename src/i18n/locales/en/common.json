@@ -161,7 +161,9 @@
     "typeLoan": "Loan {{index}} of {{count}}",
     "typeCredit": "Credit {{index}} of {{count}}",
     "typeMonthly": "Monthly",
-    "typeYearly": "Yearly"
+    "typeYearly": "Yearly",
+    "cardEnding": "Card ending {{digits}}",
+    "paidWith": "Paid with {{name}}"
   },
   "breakdown": {
     "balanceBody": "Everything counted since {{date}}.",

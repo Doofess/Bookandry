@@ -57,6 +57,7 @@ export function CardFields({
     tier: useId(),
     club: useId(),
     expires: useId(),
+    lastDigits: useId(),
     day: useId(),
     otherDay: useId(),
     limit: useId(),
@@ -189,6 +190,30 @@ export function CardFields({
               onChange({ club });
             }}
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={ids.lastDigits}>{t('edit.lastDigits')}</Label>
+          <Input
+            id={ids.lastDigits}
+            dir="ltr"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="1234"
+            value={draft.lastDigits}
+            onChange={(event) => {
+              onChange({ lastDigits: event.target.value.replace(/\D/g, '').slice(0, 4) });
+            }}
+            aria-invalid={bad('lastDigits')}
+            aria-describedby={`${ids.lastDigits}-hint`}
+            className="h-11 w-28"
+          />
+          <p
+            id={`${ids.lastDigits}-hint`}
+            className={bad('lastDigits') ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}
+          >
+            {bad('lastDigits') ? t('edit.lastDigitsInvalid') : t('edit.lastDigitsHint')}
+          </p>
         </div>
 
         <div className="space-y-1.5">

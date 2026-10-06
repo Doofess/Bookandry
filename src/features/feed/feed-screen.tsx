@@ -137,6 +137,7 @@ export function FeedScreen() {
             today,
             categories: lookups.categories,
             profiles: new Map(lookups.profiles.map((p) => [p.id, p])),
+            methods: lookups.paymentMethods,
             // One profile makes the avatar column pure noise.
             showProfile: filters.profileId === ALL_PROFILES && lookups.profiles.length > 1,
           },
@@ -294,6 +295,7 @@ export function FeedScreen() {
             target={sheet.target}
             onOpenChange={sheet.setOpen}
             onOpenRow={sheet.openImportRow}
+            onOpenCard={sheet.openImportCard}
             profiles={lookups.profiles}
             categories={[...lookups.categories.values()]}
             paymentMethods={[...lookups.paymentMethods.values()]}

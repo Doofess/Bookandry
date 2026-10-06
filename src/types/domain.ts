@@ -128,7 +128,9 @@ export type CardKind = 'bank' | 'non_bank';
  * What a card company shows about a credit card - everything but what would
  * identify or charge it.
  *
- * Never a card number, the code from its back or a PIN: `gate:pci` fails the build on those names.
+ * Never the card's number, the code from its back or a PIN: `gate:pci` fails the build on those names.
+ * Its last four digits are kept - every card company and statement prints
+ * them, and they identify and authorise nothing on their own.
  * The expiry is kept as a month only, the way it is printed, as a reminder of
  * when a new card is due - on its own it identifies and authorises nothing.
  *
@@ -144,6 +146,11 @@ export type CardDetails = {
   readonly tier?: string;
   /** The club or programme it belongs to: FLY CARD, Max Back, a supermarket club. */
   readonly club?: string;
+  /**
+   * Its last four digits, as the card company shows them: how a card is told
+   * apart in the feed, and how a statement's rows find their card.
+   */
+  readonly lastDigits?: string;
   /** YYYY-MM. */
   readonly expiresMonth?: string;
   /**

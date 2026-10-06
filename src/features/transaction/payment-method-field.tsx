@@ -50,7 +50,12 @@ export function PaymentMethodField({
       ...methodsFor(methods, profileId, value, mode).map((method) => ({
         id: method.id,
         label: methodDisplayName(method, t),
-        hint: t(PAYMENT_TYPE_KEY[method.type] as MethodTypeKey),
+        hint: [
+          t(PAYMENT_TYPE_KEY[method.type] as MethodTypeKey),
+          method.card?.lastDigits === undefined ? undefined : `\u2066··${method.card.lastDigits}\u2069`,
+        ]
+          .filter(Boolean)
+          .join(' '),
       })),
     ],
     [methods, profileId, value, mode, t],

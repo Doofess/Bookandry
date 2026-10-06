@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import type { TFunction } from 'i18next';
-import { HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
+import { CreditCard, HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { recurrenceModeOf } from '@/domain/tx-edit';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { formatLocalDate, monthsBetween } from '@/lib/dates';
-import type { Category, Occurrence, Profile } from '@/types/domain';
+import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 export type RowContext = {
@@ -19,6 +19,8 @@ export type RowContext = {
   readonly today: LocalDate;
   readonly categories: ReadonlyMap<string, Category>;
   readonly profiles: ReadonlyMap<string, Profile>;
+  /** To show which card paid. */
+  readonly methods?: ReadonlyMap<string, PaymentMethod>;
   /** Only in the merged view: one profile makes the avatar column noise. */
   readonly showProfile: boolean;
 };
@@ -99,6 +101,25 @@ function rowType(
 }
 
 /**
+ * The card an expense was paid with, as a chip: its last four digits, the way
+ * the card company shows them - or, for a card without them, its name.
+ */
+function cardOf(
+  occurrence: Occurrence,
+  methods: ReadonlyMap<string, PaymentMethod> | undefined,
+  t: TFunction<['common', 'categories']>,
+): { readonly text: string; readonly label: string } | undefined {
+  if (occurrence.transaction.kind !== 'expense' || occurrence.paymentMethodId === undefined) return undefined;
+  const method = methods?.get(occurrence.paymentMethodId);
+  if (method === undefined || (method.type !== 'credit_card' && method.type !== 'debit_card'))
+    return undefined;
+  const digits = method.card?.lastDigits;
+  return digits === undefined
+    ? { text: method.label, label: t('feed.paidWith', { name: method.label }) }
+    : { text: digits, label: t('feed.cardEnding', { digits }) };
+}
+
+/**
  * One occurrence.
  *
  * `memo` is load-bearing, not decoration: `effectiveTransaction` returns the
@@ -137,6 +158,7 @@ export const TransactionRow = memo(function TransactionRow({
   const profile = context.profiles.get(occurrence.transaction.profileId);
   const isIncome = occurrence.transaction.kind === 'income';
   const type = rowType(occurrence, t);
+  const card = cardOf(occurrence, context.methods, t);
   const signed = isIncome ? occurrence.money.baseAmountMinor : -occurrence.money.baseAmountMinor;
 
   // The date is part of the NAME, so the row is self-describing when the
@@ -150,6 +172,7 @@ export const TransactionRow = memo(function TransactionRow({
     categoryName,
     occurrence.note,
     type?.label,
+    card?.label,
     context.showProfile ? profile?.name : undefined,
   ]
     .filter(Boolean)
@@ -189,6 +212,7 @@ export const TransactionRow = memo(function TransactionRow({
                 {type.label}
               </span>
             )}
+
             {occurrence.isProjected ? (
               // Muted grey is not an explanation for an 18,000 salary sitting in
               // the feed and not in the balance.
@@ -206,12 +230,28 @@ export const TransactionRow = memo(function TransactionRow({
           <Avatar avatar={profile.avatar} color={profile.color} size="sm" />
         ) : null}
 
-        <Money
-          minor={signed}
-          currency={context.currency}
-          announce={false}
-          className={cn('shrink-0 text-sm font-semibold', isIncome ? 'text-income' : 'text-foreground')}
-        />
+        {/*
+          The card under the amount, as a bank's app shows it - not among the
+          chips, where a plan's "payment 5 of 12" and "not counted yet" already
+          fill a phone's width.
+        */}
+        <span className="flex shrink-0 flex-col items-end">
+          <Money
+            minor={signed}
+            currency={context.currency}
+            announce={false}
+            className={cn('text-sm font-semibold', isIncome ? 'text-income' : 'text-foreground')}
+          />
+          {card === undefined ? null : (
+            <span
+              className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground"
+              data-testid="row-card"
+            >
+              <CreditCard className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate tabular-nums">{card.text}</span>
+            </span>
+          )}
+        </span>
       </button>
 
       {/*

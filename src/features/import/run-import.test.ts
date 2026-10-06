@@ -6,7 +6,7 @@ import type { PreparedFile } from '@/services/ai-import/prepare-files';
 import type { ExtractOutcome } from '@/services/supabase/extract';
 import type { LocalDate } from '@/types/money';
 
-import { runImport, type FileState, type ImportContext, type ReadCache } from './run-import';
+import { runImport, type FileRead, type FileState, type ImportContext, type ReadCache } from './run-import';
 
 const wire: WireContext = {
   today: '2026-10-04',
@@ -26,15 +26,15 @@ const ctx: ImportContext = {
 const usage = { in: 100, out: 50, cacheRead: 0, cacheWrite: 0 };
 const ok = (result: unknown): ExtractOutcome => ({ ok: true, result, usage });
 const extract = (rows: WireRow[], over: Partial<WireExtract> = {}): ExtractOutcome =>
-  ok({ r: rows, t: [], per: null, done: true, ...over });
+  ok({ r: rows, t: [], per: null, done: true, k: [], ba: [], pr: '', ...over });
 
 const memoryCache = (): ReadCache & { store: Map<string, unknown> } => {
-  const store = new Map<string, { rows: never[]; totals: never[] }>();
+  const store = new Map<string, FileRead>();
   return {
     store,
     get: (hash) => Promise.resolve(store.get(hash)),
     put: (hash, read) => {
-      store.set(hash, read as never);
+      store.set(hash, read);
       return Promise.resolve();
     },
   };
@@ -200,6 +200,58 @@ describe('an image', () => {
       [2_500, ['total_mismatch']],
     ]);
     expect(result.reconciliations[0]?.differenceMinor).toBe(22_500);
+  });
+});
+
+describe('cards and bank accounts', () => {
+  const listed = {
+    k: [
+      { s: 0, n: 'max executive', l4: '3214', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+      { s: 0, n: 'Dream Card VIP', l4: '0427', nw: 'ויזה', is: 'MAX', cr: '14.65%', lim: '', bd: '' },
+    ],
+    pr: '4.75%',
+  };
+
+  it('in an image with no transactions are read twice, and the reads compared', async () => {
+    const { result, calls, states, cache } = await run([imageFile()], {
+      'extract:primary': [extract([], listed)],
+      'extract:check': [
+        extract([], {
+          ...listed,
+          k: [
+            { ...listed.k[0], cr: '5.9%' },
+            { ...listed.k[1], cr: '14.56%' },
+          ] as typeof listed.k,
+        }),
+      ],
+    });
+    expect(calls.map((c) => (c.mode === 'extract' ? c.read : c.mode))).toEqual(['primary', 'check']);
+    expect(result.cards.map((c) => [c.label, c.lastDigits, c.credit, c.flags])).toEqual([
+      ['max executive', '3214', { basis: 'prime', margin: '1.15' }, []],
+      ['Dream Card VIP', '0427', { basis: 'prime', margin: '9.9' }, ['reads_disagree']],
+    ]);
+    // Something was found: not "nothing found".
+    expect(states.at(-1)).toMatchObject({ status: 'done', found: 2 });
+    // And remembered, cards and all.
+    const again = await run([imageFile()], {}, cache);
+    expect(again.calls).toHaveLength(0);
+    expect(again.result.cards).toHaveLength(2);
+  });
+
+  it('in a text are found in it, and a bank account with them', async () => {
+    const text = 'max executive 3214 קרדיט 5.9%\nבנק הפועלים סניף 532 חשבון 123456';
+    const { result } = await run([textFile(text)], {
+      'extract:primary': [
+        extract([], {
+          k: [{ s: 0, n: 'max executive', l4: '3214', nw: '', is: '', cr: '5.9%', lim: '', bd: '' }],
+          ba: [{ s: 0, n: 'בנק הפועלים', bk: '', br: '532', no: '123456', h: '' }],
+        }),
+      ],
+    });
+    expect(result.cards.map((c) => c.flags)).toEqual([[]]);
+    expect(result.accounts.map((a) => [a.bank, a.branch, a.number, a.flags])).toEqual([
+      ['12', '532', '123456', []],
+    ]);
   });
 });
 

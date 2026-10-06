@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { WireRequest } from '@/domain/import-wire';
 import { wireRow } from '@/domain/test-factories';
+import type { SheetTarget } from '@/features/transaction/use-transaction-sheet';
 import type { ExtractOutcome } from '@/services/supabase/extract';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { Category, Profile } from '@/types/domain';
@@ -24,6 +26,7 @@ vi.mock('@/app/account', () => ({
 }));
 
 const { ImportSheet } = await import('./import-sheet');
+const { writeSession } = await import('./import-session');
 const { db } = await import('@/db/db');
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
@@ -81,6 +84,7 @@ describe('Add with AI', () => {
         target={{ mode: 'import' }}
         onOpenChange={() => undefined}
         onOpenRow={() => undefined}
+        onOpenCard={() => undefined}
         profiles={[profile]}
         categories={[category('cat.groceries', 'expense'), category('cat.salary', 'income')]}
         paymentMethods={[]}
@@ -128,6 +132,7 @@ describe('Add with AI', () => {
         target={{ mode: 'import' }}
         onOpenChange={() => undefined}
         onOpenRow={() => undefined}
+        onOpenCard={() => undefined}
         profiles={[profile]}
         categories={[category('cat.groceries', 'expense')]}
         paymentMethods={[]}
@@ -142,9 +147,92 @@ describe('Add with AI', () => {
       new File(['not an image'], 'broken.png', { type: 'image/png' }),
     );
     await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
-    const list = await screen.findByText("We didn't find any transactions in these files.");
+    const list = await screen.findByText(
+      "We didn't find any transactions, cards or bank accounts in these files.",
+    );
     expect(list).toBeInTheDocument();
     expect(within(document.body).getAllByText("This file couldn't be opened.").length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Choose other files' })).toBeInTheDocument();
+  });
+
+  it('opens a card the file showed only part of in the card editor, filled in, for the rest', async () => {
+    // A session outlives its sheet; this one starts afresh.
+    writeSession(undefined);
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: {
+          r: [],
+          t: [],
+          per: null,
+          done: true,
+          k: [
+            {
+              s: 0,
+              n: 'max executive',
+              l4: '3214',
+              nw: 'Mastercard',
+              is: 'MAX',
+              cr: '5.9%',
+              lim: '',
+              bd: '',
+            },
+          ],
+          ba: [],
+          pr: '4.75%',
+        },
+      },
+    ];
+    // The sheet's place in the URL, as the feed keeps it.
+    function Harness() {
+      const [target, setTarget] = useState<Extract<SheetTarget, { mode: 'import' }>>({ mode: 'import' });
+      return (
+        <ImportSheet
+          target={target}
+          onOpenChange={() => undefined}
+          onOpenRow={() => undefined}
+          onOpenCard={(card) => {
+            setTarget(card === undefined ? { mode: 'import' } : { mode: 'import', card });
+          }}
+          profiles={[profile]}
+          categories={[category('cat.groceries', 'expense')]}
+          paymentMethods={[]}
+          activeProfileId="p1"
+          baseCurrency="ILS"
+          today={'2026-09-15' as LocalDate}
+          onSaved={() => undefined}
+        />
+      );
+    }
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['max executive 3214 Mastercard קרדיט 5.9%'], 'cards.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+
+    // Only a card, and its billing day not in the file: straight to the editor, on what it did show.
+    await screen.findByText("Filled in from your file. Add what it didn't show: billing day.");
+    expect(screen.getByLabelText('Label')).toHaveValue('max executive');
+    expect(screen.getByLabelText('Last 4 digits')).toHaveValue('3214');
+    await user.click(screen.getByRole('radio', { name: 'The 10th' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Back to the list, the card added.
+    await screen.findByText('Added');
+    const [saved] = (await db.paymentMethods.toArray()).filter((m) => m.type === 'credit_card');
+    expect(saved).toMatchObject({
+      label: 'max executive',
+      profileId: 'p1',
+      card: {
+        lastDigits: '3214',
+        network: 'mastercard',
+        issuer: 'max',
+        billingDay: 10,
+        creditPrimeMargin: '1.15',
+      },
+    });
   });
 });
