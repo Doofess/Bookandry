@@ -7,6 +7,7 @@ import {
   mergeCards,
   readAccount,
   readCard,
+  withStatementCards,
   type FoundAccount,
   type FoundCard,
 } from '@/domain/import-cards';
@@ -305,6 +306,7 @@ export async function runImport(
   // A difference that remains marks the rows it points at.
   const stillSuspect = new Set(reconciliations.flatMap((r) => r.suspects.map((s) => s.id)));
   found = found.map((row) => (stillSuspect.has(row.id) ? withFlags(row, 'total_mismatch') : row));
+  found = withStatementCards(found, cards);
 
   // Report, and remember what was read in full.
   for (const p of fresh) {

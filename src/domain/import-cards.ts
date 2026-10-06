@@ -10,6 +10,7 @@ import type {
 
 import { BANKS, bankByCode, isAccountNumber } from './banks';
 import { CARD_CURRENCY } from './cards';
+import type { FoundRow } from './import-check';
 import type { WireAccount, WireCard } from './import-wire';
 
 /**
@@ -191,6 +192,28 @@ export function mergeCards(cards: readonly FoundCard[]): FoundCard[] {
     };
   }
   return out;
+}
+
+/**
+ * A statement of one card says so once, in its header, and not beside each
+ * row: every expense in a file that shows exactly one card - and that does
+ * not name a card of its own - was charged to it.
+ */
+export function withStatementCards(rows: readonly FoundRow[], cards: readonly FoundCard[]): FoundRow[] {
+  const byFile = new Map<number, FoundCard[]>();
+  for (const card of cards) byFile.set(card.file, [...(byFile.get(card.file) ?? []), card]);
+  return rows.map((row) => {
+    const [only, ...more] = mergeCards(byFile.get(row.file) ?? []);
+    if (only === undefined || more.length > 0) return row;
+    if (row.kind !== 'expense' || row.wire.l4 !== '' || row.methodAlias !== null) return row;
+    return {
+      ...row,
+      statementCard: {
+        label: only.label,
+        ...(only.lastDigits === undefined ? {} : { lastDigits: only.lastDigits }),
+      },
+    };
+  });
 }
 
 /** The household's card a found one is: same last digits, or - when either has none - the same name. */

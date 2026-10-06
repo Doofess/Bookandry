@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PaymentMethod } from '@/types/domain';
-import type { IsoInstant } from '@/types/money';
+import type { IsoInstant, LocalDate } from '@/types/money';
 
 import {
   accountDraftDetails,
@@ -21,9 +21,13 @@ import {
   rateFromText,
   readAccount,
   readCard,
+  withStatementCards,
   type FoundCard,
 } from './import-cards';
+import { readRow } from './import-check';
+import type { WireRow } from './import-wire';
 import type { WireAccount, WireCard } from './import-wire';
+import { wireRow } from './test-factories';
 
 const NOW = '2026-10-06T00:00:00.000Z' as IsoInstant;
 const wireCard = (over: Partial<WireCard> = {}): WireCard => ({
@@ -276,5 +280,58 @@ describe('the review list', () => {
       ['account', true, [], []],
       ['account', false, [], ['card_known']],
     ]);
+  });
+});
+
+describe('a statement of one card', () => {
+  const row = (file: number, over: Partial<WireRow> = {}) =>
+    readRow(wireRow(over), `r${String(file)}${over.m ?? ''}`, {
+      file,
+      base: 'ILS',
+      known: new Set(['ILS']),
+      anchor: '2026-10-06' as LocalDate,
+      today: '2026-10-06' as LocalDate,
+    });
+
+  it('charges every expense in it to that card, unless the row says otherwise', () => {
+    const header = { ...card(), file: 0 };
+    const [plain, ownDigits, named, refund, elsewhere] = withStatementCards(
+      [
+        row(0),
+        row(0, { l4: '9999', m: 'b' }),
+        row(0, { pm: 'p1', m: 'c' }),
+        row(0, { a: '-20.00', m: 'd' }),
+        row(1, { m: 'e' }),
+      ],
+      [header],
+    );
+    expect(plain?.statementCard).toEqual({ label: 'max executive', lastDigits: '3200' });
+    expect(ownDigits?.statementCard).toBeUndefined();
+    expect(named?.statementCard).toBeUndefined();
+    expect(refund?.statementCard).toBeUndefined();
+    // Another file: not this card's.
+    expect(elsewhere?.statementCard).toBeUndefined();
+  });
+
+  it('guesses nothing in a file that shows several cards', () => {
+    const [one] = withStatementCards(
+      [row(0)],
+      [
+        { ...card(), file: 0 },
+        { ...card({ l4: '0400', n: 'Dream Card' }), file: 0 },
+      ],
+    );
+    expect(one?.statementCard).toBeUndefined();
+  });
+
+  it('counts the same card read twice as one', () => {
+    const [one] = withStatementCards(
+      [row(0)],
+      [
+        { ...card(), file: 0 },
+        { ...card(), id: 'again', file: 0 },
+      ],
+    );
+    expect(one?.statementCard?.lastDigits).toBe('3200');
   });
 });

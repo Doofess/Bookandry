@@ -35,6 +35,15 @@ describe('categoryFromText', () => {
     }
   });
 
+  it("files a statement's loan plan under Loans, whatever its line says", () => {
+    expect(categoryFromText({ ...expense('מקס איט פיננסים'), plan: { mode: 'loan' } }, household)).toBe(
+      'cat.loans',
+    );
+    expect(
+      categoryFromText({ ...expense('שופרסל'), plan: { mode: 'installments' } }, household),
+    ).toBeUndefined();
+  });
+
   it('leaves everything else to the history and the reading', () => {
     expect(categoryFromText(expense('מקס איט פיננסים'), household)).toBeUndefined();
     expect(categoryFromText(expense('Shufersal'), household)).toBeUndefined();
