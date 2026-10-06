@@ -1,5 +1,6 @@
 import { db } from '@/db/db';
 import { categoryFromHistory } from '@/db/repos/transactions';
+import { categoryFromText } from '@/domain/import-categories';
 import { BLOCKING, withFlags, type Flag, type FoundRow } from '@/domain/import-check';
 import { draftOf } from '@/domain/import-review';
 import { txFormSchema, type TxFormValues } from '@/domain/tx-form';
@@ -71,6 +72,7 @@ export async function buildReview(
         : undefined;
     const categoryId =
       fromHistory ??
+      categoryFromText(row, ctx.categories) ??
       (suggestedFits ? suggested : undefined) ??
       refund ??
       categoriesFor(ctx.categories, row.kind)[0]?.id ??
