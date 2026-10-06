@@ -438,3 +438,24 @@ describe('a bank account', () => {
     });
   });
 });
+
+describe('a card’s colour', () => {
+  it('is kept by key, left alone by undefined, and cleared back to the company’s by null', async () => {
+    await createPaymentMethod(
+      handle.db,
+      'pm.visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1', color: 'gold' },
+      NOW,
+    );
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.color).toBe('gold');
+
+    await updatePaymentMethod(handle.db, 'pm.visa', { label: 'Visa Gold' }, NOW);
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.color).toBe('gold');
+
+    await updatePaymentMethod(handle.db, 'pm.visa', { color: 'black' }, NOW);
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.color).toBe('black');
+
+    await updatePaymentMethod(handle.db, 'pm.visa', { color: null }, NOW);
+    expect((await handle.db.paymentMethods.get('pm.visa'))?.color).toBeUndefined();
+  });
+});

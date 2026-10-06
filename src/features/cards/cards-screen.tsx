@@ -28,6 +28,7 @@ import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
 import { SHARED_OWNER, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
+import { cardGradient } from './card-colors';
 import { MethodEditor, OtherMethods } from './method-editor';
 import { NetworkLogo } from './network-logo';
 import { UnfinishedNotice } from './unfinished-notice';
@@ -121,16 +122,6 @@ export function CardsScreen() {
   );
 }
 
-/** Issuer tints: a hint of whose card it is, never their artwork. */
-const TINTS: Record<string, string> = {
-  isracard: 'from-[#1f3a68] to-[#3b6bb0]',
-  cal: 'from-[#0f5c56] to-[#2a9083]',
-  max: 'from-[#5b1f63] to-[#b03a7a]',
-  amex: 'from-[#1d4f7a] to-[#4a8cc4]',
-  diners: 'from-[#2b2b2b] to-[#5a5a5a]',
-  other: 'from-[#2f3b35] to-[#5b6d63]',
-};
-
 function CardPanel({
   card,
   owner,
@@ -178,9 +169,11 @@ function CardPanel({
     <article className="space-y-3" aria-labelledby={`card-${card.id}`}>
       {/* The card itself: everything on its face but the number. */}
       <div
+        data-testid="card-face"
+        data-color={card.color ?? ''}
         className={cn(
           'relative flex aspect-[1.586] w-full flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br p-5 text-white shadow-md',
-          TINTS[details?.issuer ?? 'other'],
+          cardGradient(card),
         )}
       >
         <div className="flex items-start justify-between gap-3">

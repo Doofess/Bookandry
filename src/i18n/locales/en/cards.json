@@ -190,5 +190,20 @@
     "accounts_one": "1 bank account from Add with AI is still to finish.",
     "accounts_other": "{{count}} bank accounts from Add with AI are still to finish.",
     "open": "Finish"
+  },
+  "color": {
+    "label": "Card colour",
+    "issuer": "The card company's colour",
+    "auto": "Auto",
+    "black": "Black",
+    "silver": "Silver",
+    "blue": "Blue",
+    "teal": "Teal",
+    "green": "Green",
+    "gold": "Gold",
+    "orange": "Copper",
+    "red": "Red",
+    "rose": "Rose",
+    "purple": "Purple"
   }
 }

@@ -83,7 +83,9 @@ export async function createPaymentMethod(
 export async function updatePaymentMethod(
   db: BookandryDB,
   id: string,
-  patch: Partial<Pick<PaymentMethod, 'label' | 'type' | 'color' | 'profileId'>> & {
+  patch: Partial<Pick<PaymentMethod, 'label' | 'type' | 'profileId'>> & {
+    /** `null` clears it: back to the card company's colour. */
+    readonly color?: string | null;
     /** `null` CLEARS it, which `Partial<>` alone cannot express. */
     readonly creditAnnualRate?: string | null;
     /** The card's details, whole; `null` removes them. */
@@ -114,11 +116,12 @@ export async function updatePaymentMethod(
   return db.transaction('rw', db.paymentMethods, async () => {
     const current = await db.paymentMethods.get(id);
     if (!current) throw new Error(`No such payment method: ${id}`);
-    const { creditAnnualRate: _raw, card, account, ...rest } = patch;
+    const { creditAnnualRate: _raw, card, account, color, ...rest } = patch;
     const next: PaymentMethod = {
       ...current,
       ...rest,
       ...(label === undefined ? {} : { label }),
+      ...(color === undefined ? {} : { color: color ?? undefined }),
       // undefined leaves it alone; null clears it; a string sets it.
       ...(rate === undefined
         ? {}

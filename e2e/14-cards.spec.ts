@@ -24,6 +24,7 @@ const COPY = {
     add: 'Add a card',
     label: 'Label',
     lastDigits: 'Last 4 digits',
+    gold: 'Gold',
     max: 'Max',
     day10: 'The 10th',
     fxFee: 'Foreign-currency fee',
@@ -50,6 +51,7 @@ const COPY = {
     add: 'הוספת כרטיס',
     label: 'תווית',
     lastDigits: '4 ספרות אחרונות',
+    gold: 'זהב',
     max: 'מקס',
     day10: 'ב־10 לחודש',
     fxFee: 'עמלת עסקה במט״ח',
@@ -105,6 +107,8 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByLabel(copy.label, { exact: true }).fill('Visa');
       await page.getByLabel(copy.lastDigits, { exact: true }).fill('3200');
       await page.getByRole('radio', { name: copy.max, exact: true }).click();
+      // Its colour: picked from swatches shaped like the card.
+      await page.getByTitle(copy.gold, { exact: true }).click();
       await page.getByRole('radio', { name: copy.day10, exact: true }).click();
       await page.getByLabel(copy.fxFee, { exact: true }).fill('2.5');
       await page.getByLabel(copy.limit, { exact: true }).fill('15,000');
@@ -114,6 +118,7 @@ for (const lang of ['en', 'he'] as const) {
       await expect(tile).toContainText(copy.billed);
       // Its last four digits, where a card prints them.
       await expect(tile).toContainText('3200');
+      await expect(tile.getByTestId('card-face')).toHaveAttribute('data-color', 'gold');
 
       // The balance before.
       await page.goto('/');
