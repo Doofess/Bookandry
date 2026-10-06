@@ -143,5 +143,14 @@
   "fillCheck": "Filled in from your file. Check it, then save.",
   "methodSaved": "{{name}} saved",
   "methodsAdded_one": "Added 1 card or account",
-  "methodsAdded_other": "Added {{count}} cards and accounts"
+  "methodsAdded_other": "Added {{count}} cards and accounts",
+  "unfinished": {
+    "title_one": "Still to finish (1)",
+    "title_other": "Still to finish ({{count}})",
+    "body": "Your files showed only part of these. They stay here until you fill in the rest or delete them.",
+    "delete": "Delete {{name}}",
+    "deleted": "{{name}} deleted",
+    "waiting_one": "1 card or account is still to finish. It's waiting in Add with AI.",
+    "waiting_other": "{{count}} cards and accounts are still to finish. They're waiting in Add with AI."
+  }
 }

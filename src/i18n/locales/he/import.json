@@ -155,5 +155,16 @@
   "methodSaved": "{{name}} נשמר",
   "methodsAdded_one": "נוסף כרטיס או חשבון אחד",
   "methodsAdded_two": "נוספו 2 כרטיסים וחשבונות",
-  "methodsAdded_other": "נוספו {{count}} כרטיסים וחשבונות"
+  "methodsAdded_other": "נוספו {{count}} כרטיסים וחשבונות",
+  "unfinished": {
+    "title_one": "להשלמה (1)",
+    "title_two": "להשלמה (2)",
+    "title_other": "להשלמה ({{count}})",
+    "body": "הקבצים הראו רק חלק מהפרטים. הם נשארים כאן עד שמשלימים אותם או מוחקים.",
+    "delete": "מחיקת {{name}}",
+    "deleted": "{{name}} נמחק",
+    "waiting_one": "כרטיס או חשבון אחד מחכה להשלמה בהוספה עם AI.",
+    "waiting_two": "2 כרטיסים וחשבונות מחכים להשלמה בהוספה עם AI.",
+    "waiting_other": "{{count}} כרטיסים וחשבונות מחכים להשלמה בהוספה עם AI."
+  }
 }

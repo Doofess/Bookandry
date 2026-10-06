@@ -1,4 +1,5 @@
 import { cn } from 'cn';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronDown, CircleAlert, FileUp, Info, Loader2, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
@@ -23,6 +24,13 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import { cachedRead, rememberRead } from '@/db/import-cache';
+import {
+  dropUnfinished,
+  keepUnfinished,
+  listUnfinished,
+  restoreUnfinished,
+  type UnfinishedMethod,
+} from '@/db/import-drafts';
 import { redoImport, saveImported, undoImport, type ImportItem } from '@/db/import-transactions';
 import { quoteRate } from '@/db/rates-gateway';
 import { categoryFromHistory, findCandidates, findOverrides } from '@/db/repos/transactions';
@@ -53,8 +61,16 @@ import {
 } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
-import { foundName, needsFilling, nextToFill, saveFound, tickable } from './found-methods';
-import { MethodPanel, MethodsGroup } from './found-methods-list';
+import {
+  foundMethodOf,
+  foundName,
+  needsFilling,
+  nextUnfinished,
+  saveFound,
+  tickable,
+  unfinishedItem,
+} from './found-methods';
+import { MethodPanel, MethodsGroup, UnfinishedGroup } from './found-methods-list';
 import { readSession, writeSession, type ImportSession } from './import-session';
 import { applyBatch, buildReview, linkToCard, saveable, type Aliases, type ReviewItem } from './review-items';
 import { runImport, type FileState } from './run-import';
@@ -66,7 +82,7 @@ export type ImportSheetProps = {
   readonly target: Extract<SheetTarget, { mode: 'import' }>;
   readonly onOpenChange: (open: boolean) => void;
   readonly onOpenRow: (row: number | undefined) => void;
-  readonly onOpenCard: (card: number | undefined) => void;
+  readonly onOpenCard: (card: string | undefined) => void;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
@@ -105,6 +121,7 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
   states: [],
   items: [],
   methods: [],
+  drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId },
 });
@@ -120,7 +137,9 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
  *
  * Cards and bank accounts found are listed above them. One the file showed
  * only part of opens in the card or account editor, with what it did show
- * already filled in - straight away, when that is all the files held.
+ * already filled in - straight away, when that is all the files held - and
+ * waits at the top of the sheet, reading after reading, until its rest is
+ * filled in or it is deleted.
  */
 export function ImportSheet(props: ImportSheetProps) {
   const { t, i18n } = useTranslation(['import', 'common', 'categories', 'profiles']);
@@ -139,6 +158,23 @@ export function ImportSheet(props: ImportSheetProps) {
   useEffect(() => {
     writeSession(session);
   }, [session]);
+
+  // Cards and accounts still to finish, from this reading or an earlier one.
+  const kept = useLiveQuery(() => listUnfinished(db), []);
+  const unfinished = useMemo(
+    () =>
+      (kept ?? []).flatMap((entry) => {
+        const item = unfinishedItem(entry, props.paymentMethods);
+        return item === undefined ? [] : [{ entry, item }];
+      }),
+    [kept, props.paymentMethods],
+  );
+  // One the household turns out to have all of already was finished some other way.
+  useEffect(() => {
+    for (const entry of kept ?? []) {
+      if (unfinishedItem(entry, props.paymentMethods) === undefined) void dropUnfinished(db, entry.key);
+    }
+  }, [kept, props.paymentMethods]);
 
   // Files from the Share menu: picked for the person, read only when they say so.
   const sharedId = props.target.sharedId;
@@ -169,6 +205,20 @@ export function ImportSheet(props: ImportSheetProps) {
       : 0;
   // Who a new card or account belongs to: the batch "For".
   const owner = session.batch.profileId || defaultProfileId;
+  // One kept from an earlier reading: whoever it was read for, while they are in the household.
+  const ownerOf = (entry: UnfinishedMethod) =>
+    props.profiles.some((p) => p.id === entry.owner) ? entry.owner : owner;
+
+  const deleteUnfinished = (entry: UnfinishedMethod, name: string) => {
+    void dropUnfinished(db, entry.key).then(() => {
+      toast(t('import:unfinished.deleted', { name }), {
+        action: {
+          label: t('common:action.undo'),
+          onClick: () => void restoreUnfinished(db, entry),
+        },
+      });
+    });
+  };
   const requestClose = () => {
     if (unsaved > 0) setConfirmDiscard(true);
     else close();
@@ -187,6 +237,7 @@ export function ImportSheet(props: ImportSheetProps) {
       states,
       items: [],
       methods: [],
+      drafted: 0,
       reconciliations: [],
     }));
     const update = (state: FileState) => {
@@ -264,11 +315,25 @@ export function ImportSheet(props: ImportSheetProps) {
         today: props.today,
         primeRate: prime.primeRate,
       });
-      const methods = buildMethodReview(result.cards, result.accounts, props.paymentMethods);
-      setSession((s) => ({ ...s, stage: 'review', items, methods, reconciliations: result.reconciliations }));
+      const found = buildMethodReview(result.cards, result.accounts, props.paymentMethods);
+      // What the files showed only part of is kept apart, until it is finished or deleted.
+      const drafted = await keepUnfinished(
+        db,
+        found.filter(needsFilling).map(foundMethodOf),
+        owner,
+        systemClock.nowMs(),
+      );
+      setSession((s) => ({
+        ...s,
+        stage: 'review',
+        items,
+        methods: found.filter((m) => !needsFilling(m)),
+        drafted: drafted.length,
+        reconciliations: result.reconciliations,
+      }));
       // Only cards or accounts, and one of them needs finishing: straight to its editor.
-      const first = methods.findIndex(needsFilling);
-      if (items.length === 0 && first !== -1) props.onOpenCard(first);
+      const first = drafted[0];
+      if (items.length === 0 && first !== undefined) props.onOpenCard(first.key);
     } catch {
       // Stopped: back to the files, still picked.
       setSession((s) => ({ ...s, stage: 'pick' }));
@@ -331,6 +396,8 @@ export function ImportSheet(props: ImportSheetProps) {
       if (session.sharedId !== undefined) void forgetShared(session.sharedId);
       writeSession(undefined);
       if (methodsSaved > 0) toast(t('import:methodsAdded', { count: methodsSaved }));
+      // The sheet closes; what is still to finish stays, and says where.
+      if (unfinished.length > 0) toast(t('import:unfinished.waiting', { count: unfinished.length }));
       if (ids.length === 0) {
         props.onOpenChange(false);
         return;
@@ -365,7 +432,9 @@ export function ImportSheet(props: ImportSheetProps) {
   }
 
   const editing = props.target.row === undefined ? undefined : session.items[props.target.row];
-  const filling = props.target.card === undefined ? undefined : session.methods[props.target.card];
+  const draft =
+    props.target.card === undefined ? undefined : unfinished.find((u) => u.entry.key === props.target.card);
+  const filling = draft?.item ?? session.methods.find((m) => m.id === props.target.card);
 
   return (
     <Sheet
@@ -395,20 +464,33 @@ export function ImportSheet(props: ImportSheetProps) {
               item={filling}
               methods={props.paymentMethods}
               profiles={props.profiles}
-              owner={owner}
+              owner={draft === undefined ? owner : ownerOf(draft.entry)}
               onDone={(saved) => {
-                const index = props.target.card ?? -1;
-                if (saved === undefined) {
+                const open = props.target.card;
+                if (saved === undefined || open === undefined) {
                   props.onOpenCard(undefined);
                   return;
                 }
-                const methods = session.methods.map((m, i): MethodReviewItem =>
-                  i === index ? { ...m, savedId: saved.id, ticked: false } : m,
-                );
-                setSession((s) => ({ ...s, methods, items: linkToCard(s.items, saved) }));
+                setSession((s) => ({
+                  ...s,
+                  methods: s.methods.map((m): MethodReviewItem =>
+                    m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
+                  ),
+                  items: linkToCard(s.items, saved),
+                }));
                 toast(t('import:methodSaved', { name: saved.label }));
-                // On to the next one the files showed only part of, if any.
-                props.onOpenCard(nextToFill(methods, index));
+                if (draft === undefined) {
+                  props.onOpenCard(undefined);
+                  return;
+                }
+                // Finished: no longer kept. On to the next one still to finish, if any.
+                void dropUnfinished(db, draft.entry.key);
+                props.onOpenCard(
+                  nextUnfinished(
+                    unfinished.map((u) => u.entry.key),
+                    draft.entry.key,
+                  ),
+                );
               }}
             />
           ) : editing !== undefined && props.target.row !== undefined ? (
@@ -432,51 +514,76 @@ export function ImportSheet(props: ImportSheetProps) {
                 props.onOpenRow(undefined);
               }}
             />
-          ) : session.stage === 'pick' ? (
-            <Picker
-              files={session.files}
-              shared={session.sharedId !== undefined}
-              sharedGone={sharedGone}
-              onFiles={(files) => {
-                setSession((s) => ({ ...s, files }));
-              }}
-              onRead={() => void read(session.files)}
-            />
-          ) : session.stage === 'reading' ? (
-            <Reading
-              states={session.states}
-              onStop={() => {
-                abort.current?.abort();
-              }}
-            />
           ) : (
-            <Review
-              session={session}
-              profiles={props.profiles}
-              categories={props.categories}
-              methodsList={props.paymentMethods}
-              translate={translate}
-              saving={saving}
-              onChange={(items) => {
-                setSession((s) => ({ ...s, items }));
-              }}
-              onMethods={(methods) => {
-                setSession((s) => ({ ...s, methods }));
-              }}
-              onOpenMethod={(index) => {
-                props.onOpenCard(index);
-              }}
-              onBatch={(batch) => {
-                setSession((s) => ({ ...s, batch, items: applyBatch(s.items, batch, props.paymentMethods) }));
-              }}
-              onOpen={(index) => {
-                props.onOpenRow(index);
-              }}
-              onSave={() => void save()}
-              onAgain={() => {
-                setSession((s) => ({ ...s, stage: 'pick', files: [], items: [], methods: [] }));
-              }}
-            />
+            <div className="space-y-4">
+              {session.stage === 'reading' ? null : (
+                <UnfinishedGroup
+                  entries={unfinished}
+                  methods={props.paymentMethods}
+                  onOpen={(key) => {
+                    props.onOpenCard(key);
+                  }}
+                  onDelete={deleteUnfinished}
+                />
+              )}
+              {session.stage === 'pick' ? (
+                <Picker
+                  files={session.files}
+                  shared={session.sharedId !== undefined}
+                  sharedGone={sharedGone}
+                  onFiles={(files) => {
+                    setSession((s) => ({ ...s, files }));
+                  }}
+                  onRead={() => void read(session.files)}
+                />
+              ) : session.stage === 'reading' ? (
+                <Reading
+                  states={session.states}
+                  onStop={() => {
+                    abort.current?.abort();
+                  }}
+                />
+              ) : (
+                <Review
+                  session={session}
+                  profiles={props.profiles}
+                  categories={props.categories}
+                  methodsList={props.paymentMethods}
+                  translate={translate}
+                  saving={saving}
+                  onChange={(items) => {
+                    setSession((s) => ({ ...s, items }));
+                  }}
+                  onMethods={(methods) => {
+                    setSession((s) => ({ ...s, methods }));
+                  }}
+                  onOpenMethod={(id) => {
+                    props.onOpenCard(id);
+                  }}
+                  onBatch={(batch) => {
+                    setSession((s) => ({
+                      ...s,
+                      batch,
+                      items: applyBatch(s.items, batch, props.paymentMethods),
+                    }));
+                  }}
+                  onOpen={(index) => {
+                    props.onOpenRow(index);
+                  }}
+                  onSave={() => void save()}
+                  onAgain={() => {
+                    setSession((s) => ({
+                      ...s,
+                      stage: 'pick',
+                      files: [],
+                      items: [],
+                      methods: [],
+                      drafted: 0,
+                    }));
+                  }}
+                />
+              )}
+            </div>
           )}
         </div>
 
@@ -752,7 +859,7 @@ function Review({
   readonly saving: boolean;
   readonly onChange: (items: ReviewItem[]) => void;
   readonly onMethods: (methods: MethodReviewItem[]) => void;
-  readonly onOpenMethod: (index: number) => void;
+  readonly onOpenMethod: (id: string) => void;
   readonly onBatch: (batch: ImportSession['batch']) => void;
   readonly onOpen: (index: number) => void;
   readonly onSave: () => void;
@@ -765,6 +872,14 @@ function Review({
   const methods = session.methods;
   const failures = session.states.filter((s) => s.status === 'failed' || s.status === 'refused');
 
+  // Everything found waits above, to be finished: only another file to offer here.
+  if (items.length === 0 && methods.length === 0 && session.drafted > 0) {
+    return (
+      <Button type="button" variant="outline" className="w-full" onClick={onAgain}>
+        {t('chooseOther')}
+      </Button>
+    );
+  }
   if (items.length === 0 && methods.length === 0) {
     return (
       <div className="space-y-4">
@@ -838,7 +953,10 @@ function Review({
         onTick={(index, value) => {
           onMethods(methods.map((m, i) => (i === index ? { ...m, ticked: value && tickable(m) } : m)));
         }}
-        onOpen={onOpenMethod}
+        onOpen={(index) => {
+          const method = methods[index];
+          if (method !== undefined) onOpenMethod(method.id);
+        }}
       />
 
       <div className="grid gap-3 sm:grid-cols-2">

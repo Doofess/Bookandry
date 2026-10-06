@@ -1,7 +1,8 @@
 import { db } from '@/db/db';
+import type { FoundMethod, UnfinishedMethod } from '@/db/import-drafts';
 import { createPaymentMethod, updatePaymentMethod } from '@/db/repos/payment-methods';
 import { bankByCode, bankName } from '@/domain/banks';
-import { accountDraftDetails, type MethodReviewItem } from '@/domain/import-cards';
+import { accountDraftDetails, buildMethodReview, type MethodReviewItem } from '@/domain/import-cards';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
 import type { PaymentMethod } from '@/types/domain';
@@ -31,12 +32,33 @@ export function tickable(item: MethodReviewItem): boolean {
   return item.savedId === undefined && !item.flags.includes('card_known') && item.missing.length === 0;
 }
 
-/** The next one to fill in after `from` - wrapping round - or undefined when none is left. */
-export function nextToFill(items: readonly MethodReviewItem[], from: number): number | undefined {
-  for (let step = 1; step <= items.length; step += 1) {
-    const index = (from + step) % items.length;
-    const item = items[index];
-    if (item !== undefined && index !== from && needsFilling(item)) return index;
+/** What a found card or account was read as, to be kept until it is finished. */
+export function foundMethodOf(item: MethodReviewItem): FoundMethod {
+  return item.kind === 'card' ? { kind: 'card', found: item.found } : { kind: 'account', found: item.found };
+}
+
+/**
+ * One kept to finish, as the household stands now: the card it turns out to
+ * update, what is still missing. Undefined once the household already has all
+ * it showed - finished some other way.
+ */
+export function unfinishedItem(
+  entry: UnfinishedMethod,
+  methods: readonly PaymentMethod[],
+): MethodReviewItem | undefined {
+  const [item] =
+    entry.kind === 'card'
+      ? buildMethodReview([entry.found], [], methods)
+      : buildMethodReview([], [entry.found], methods);
+  return item === undefined || item.flags.includes('card_known') ? undefined : item;
+}
+
+/** The one to fill in after `from` - wrapping round - or undefined when none is left. */
+export function nextUnfinished(keys: readonly string[], from: string): string | undefined {
+  const at = keys.indexOf(from);
+  for (let step = 1; step < keys.length; step += 1) {
+    const key = keys[(at + step + keys.length) % keys.length];
+    if (key !== undefined && key !== from) return key;
   }
   return undefined;
 }

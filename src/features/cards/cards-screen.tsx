@@ -30,6 +30,7 @@ import type { Currency, LocalDate } from '@/types/money';
 
 import { MethodEditor, OtherMethods } from './method-editor';
 import { NetworkLogo } from './network-logo';
+import { UnfinishedNotice } from './unfinished-notice';
 import { useCardsData } from './use-cards-data';
 
 /**
@@ -74,6 +75,8 @@ export function CardsScreen() {
           {t('add')}
         </Button>
       </header>
+
+      <UnfinishedNotice kind="card" />
 
       {data === undefined ? null : data.cards.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center">
