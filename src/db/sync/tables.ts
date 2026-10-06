@@ -58,6 +58,32 @@ export const SYNCED_SETTINGS_FIELDS = ['defaultCurrency'] as const;
  */
 export const SYNC_CURSOR_KEY = 'syncCursor';
 
+/**
+ * Where the next pull from a linked account's space resumes. The account's
+ * own space keeps SYNC_CURSOR_KEY, so a device that synced before accounts
+ * could link carries straight on.
+ */
+export function cursorKeyOf(space: string | undefined): string {
+  return space === undefined ? SYNC_CURSOR_KEY : `${SYNC_CURSOR_KEY}:${space}`;
+}
+
+/**
+ * A row's `home` when it lives in every linked account's space: the
+ * household's structure (categories, the currency, merges) and its joint
+ * cards and accounts. Unlinking leaves each account its own copy.
+ */
+export const EVERYWHERE = '*';
+
+/** A row's `home` before its first push: it lives in no space yet. */
+export const NOWHERE = '';
+
+/** Tables whose every row lives in every linked account's space. */
+export const REPLICATED_TABLES: ReadonlySet<SyncedTable> = new Set<SyncedTable>([
+  'categories',
+  'settings',
+  'redirects',
+]);
+
 /** Side-table row: the newest rev this device knows for a synced row. */
 export type SyncStateRow = {
   readonly tbl: SyncedTable;
@@ -65,6 +91,13 @@ export type SyncStateRow = {
   readonly rev: string;
   /** 1 when that newest rev is a deletion. */
   readonly deleted: 0 | 1;
+  /**
+   * The space the row lives in, when it is not this account's own: a linked
+   * account's id, EVERYWHERE, or NOWHERE for a row made here and never sent.
+   * Absent means the account's own space - which is every row that existed
+   * before accounts could link.
+   */
+  readonly home?: string;
 };
 
 /** Present means "changed here and not yet acknowledged by the server". */

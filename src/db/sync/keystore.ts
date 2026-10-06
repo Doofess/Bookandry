@@ -67,12 +67,49 @@ export async function dropOlderKeys(db: BookandryDB): Promise<void> {
 }
 
 /**
+ * A linked account's key: what this device seals and opens that account's
+ * space with. Fetched from the account's own entry, which the server hands to
+ * fellow members only; never another way in.
+ */
+export function spaceKeysKey(space: string): string {
+  return `${KEYS_KEY}:${space}`;
+}
+
+export async function saveSpaceKeys(db: BookandryDB, space: string, ring: Keyring): Promise<void> {
+  const existing = await loadSpaceKeys(db, space);
+  const older = existing === undefined ? [] : [...existing.byVersion.values()];
+  const stored: StoredKeys = {
+    userId: space,
+    current: ring.version,
+    rings: [ring, ...older.filter((r) => r.version !== ring.version)],
+  };
+  await db.meta.put({ key: spaceKeysKey(space), value: stored });
+}
+
+export async function loadSpaceKeys(db: BookandryDB, space: string): Promise<LoadedKeys | undefined> {
+  const stored = (await db.meta.get(spaceKeysKey(space)))?.value as StoredKeys | undefined;
+  if (stored?.userId !== space) return undefined;
+  const byVersion = new Map(stored.rings.map((r) => [r.version, r]));
+  const current = byVersion.get(stored.current);
+  if (current === undefined) return undefined;
+  return { userId: space, current, byVersion };
+}
+
+/**
  * Forget everything that ties this device to an account: keys and cursor.
  * Signing out calls this; whether the local DATA stays is the user's choice
  * and a separate step.
  */
 export async function forgetSyncIdentity(db: BookandryDB): Promise<void> {
   await db.transaction('rw', [db.meta], async () => {
-    await db.meta.bulkDelete([KEYS_KEY, SYNC_CURSOR_KEY]);
+    // Linked accounts' keys and cursors too: they were reached through this one.
+    const linked = (await db.meta.toCollection().primaryKeys()).filter(
+      (key) =>
+        key === LINKED_SPACES_KEY || key.startsWith(`${KEYS_KEY}:`) || key.startsWith(`${SYNC_CURSOR_KEY}:`),
+    );
+    await db.meta.bulkDelete([KEYS_KEY, SYNC_CURSOR_KEY, ...linked]);
   });
 }
+
+/** The `meta` key listing the linked accounts this device last synced with. */
+export const LINKED_SPACES_KEY = 'syncLinkedSpaces';

@@ -9,7 +9,7 @@ import type {
 
 import { nextRev, type Rev } from '@/lib/rev';
 
-import { isSyncedTable, type OutboxRow, type SyncedTable, type SyncStateRow } from './tables';
+import { isSyncedTable, NOWHERE, type OutboxRow, type SyncedTable, type SyncStateRow } from './tables';
 
 /**
  * Change tracking for sync, as ONE Dexie middleware.
@@ -139,12 +139,19 @@ export function changeTracking(context: TrackingContext): Middleware<DBCore> {
         })) as (SyncStateRow | undefined)[];
 
         const now = context.nowMs();
-        const rows: SyncStateRow[] = changes.map((c, i) => ({
-          tbl,
-          id: c.id,
-          rev: nextRev(previous[i]?.rev as Rev | undefined, now, deviceId),
-          deleted: c.deleted ? 1 : 0,
-        }));
+        const rows: SyncStateRow[] = changes.map((c, i) => {
+          // A row new to sync lives nowhere yet, so its first push moves it from nowhere.
+          const home = previous[i] === undefined ? NOWHERE : previous[i].home;
+          return {
+            tbl,
+            id: c.id,
+            rev: nextRev(previous[i]?.rev as Rev | undefined, now, deviceId),
+            deleted: c.deleted ? 1 : 0,
+            // Where it lives until the next push says otherwise: a move to
+            // another account's space must know where to take it from.
+            ...(home === undefined ? {} : { home }),
+          };
+        });
 
         await syncState.mutate({ type: 'put', trans, values: rows });
         await outbox.mutate({
