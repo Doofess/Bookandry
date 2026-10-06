@@ -33,7 +33,7 @@ describe('AppShell', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav).toBeInTheDocument();
-    for (const label of ['Feed', 'Chart', 'Profiles']) {
+    for (const label of ['Feed', 'Chart', 'Household']) {
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
     }
   });

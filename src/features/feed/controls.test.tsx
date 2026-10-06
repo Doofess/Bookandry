@@ -15,7 +15,6 @@ const DEFAULTS = { profileId: 'all', today: d('2026-09-15') };
 const profile = (id: string, name: string, color: string): Profile => ({
   id,
   name,
-  avatar: 'fox',
   color,
   openingBalanceMinor: 0,
   openingBalanceCurrency: 'USD',
@@ -38,7 +37,8 @@ describe('ProfileSwitcher', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('offers All plus each profile once there are two', () => {
+  it('is one small button naming whose money is shown, with everyone and each person inside', async () => {
+    const user = userEvent.setup();
     renderWithProviders(
       <ProfileSwitcher
         profiles={[profile('p1', 'Dana', '#16794a'), profile('p2', 'Yossi', '#0369a1')]}
@@ -46,26 +46,16 @@ describe('ProfileSwitcher', () => {
         onSelect={vi.fn()}
       />,
     );
-    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['All', 'Dana', 'Yossi']);
-    expect(screen.getByRole('radio', { name: 'All' })).toHaveAttribute('aria-checked', 'true');
+    const trigger = screen.getByRole('button', { name: 'Whose money: Everyone' });
+    await user.click(trigger);
+    await screen.findByRole('menu');
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(3);
+    for (const name of ['Dana', 'Yossi'])
+      expect(screen.getByRole('menuitemradio', { name })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'Everyone' })).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('is a named radiogroup, not a row of loose buttons', () => {
-    const { container } = renderWithProviders(
-      <ProfileSwitcher
-        profiles={[profile('p1', 'Dana', '#16794a'), profile('p2', 'Yossi', '#0369a1')]}
-        active="all"
-        onSelect={vi.fn()}
-      />,
-    );
-    const group = container.querySelector('[role="radiogroup"]');
-    expect(group).toHaveAttribute('aria-label', 'Profile');
-    for (const radio of container.querySelectorAll('[role="radio"]')) {
-      expect(radio.closest('[role="radiogroup"]')).toBe(group);
-    }
-  });
-
-  it('reports the selected profile id', async () => {
+  it('reports the chosen person', async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();
     renderWithProviders(
@@ -75,7 +65,8 @@ describe('ProfileSwitcher', () => {
         onSelect={onSelect}
       />,
     );
-    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    await user.click(screen.getByRole('button', { name: /Whose money/ }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Yossi' }));
     expect(onSelect).toHaveBeenCalledWith('p2');
   });
 });

@@ -25,7 +25,6 @@ function envelope(over: Partial<ExportEnvelope> = {}): unknown {
         {
           id: 'p1',
           name: 'Dana',
-          avatar: 'fox',
           color: '#16794a',
           openingBalanceMinor: 100000,
           openingBalanceCurrency: 'USD',

@@ -5,7 +5,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { Avatar } from '@/components/avatars/avatar';
+import { PersonAvatar } from '@/components/person-avatar';
 import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
@@ -195,7 +195,7 @@ export function OtherMethods() {
                   {t('categories:manage.methodShared').slice(0, 2)}
                 </span>
               ) : (
-                <Avatar avatar={profile.avatar} color={profile.color} size="sm" />
+                <PersonAvatar person={profile} size="sm" />
               )}
 
               <span className="min-w-0 flex-1">

@@ -76,8 +76,6 @@
      White text on it measures 10.4:1. */
   --brand-deep: oklch(0.36 0.075 158);
   --brand-deep-foreground: oklch(0.985 0.01 156);
-  --avatar-paper: oklch(0.985 0 0);
-  --avatar-ink: oklch(0.2 0.01 286);
 
   /* Floating action button.
      A BLACK plus on the vivid green measures 7.64:1 - markedly better than
@@ -129,8 +127,6 @@
   --brand-vivid: oklch(0.71 0.163 156.3);
   --brand-deep: oklch(0.33 0.07 158);
   --brand-deep-foreground: oklch(0.985 0.01 156);
-  --avatar-paper: oklch(0.985 0 0);
-  --avatar-ink: oklch(0.2 0.01 286);
 
   /* On a near-black page the disc is already 8.30:1, so the rim is cosmetic
      here rather than load-bearing. Kept so the shape is identical in both
@@ -172,8 +168,6 @@
   --color-fab: var(--fab);
   --color-fab-foreground: var(--fab-foreground);
   --color-fab-rim: var(--fab-rim);
-  --color-avatar-paper: var(--avatar-paper);
-  --color-avatar-ink: var(--avatar-ink);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

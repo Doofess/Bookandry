@@ -57,12 +57,9 @@ export async function completeFirstRun(
   await bootAs(page, lang, theme);
   await page.goto(`${origin}/`);
 
-  // Welcome, then language + currency: both pre-filled from the mirror.
-  await page.getByRole('button', { name: copy.next }).click();
-  await page.getByRole('button', { name: copy.next }).click();
-
-  // People: one profile, named. The field is required, so this is not optional.
-  await page.getByRole('textbox').first().fill('Dana');
+  // Language + currency, pre-filled from the mirror; then the balance step.
+  // Nothing is typed: the one person is the account's, named after it - or,
+  // with no account signed in, the fallback "Me" / its Hebrew.
   await page.getByRole('button', { name: copy.next }).click();
 
   if (demo) {

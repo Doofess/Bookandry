@@ -1,5 +1,5 @@
 import { isDemoSupported } from '@/domain/demo';
-import { buildProfiles, type FirstRunDraft } from '@/domain/first-run';
+import { buildProfile, type FirstRunDraft } from '@/domain/first-run';
 import { writeBootMirror } from '@/i18n/boot';
 import { ALL_PROFILES } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
@@ -10,15 +10,20 @@ import { SETTINGS_ID } from './repos/settings';
 
 export type CompleteFirstRunInput = {
   readonly draft: FirstRunDraft;
-  /** One id per person, minted by the caller so the write stays deterministic. */
-  readonly ids: readonly string[];
+  /**
+   * The person's id: the account's when signed in, else a fresh one. Chosen
+   * by the caller so the write stays deterministic.
+   */
+  readonly id: string;
+  /** The account's name, or the translated fallback - never empty. */
+  readonly name: string;
   readonly today: LocalDate;
   readonly now: IsoInstant;
   readonly loadDemo?: boolean;
 };
 
 export type FirstRunResult = {
-  readonly profileIds: readonly string[];
+  readonly profileId: string;
   readonly activeProfileId: string;
   readonly demoLoaded: boolean;
 };
@@ -26,9 +31,9 @@ export type FirstRunResult = {
 /**
  * Commit the wizard.
  *
- * Profiles and settings land in ONE transaction. Half-committing is the worst
- * possible state here: settings written without profiles sends the boot gate
- * straight back to this wizard with the user's answers gone, and profiles
+ * The person and settings land in ONE transaction. Half-committing is the
+ * worst possible state here: settings written without a person sends the boot
+ * gate straight back to this wizard with the user's answers gone, and a person
  * written without settings leaves every amount denominated in a currency the
  * user never chose.
  *
@@ -40,8 +45,8 @@ export async function completeFirstRun(
   db: BookandryDB,
   input: CompleteFirstRunInput,
 ): Promise<FirstRunResult> {
-  const { draft, ids, today, now } = input;
-  const profiles = buildProfiles({ draft, ids, today, now });
+  const { draft, id, name, today, now } = input;
+  const profile = buildProfile({ draft, id, name, today, now });
 
   /*
    * One profile means no switcher and no "All" chip, so pointing the app at the
@@ -53,11 +58,10 @@ export async function completeFirstRun(
    * "Nothing here yet" immediately after they asked to be shown something.
    */
   const willHaveDemoProfiles = input.loadDemo === true && isDemoSupported(draft.currency);
-  const activeProfileId =
-    profiles.length === 1 && !willHaveDemoProfiles ? (profiles[0]?.id ?? ALL_PROFILES) : ALL_PROFILES;
+  const activeProfileId = willHaveDemoProfiles ? ALL_PROFILES : profile.id;
 
   const theme = await db.transaction('rw', [db.profiles, db.settings], async () => {
-    await db.profiles.bulkAdd(profiles);
+    await db.profiles.add(profile);
 
     const current = await db.settings.get(SETTINGS_ID);
     // The theme is whatever it already was: the wizard does not ask, and a
@@ -91,5 +95,5 @@ export async function completeFirstRun(
     demoLoaded = true;
   }
 
-  return { profileIds: profiles.map((p) => p.id), activeProfileId, demoLoaded };
+  return { profileId: profile.id, activeProfileId, demoLoaded };
 }

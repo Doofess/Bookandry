@@ -62,7 +62,6 @@ export async function ensureMember(
   const profile: Profile = {
     id: me,
     name: name.trim() === '' ? 'Me' : name.trim().slice(0, 40),
-    avatar: 'fox',
     color: nextAvailableColor(all) ?? PROFILE_PALETTE[0].hex,
     openingBalanceMinor: 0,
     openingBalanceCurrency: currency,

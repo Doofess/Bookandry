@@ -33,28 +33,15 @@ export function isActiveMethod(method: { readonly id: string; readonly isArchive
 /** The merged view. A literal union with string collapses, so name the sentinel. */
 export const ALL_PROFILES = 'all';
 
-export type AvatarKey =
-  | 'fox'
-  | 'cat'
-  | 'panda'
-  | 'owl'
-  | 'frog'
-  | 'koala'
-  | 'penguin'
-  | 'bear'
-  | 'bunny'
-  | 'sloth'
-  | 'whale'
-  | 'hedgehog'
-  | 'otter'
-  | 'duck'
-  | 'monkey'
-  | 'robot';
-
 export type Profile = {
   readonly id: string;
   readonly name: string;
-  readonly avatar: AvatarKey;
+  /**
+   * Legacy: the animal a profile was once drawn as. No longer written or shown
+   * - a person is their account's picture or their initials - but old exports
+   * and synced rows may still carry it.
+   */
+  readonly avatar?: string;
   /** Hex from the curated palette; unique across profiles. */
   readonly color: string;
   readonly openingBalanceMinor: Minor;

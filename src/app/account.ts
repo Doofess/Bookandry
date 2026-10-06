@@ -570,7 +570,7 @@ export class AccountController {
     if (this.view.status !== 'signed_in') return { ok: false, error: 'offline' };
     const user = this.view.user;
     const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
-    const { sendInvite } = await import('@/services/supabase/household');
+    const { sendInvite } = await import('@/services/supabase/send-invite');
     try {
       await this.connect();
       // The others see this name in the email and on the invitation.

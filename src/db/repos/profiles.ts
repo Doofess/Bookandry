@@ -1,7 +1,7 @@
 import type { BookandryDB } from '@/db/db';
 import { MAX_PROFILES, nextFreeColor } from '@/domain/palette';
 import { normalizeName } from '@/domain/validation';
-import { ALL_PROFILES, redirectId, type AvatarKey, type Profile } from '@/types/domain';
+import { ALL_PROFILES, redirectId, type Profile } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
 import { SETTINGS_ID } from './settings';
@@ -39,7 +39,6 @@ export class ProfileNotEmptyError extends Error {
 
 export type ProfileDraft = {
   readonly name: string;
-  readonly avatar: AvatarKey;
   readonly color?: string;
   readonly openingBalanceMinor: Minor;
   readonly openingBalanceCurrency: Currency;
@@ -87,7 +86,6 @@ export async function createProfile(
     const row: Profile = {
       id,
       name,
-      avatar: draft.avatar,
       color,
       openingBalanceMinor: draft.openingBalanceMinor,
       openingBalanceCurrency: draft.openingBalanceCurrency,

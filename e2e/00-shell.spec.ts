@@ -8,7 +8,7 @@ import { bootAs, completeFirstRun } from './support/seed';
  * observable claims on their own; these are.
  */
 
-const ROUTES = ['/', '/chart', '/cards', '/profiles', '/settings'] as const;
+const ROUTES = ['/', '/chart', '/cards', '/household', '/settings'] as const;
 
 test.describe('@smoke0 first run', () => {
   test('gates a fresh install on the wizard, not on the shell', async ({ page }) => {

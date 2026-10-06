@@ -145,11 +145,12 @@ describe('buildDemoData — unsupported currencies', () => {
 describe('buildDemoData — shape', () => {
   const data = build();
 
-  it('creates the household the onboarding wizard offers', () => {
+  it('creates a household of three people', () => {
     expect(data.profiles).toHaveLength(3);
     expect(new Set(data.profiles.map((p) => p.id)).size).toBe(3);
     expect(new Set(data.profiles.map((p) => p.color)).size).toBe(3);
-    expect(new Set(data.profiles.map((p) => p.avatar)).size).toBe(3);
+    // A person is their account's picture or initials now: no animal is written.
+    expect(data.profiles.every((p) => p.avatar === undefined)).toBe(true);
   });
 
   it('starts counting six months back, on a month boundary', () => {

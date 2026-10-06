@@ -17,6 +17,7 @@ const reader = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/account', () => ({
+  useAccount: () => ({ status: 'signed_out' }),
   accountController: () => ({
     extractTransactions: (request: WireRequest) => {
       reader.calls.push(request);

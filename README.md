@@ -444,6 +444,25 @@ the background.
   account and only after the second step
   (`supabase/migrations/20261003000000_avatars.sql`). Each device keeps a copy
   for offline. Without one, Google's picture (Google sign-ins) or initials.
+- **Linked accounts** (`src/features/household/`, `src/db/sync/route.ts`,
+  `supabase/migrations/20261007000000_households.sql`): a household of up to
+  ten accounts that see and edit each other's data. Every account keeps its
+  own rows in its own space, sealed with its own key; linking lets the others
+  read and write it there (the record functions' `p_space`), and the server
+  hands a member the account's own key entry and nothing else of it. A
+  transaction, card or account lives in its owner's space (a person's
+  `profileId` is their account id); the household's structure (categories,
+  the currency, merges) and its joint cards live in every space. Unlinking
+  ends the access at once and leaves each account exactly its own - nothing
+  is moved or deleted to get there. Invitations go by email (the
+  `send-invite` function, through Resend): a single-use link, kept on the
+  server only as a hash, good for seven days, accepted only by the signed-in
+  account with that confirmed address. Joining asks the invitee to convert
+  to the household's currency first. People made inside an account before
+  accounts could link stay listed "from before linking" until their entries
+  are given to someone's account; the first of them becomes the account's
+  own person. The animal avatars are gone: a person is their account's
+  picture, or their initials.
 - **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.
@@ -560,6 +579,11 @@ Configuration that lives in the dashboard, not in this repo:
   second read) and `VERIFY_MODEL` (Claude Opus 5.5, the correction), each
   only from an allow-list. Its daily cap is the migration
   `20261004000100_ai_usage_one_cap.sql` (80 calls a person a day).
+- **Edge Function `send-invite`** (`supabase/functions/send-invite/`): emails
+  an invitation to link accounts. Needs **Edge Functions → Secrets →
+  `RESEND_API_KEY`** (the same Resend key as the SMTP password; entered there
+  only). Without it, inviting answers "the email couldn't be sent" and no
+  invitation is left behind.
 - **SheetJS** is pinned to its own CDN's tarball
   (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`); the npm `xlsx`
   package is years behind and unmaintained. `pnpm outdated` does not track it.

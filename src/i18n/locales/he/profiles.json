@@ -14,27 +14,6 @@
     "stone": "אבן",
     "slate": "צפחה"
   },
-  "avatar": {
-    "label": "דמות",
-    "fox": "שועל",
-    "cat": "חתול",
-    "panda": "פנדה",
-    "owl": "ינשוף",
-    "frog": "צפרדע",
-    "koala": "קואלה",
-    "penguin": "פינגווין",
-    "bear": "דוב",
-    "bunny": "ארנב",
-    "sloth": "עצלן",
-    "whale": "לווייתן",
-    "hedgehog": "קיפוד",
-    "otter": "לוטרה",
-    "duck": "ברווז",
-    "monkey": "קוף",
-    "robot": "רובוט"
-  },
-  "household": "משק בית",
-  "limit": "Bookandry תומך בעד {{count}} פרופילים, אחד לכל צבע.",
   "method": {
     "cash": "מזומן",
     "cheque": "צ'ק",

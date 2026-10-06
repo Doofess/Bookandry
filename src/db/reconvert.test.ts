@@ -63,7 +63,6 @@ async function seedProfile(over: Partial<Profile> = {}) {
   await handle.db.profiles.put({
     id: 'p1',
     name: 'Dana',
-    avatar: 'fox',
     color: '#16794a',
     openingBalanceMinor: 100_000,
     openingBalanceCurrency: 'USD',

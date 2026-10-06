@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildDemoData } from '@/domain/demo';
-import { applyShape, initialDraft, updatePerson, type FirstRunDraft } from '@/domain/first-run';
+import { initialDraft } from '@/domain/first-run';
 import { validateEnvelope } from '@/domain/transfer-validate';
 import { BOOT_KEY } from '@/i18n/boot';
 import { assertLocalDate } from '@/lib/dates';
@@ -48,20 +48,19 @@ afterEach(async () => {
   await handle.dispose();
 });
 
-const named = (draft: FirstRunDraft, ...names: string[]): FirstRunDraft =>
-  names.reduce((acc, name, i) => {
-    const key = acc.people[i]?.key;
-    return key === undefined ? acc : updatePerson(acc, key, { name });
-  }, draft);
-
-const solo = () => named(initialDraft('he', 'ILS'), 'Dana');
-const household = () => named(applyShape(initialDraft('en', 'ILS'), 'couple', 'Household'), 'Dana', 'Yossi');
+const solo = () => initialDraft('he', 'ILS');
 
 describe('completeFirstRun', () => {
-  it('writes the profiles and the settings together', async () => {
-    const result = await completeFirstRun(handle.db, { draft: solo(), ids: ['p1'], today: TODAY, now: NOW });
+  it('writes the person and the settings together', async () => {
+    const result = await completeFirstRun(handle.db, {
+      draft: solo(),
+      id: 'p1',
+      name: 'Dana',
+      today: TODAY,
+      now: NOW,
+    });
 
-    expect(result.profileIds).toEqual(['p1']);
+    expect(result.profileId).toBe('p1');
     expect(await handle.db.profiles.count()).toBe(1);
 
     const settings = await getSettings(handle.db);
@@ -75,24 +74,42 @@ describe('completeFirstRun', () => {
   it('points a single-profile install at that profile, not at the merged view', async () => {
     // With one profile the switcher and the "All" chip are hidden entirely, so
     // pointing the app at "all" would select a control that is not rendered.
-    const result = await completeFirstRun(handle.db, { draft: solo(), ids: ['p1'], today: TODAY, now: NOW });
+    const result = await completeFirstRun(handle.db, {
+      draft: solo(),
+      id: 'p1',
+      name: 'Dana',
+      today: TODAY,
+      now: NOW,
+    });
     expect(result.activeProfileId).toBe('p1');
     expect((await getSettings(handle.db))?.activeProfileId).toBe('p1');
   });
 
-  it('opens a household on the merged view', async () => {
+  it('makes the person under the id and name it is given, with no picture', async () => {
+    // Signed in, the id is the account's: the person IS the account.
+    await completeFirstRun(handle.db, { draft: solo(), id: 'acc-1', name: 'Me', today: TODAY, now: NOW });
+    const [profile] = await handle.db.profiles.toArray();
+    expect(profile).toMatchObject({ id: 'acc-1', name: 'Me', color: '#16794a' });
+    expect(profile?.avatar).toBeUndefined();
+  });
+
+  it('opens on the merged view when the demo is coming', async () => {
+    // The demo's three people would otherwise hold sixty transactions the
+    // feed does not show.
     const result = await completeFirstRun(handle.db, {
-      draft: household(),
-      ids: ['a', 'b', 'c'],
+      draft: solo(),
+      id: 'p1',
+      name: 'Dana',
       today: TODAY,
       now: NOW,
+      loadDemo: true,
     });
     expect(result.activeProfileId).toBe('all');
-    expect(await handle.db.profiles.count()).toBe(3);
+    expect(result.demoLoaded).toBe(true);
   });
 
   it('writes the boot mirror so the next paint is already in Hebrew', async () => {
-    await completeFirstRun(handle.db, { draft: solo(), ids: ['p1'], today: TODAY, now: NOW });
+    await completeFirstRun(handle.db, { draft: solo(), id: 'p1', name: 'Dana', today: TODAY, now: NOW });
     // The pre-paint script reads this flat key; without it the first frame
     // after a reload renders LTR and then flips.
     expect(JSON.parse(localStorage.getItem(BOOT_KEY) ?? '{}')).toMatchObject({ lang: 'he' });
@@ -108,7 +125,7 @@ describe('completeFirstRun', () => {
       updatedAt: NOW,
     });
 
-    await completeFirstRun(handle.db, { draft: solo(), ids: ['p1'], today: TODAY, now: NOW });
+    await completeFirstRun(handle.db, { draft: solo(), id: 'p1', name: 'Dana', today: TODAY, now: NOW });
 
     expect((await getSettings(handle.db))?.theme).toBe('dark');
     expect(JSON.parse(localStorage.getItem(BOOT_KEY) ?? '{}')).toMatchObject({ theme: 'dark' });
@@ -118,16 +135,16 @@ describe('completeFirstRun', () => {
     // Settings without profiles sends the boot gate straight back to the wizard
     // with the user's answers gone; profiles without settings leaves every
     // amount in a currency they never chose.
-    const original = handle.db.profiles.bulkAdd.bind(handle.db.profiles);
-    handle.db.profiles.bulkAdd = (() =>
+    const original = handle.db.profiles.add.bind(handle.db.profiles);
+    handle.db.profiles.add = (() =>
       Promise.reject(new Error('quota exceeded'))) as unknown as typeof original;
 
     try {
       await expect(
-        completeFirstRun(handle.db, { draft: solo(), ids: ['p1'], today: TODAY, now: NOW }),
+        completeFirstRun(handle.db, { draft: solo(), id: 'p1', name: 'Dana', today: TODAY, now: NOW }),
       ).rejects.toThrow('quota exceeded');
     } finally {
-      handle.db.profiles.bulkAdd = original;
+      handle.db.profiles.add = original;
     }
 
     expect(await handle.db.profiles.count()).toBe(0);
@@ -154,7 +171,8 @@ describe('the wizard plus the demo', () => {
   it('gives every profile its own colour', async () => {
     await completeFirstRun(handle.db, {
       draft: solo(),
-      ids: ['p1'],
+      id: 'p1',
+      name: 'Dana',
       today: TODAY,
       now: NOW,
       loadDemo: true,
@@ -171,7 +189,8 @@ describe('the wizard plus the demo', () => {
     // The round trip, end to end, on the state the wizard really produces.
     await completeFirstRun(handle.db, {
       draft: solo(),
-      ids: ['p1'],
+      id: 'p1',
+      name: 'Dana',
       today: TODAY,
       now: NOW,
       loadDemo: true,

@@ -34,7 +34,6 @@ afterEach(async () => {
 
 const draft = (name: string) => ({
   name,
-  avatar: 'fox' as const,
   openingBalanceMinor: 100_000,
   openingBalanceCurrency: 'USD',
   openingBalanceDate: d('2026-01-01'),

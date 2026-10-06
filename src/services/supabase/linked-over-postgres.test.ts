@@ -122,12 +122,11 @@ async function person(db: BookandryDB, id: string, name: string, color: string):
     id,
     {
       name,
-      avatar: 'fox',
       color,
       openingBalanceMinor: 0,
       openingBalanceCurrency: 'USD',
       openingBalanceDate: d('2026-01-01'),
-    } as never,
+    },
     now(),
   );
 }

@@ -10,7 +10,7 @@ import {
   startOfMonth,
 } from '@/lib/dates';
 import { convertMinor, crossRate } from '@/lib/money';
-import type { AvatarKey, Override, PaymentMethod, Profile, Transaction } from '@/types/domain';
+import type { Override, PaymentMethod, Profile, Transaction } from '@/types/domain';
 import { SHARED_OWNER } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor, MoneySnapshot, RateString } from '@/types/money';
 
@@ -245,8 +245,8 @@ export type DemoInput = {
   /**
    * Colours already spoken for, so the demo cannot take one twice.
    *
-   * The demo arrives on the LAST step of the wizard, after the user has already
-   * named themselves - and the first colour the wizard hands out is the first
+   * The demo arrives on the LAST step of the wizard, alongside the user's own
+   * person - and the first colour the wizard hands out is the first
    * colour in the palette, which is also the first colour the demo wanted.
    * Two profiles then share one, which is not cosmetic: colour uniqueness is
    * what the profile switcher, the avatars and the chart identify a profile by,
@@ -465,7 +465,6 @@ const SPENDERS: readonly { profileId: string; methods: readonly string[] }[] = [
   { profileId: P_HOUSE, methods: [PM_JOINT, PM_CASH] },
 ];
 
-const AVATARS: readonly AvatarKey[] = ['fox', 'owl', 'bear'];
 const COLORS = ['#16794a', '#0369a1', '#7e22ce'] as const;
 /** ILS opening balances, converted to the user's base like everything else. */
 const OPENING_ILS: readonly Minor[] = [1_240_000, 915_000, 300_000];
@@ -509,7 +508,6 @@ export function buildDemoData(input: DemoInput): DemoData {
   const profiles: Profile[] = [P_DANA, P_YOSSI, P_HOUSE].map((id, i) => ({
     id,
     name: s.people[i] ?? 'Demo',
-    avatar: AVATARS[i] ?? 'fox',
     color: pickColor(i),
     openingBalanceMinor: authored(OPENING_ILS[i] ?? 0, base),
     openingBalanceCurrency: base,

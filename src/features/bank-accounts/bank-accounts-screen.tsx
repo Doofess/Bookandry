@@ -2,18 +2,23 @@ import { Landmark, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useBaseCurrency, useToday } from '@/app/app-context';
-import { Avatar } from '@/components/avatars/avatar';
+import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { Money } from '@/components/money';
+import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
+import { db } from '@/db/db';
+import { writeSettings } from '@/db/repos/settings';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
+import { methodOwnedBy } from '@/domain/tx-options';
 import { MethodEditor } from '@/features/cards/method-editor';
 import { UnfinishedNotice } from '@/features/cards/unfinished-notice';
 import { useBranch } from '@/features/cards/use-branch';
 import { useCardsData } from '@/features/cards/use-cards-data';
+import { ProfileSwitcher } from '@/features/feed/profile-switcher';
+import { systemClock } from '@/lib/clock';
 import { compareLocal, formatLocalDate } from '@/lib/dates';
-import type { Occurrence, PaymentMethod, Profile } from '@/types/domain';
+import { ALL_PROFILES, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 /**
@@ -30,7 +35,11 @@ export function BankAccountsScreen() {
   const baseCurrency = useBaseCurrency();
   const data = useCardsData(today, baseCurrency);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
-  const accounts = data?.accounts ?? [];
+  // Whose accounts: the same choice as the feed's. A joint account is everyone's who holds it.
+  const whose = useSettings().activeProfileId;
+  const accounts = (data?.accounts ?? []).filter(
+    (account) => whose === ALL_PROFILES || methodOwnedBy(account, whose),
+  );
 
   return (
     <section className="mx-auto max-w-4xl space-y-5 px-4 py-6 pb-24 lg:pb-8">
@@ -51,6 +60,16 @@ export function BankAccountsScreen() {
       </header>
 
       <UnfinishedNotice kind="account" />
+
+      {data === undefined ? null : (
+        <ProfileSwitcher
+          profiles={[...data.profiles.values()]}
+          active={whose}
+          onSelect={(profileId) => {
+            void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+          }}
+        />
+      )}
 
       {data === undefined ? null : accounts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center">
@@ -164,7 +183,7 @@ function AccountPanel({
           <dd className="mt-1 flex flex-wrap items-center gap-2 text-sm">
             {holders.map((profile) => (
               <span key={profile.id} className="inline-flex items-center gap-1.5">
-                <Avatar avatar={profile.avatar} color={profile.color} size="sm" />
+                <PersonAvatar person={profile} size="sm" />
                 {profile.name}
               </span>
             ))}
