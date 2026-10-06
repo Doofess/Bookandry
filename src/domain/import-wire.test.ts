@@ -252,7 +252,46 @@ describe('an answer', () => {
       t: [],
       per: null,
       done: true,
+      k: [],
+      ba: [],
+      pr: '',
     });
+  });
+
+  it('reads the cards and accounts a document shows - of a card, never more than its last four digits', () => {
+    const result = cleanExtract(
+      {
+        r: [row({ l4: ' 3200 ' }), row({ l4: '5326100012343200' })],
+        t: [],
+        per: null,
+        done: true,
+        k: [
+          { s: 0, n: 'max executive', l4: '3200', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+          { s: 0, n: 'Leaky', l4: '4580123412341234', nw: '', is: '', cr: '', lim: '', bd: '' },
+          { s: 0, n: '', l4: '1111' },
+          { s: 3, n: 'Elsewhere' },
+          'card',
+        ],
+        ba: [
+          { s: 0, n: 'בנק הפועלים', bk: '12', br: '532', no: '12-3456', h: 'דנה' },
+          { s: 0, n: '', bk: '', br: '1', no: '1' },
+          { s: 0, n: 'Bank', bk: 'x', br: '12345', no: '12345678901234', h: 5 },
+        ],
+        pr: '4.75%',
+      },
+      1,
+      ctx,
+    );
+    expect(result?.r.map((r) => r.l4)).toEqual(['3200', '']);
+    expect(result?.k).toEqual([
+      { s: 0, n: 'max executive', l4: '3200', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+      { s: 0, n: 'Leaky', l4: '', nw: '', is: '', cr: '', lim: '', bd: '' },
+    ]);
+    expect(result?.ba).toEqual([
+      { s: 0, n: 'בנק הפועלים', bk: '12', br: '532', no: '123456', h: 'דנה' },
+      { s: 0, n: 'Bank', bk: '', br: '', no: '', h: '' },
+    ]);
+    expect(result?.pr).toBe('4.75%');
   });
 
   it('takes a verify answer only for the rows it asked about', () => {
@@ -341,6 +380,8 @@ describe('what the model is given', () => {
       properties: { r: { items: { properties: { pm: unknown } } } };
     };
     expect(none.properties.r.items.properties.pm).toEqual({ type: 'null' });
+    const extract = extractSchema(ctx) as { required: string[] };
+    expect(extract.required).toEqual(['r', 't', 'per', 'done', 'k', 'ba', 'pr']);
   });
 
   it('lists the household compactly, and says what is left to read', () => {

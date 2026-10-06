@@ -16,6 +16,8 @@ export type CardDraft = {
   readonly bank: string;
   readonly tier: string;
   readonly club: string;
+  /** The last four digits, as typed. */
+  readonly lastDigits: string;
   /** MM/YY, as printed on the card. */
   readonly expires: string;
   readonly billingDay: string;
@@ -33,6 +35,7 @@ export type CardDraft = {
 };
 
 export type CardDraftField =
+  | 'lastDigits'
   | 'expires'
   | 'billingDay'
   | 'creditLimit'
@@ -52,6 +55,7 @@ export const EMPTY_CARD_DRAFT: CardDraft = {
   bank: '',
   tier: '',
   club: '',
+  lastDigits: '',
   expires: '',
   billingDay: '',
   creditLimit: '',
@@ -84,6 +88,7 @@ export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
     bank: card?.bank ?? '',
     tier: card?.tier ?? '',
     club: card?.club ?? '',
+    lastDigits: card?.lastDigits ?? '',
     expires,
     billingDay: card?.billingDay === undefined ? '' : String(card.billingDay),
     creditLimit: money(card?.creditLimitMinor),
@@ -173,6 +178,9 @@ export function cardFromDraft(
 ): CardDraftResult {
   const invalid: CardDraftField[] = [];
 
+  const lastDigits = draft.lastDigits.replace(/\s/g, '');
+  if (lastDigits !== '' && !/^\d{4}$/.test(lastDigits)) invalid.push('lastDigits');
+
   const expiresMonth = parseExpires(draft.expires);
   if (expiresMonth === undefined) invalid.push('expires');
 
@@ -211,6 +219,7 @@ export function cardFromDraft(
     ...(draft.accountId === '' ? {} : { accountId: draft.accountId }),
     ...(text(draft.tier) === undefined ? {} : { tier: text(draft.tier) }),
     ...(text(draft.club) === undefined ? {} : { club: text(draft.club) }),
+    ...(lastDigits === '' ? {} : { lastDigits }),
     ...(expiresMonth === '' || expiresMonth === undefined ? {} : { expiresMonth }),
     ...(day === undefined ? {} : { billingDay: day }),
     ...(creditLimitMinor === undefined || creditLimitMinor === null ? {} : { creditLimitMinor }),

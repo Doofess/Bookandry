@@ -73,10 +73,13 @@ Lint cannot express these, so they are scripts.
 - **`gate:pci`** — bans card numbers, expiry dates, CVV, IBAN, SWIFT and routing
   numbers from `src/**` and `e2e/**`, scanning i18n JSON as well as source.
   Payment methods store a user-chosen **label** only. There is no escape hatch,
-  deliberately. A bank account is the one exception the user asked for: it
-  keeps its bank, branch and account number - what is printed on every cheque
-  and given to anyone who sends money to it - and never a password, code or
-  anything else that moves money.
+  deliberately. Two exceptions the user asked for: a card keeps its **last four
+  digits** (`card.lastDigits`) - what every card company and statement prints,
+  shown in the feed beside each purchase and used to match a statement's rows
+  to their card - and a bank account keeps its bank, branch and account number -
+  what is printed on every cheque and given to anyone who sends money to it.
+  Never the rest of a card's number, a password, a code, or anything else that
+  moves money.
 
 ---
 
@@ -293,6 +296,18 @@ and they can be neither deleted, renamed nor put away (`isActiveMethod` offers
 them even where an older install archived one).
 
 **"Add with AI" reads files into transactions, and code checks the reading.**
+It also reads the **cards and bank accounts** a file shows - a card company's
+list of cards and their rates, a statement's header (`import-cards.ts`): a
+card's name, last four digits, network, issuer, קרדיט rate (kept as prime plus
+its margin when the page says its rates are prime-based), limit and billing
+day; an account's bank, branch, number and holders. An image's are read twice
+and compared, a text's are found in the text. Each is matched to the
+household's own - by the card's last four digits - and listed as new, as an
+update, or as already there. One the file shows only part of (a card without
+its billing day, an account without its branch) opens in the card or account
+editor with what it did show filled in, for the person to finish; when that is
+all the files held, the editor opens straight away. A statement row's card is
+the one whose last four digits are printed beside it.
 The + button opens a menu: _Add manually_, or _Add with AI_, which takes
 screenshots (a Bit or bank notification), photos, PDFs, Excel/CSV and Word
 files - picked, pasted, dropped, or shared from the phone (the installed

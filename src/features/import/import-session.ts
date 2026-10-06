@@ -1,3 +1,4 @@
+import type { MethodReviewItem } from '@/domain/import-cards';
 import type { Reconciliation } from '@/domain/import-check';
 
 import type { ReviewItem } from './review-items';
@@ -15,6 +16,8 @@ export type ImportSession = {
   readonly files: readonly File[];
   readonly states: readonly FileState[];
   readonly items: readonly ReviewItem[];
+  /** Cards and bank accounts found. */
+  readonly methods: readonly MethodReviewItem[];
   readonly reconciliations: readonly Reconciliation[];
   readonly batch: { readonly methodId: string; readonly profileId: string };
   /** The share the files came from, so it can be forgotten once read. */

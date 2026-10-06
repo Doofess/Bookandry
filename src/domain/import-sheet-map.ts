@@ -278,6 +278,7 @@ export function readSheet(
       cat: null,
       pm: null,
       pl: plan === undefined ? null : { md: plan.mode, n: plan.number, of: plan.count, tot: null },
+      l4: '',
     };
     out.push({
       id: `${ctx.idPrefix}${String(i)}`,

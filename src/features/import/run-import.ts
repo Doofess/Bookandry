@@ -1,4 +1,16 @@
 import {
+  combineAccountReads,
+  combineCardReads,
+  groundAccounts,
+  groundCards,
+  mergeAccounts,
+  mergeCards,
+  readAccount,
+  readCard,
+  type FoundAccount,
+  type FoundCard,
+} from '@/domain/import-cards';
+import {
   combineReads,
   groundInText,
   readRow,
@@ -26,6 +38,8 @@ import {
   LIMITS,
   tokensForRows,
   type Dispute,
+  type WireAccount,
+  type WireCard,
   type WireContext,
   type WireExtract,
   type WireRequest,
@@ -52,6 +66,10 @@ import type { Currency, LocalDate } from '@/types/money';
  *    compared row by row.
  * Then one correction call per batch, for the rows that failed, and only
  * those. Anything still in doubt is returned flagged, never hidden.
+ *
+ * Cards and bank accounts a document describes - a card company's list of
+ * cards and their rates, a statement's header - are read in the same calls,
+ * and an image's are read twice too.
  */
 
 export type Caller = (request: WireRequest, signal?: AbortSignal) => Promise<ExtractOutcome>;
@@ -90,18 +108,23 @@ export type ImportContext = {
   readonly knownMerchant: (description: string) => Promise<boolean>;
 };
 
+/** What one file gave: kept by its hash, so it is never read twice. */
+export type FileRead = {
+  readonly rows: readonly FoundRow[];
+  readonly totals: readonly WireTotal[];
+  readonly cards: readonly FoundCard[];
+  readonly accounts: readonly FoundAccount[];
+};
+
 export type ReadCache = {
-  readonly get: (
-    hash: string,
-  ) => Promise<{ readonly rows: readonly FoundRow[]; readonly totals: readonly WireTotal[] } | undefined>;
-  readonly put: (
-    hash: string,
-    read: { readonly rows: readonly FoundRow[]; readonly totals: readonly WireTotal[] },
-  ) => Promise<void>;
+  readonly get: (hash: string) => Promise<FileRead | undefined>;
+  readonly put: (hash: string, read: FileRead) => Promise<void>;
 };
 
 export type ImportResult = {
   readonly rows: readonly FoundRow[];
+  readonly cards: readonly FoundCard[];
+  readonly accounts: readonly FoundAccount[];
   readonly reconciliations: readonly Reconciliation[];
   readonly usage: { readonly input: number; readonly output: number };
 };
@@ -142,6 +165,8 @@ export async function runImport(
 
   const rows: FoundRow[] = [];
   const totals: Totals = [];
+  const cards: FoundCard[] = [];
+  const accounts: FoundAccount[] = [];
   const names = new Map(prepared.map((p) => [p.file, p.name]));
   const failed = new Set<number>();
   const partial = new Set<number>();
@@ -164,6 +189,10 @@ export async function runImport(
     }
     rows.push(...cached.rows.map((row) => ({ ...row, id: `f${String(p.file)}${row.id}`, file: p.file })));
     totals.push(...cached.totals.map((t) => ({ ...t, file: p.file })));
+    cards.push(
+      ...cached.cards.map((card) => ({ ...card, id: `f${String(p.file)}${card.id}`, file: p.file })),
+    );
+    accounts.push(...cached.accounts.map((a) => ({ ...a, id: `f${String(p.file)}${a.id}`, file: p.file })));
   }
 
   // Spreadsheets: by code.
@@ -192,6 +221,8 @@ export async function runImport(
       if (read.partial) for (const o of job.origin) partial.add(o.file);
       rows.push(...read.rows);
       totals.push(...read.totals);
+      cards.push(...read.cards);
+      accounts.push(...read.accounts);
       byJob.push({ job, rows: read.rows });
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
@@ -279,25 +310,36 @@ export async function runImport(
   for (const p of fresh) {
     if (failed.has(p.file)) continue;
     const own = found.filter((row) => row.file === p.file);
+    const ownCards = cards.filter((card) => card.file === p.file);
+    const ownAccounts = accounts.filter((account) => account.file === p.file);
+    const count = own.length + ownCards.length + ownAccounts.length;
     report(
-      own.length === 0
+      count === 0
         ? { file: p.file, name: p.name, status: 'empty' }
-        : { file: p.file, name: p.name, status: 'done', found: own.length, partial: partial.has(p.file) },
+        : { file: p.file, name: p.name, status: 'done', found: count, partial: partial.has(p.file) },
     );
     if (!partial.has(p.file)) {
-      await options.cache.put(p.hash, { rows: own, totals: totals.filter((t) => t.file === p.file) });
+      await options.cache.put(p.hash, {
+        rows: own,
+        totals: totals.filter((t) => t.file === p.file),
+        cards: ownCards,
+        accounts: ownAccounts,
+      });
     }
   }
   for (const p of prepared) {
     if (p.kind === 'refused' || fresh.includes(p)) continue;
-    const own = found.filter((row) => row.file === p.file);
+    const count =
+      found.filter((row) => row.file === p.file).length +
+      cards.filter((card) => card.file === p.file).length +
+      accounts.filter((account) => account.file === p.file).length;
     report(
-      own.length === 0
+      count === 0
         ? { file: p.file, name: p.name, status: 'empty' }
-        : { file: p.file, name: p.name, status: 'done', found: own.length, partial: false },
+        : { file: p.file, name: p.name, status: 'done', found: count, partial: false },
     );
   }
-  return { rows: found, reconciliations, usage };
+  return { rows: found, cards: mergeCards(cards), accounts: mergeAccounts(accounts), reconciliations, usage };
 }
 
 function problemFor(hint: string | undefined): string {
@@ -338,6 +380,9 @@ async function extractAll(
 ): Promise<WireExtract & { readonly partial: boolean }> {
   const all: WireRow[] = [];
   const totals: WireTotal[] = [];
+  const cards: WireCard[] = [];
+  const accounts: WireAccount[] = [];
+  let prime = '';
   let period: WireExtract['per'] = null;
   let maxTokens = tokensForRows(expectedRows(job));
   for (let turn = 0; turn <= CONTINUATIONS; turn += 1) {
@@ -364,14 +409,46 @@ async function extractAll(
     const answer = cleanExtract(raw, job.sources.length, ctx.wire);
     if (answer === undefined) throw new Failure('upstream');
     all.push(...answer.r);
+    cards.push(...answer.k);
+    accounts.push(...answer.ba);
+    if (prime === '') prime = answer.pr;
     if (turn === 0) {
       totals.push(...answer.t);
       period = answer.per;
     }
     if (answer.done || answer.r.length === 0)
-      return { r: all, t: totals, per: period, done: true, partial: false };
+      return {
+        r: all,
+        t: totals,
+        per: period,
+        done: true,
+        k: cards,
+        ba: accounts,
+        pr: prime,
+        partial: false,
+      };
   }
-  return { r: all, t: totals, per: period, done: false, partial: true };
+  return { r: all, t: totals, per: period, done: false, k: cards, ba: accounts, pr: prime, partial: true };
+}
+
+/** A read's bank accounts, read by the app - and, from a text, found in it. */
+function readAccounts(answer: WireExtract, job: Job, prefix: string): FoundAccount[] {
+  return answer.ba.map((wire, i) => {
+    const origin = job.origin[wire.s] ?? job.origin[0] ?? { file: 0, part: null };
+    const account = readAccount(wire, `${prefix}${String(i)}`, origin.file);
+    const text = job.texts[wire.s];
+    return text === null || text === undefined ? account : (groundAccounts([account], text)[0] ?? account);
+  });
+}
+
+/** A read's cards, read by the app, each with the file it came from - and, from a text, found in it. */
+function readCards(answer: WireExtract, job: Job, prefix: string): FoundCard[] {
+  return answer.k.map((wire, i) => {
+    const origin = job.origin[wire.s] ?? job.origin[0] ?? { file: 0, part: null };
+    const card = readCard(wire, `${prefix}${String(i)}`, origin.file, answer.pr);
+    const text = job.texts[wire.s];
+    return text === null || text === undefined ? card : (groundCards([card], text)[0] ?? card);
+  });
 }
 
 function readRows(
@@ -411,19 +488,35 @@ async function readJob(
   ctx: ImportContext,
   ask: (r: WireRequest) => Promise<unknown>,
   cache: boolean,
-): Promise<{ readonly rows: FoundRow[]; readonly totals: Totals; readonly partial: boolean }> {
+): Promise<{
+  readonly rows: FoundRow[];
+  readonly totals: Totals;
+  readonly cards: FoundCard[];
+  readonly accounts: FoundAccount[];
+  readonly partial: boolean;
+}> {
   const first = await extractAll(job, 'primary', ctx, ask, cache);
+  let cards = readCards(first, job, `j${String(index)}k`);
+  let accounts = readAccounts(first, job, `j${String(index)}b`);
   let found = ground(readRows(first.r, job, `j${String(index)}r`, ctx, first.per), first.r, job);
   const jobTotals: Totals = first.t.map((t) => ({
     ...t,
     file: job.origin[t.s]?.file ?? job.origin[0]?.file ?? 0,
   }));
-  // An image with no printed total to hold it to: a second, independent read.
-  if (job.visual && jobTotals.length === 0 && found.length > 0) {
+  // An image with no printed total to hold it to - or cards, which no total
+  // holds to anything: a second, independent read.
+  const checkRows = job.visual && jobTotals.length === 0 && found.length > 0;
+  const checkCards = job.visual && (cards.length > 0 || accounts.length > 0);
+  if (checkRows || checkCards) {
     const second = await extractAll(job, 'check', ctx, ask, false);
-    found = combineReads(found, readRows(second.r, job, `j${String(index)}c`, ctx, second.per));
+    if (checkRows)
+      found = combineReads(found, readRows(second.r, job, `j${String(index)}c`, ctx, second.per));
+    if (checkCards) {
+      cards = combineCardReads(cards, readCards(second, job, `j${String(index)}kc`));
+      accounts = combineAccountReads(accounts, readAccounts(second, job, `j${String(index)}bc`));
+    }
   }
-  return { rows: found, totals: jobTotals, partial: first.partial };
+  return { rows: found, totals: jobTotals, cards, accounts, partial: first.partial };
 }
 
 /**

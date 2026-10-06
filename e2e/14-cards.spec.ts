@@ -23,6 +23,7 @@ const COPY = {
     title: 'Credit cards',
     add: 'Add a card',
     label: 'Label',
+    lastDigits: 'Last 4 digits',
     max: 'Max',
     day10: 'The 10th',
     fxFee: 'Foreign-currency fee',
@@ -47,6 +48,7 @@ const COPY = {
     title: 'כרטיסי אשראי',
     add: 'הוספת כרטיס',
     label: 'תווית',
+    lastDigits: '4 ספרות אחרונות',
     max: 'מקס',
     day10: 'ב־10 לחודש',
     fxFee: 'עמלת עסקה במט״ח',
@@ -95,6 +97,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('link', { name: copy.nav }).click();
       await page.getByRole('button', { name: copy.add }).click();
       await page.getByLabel(copy.label, { exact: true }).fill('Visa');
+      await page.getByLabel(copy.lastDigits, { exact: true }).fill('3200');
       await page.getByRole('radio', { name: copy.max, exact: true }).click();
       await page.getByRole('radio', { name: copy.day10, exact: true }).click();
       await page.getByLabel(copy.fxFee, { exact: true }).fill('2.5');
@@ -103,6 +106,8 @@ for (const lang of ['en', 'he'] as const) {
       await expect(page.getByRole('dialog')).toHaveCount(0);
       const tile = page.getByRole('article').filter({ hasText: 'Visa' });
       await expect(tile).toContainText(copy.billed);
+      // Its last four digits, where a card prints them.
+      await expect(tile).toContainText('3200');
 
       // The balance before.
       await page.goto('/');
@@ -119,6 +124,8 @@ for (const lang of ['en', 'he'] as const) {
       await expect(sheet.getByTestId('card-charge-note')).toContainText(copy.charged);
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(sheet).toHaveCount(0);
+      // The feed says which card paid: a card and its last four digits.
+      await expect(page.getByTestId('row-card').first()).toContainText('3200');
 
       // Not taken yet: the balance is as it was, and the breakdown says why.
       await expect(balance).toHaveText(beforeText ?? '');

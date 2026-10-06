@@ -39,7 +39,8 @@ export function saveable(values: TxFormValues): boolean {
  *    filed it under last time - then the reader's suggestion if it is of the
  *    right kind, then the kind's first category; money back on a card is a
  *    refund;
- *  - its payment method: the one the document named, else the batch choice;
+ *  - its payment method: the card whose last four digits the document shows
+ *    beside it, else the one the document named, else the batch choice;
  *  - its profile: whoever owns that card, else the batch choice;
  *  - ticked unless something about it needs a look.
  */
@@ -75,7 +76,9 @@ export async function buildReview(
       categoriesFor(ctx.categories, row.kind)[0]?.id ??
       '';
 
-    const named = row.methodAlias === null ? undefined : ctx.aliases.methods.get(row.methodAlias);
+    const named =
+      cardByDigits(row, ctx.methods)?.id ??
+      (row.methodAlias === null ? undefined : ctx.aliases.methods.get(row.methodAlias));
     const method = ctx.methods.find((m) => m.id === (named ?? ctx.defaultMethodId));
     const owner = method !== undefined && method.profileId !== SHARED_OWNER ? method.profileId : undefined;
     const profileId = ctx.profiles.some((p) => p.id === owner)
@@ -111,6 +114,28 @@ export async function buildReview(
   return items;
 }
 
+/** The household's card a row's printed last four digits belong to. */
+function cardByDigits(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
+  const digits = row.wire.l4;
+  if (digits === '') return undefined;
+  return methods.find((m) => m.type === 'credit_card' && m.card?.lastDigits === digits);
+}
+
+/**
+ * A card just added or completed: the rows charged to it - by the last four
+ * digits printed beside them - are now paid with it, and belong to its owner,
+ * unless the person settled them otherwise.
+ */
+export function linkToCard(items: readonly ReviewItem[], card: PaymentMethod): ReviewItem[] {
+  const digits = card.card?.lastDigits;
+  if (card.type !== 'credit_card' || digits === undefined) return [...items];
+  return items.map((item) => {
+    if (item.confirmed || item.values?.kind !== 'expense' || item.found.wire.l4 !== digits) return item;
+    const profileId = card.profileId === SHARED_OWNER ? item.values.profileId : card.profileId;
+    return { ...item, values: { ...item.values, paymentMethodId: card.id, profileId } };
+  });
+}
+
 /** Apply the batch "Paid with" and "For" to every row the person has not settled themselves. */
 export function applyBatch(
   items: readonly ReviewItem[],
@@ -120,7 +145,7 @@ export function applyBatch(
   const method = methods.find((m) => m.id === batch.methodId);
   return items.map((item) => {
     if (item.confirmed || item.values === undefined) return item;
-    const named = item.found.methodAlias !== null;
+    const named = item.found.methodAlias !== null || cardByDigits(item.found, methods) !== undefined;
     const paymentMethodId =
       item.values.kind === 'expense' && !named ? batch.methodId : item.values.paymentMethodId;
     // A card the document named keeps its owner; otherwise the batch card's owner, or the batch "For".

@@ -97,7 +97,7 @@ describe('files already read', () => {
 
   it('are remembered on this device by their fingerprint, for 30 days', async () => {
     const at = Date.parse(NOW);
-    await rememberRead(handle.db, 'abc', { rows: [row], totals: [] }, at);
+    await rememberRead(handle.db, 'abc', { rows: [row], totals: [], cards: [], accounts: [] }, at);
     const cached = await cachedRead(handle.db, 'abc', at + DAY);
     expect(cached?.rows).toHaveLength(1);
     // Stored without the file's place in this pick: the next pick puts its own.
@@ -108,8 +108,8 @@ describe('files already read', () => {
 
   it('are swept once they are a month old', async () => {
     const at = Date.parse(NOW);
-    await rememberRead(handle.db, 'old', { rows: [row], totals: [] }, at - 40 * DAY);
-    await rememberRead(handle.db, 'new', { rows: [row], totals: [] }, at);
+    await rememberRead(handle.db, 'old', { rows: [row], totals: [], cards: [], accounts: [] }, at - 40 * DAY);
+    await rememberRead(handle.db, 'new', { rows: [row], totals: [], cards: [], accounts: [] }, at);
     await sweepImportCache(handle.db, at);
     expect(await handle.db.meta.get('importCache:old')).toBeUndefined();
     expect(await handle.db.meta.get('importCache:new')).toBeDefined();

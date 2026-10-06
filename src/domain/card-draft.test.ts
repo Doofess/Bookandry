@@ -194,3 +194,17 @@ describe('the account a card is paid from', () => {
     expect(cardFromDraft(EMPTY_CARD_DRAFT)).toMatchObject({ ok: true, card: undefined });
   });
 });
+
+describe('a card’s last four digits', () => {
+  it('are kept as typed, four digits and nothing else', () => {
+    expect(cardFromDraft({ ...EMPTY_CARD_DRAFT, lastDigits: '3200' })).toMatchObject({
+      ok: true,
+      card: { lastDigits: '3200' },
+    });
+    expect(cardFromDraft({ ...EMPTY_CARD_DRAFT, lastDigits: '321' })).toEqual({
+      ok: false,
+      invalid: ['lastDigits'],
+    });
+    expect(cardDraftOf(method({ card: { lastDigits: '0400' } })).lastDigits).toBe('0400');
+  });
+});

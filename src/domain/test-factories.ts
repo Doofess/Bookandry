@@ -103,5 +103,6 @@ export const wireRow = (over: Partial<WireRow> = {}): WireRow => ({
   cat: null,
   pm: null,
   pl: null,
+  l4: '',
   ...over,
 });

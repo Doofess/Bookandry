@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { MONEY, d, makeTx } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
-import type { Category, Occurrence, Profile } from '@/types/domain';
+import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
 
 import { DayHeader, TransactionRow, type RowContext } from './feed-rows';
 
@@ -295,5 +295,50 @@ describe('DayHeader', () => {
       <DayHeader date={d('2026-09-10')} netMinor={5000} isToday={false} currency="USD" />,
     );
     expect(container.querySelector('[data-value="5000"]')?.textContent).toContain('+');
+  });
+});
+
+describe('the card an expense was paid with', () => {
+  const at = '2026-01-01T00:00:00.000Z' as PaymentMethod['createdAt'];
+  const card = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
+    id: 'visa',
+    profileId: 'p1',
+    type: 'credit_card',
+    label: 'Max Gold',
+    card: { lastDigits: '3200' },
+    isArchived: 0,
+    createdAt: at,
+    updatedAt: at,
+    ...over,
+  });
+  const paidWith = (method: PaymentMethod) =>
+    render(
+      <TransactionRow
+        occurrence={occurrence({ paymentMethodId: method.id })}
+        context={context({ methods: new Map([[method.id, method]]) })}
+        position={1}
+        setSize={1}
+      />,
+    );
+
+  it('shows a card icon and its last four digits, and says so', () => {
+    paidWith(card());
+    expect(screen.getByTestId('row-card').textContent).toBe('3200');
+    expect(
+      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 3200$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the card’s name when its digits are not known', () => {
+    paidWith(card({ card: {} }));
+    expect(screen.getByTestId('row-card').textContent).toBe('Max Gold');
+    expect(
+      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Paid with Max Gold$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows nothing for cash, or for money in', () => {
+    paidWith(card({ id: 'pm.cash', type: 'cash', label: 'Cash' }));
+    expect(screen.queryByTestId('row-card')).not.toBeInTheDocument();
   });
 });

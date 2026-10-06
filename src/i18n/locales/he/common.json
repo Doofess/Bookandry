@@ -162,7 +162,9 @@
     "typeLoan": "הלוואה {{index}} מתוך {{count}}",
     "typeCredit": "קרדיט {{index}} מתוך {{count}}",
     "typeMonthly": "חודשי",
-    "typeYearly": "שנתי"
+    "typeYearly": "שנתי",
+    "cardEnding": "כרטיס שמסתיים ב־{{digits}}",
+    "paidWith": "שולם ב־{{name}}"
   },
   "breakdown": {
     "balanceBody": "כל מה שנספר מ-{{date}}.",

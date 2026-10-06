@@ -79,7 +79,7 @@
     "club": "Club or programme",
     "clubPlaceholder": "e.g. FLY CARD",
     "expires": "Valid until",
-    "expiresHint": "As printed on the card, month and year. The card number and the code on the back are never asked for.",
+    "expiresHint": "As printed on the card, month and year.",
     "expiresInvalid": "Use the month and year on the card, like 09/28.",
     "billing": "Billing",
     "billingDay": "Billing day",
@@ -110,7 +110,10 @@
     "discountPercentInvalid": "A percentage, 0 to 100.",
     "debitedFrom": "Paid from",
     "debitedFromHint": "The account the card's monthly bill is taken from.",
-    "debitedOther": "Another account"
+    "debitedOther": "Another account",
+    "lastDigits": "Last 4 digits",
+    "lastDigitsHint": "As the card company shows them. Only these four are kept: never the rest of the number.",
+    "lastDigitsInvalid": "The last four digits of the card."
   },
   "feeLine": "Card fee",
   "feeThisMonth": "Card fee for {{month}}",

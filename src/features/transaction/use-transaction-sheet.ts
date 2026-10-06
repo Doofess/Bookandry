@@ -36,6 +36,8 @@ const IMPORT = 'import';
 const SHARED_ID = 'id';
 /** The found transaction being edited inside the import sheet, by its index. */
 const ROW = 'row';
+/** The found card or bank account being filled in inside the import sheet, by its index. */
+const CARD = 'card';
 
 export type SheetTarget =
   | { readonly mode: 'closed' }
@@ -47,6 +49,8 @@ export type SheetTarget =
       readonly sharedId?: string;
       /** A found transaction open for editing, so Back returns to the list. */
       readonly row?: number;
+      /** A found card or account open in its editor, likewise. */
+      readonly card?: number;
     };
 
 export type TransactionSheetApi = {
@@ -56,6 +60,8 @@ export type TransactionSheetApi = {
   readonly openImport: (sharedId?: string) => void;
   /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
   readonly openImportRow: (row: number | undefined) => void;
+  /** Open one found card or account in its editor inside the import sheet, or go back to the list. */
+  readonly openImportCard: (card: number | undefined) => void;
   readonly close: () => void;
   /** For `onOpenChange`, which a backdrop click or Escape also drives. */
   readonly setOpen: (open: boolean) => void;
@@ -70,10 +76,12 @@ export function useTransactionSheet(): TransactionSheetApi {
     if (importing === '1' || importing === 'shared') {
       const sharedId = importing === 'shared' ? (params.get(SHARED_ID) ?? undefined) : undefined;
       const row = Number(params.get(ROW) ?? '');
+      const card = Number(params.get(CARD) ?? '');
       return {
         mode: 'import',
         ...(sharedId === undefined || sharedId === '' ? {} : { sharedId }),
         ...(params.get(ROW) !== null && Number.isInteger(row) && row >= 0 ? { row } : {}),
+        ...(params.get(CARD) !== null && Number.isInteger(card) && card >= 0 ? { card } : {}),
       };
     }
     const transactionId = params.get(EDIT);
@@ -95,12 +103,14 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(IMPORT);
       updated.delete(SHARED_ID);
       updated.delete(ROW);
+      updated.delete(CARD);
 
       if (next.mode === 'add') updated.set(ADD, '1');
       if (next.mode === 'import') {
         updated.set(IMPORT, next.sharedId === undefined ? '1' : 'shared');
         if (next.sharedId !== undefined) updated.set(SHARED_ID, next.sharedId);
         if (next.row !== undefined) updated.set(ROW, String(next.row));
+        if (next.card !== undefined) updated.set(CARD, String(next.card));
       }
       if (next.mode === 'edit') {
         updated.set(EDIT, next.transactionId);
@@ -145,10 +155,17 @@ export function useTransactionSheet(): TransactionSheetApi {
       },
       openImportRow: (row: number | undefined) => {
         if (target.mode !== 'import') return;
-        const { row: _open, ...rest } = target;
+        const { row: _open, card: _card, ...rest } = target;
         // Back to the list replaces, like closing does, so Back never reopens the row.
         if (row === undefined) write(rest, true);
         else write({ ...rest, row });
+      },
+      openImportCard: (card: number | undefined) => {
+        if (target.mode !== 'import') return;
+        const { row: _row, card: open, ...rest } = target;
+        // From one card straight to the next replaces too: Back goes to the list, not the last card.
+        if (card === undefined) write(rest, true);
+        else write({ ...rest, card }, open !== undefined);
       },
       close: () => {
         write({ mode: 'closed' });

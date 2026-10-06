@@ -125,6 +125,10 @@ export const cardSchema = z.object({
   bank: shortText.optional(),
   tier: shortText.optional(),
   club: shortText.optional(),
+  lastDigits: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
   expiresMonth: z.string().refine(isExpiresMonth, 'not a YYYY-MM month').optional(),
   billingDay: z.number().int().min(1).max(31).optional(),
   creditLimitMinor: minorAmount.optional(),

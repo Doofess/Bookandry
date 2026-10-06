@@ -28,6 +28,7 @@ import { quoteRate } from '@/db/rates-gateway';
 import { categoryFromHistory, findCandidates, findOverrides } from '@/db/repos/transactions';
 import type { ResolvedRate } from '@/db/save-transaction';
 import { cardFeeOccurrences, fxFeeFor } from '@/domain/cards';
+import { buildMethodReview, type MethodReviewItem } from '@/domain/import-cards';
 import { BLOCKING, type Flag, type FoundRow } from '@/domain/import-check';
 import { flagCardFees, flagExisting } from '@/domain/import-review';
 import type { WireContext } from '@/domain/import-wire';
@@ -52,8 +53,10 @@ import {
 } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
+import { foundName, needsFilling, nextToFill, saveFound, tickable } from './found-methods';
+import { MethodPanel, MethodsGroup } from './found-methods-list';
 import { readSession, writeSession, type ImportSession } from './import-session';
-import { applyBatch, buildReview, saveable, type Aliases, type ReviewItem } from './review-items';
+import { applyBatch, buildReview, linkToCard, saveable, type Aliases, type ReviewItem } from './review-items';
 import { runImport, type FileState } from './run-import';
 import { CategoryField } from '../transaction/category-field';
 import { DateField } from '../transaction/date-field';
@@ -63,6 +66,7 @@ export type ImportSheetProps = {
   readonly target: Extract<SheetTarget, { mode: 'import' }>;
   readonly onOpenChange: (open: boolean) => void;
   readonly onOpenRow: (row: number | undefined) => void;
+  readonly onOpenCard: (card: number | undefined) => void;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
@@ -100,6 +104,7 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
   files: [],
   states: [],
   items: [],
+  methods: [],
   reconciliations: [],
   batch: { methodId: '', profileId },
 });
@@ -112,6 +117,10 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
  * already in the household - each row with its reason in plain words, and
  * any row can be opened and corrected first. "Add N" saves the ticked rows
  * through the same path the form uses, all at once, with an Undo.
+ *
+ * Cards and bank accounts found are listed above them. One the file showed
+ * only part of opens in the card or account editor, with what it did show
+ * already filled in - straight away, when that is all the files held.
  */
 export function ImportSheet(props: ImportSheetProps) {
   const { t, i18n } = useTranslation(['import', 'common', 'categories', 'profiles']);
@@ -154,7 +163,12 @@ export function ImportSheet(props: ImportSheetProps) {
     props.onOpenChange(false);
   };
 
-  const unsaved = session.stage === 'review' ? session.items.filter((i) => i.ticked).length : 0;
+  const unsaved =
+    session.stage === 'review'
+      ? session.items.filter((i) => i.ticked).length + session.methods.filter((m) => m.ticked).length
+      : 0;
+  // Who a new card or account belongs to: the batch "For".
+  const owner = session.batch.profileId || defaultProfileId;
   const requestClose = () => {
     if (unsaved > 0) setConfirmDiscard(true);
     else close();
@@ -166,7 +180,15 @@ export function ImportSheet(props: ImportSheetProps) {
     const controller = new AbortController();
     abort.current = controller;
     const states: FileState[] = files.map((file, i) => ({ file: i, name: file.name, status: 'reading' }));
-    setSession((s) => ({ ...s, stage: 'reading', files, states, items: [], reconciliations: [] }));
+    setSession((s) => ({
+      ...s,
+      stage: 'reading',
+      files,
+      states,
+      items: [],
+      methods: [],
+      reconciliations: [],
+    }));
     const update = (state: FileState) => {
       setSession((s) => ({ ...s, states: s.states.map((x) => (x.file === state.file ? state : x)) }));
     };
@@ -242,7 +264,11 @@ export function ImportSheet(props: ImportSheetProps) {
         today: props.today,
         primeRate: prime.primeRate,
       });
-      setSession((s) => ({ ...s, stage: 'review', items, reconciliations: result.reconciliations }));
+      const methods = buildMethodReview(result.cards, result.accounts, props.paymentMethods);
+      setSession((s) => ({ ...s, stage: 'review', items, methods, reconciliations: result.reconciliations }));
+      // Only cards or accounts, and one of them needs finishing: straight to its editor.
+      const first = methods.findIndex(needsFilling);
+      if (items.length === 0 && first !== -1) props.onOpenCard(first);
     } catch {
       // Stopped: back to the files, still picked.
       setSession((s) => ({ ...s, stage: 'pick' }));
@@ -250,9 +276,18 @@ export function ImportSheet(props: ImportSheetProps) {
   }
 
   async function save() {
-    const chosen = session.items.filter((item) => item.ticked && item.values !== undefined);
     setSaving(true);
     try {
+      // Cards and accounts first, so the rows charged to a new card can be paid with it.
+      let items = session.items;
+      let methodsSaved = 0;
+      for (const method of session.methods) {
+        if (!method.ticked || !tickable(method)) continue;
+        const saved = await saveFound(method, owner, i18n.language);
+        items = linkToCard(items, saved);
+        methodsSaved += 1;
+      }
+      const chosen = items.filter((item) => item.ticked && item.values !== undefined);
       const toSave: ImportItem[] = [];
       let noRate = 0;
       for (const item of chosen) {
@@ -285,13 +320,21 @@ export function ImportSheet(props: ImportSheetProps) {
           ...(fee === undefined ? {} : { feeRate: fee }),
         });
       }
-      const ids = await saveImported(db, toSave, {
-        baseCurrency: props.baseCurrency,
-        now: systemClock.nowIso(),
-        newId,
-      });
+      const ids =
+        toSave.length === 0
+          ? []
+          : await saveImported(db, toSave, {
+              baseCurrency: props.baseCurrency,
+              now: systemClock.nowIso(),
+              newId,
+            });
       if (session.sharedId !== undefined) void forgetShared(session.sharedId);
       writeSession(undefined);
+      if (methodsSaved > 0) toast(t('import:methodsAdded', { count: methodsSaved }));
+      if (ids.length === 0) {
+        props.onOpenChange(false);
+        return;
+      }
       const latest = toSave.reduce<LocalDate>(
         (d, item) => maxDate(d, item.parsed.date),
         toSave[0]?.parsed.date ?? props.today,
@@ -322,6 +365,7 @@ export function ImportSheet(props: ImportSheetProps) {
   }
 
   const editing = props.target.row === undefined ? undefined : session.items[props.target.row];
+  const filling = props.target.card === undefined ? undefined : session.methods[props.target.card];
 
   return (
     <Sheet
@@ -333,13 +377,41 @@ export function ImportSheet(props: ImportSheetProps) {
       <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
         <SheetHeader>
           <SheetTitle id={titleId}>
-            {editing === undefined ? t('import:title') : t('import:editTitle')}
+            {filling !== undefined
+              ? t('import:fillTitle', { name: foundName(filling, i18n.language) })
+              : editing === undefined
+                ? t('import:title')
+                : t('import:editTitle')}
           </SheetTitle>
-          {editing === undefined ? <SheetDescription>{t('import:body')}</SheetDescription> : null}
+          {editing === undefined && filling === undefined ? (
+            <SheetDescription>{t('import:body')}</SheetDescription>
+          ) : null}
         </SheetHeader>
 
         <div className="px-4 pb-4">
-          {editing !== undefined && props.target.row !== undefined ? (
+          {filling !== undefined && props.target.card !== undefined ? (
+            <MethodPanel
+              key={filling.id}
+              item={filling}
+              methods={props.paymentMethods}
+              profiles={props.profiles}
+              owner={owner}
+              onDone={(saved) => {
+                const index = props.target.card ?? -1;
+                if (saved === undefined) {
+                  props.onOpenCard(undefined);
+                  return;
+                }
+                const methods = session.methods.map((m, i): MethodReviewItem =>
+                  i === index ? { ...m, savedId: saved.id, ticked: false } : m,
+                );
+                setSession((s) => ({ ...s, methods, items: linkToCard(s.items, saved) }));
+                toast(t('import:methodSaved', { name: saved.label }));
+                // On to the next one the files showed only part of, if any.
+                props.onOpenCard(nextToFill(methods, index));
+              }}
+            />
+          ) : editing !== undefined && props.target.row !== undefined ? (
             <RowEditor
               item={editing}
               profiles={props.profiles}
@@ -382,11 +454,17 @@ export function ImportSheet(props: ImportSheetProps) {
               session={session}
               profiles={props.profiles}
               categories={props.categories}
-              methods={props.paymentMethods}
+              methodsList={props.paymentMethods}
               translate={translate}
               saving={saving}
               onChange={(items) => {
                 setSession((s) => ({ ...s, items }));
+              }}
+              onMethods={(methods) => {
+                setSession((s) => ({ ...s, methods }));
+              }}
+              onOpenMethod={(index) => {
+                props.onOpenCard(index);
               }}
               onBatch={(batch) => {
                 setSession((s) => ({ ...s, batch, items: applyBatch(s.items, batch, props.paymentMethods) }));
@@ -396,7 +474,7 @@ export function ImportSheet(props: ImportSheetProps) {
               }}
               onSave={() => void save()}
               onAgain={() => {
-                setSession((s) => ({ ...s, stage: 'pick', files: [], items: [] }));
+                setSession((s) => ({ ...s, stage: 'pick', files: [], items: [], methods: [] }));
               }}
             />
           )}
@@ -655,10 +733,12 @@ function Review({
   session,
   profiles,
   categories,
-  methods,
+  methodsList,
   translate,
   saving,
   onChange,
+  onMethods,
+  onOpenMethod,
   onBatch,
   onOpen,
   onSave,
@@ -667,10 +747,12 @@ function Review({
   readonly session: ImportSession;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
-  readonly methods: readonly PaymentMethod[];
+  readonly methodsList: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly saving: boolean;
   readonly onChange: (items: ReviewItem[]) => void;
+  readonly onMethods: (methods: MethodReviewItem[]) => void;
+  readonly onOpenMethod: (index: number) => void;
   readonly onBatch: (batch: ImportSession['batch']) => void;
   readonly onOpen: (index: number) => void;
   readonly onSave: () => void;
@@ -680,9 +762,10 @@ function Review({
   const paidId = useId();
   const forId = useId();
   const items = session.items;
+  const methods = session.methods;
   const failures = session.states.filter((s) => s.status === 'failed' || s.status === 'refused');
 
-  if (items.length === 0) {
+  if (items.length === 0 && methods.length === 0) {
     return (
       <div className="space-y-4">
         {failures.length === 0 ? null : <Reading states={session.states} onStop={() => undefined} />}
@@ -704,15 +787,16 @@ function Review({
   const ready = indexed.filter(
     ({ item }) => !check.some((c) => c.item === item) && !existing.some((e) => e.item === item),
   );
-  const ticked = items.filter((i) => i.ticked).length;
-  const setTicked = (predicate: (item: ReviewItem) => boolean, value: boolean) => {
+  const ticked = items.filter((i) => i.ticked).length + methods.filter((m) => m.ticked).length;
+  const selectable = items.length + methods.filter(tickable).length;
+  const setTicked = (value: boolean) => {
     onChange(
-      items.map((item) =>
-        predicate(item)
-          ? { ...item, ticked: value && item.values !== undefined && saveable(item.values) }
-          : item,
-      ),
+      items.map((item) => ({
+        ...item,
+        ticked: value && item.values !== undefined && saveable(item.values),
+      })),
     );
+    onMethods(methods.map((m) => ({ ...m, ticked: value && tickable(m) })));
   };
 
   return (
@@ -748,22 +832,33 @@ function Review({
           </p>
         ))}
 
+      <MethodsGroup
+        items={methods}
+        methods={methodsList}
+        onTick={(index, value) => {
+          onMethods(methods.map((m, i) => (i === index ? { ...m, ticked: value && tickable(m) } : m)));
+        }}
+        onOpen={onOpenMethod}
+      />
+
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <span id={paidId} className="text-sm font-medium">
-            {t('paidWith')}
-          </span>
-          <PaymentMethodField
-            value={session.batch.methodId}
-            onChange={(methodId) => {
-              onBatch({ ...session.batch, methodId });
-            }}
-            profileId={session.batch.profileId}
-            mode="one_time"
-            methods={methods}
-            labelledBy={paidId}
-          />
-        </div>
+        {items.length === 0 ? null : (
+          <div className="space-y-1">
+            <span id={paidId} className="text-sm font-medium">
+              {t('paidWith')}
+            </span>
+            <PaymentMethodField
+              value={session.batch.methodId}
+              onChange={(methodId) => {
+                onBatch({ ...session.batch, methodId });
+              }}
+              profileId={session.batch.profileId}
+              mode="one_time"
+              methods={methodsList}
+              labelledBy={paidId}
+            />
+          </div>
+        )}
         {profiles.length < 2 ? null : (
           <div className="space-y-1">
             <span id={forId} className="text-sm font-medium">
@@ -791,19 +886,22 @@ function Review({
         title={t('groups.check', { count: check.length })}
         rows={check}
         open
-        {...{ categories, methods, translate, onChange, onOpen, items }}
+        methods={methodsList}
+        {...{ categories, translate, onChange, onOpen, items }}
       />
       <Group
         title={t('groups.ready', { count: ready.length })}
         rows={ready}
         open
-        {...{ categories, methods, translate, onChange, onOpen, items }}
+        methods={methodsList}
+        {...{ categories, translate, onChange, onOpen, items }}
       />
       <Group
         title={t('groups.existing', { count: existing.length })}
         rows={existing}
         open={false}
-        {...{ categories, methods, translate, onChange, onOpen, items }}
+        methods={methodsList}
+        {...{ categories, translate, onChange, onOpen, items }}
       />
 
       <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
@@ -811,10 +909,10 @@ function Review({
           type="button"
           variant="outline"
           onClick={() => {
-            setTicked(() => true, ticked < items.length);
+            setTicked(ticked < selectable);
           }}
         >
-          {ticked < items.length ? t('selectAll') : t('selectNone')}
+          {ticked < selectable ? t('selectAll') : t('selectNone')}
         </Button>
         <Button
           type="button"

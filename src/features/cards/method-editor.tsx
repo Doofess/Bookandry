@@ -1,3 +1,4 @@
+import { cn } from 'cn';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Archive, ArchiveRestore, Banknote, Pencil, Plus, ScrollText, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -272,6 +273,7 @@ export function OtherMethods() {
 /** The built-in methods, in the order they are listed. */
 const BUILTIN_ORDER = [CASH_METHOD_ID, CHEQUE_METHOD_ID];
 
+/** The payment-method editor in a sheet of its own: the Cards and Bank accounts screens'. */
 export function MethodEditor({
   target,
   profiles,
@@ -284,9 +286,56 @@ export function MethodEditor({
   /** What a new method starts as. */
   readonly newType?: PaymentMethodType;
 }) {
+  const { t } = useTranslation(['common', 'categories']);
+  return (
+    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>
+            {target === 'new' ? t('categories:manage.methodNew') : t('categories:manage.methodEdit')}
+          </SheetTitle>
+        </SheetHeader>
+        <MethodForm
+          target={target}
+          profiles={profiles}
+          newType={newType}
+          className="px-4 pb-6"
+          onDone={() => {
+            onOpenChange(false);
+          }}
+        />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * The editor's form, wherever it is shown: in its own sheet, or inside "Add
+ * with AI", opened on what a document showed of a card or an account so only
+ * the rest is left to fill in.
+ */
+export function MethodForm({
+  target,
+  profiles,
+  newType = 'credit_card',
+  prefill,
+  className,
+  onDone,
+}: {
+  readonly target: PaymentMethod | 'new' | undefined;
+  readonly profiles: readonly Profile[];
+  /** What a new method starts as. */
+  readonly newType?: PaymentMethodType;
+  /** A new method's starting fields - what a document showed - in place of empty ones. */
+  readonly prefill?: PaymentMethod;
+  readonly className?: string;
+  /** Saved (with what was saved) or cancelled (with nothing). */
+  readonly onDone: (saved: PaymentMethod | undefined) => void;
+}) {
   const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
   const isNew = target === 'new';
   const existing = target === 'new' ? undefined : target;
+  const source = existing ?? (isNew ? prefill : undefined);
 
   const [label, setLabel] = useState('');
   const [type, setType] = useState<PaymentMethodType>('credit_card');
@@ -313,14 +362,15 @@ export function MethodEditor({
 
   // Derived from the target during render, not synchronised in an effect: an
   // effect would paint one frame of the previous method's label.
-  const identity = target === undefined ? undefined : isNew ? 'new' : existing?.id;
+  const identity =
+    target === undefined ? undefined : isNew ? `new:${prefill?.id ?? ''}` : (existing?.id ?? '');
   if (identity !== seeded) {
     setSeeded(identity);
-    setLabel(existing?.label ?? '');
-    setType(existing?.type ?? newType);
-    setOwner(existing?.profileId ?? profiles[0]?.id ?? SHARED_OWNER);
-    setCard(cardDraftOf(existing));
-    setAccount(accountDraftOf(existing, profiles[0]?.id ?? SHARED_OWNER));
+    setLabel(source?.label ?? '');
+    setType(source?.type ?? newType);
+    setOwner(source?.profileId ?? profiles[0]?.id ?? SHARED_OWNER);
+    setCard(cardDraftOf(source));
+    setAccount(accountDraftOf(source, profiles[0]?.id ?? SHARED_OWNER));
     setAttempted(false);
   }
 
@@ -372,8 +422,9 @@ export function MethodEditor({
     const profileId = type === 'bank_account' && parsedAccount.ok ? parsedAccount.profileId : owner;
 
     try {
+      let saved: PaymentMethod | undefined;
       if (isNew) {
-        await createPaymentMethod(
+        saved = await createPaymentMethod(
           db,
           newId(),
           {
@@ -387,7 +438,7 @@ export function MethodEditor({
           now,
         );
       } else if (existing !== undefined) {
-        await updatePaymentMethod(
+        saved = await updatePaymentMethod(
           db,
           existing.id,
           {
@@ -401,121 +452,111 @@ export function MethodEditor({
           now,
         );
       }
-      onOpenChange(false);
+      onDone(saved);
     } catch {
       toast.error(t('tx.toastFailed'));
     }
   };
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
-            {isNew ? t('categories:manage.methodNew') : t('categories:manage.methodEdit')}
-          </SheetTitle>
-        </SheetHeader>
-
-        <form
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault();
-            setAttempted(true);
-            if (label.trim() !== '' && !cardInvalid && !accountInvalid) void save();
+    <form
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        setAttempted(true);
+        if (label.trim() !== '' && !cardInvalid && !accountInvalid) void save();
+      }}
+      className={cn('space-y-4', className)}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor={labelId}>{t('categories:manage.methodLabel')}</Label>
+        <Input
+          id={labelId}
+          value={label}
+          placeholder={t('categories:manage.methodLabelPlaceholder')}
+          onChange={(event) => {
+            setLabel(event.target.value);
           }}
-          className="space-y-4 px-4 pb-6"
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor={labelId}>{t('categories:manage.methodLabel')}</Label>
-            <Input
-              id={labelId}
-              value={label}
-              placeholder={t('categories:manage.methodLabelPlaceholder')}
-              onChange={(event) => {
-                setLabel(event.target.value);
-              }}
-              className="h-11"
-            />
-          </div>
+          className="h-11"
+        />
+      </div>
 
-          <div className="space-y-1.5">
-            <Label id={typeId}>{t('categories:manage.methodType')}</Label>
-            <Segmented<PaymentMethodType>
-              value={type}
-              labelledBy={typeId}
-              onChange={setType}
-              size="sm"
-              options={TYPES.map((option) => ({
-                value: option,
-                label: t(TYPE_KEY[option] as MethodTypeKey),
-              }))}
-            />
-          </div>
+      <div className="space-y-1.5">
+        <Label id={typeId}>{t('categories:manage.methodType')}</Label>
+        <Segmented<PaymentMethodType>
+          value={type}
+          labelledBy={typeId}
+          onChange={setType}
+          size="sm"
+          options={TYPES.map((option) => ({
+            value: option,
+            label: t(TYPE_KEY[option] as MethodTypeKey),
+          }))}
+        />
+      </div>
 
-          {/*
+      {/*
             Everything a card company shows about the card - its billing day,
             its fees, its interest - asked once instead of per purchase, and
             never its number. Only for a credit card: nothing else is billed
             monthly or charges קרדיט.
           */}
-          {type === 'credit_card' ? (
-            <CardFields
-              key={seeded}
-              draft={card}
-              onChange={changeCard}
-              invalid={attempted && !parsedCard.ok ? parsedCard.invalid : []}
-              accounts={accounts}
-            />
-          ) : null}
+      {type === 'credit_card' ? (
+        <CardFields
+          key={seeded}
+          draft={card}
+          onChange={changeCard}
+          invalid={attempted && !parsedCard.ok ? parsedCard.invalid : []}
+          accounts={accounts}
+        />
+      ) : null}
 
-          {/*
+      {/*
             A bank account names its own holders - one person, or several on
             a joint or business account - so it does not ask "belongs to".
           */}
-          {type === 'bank_account' ? (
-            <AccountFields
-              draft={account}
-              onChange={changeAccount}
-              invalid={attempted && !parsedAccount.ok ? parsedAccount.invalid : []}
-              profiles={profiles}
-            />
-          ) : (
-            <div className="space-y-1.5">
-              <Label id={ownerId}>{t('categories:manage.methodOwner')}</Label>
-              <Segmented
-                value={owner}
-                labelledBy={ownerId}
-                onChange={setOwner}
-                size="sm"
-                options={[
-                  ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
-                  { value: SHARED_OWNER, label: t('categories:manage.methodShared') },
-                ]}
-              />
-              {owner === SHARED_OWNER ? (
-                <p className="text-xs text-muted-foreground">{t('categories:manage.methodSharedHint')}</p>
-              ) : null}
-            </div>
-          )}
+      {type === 'bank_account' ? (
+        <AccountFields
+          draft={account}
+          onChange={changeAccount}
+          invalid={attempted && !parsedAccount.ok ? parsedAccount.invalid : []}
+          profiles={profiles}
+        />
+      ) : (
+        <div className="space-y-1.5">
+          <Label id={ownerId}>{t('categories:manage.methodOwner')}</Label>
+          <Segmented
+            value={owner}
+            labelledBy={ownerId}
+            onChange={setOwner}
+            size="sm"
+            options={[
+              ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+              { value: SHARED_OWNER, label: t('categories:manage.methodShared') },
+            ]}
+          />
+          {owner === SHARED_OWNER ? (
+            <p className="text-xs text-muted-foreground">{t('categories:manage.methodSharedHint')}</p>
+          ) : null}
+        </div>
+      )}
 
-          <div className="flex gap-2 pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => {
-                onOpenChange(false);
-              }}
-            >
-              {t('action.cancel')}
-            </Button>
-            <Button type="submit" disabled={label.trim() === ''} className="flex-1">
-              {t('action.save')}
-            </Button>
-          </div>
-        </form>
-      </SheetContent>
-    </Sheet>
+      <div className="flex gap-2 pt-1">
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          onClick={() => {
+            onDone(undefined);
+          }}
+        >
+          {t('action.cancel')}
+        </Button>
+        <Button type="submit" disabled={label.trim() === ''} className="flex-1">
+          {t('action.save')}
+        </Button>
+      </div>
+    </form>
   );
 }
 

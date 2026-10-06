@@ -49,7 +49,7 @@
     "upstream": "This file couldn't be read."
   },
   "retry": "Try again",
-  "nothing": "We didn't find any transactions in these files.",
+  "nothing": "We didn't find any transactions, cards or bank accounts in these files.",
   "chooseOther": "Choose other files",
   "addManually": "Add manually",
   "groups": {
@@ -58,7 +58,9 @@
     "ready_one": "Ready (1)",
     "ready_other": "Ready ({{count}})",
     "existing_one": "Looks already added (1)",
-    "existing_other": "Looks already added ({{count}})"
+    "existing_other": "Looks already added ({{count}})",
+    "methods_one": "Card or account found (1)",
+    "methods_other": "Cards and accounts found ({{count}})"
   },
   "paidWith": "Paid with",
   "forProfile": "For",
@@ -110,5 +112,36 @@
   "added_other": "Added {{count}} transactions",
   "noRate_one": "1 left out: no exchange rate for its date.",
   "noRate_other": "{{count}} left out: no exchange rate for their dates.",
-  "saveFailed": "Couldn't add them. Nothing was changed."
+  "saveFailed": "Couldn't add them. Nothing was changed.",
+  "method": {
+    "credit": "Credit interest {{rate}}%",
+    "saved": "Added",
+    "known": "Already added, nothing new in the file.",
+    "missing": "The file doesn't show its {{fields}}.",
+    "newCard": "New card",
+    "newAccount": "New bank account",
+    "updates": "Updates {{name}}",
+    "fill": "Fill in the rest",
+    "fillName": "Fill in the rest of {{name}}"
+  },
+  "missing": {
+    "lastDigits": "last 4 digits",
+    "billingDay": "billing day",
+    "bank": "bank",
+    "branch": "branch",
+    "number": "account number",
+    "holders": "holders in the household"
+  },
+  "cardFlag": {
+    "reads_disagree": "Check it: read twice, it came out differently.",
+    "one_read_only": "Check it: only one of two reads found it.",
+    "not_in_source": "Check it: some of it isn't in the file.",
+    "card_known": "Already added, nothing new in the file."
+  },
+  "fillTitle": "Fill in {{name}}",
+  "fillBody": "Filled in from your file. Add what it didn't show: {{fields}}.",
+  "fillCheck": "Filled in from your file. Check it, then save.",
+  "methodSaved": "{{name}} saved",
+  "methodsAdded_one": "Added 1 card or account",
+  "methodsAdded_other": "Added {{count}} cards and accounts"
 }
