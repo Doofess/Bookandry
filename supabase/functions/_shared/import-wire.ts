@@ -622,7 +622,7 @@ st: "pending" when marked pending or authorisation only (ממתין, בקליט�
 pl: for instalments ("תשלום 3 מתוך 6"): n=3, of=6, md "installments", or "credit" for קרדיט. a is this payment. tot: the deal's whole amount if printed.
 fee: true for the card's own monthly fee (דמי כרטיס).
 m: the merchant or counterparty as printed, short.
-cat: the best category alias from the list for the row's kind, or null. pm: the payment method alias only when the document clearly names it, else null.
+cat: the best category alias from the list for the row's kind, or null. A loan's repayment (הלוואה, פירעון, loan) - a card company's own loan too, such as מקס איט פיננסים - takes the loans category; a card company or a bank is never a restaurant or a shop. pm: the payment method alias only when the document clearly names it, else null.
 l4: the last four digits of the card the row was charged to, when the document shows them (a card's section of a statement, a card column), else "".
 k: cards the documents describe - a card company's list of cards, a card's terms or rates page, a statement's card header - even when there are no transactions. n: the card's name as printed; l4: its last four digits; nw: its network (Visa, Mastercard...); is: the company that issued it; cr: its קרדיט annual rate as printed, the nominal one (תעריפית) when both are shown; lim: its credit limit (מסגרת); bd: its billing day (מועד חיוב). "" for anything not printed.
 pr: the prime rate the documents say their rates are worked out from, as printed, else "".
