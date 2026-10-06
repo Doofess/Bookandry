@@ -28,6 +28,7 @@ vi.mock('@/app/account', () => ({
 const { ImportSheet } = await import('./import-sheet');
 const { writeSession } = await import('./import-session');
 const { db } = await import('@/db/db');
+const { listUnfinished } = await import('@/db/import-drafts');
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 const category = (id: string, kind: 'income' | 'expense'): Category => ({
@@ -220,8 +221,13 @@ describe('Add with AI', () => {
     await user.click(screen.getByRole('radio', { name: 'The 10th' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    // Back to the list, the card added.
-    await screen.findByText('Added');
+    // Added, and no longer waiting to be finished.
+    await waitFor(async () => {
+      expect(await listUnfinished(db)).toEqual([]);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('import-unfinished')).toBeNull();
+    });
     const [saved] = (await db.paymentMethods.toArray()).filter((m) => m.type === 'credit_card');
     expect(saved).toMatchObject({
       label: 'max executive',
@@ -234,5 +240,85 @@ describe('Add with AI', () => {
         creditPrimeMargin: '1.15',
       },
     });
+  });
+
+  it('keeps what a file showed only part of - through closing and reloading - until it is filled in or deleted', async () => {
+    writeSession(undefined);
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: {
+          r: [],
+          t: [],
+          per: null,
+          done: true,
+          k: [{ s: 0, n: 'Dream Card VIP', l4: '0427', nw: 'Visa', is: 'MAX', cr: '', lim: '', bd: '' }],
+          ba: [{ s: 0, n: 'בנק הפועלים', bk: '', br: '532', no: '', h: '' }],
+          pr: '',
+        },
+      },
+    ];
+    function Harness() {
+      const [target, setTarget] = useState<Extract<SheetTarget, { mode: 'import' }>>({ mode: 'import' });
+      return (
+        <ImportSheet
+          target={target}
+          onOpenChange={() => undefined}
+          onOpenRow={() => undefined}
+          onOpenCard={(card) => {
+            setTarget(card === undefined ? { mode: 'import' } : { mode: 'import', card });
+          }}
+          profiles={[profile]}
+          categories={[category('cat.groceries', 'expense')]}
+          paymentMethods={[]}
+          activeProfileId="p1"
+          baseCurrency="ILS"
+          today={'2026-09-15' as LocalDate}
+          onSaved={() => undefined}
+        />
+      );
+    }
+    const user = userEvent.setup();
+    const first = renderWithProviders(<Harness />);
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['Dream Card VIP 0427 Visa / בנק הפועלים סניף 532'], 'cards.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+
+    // Straight into the first one; not filled in now.
+    await screen.findByText("Filled in from your file. Add what it didn't show: billing day.");
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    const waiting = await screen.findByTestId('import-unfinished');
+    expect(within(waiting).getByRole('heading', { name: 'Still to finish (2)' })).toBeInTheDocument();
+
+    // The sheet closed, the page reloaded: nothing of the reading is left but these.
+    first.unmount();
+    writeSession(undefined);
+    renderWithProviders(<Harness />);
+    const again = await screen.findByTestId('import-unfinished');
+    expect(
+      within(again).getByRole('button', { name: 'Fill in the rest of Dream Card VIP' }),
+    ).toBeInTheDocument();
+    expect(
+      within(again).getByRole('button', { name: 'Fill in the rest of Bank Hapoalim' }),
+    ).toBeInTheDocument();
+
+    // Deleted by hand: gone.
+    await user.click(within(again).getByRole('button', { name: 'Delete Bank Hapoalim' }));
+    await waitFor(async () => {
+      expect((await listUnfinished(db)).map((u) => u.kind)).toEqual(['card']);
+    });
+    expect(within(again).queryByRole('button', { name: 'Delete Bank Hapoalim' })).toBeNull();
+
+    // Filled in: gone too.
+    await user.click(within(again).getByRole('button', { name: 'Fill in the rest of Dream Card VIP' }));
+    await user.click(await screen.findByRole('radio', { name: 'The 10th' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => {
+      expect(await listUnfinished(db)).toEqual([]);
+    });
+    expect(await db.paymentMethods.filter((m) => m.label === 'Dream Card VIP').count()).toBe(1);
   });
 });

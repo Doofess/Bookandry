@@ -1,8 +1,9 @@
 import { cn } from 'cn';
-import { Check, ChevronDown, CircleAlert, CreditCard, Landmark } from 'lucide-react';
-import { useState } from 'react';
+import { Check, ChevronDown, CircleAlert, CreditCard, Landmark, Trash2 } from 'lucide-react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { UnfinishedMethod } from '@/db/import-drafts';
 import { CARD_BLOCKING, type MethodReviewItem } from '@/domain/import-cards';
 import { MethodForm } from '@/features/cards/method-editor';
 import type { PaymentMethod, Profile } from '@/types/domain';
@@ -77,6 +78,109 @@ function MethodRow({
   readonly onTick: (ticked: boolean) => void;
   readonly onOpen: () => void;
 }) {
+  const { t, i18n } = useTranslation('import');
+  const name = foundName(item, i18n.language);
+  const known = item.flags.includes('card_known');
+  const saved = item.savedId !== undefined;
+
+  return (
+    <li className="flex items-stretch">
+      <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
+        <input
+          type="checkbox"
+          className="size-4 accent-primary"
+          checked={item.ticked}
+          disabled={!tickable(item)}
+          onChange={(event) => {
+            onTick(event.target.checked);
+          }}
+          aria-label={t('include', { name })}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={saved || known}
+        aria-label={needsFilling(item) ? t('method.fillName', { name }) : t('edit', { name })}
+        className="min-w-0 flex-1 px-2 py-2 text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none enabled:hover:bg-muted/50"
+      >
+        <MethodSummary item={item} methods={methods} />
+      </button>
+    </li>
+  );
+}
+
+/**
+ * The cards and accounts kept to finish - from this reading or an earlier
+ * one - each until its rest is filled in or it is deleted.
+ */
+export function UnfinishedGroup({
+  entries,
+  methods,
+  onOpen,
+  onDelete,
+}: {
+  readonly entries: readonly { readonly entry: UnfinishedMethod; readonly item: MethodReviewItem }[];
+  readonly methods: readonly PaymentMethod[];
+  readonly onOpen: (key: string) => void;
+  readonly onDelete: (entry: UnfinishedMethod, name: string) => void;
+}) {
+  const { t, i18n } = useTranslation('import');
+  const titleId = useId();
+  if (entries.length === 0) return null;
+  return (
+    <section
+      className="rounded-xl border border-amber-500/40"
+      aria-labelledby={titleId}
+      data-testid="import-unfinished"
+    >
+      <div className="px-3 py-2">
+        <h3 id={titleId} className="text-sm font-medium">
+          {t('unfinished.title', { count: entries.length })}
+        </h3>
+        <p className="text-xs text-muted-foreground">{t('unfinished.body')}</p>
+      </div>
+      <ul className="divide-y divide-border border-t border-border">
+        {entries.map(({ entry, item }) => {
+          const name = foundName(item, i18n.language);
+          return (
+            <li key={entry.key} className="flex items-stretch">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpen(entry.key);
+                }}
+                aria-label={needsFilling(item) ? t('method.fillName', { name }) : t('edit', { name })}
+                className="min-w-0 flex-1 px-3 py-2 text-start hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <MethodSummary item={item} methods={methods} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDelete(entry, name);
+                }}
+                aria-label={t('unfinished.delete', { name })}
+                className="flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:bg-muted/50 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** A found card or account in a few lines: what it is, and where it stands. */
+function MethodSummary({
+  item,
+  methods,
+}: {
+  readonly item: MethodReviewItem;
+  readonly methods: readonly PaymentMethod[];
+}) {
   const { t, i18n } = useTranslation(['import', 'cards']);
   const name = foundName(item, i18n.language);
   const list = new Intl.ListFormat(i18n.language, { type: 'conjunction' });
@@ -131,43 +235,23 @@ function MethodRow({
   );
 
   return (
-    <li className="flex items-stretch">
-      <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
-        <input
-          type="checkbox"
-          className="size-4 accent-primary"
-          checked={item.ticked}
-          disabled={!tickable(item)}
-          onChange={(event) => {
-            onTick(event.target.checked);
-          }}
-          aria-label={t('import:include', { name })}
-        />
-      </label>
-      <button
-        type="button"
-        onClick={onOpen}
-        disabled={saved || known}
-        aria-label={needsFilling(item) ? t('import:method.fillName', { name }) : t('import:edit', { name })}
-        className="min-w-0 flex-1 px-2 py-2 text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none enabled:hover:bg-muted/50"
-      >
-        <span className="flex items-center gap-2">
-          <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="min-w-0 truncate text-sm font-medium" dir="auto">
-            {name}
-          </span>
+    <>
+      <span className="flex items-center gap-2">
+        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 truncate text-sm font-medium" dir="auto">
+          {name}
         </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {details.filter(Boolean).join(' · ')}
+      </span>
+      <span className="block truncate text-xs text-muted-foreground">
+        {details.filter(Boolean).join(' · ')}
+      </span>
+      {status}
+      {needsFilling(item) ? (
+        <span className="mt-1 inline-flex min-h-8 items-center rounded-md border border-border px-2.5 text-xs font-medium">
+          {t('import:method.fill')}
         </span>
-        {status}
-        {needsFilling(item) ? (
-          <span className="mt-1 inline-flex min-h-8 items-center rounded-md border border-border px-2.5 text-xs font-medium">
-            {t('import:method.fill')}
-          </span>
-        ) : null}
-      </button>
-    </li>
+      ) : null}
+    </>
   );
 }
 

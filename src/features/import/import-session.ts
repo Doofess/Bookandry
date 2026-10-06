@@ -16,8 +16,10 @@ export type ImportSession = {
   readonly files: readonly File[];
   readonly states: readonly FileState[];
   readonly items: readonly ReviewItem[];
-  /** Cards and bank accounts found. */
+  /** Cards and bank accounts found whole; what was found only in part is kept apart, in `import-drafts`. */
   readonly methods: readonly MethodReviewItem[];
+  /** How many this reading found only in part. */
+  readonly drafted: number;
   readonly reconciliations: readonly Reconciliation[];
   readonly batch: { readonly methodId: string; readonly profileId: string };
   /** The share the files came from, so it can be forgotten once read. */

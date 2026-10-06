@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
 import { MethodEditor } from '@/features/cards/method-editor';
+import { UnfinishedNotice } from '@/features/cards/unfinished-notice';
 import { useBranch } from '@/features/cards/use-branch';
 import { useCardsData } from '@/features/cards/use-cards-data';
 import { compareLocal, formatLocalDate } from '@/lib/dates';
@@ -48,6 +49,8 @@ export function BankAccountsScreen() {
           {t('accounts.add')}
         </Button>
       </header>
+
+      <UnfinishedNotice kind="account" />
 
       {data === undefined ? null : accounts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center">
