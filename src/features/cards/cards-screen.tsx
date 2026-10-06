@@ -29,6 +29,7 @@ import { SHARED_OWNER, type Occurrence, type PaymentMethod, type Profile } from 
 import type { Currency, LocalDate } from '@/types/money';
 
 import { MethodEditor, OtherMethods } from './method-editor';
+import { NetworkLogo } from './network-logo';
 import { useCardsData } from './use-cards-data';
 
 /**
@@ -184,9 +185,7 @@ function CardPanel({
             {details?.issuer === undefined ? t('unknownIssuer') : t(`issuer.${details.issuer}`)}
           </span>
           {details?.network === undefined ? null : (
-            <span className="text-base font-semibold tracking-wide italic">
-              {t(`network.${details.network}`)}
-            </span>
+            <NetworkLogo network={details.network} className="shrink-0" />
           )}
         </div>
         <div>

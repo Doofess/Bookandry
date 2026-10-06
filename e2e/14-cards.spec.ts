@@ -40,6 +40,7 @@ const COPY = {
     // currency, so its 2.5% foreign-currency fee is on top.
     charge: '256.25',
     demoCards: ['Max', 'Cal', 'Isracard'],
+    networks: ['Mastercard', 'Visa'],
     household: 'Total commitments on the cards',
     commitments: 'Total commitments on the card',
   },
@@ -63,6 +64,7 @@ const COPY = {
     nextBill: /החיוב הבא/,
     charge: '250.00',
     demoCards: ['מקס', 'כאל', 'ישראכרט'],
+    networks: ['מאסטרקארד', 'ויזה'],
     household: 'סך הכל התחייבויות בכרטיסים',
     commitments: 'סך הכל התחייבויות בכרטיס',
   },
@@ -82,6 +84,10 @@ for (const lang of ['en', 'he'] as const) {
       await expect(page.getByRole('heading', { level: 1, name: copy.title })).toBeVisible();
       for (const issuer of copy.demoCards) {
         await expect(page.getByRole('article').filter({ hasText: issuer }).first()).toBeVisible();
+      }
+      // The network's mark on the card, named for a screen reader.
+      for (const network of copy.networks) {
+        await expect(page.getByRole('img', { name: network, exact: true })).toBeVisible();
       }
       // A limit, as a meter.
       await expect(page.getByRole('meter', { name: copy.limit }).first()).toBeVisible();
