@@ -4,7 +4,7 @@ import type { BookandryDB } from '@/db/db';
 import { quoteRate } from '@/db/rates-gateway';
 import { SETTINGS_ID } from '@/db/repos/settings';
 import { KeyUnavailableError } from '@/db/sync/codec';
-import { syncOnce, type SyncReport } from '@/db/sync/engine';
+import { syncOnce, type SyncReport, type SyncSpaces } from '@/db/sync/engine';
 import type { SyncTransport } from '@/db/sync/protocol';
 import type { RateQuote } from '@/domain/reconvert';
 import { systemClock } from '@/lib/clock';
@@ -39,8 +39,11 @@ const BACKOFF_MAX_MS = 300_000;
 
 export type SyncRunnerDeps = {
   readonly db: BookandryDB;
-  /** Built fresh for each sync, so it always carries the latest keys. */
-  readonly transport: () => Promise<SyncTransport>;
+  /**
+   * Built fresh for each sync, so it always carries the latest keys - and,
+   * for a linked account, every space the household reaches right now.
+   */
+  readonly transport: () => Promise<SyncTransport | SyncSpaces>;
   readonly onState: (state: SyncState) => void;
   /** Tests pass fakes; the app passes the window. */
   readonly target?: Pick<Window, 'addEventListener' | 'removeEventListener'>;

@@ -143,12 +143,18 @@ function chunks(records: readonly EncryptedRecord[]): EncryptedRecord[][] {
   return out;
 }
 
-export function rpcTransport(rpc: Rpc): EncryptedTransport {
+/**
+ * `space`: a linked account's space to read and write, instead of this
+ * account's own (supabase/migrations/*_households.sql).
+ */
+export function rpcTransport(rpc: Rpc, space?: string): EncryptedTransport {
+  const where = space === undefined ? {} : { p_space: space };
   return {
     async push(records) {
       const results: EncryptedPushResult[] = [];
       for (const chunk of chunks(records)) {
         const answer = await rpc('push_records', {
+          ...where,
           p_records: chunk.map((r) => ({
             rid: r.rid,
             rev: r.rev,
@@ -166,7 +172,7 @@ export function rpcTransport(rpc: Rpc): EncryptedTransport {
     },
 
     async pull(cursor, limit) {
-      const answer = (await rpc('pull_records', { p_cursor: cursor, p_limit: limit })) as {
+      const answer = (await rpc('pull_records', { ...where, p_cursor: cursor, p_limit: limit })) as {
         records?: unknown;
         cursor?: unknown;
         hasMore?: unknown;
@@ -246,8 +252,12 @@ function parseWrap(value: unknown): WrappedKey | undefined {
   return { ...base, kdf: { alg: 'argon2id', m, t, p } };
 }
 
-export async function getKeyState(rpc: Rpc): Promise<KeyState> {
-  const answer = (await rpc('get_key_state', {})) as { keyVersion?: unknown; wraps?: unknown } | null;
+/** `space`: a linked account's, whose own key entry is all the server hands over. */
+export async function getKeyState(rpc: Rpc, space?: string): Promise<KeyState> {
+  const answer = (await rpc('get_key_state', space === undefined ? {} : { p_space: space })) as {
+    keyVersion?: unknown;
+    wraps?: unknown;
+  } | null;
   const keyVersion = answer?.keyVersion;
   const raw = answer?.wraps;
   if (typeof keyVersion !== 'number' || !Number.isSafeInteger(keyVersion) || !Array.isArray(raw)) {

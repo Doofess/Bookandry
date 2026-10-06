@@ -1,9 +1,14 @@
 import { useSyncExternalStore } from 'react';
 
 import type { BookandryDB } from '@/db/db';
+import { ensureMember } from '@/db/members';
 import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
-import { loadKeys } from '@/db/sync/keystore';
+import type { SyncSpace, SyncSpaces } from '@/db/sync/engine';
+import { PULLED_TO_HEAD_KEY } from '@/db/sync/engine';
+import { loadKeys, loadSpaceKeys } from '@/db/sync/keystore';
+import { connectLinked } from '@/db/sync/linked';
+import { forgetSpace, knownSpaces } from '@/db/sync/spaces';
 import type { WireRequest } from '@/domain/import-wire';
 import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
@@ -19,6 +24,17 @@ import {
   type Session,
 } from '@/services/supabase/client';
 import type { ExtractOutcome } from '@/services/supabase/extract';
+import type { Household, InvitePreview, SendInviteOutcome } from '@/services/supabase/household';
+import {
+  acceptInvite,
+  declineInvite,
+  getHousehold,
+  leaveHousehold,
+  peekInvite,
+  removeMember,
+  revokeInvite,
+  setMyMember,
+} from '@/services/supabase/household';
 import { takeArrival, type Arrival } from '@/services/supabase/id-token';
 import {
   deleteMyAccount,
@@ -31,7 +47,14 @@ import {
 } from '@/services/supabase/transport';
 import type { Kind } from '@/types/money';
 
-import { forgetAvatar, readAvatarVersion, storeAvatar } from './avatar-store';
+import {
+  forgetAvatar,
+  forgetMemberAvatar,
+  readAvatarVersion,
+  readMemberAvatarVersion,
+  storeAvatar,
+  storeMemberAvatar,
+} from './avatar-store';
 import { idleExpired, touch, watchIdle, type IdleWatch } from './idle-lock';
 import { clearShared } from './shared-files';
 import { startSyncRunner, type SyncRunner, type SyncState } from './sync-runner';
@@ -102,6 +125,11 @@ export type AccountView =
       readonly passwordRecovery: boolean;
       /** Two-step sign-in (an authenticator-app code) is on for this account. */
       readonly twoStep: boolean;
+      /**
+       * The accounts this one is linked with: null for none, undefined until
+       * the server has been asked.
+       */
+      readonly household?: Household | null;
     };
 
 type SignedIn = Extract<AccountView, { status: 'signed_in' }>;
@@ -132,6 +160,11 @@ function userOf(session: Pick<Session, 'user'>): AccountUser {
   };
 }
 
+/** What the household calls an account that has not named its person yet. */
+export function displayNameOf(user: AccountUser): string {
+  return user.name ?? user.email?.split('@')[0] ?? '';
+}
+
 /** The language the page is in now: set on <html> by i18n/boot. */
 const pageLanguage = (): Language => (document.documentElement.lang === 'he' ? 'he' : 'en');
 
@@ -154,6 +187,10 @@ export class AccountController {
   /** Why the sign-in this page came back from Google with did not go through. */
   private redirectFailure: AuthFailure | undefined;
   private readonly settled = new Set<(state: SyncState) => void>();
+  /** Fetch linked accounts' keys afresh on the next sync: one of them moved on. */
+  private refreshLinked = false;
+  /** This account's person in the household is in place for this session. */
+  private memberReady = false;
 
   constructor(
     private readonly db: BookandryDB,
@@ -356,6 +393,8 @@ export class AccountController {
   async refreshKeys(): Promise<void> {
     if (this.view.status !== 'signed_in') return;
     const { id } = this.view.user;
+    // Whatever moved on may have been a linked account's key.
+    this.refreshLinked = true;
     let keys: KeysView;
     try {
       const result = await connectDevice(this.db, this.server(), id);
@@ -398,13 +437,18 @@ export class AccountController {
     if (rpc === undefined) return;
     this.runner = startSyncRunner({
       db: this.db,
-      transport: async () => {
+      transport: async (): Promise<SyncSpaces> => {
         const keys = await loadKeys(this.db);
         if (keys?.userId !== userId) throw new KeyUnavailableError(0);
-        return encryptingTransport(rpcTransport(rpc), { userId, keys: () => keys });
+        const own: SyncSpace = {
+          id: userId,
+          transport: encryptingTransport(rpcTransport(rpc), { userId, keys: () => keys }),
+        };
+        return { own, linked: await this.linkedSpaces(rpc, userId) };
       },
       onState: (sync) => {
         this.patch({ sync });
+        if (sync.kind === 'idle' || sync.kind === 'rebasing') void this.afterSync();
         if (sync.kind !== 'syncing') {
           for (const resolve of this.settled) resolve(sync);
           this.settled.clear();
@@ -428,6 +472,162 @@ export class AccountController {
   private stopRunner(): void {
     this.runner?.stop();
     this.runner = undefined;
+  }
+
+  // -- linked accounts -------------------------------------------------------------
+
+  /**
+   * The linked accounts' spaces this sync reaches, asked of the server every
+   * cycle: a link or an unlink made on another device (or by the other
+   * person) takes effect at this device's next sync.
+   */
+  private async linkedSpaces(rpc: Rpc, me: string): Promise<SyncSpace[]> {
+    let members: string[] | undefined;
+    try {
+      const household = await getHousehold(rpc);
+      this.patch({ household });
+      members = household?.members.map((m) => m.userId) ?? [];
+      void this.syncMemberAvatars(household, me);
+    } catch (error) {
+      if (error instanceof ServerError && error.code === 'second_step_required') throw error;
+      members = undefined; // offline: the spaces already held
+    }
+    const refresh = this.refreshLinked;
+    this.refreshLinked = false;
+    const ready = await connectLinked(
+      this.db,
+      { getKeyState: (s) => getKeyState(rpc, s) },
+      me,
+      members,
+      refresh,
+    );
+    const spaces: SyncSpace[] = [];
+    for (const id of ready) {
+      const keys = await loadSpaceKeys(this.db, id);
+      if (keys === undefined) continue;
+      spaces.push({
+        id,
+        transport: encryptingTransport(rpcTransport(rpc, id), { userId: id, keys: () => keys }),
+      });
+    }
+    return spaces;
+  }
+
+  /**
+   * Once the device holds everything: this account's own person in the
+   * household, and what the other members see of it.
+   */
+  private async afterSync(): Promise<void> {
+    if (this.view.status !== 'signed_in') return;
+    const { user, household } = this.view;
+    try {
+      if (!this.memberReady && (await this.db.meta.get(PULLED_TO_HEAD_KEY)) !== undefined) {
+        await ensureMember(this.db, user.id, displayNameOf(user), systemClock.nowIso(), systemClock.today());
+        this.memberReady = true;
+      }
+      const mine = household?.members.find((m) => m.userId === user.id);
+      if (mine === undefined || this.rpc === undefined) return;
+      const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
+      const version = user.avatarVersion ?? 0;
+      if (mine.displayName !== name || mine.avatarVersion !== version) {
+        await setMyMember(this.rpc, name, version);
+      }
+    } catch {
+      // Offline, or the device being cleared; the next sync tries again.
+    }
+  }
+
+  /** Each linked account's picture, kept on this device in step with its version. */
+  private async syncMemberAvatars(household: Household | null, me: string): Promise<void> {
+    try {
+      for (const member of household?.members ?? []) {
+        if (member.userId === me) continue;
+        const kept = await readMemberAvatarVersion(this.db, member.userId);
+        if (member.avatarVersion === 0) {
+          if (kept !== undefined) await forgetMemberAvatar(this.db, member.userId);
+          continue;
+        }
+        if (kept === member.avatarVersion) continue;
+        const { downloadAvatar } = await import('@/services/supabase/avatar');
+        const image = await downloadAvatar(await getSupabase(), member.userId);
+        await storeMemberAvatar(this.db, member.userId, member.avatarVersion, image);
+      }
+    } catch {
+      // Initials stand in until the next sync brings it.
+    }
+  }
+
+  /** Ask the server who is in the household now. */
+  async refreshHousehold(): Promise<Household | null | undefined> {
+    if (this.view.status !== 'signed_in') return undefined;
+    const household = await getHousehold(await this.connect());
+    this.patch({ household });
+    return household;
+  }
+
+  /** Email an invitation to join this account's household. */
+  async invite(email: string, currency: string, language: 'en' | 'he'): Promise<SendInviteOutcome> {
+    if (this.view.status !== 'signed_in') return { ok: false, error: 'offline' };
+    const user = this.view.user;
+    const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
+    const { sendInvite } = await import('@/services/supabase/household');
+    try {
+      await this.connect();
+      // The others see this name in the email and on the invitation.
+      await setMyMember(await this.connect(), name, user.avatarVersion ?? 0).catch(() => undefined);
+      const outcome = await sendInvite(await getSupabase(), email, currency, language, name);
+      if (outcome.ok) await this.refreshHousehold().catch(() => undefined);
+      return outcome;
+    } catch {
+      return { ok: false, error: 'offline' };
+    }
+  }
+
+  async revokeInvite(id: string): Promise<void> {
+    await revokeInvite(await this.connect(), id);
+    await this.refreshHousehold();
+  }
+
+  async peekInvite(token: string): Promise<InvitePreview> {
+    return peekInvite(await this.connect(), token);
+  }
+
+  async declineInvite(token: string): Promise<void> {
+    await declineInvite(await this.connect(), token);
+  }
+
+  /**
+   * Join the household the invitation is for. The caller has already brought
+   * this account's books into the household's currency; what is waiting to be
+   * sent goes first, so the others meet this account as it is now.
+   */
+  async acceptInvite(token: string, currency: string): Promise<void> {
+    if (this.view.status !== 'signed_in') throw new Error('not signed in');
+    const user = this.view.user;
+    await this.unsavedChanges();
+    const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
+    const household = await acceptInvite(await this.connect(), token, currency, name);
+    this.patch({ household });
+    this.runner?.now();
+  }
+
+  /**
+   * Unlink this account from the household. Each keeps their own: the
+   * others' rows leave this device, this account's leave theirs.
+   */
+  async leaveHousehold(): Promise<void> {
+    await leaveHousehold(await this.connect());
+    for (const space of await knownSpaces(this.db)) await forgetSpace(this.db, space);
+    this.patch({ household: null });
+    this.runner?.now();
+  }
+
+  /** The household's owner unlinks someone else. */
+  async removeMember(userId: string): Promise<void> {
+    await removeMember(await this.connect(), userId);
+    await forgetSpace(this.db, userId);
+    await this.refreshHousehold();
+    this.runner?.now();
   }
 
   private stop(): void {

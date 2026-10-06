@@ -28,3 +28,31 @@ export async function storeAvatar(database: BookandryDB, version: number, image:
 export async function forgetAvatar(database: BookandryDB): Promise<void> {
   await database.meta.delete(AVATAR_KEY);
 }
+
+/**
+ * Linked accounts' pictures, one per account, the same way: device-local
+ * copies, in step with the version each account publishes to the household.
+ */
+export const memberAvatarKey = (userId: string): string => `memberAvatar:${userId}`;
+
+export async function readMemberAvatarVersion(
+  database: BookandryDB,
+  userId: string,
+): Promise<number | undefined> {
+  const row = await database.meta.get(memberAvatarKey(userId));
+  return isStored(row?.value) ? row.value.version : undefined;
+}
+
+export async function storeMemberAvatar(
+  database: BookandryDB,
+  userId: string,
+  version: number,
+  image: Blob,
+): Promise<void> {
+  const value: StoredAvatar = { version, type: image.type, bytes: await image.arrayBuffer() };
+  await database.meta.put({ key: memberAvatarKey(userId), value });
+}
+
+export async function forgetMemberAvatar(database: BookandryDB, userId: string): Promise<void> {
+  await database.meta.delete(memberAvatarKey(userId));
+}
