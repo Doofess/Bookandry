@@ -46,6 +46,8 @@ import {
 } from '@/types/domain';
 
 import { AccountFields } from './account-fields';
+import { CardColorField } from './card-color-field';
+import { CARD_COLORS, type CardColor } from './card-colors';
 import { CardFields } from './card-fields';
 
 /**
@@ -341,6 +343,7 @@ export function MethodForm({
   const [type, setType] = useState<PaymentMethodType>('credit_card');
   const [owner, setOwner] = useState<string>(SHARED_OWNER);
   const [card, setCard] = useState<CardDraft>(EMPTY_CARD_DRAFT);
+  const [color, setColor] = useState<CardColor | ''>('');
   const [account, setAccount] = useState<AccountDraft>(() => accountDraftOf(undefined, SHARED_OWNER));
 
   // The household's bank accounts, for a card to say which one pays its bill.
@@ -370,6 +373,7 @@ export function MethodForm({
     setType(source?.type ?? newType);
     setOwner(source?.profileId ?? profiles[0]?.id ?? SHARED_OWNER);
     setCard(cardDraftOf(source));
+    setColor(CARD_COLORS.find((c) => c.key === source?.color)?.key ?? '');
     setAccount(accountDraftOf(source, profiles[0]?.id ?? SHARED_OWNER));
     setAttempted(false);
   }
@@ -431,6 +435,7 @@ export function MethodForm({
             label,
             type,
             profileId,
+            ...(isCard && color !== '' ? { color } : {}),
             ...(creditAnnualRate === null ? {} : { creditAnnualRate }),
             ...(details === undefined ? {} : { card: details }),
             ...(accountDetails === undefined ? {} : { account: accountDetails }),
@@ -445,6 +450,8 @@ export function MethodForm({
             label,
             type,
             profileId,
+            // A card's colour is set here; any other method keeps whatever it had.
+            ...(type === 'credit_card' ? { color: color === '' ? null : color } : {}),
             creditAnnualRate,
             card: details ?? null,
             account: accountDetails ?? null,
@@ -501,6 +508,10 @@ export function MethodForm({
             never its number. Only for a credit card: nothing else is billed
             monthly or charges קרדיט.
           */}
+      {type === 'credit_card' ? (
+        <CardColorField value={color} issuer={card.issuer || undefined} onChange={setColor} />
+      ) : null}
+
       {type === 'credit_card' ? (
         <CardFields
           key={seeded}
