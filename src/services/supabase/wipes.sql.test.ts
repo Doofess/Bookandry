@@ -144,3 +144,14 @@ describe('erasing alone', () => {
     expect(await refused(alice.rpc('wipe_my_data', {}))).toBe('linked_needs_confirmation');
   });
 });
+
+describe('erase_space', () => {
+  it('takes the space lock before it deletes, so an in-flight push cannot survive the erase', async () => {
+    const [row] = (
+      await t.pg.query<{ src: string }>(`select prosrc as src from pg_proc where proname = 'erase_space'`)
+    ).rows;
+    const src = row?.src ?? '';
+    expect(src.indexOf('for update')).toBeGreaterThan(-1);
+    expect(src.indexOf('for update')).toBeLessThan(src.indexOf('delete from public.records'));
+  });
+});
