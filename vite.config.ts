@@ -171,6 +171,9 @@ export default defineConfig(({ mode }) => ({
   ],
   test: {
     globals: true,
+    // Generous: a test file's first Postgres (PGlite, every migration run) can take seconds
+    // on a machine busy running every other file at once under coverage.
+    hookTimeout: 30_000,
     restoreMocks: true,
     unstubGlobals: true,
     unstubEnvs: true,
