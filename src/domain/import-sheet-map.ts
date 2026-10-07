@@ -44,6 +44,19 @@ const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>
   chgCur: ['מטבע חיוב', 'מטבע החיוב', 'charge currency'],
   chgDate: ['תאריך חיוב', 'מועד חיוב', 'charge date', 'billing date'],
   plan: ['פירוט נוסף', 'הערות', 'סוג עסקה', 'פרטי עסקה', 'notes', 'type'],
+  card: [
+    '4 ספרות אחרונות של כרטיס האשראי',
+    '4 ספרות אחרונות',
+    'ספרות אחרונות',
+    'מספר כרטיס',
+    'כרטיס אשראי',
+    'כרטיס',
+    'card',
+    'card number',
+    'card no',
+    'last 4 digits',
+    'last four digits',
+  ],
 };
 
 const norm = (cell: Cell): string =>
@@ -96,6 +109,7 @@ export function mapByDictionary(rows: readonly (readonly Cell[])[], scan = 30): 
       chgCur: found.chgCur ?? null,
       chgDate: found.chgDate ?? null,
       plan: found.plan ?? null,
+      card: found.card ?? null,
       dec: decimalOf(rows, r, found.amt ?? found.debit ?? found.credit ?? 0),
       df: 'dmy',
     };
@@ -168,6 +182,41 @@ function cellMoney(cell: Cell, currency: Currency, dec: DecimalMark): number | u
 const text = (cell: Cell | undefined): string =>
   cell === null || cell === undefined ? '' : String(cell).trim();
 
+/**
+ * A card's last four digits, from a cell holding its number or only those
+ * digits - '' when it holds fewer. A number cell has lost its leading zeros.
+ */
+function cardDigits(cell: Cell | undefined): string {
+  if (typeof cell === 'number' && Number.isInteger(cell) && cell >= 0 && cell < 10_000) {
+    return String(cell).padStart(4, '0');
+  }
+  const digits = text(cell).replace(/\D/g, '');
+  return digits.length >= 4 ? digits.slice(-4) : '';
+}
+
+const CARD_WORDS = /כרטיס|המסתיים|מסתיים|\bcard\b|ending|[*•xX]{2,}/i;
+/** A run of exactly four digits that is not part of a date. */
+const FOUR = /(?<![\d/.-])(\d{4})(?![\d/.-])/;
+
+/**
+ * The card a whole sheet is for, when the lines above its table say so -
+ * "פירוט עסקאות לכרטיס מקס 1234" - and name only one.
+ */
+export function cardAbove(rows: readonly (readonly Cell[])[], headerRow: number): string {
+  const found = new Set<string>();
+  for (const row of rows.slice(0, headerRow)) {
+    for (const cell of row) {
+      const line = text(cell);
+      const at = line.search(CARD_WORDS);
+      if (at === -1) continue;
+      const digits = FOUR.exec(line.slice(at))?.[1];
+      if (digits !== undefined) found.add(digits);
+    }
+  }
+  const [only, ...more] = [...found];
+  return only !== undefined && more.length === 0 ? only : '';
+}
+
 export type SheetRead = {
   readonly rows: FoundRow[];
   /** Rows under the header that were not transactions: totals, blanks, notes. */
@@ -197,6 +246,7 @@ export function readSheet(
   const out: FoundRow[] = [];
   let skipped = 0;
   let unreadable = 0;
+  const sheetCard = cardAbove(rows, map.headerRow);
   rows.slice(map.headerRow + 1).forEach((row, i) => {
     const description = text(row[map.desc]);
     const dateCell = row[map.date] ?? null;
@@ -278,7 +328,7 @@ export function readSheet(
       cat: null,
       pm: null,
       pl: plan === undefined ? null : { md: plan.mode, n: plan.number, of: plan.count, tot: null },
-      l4: '',
+      l4: (map.card === null ? '' : cardDigits(row[map.card])) || sheetCard,
     };
     out.push({
       id: `${ctx.idPrefix}${String(i)}`,

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LocalDate } from '@/types/money';
 
 import {
+  cardAbove,
   fromWireMap,
   mapByDictionary,
   mapHolds,
@@ -135,6 +136,7 @@ describe('a map from the model', () => {
       chgCur: null,
       chgDate: null,
       plan: null,
+      card: null,
       dec: '.',
       df: 'mdy',
       mc: [],
@@ -144,6 +146,31 @@ describe('a map from the model', () => {
     const ymd = { ...map, df: 'ymd' as const };
     expect(readSheet(rows, ymd, ctx).rows[1]?.date).toBe('2026-10-04');
     expect(readSheet(rows, ymd, ctx).rows[0]?.date).toBeUndefined();
+  });
+
+  it("reads the card each row was charged to: its own column, else the one the sheet's title names", () => {
+    const perRow: Cell[][] = [
+      ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה', '4 ספרות אחרונות של כרטיס האשראי'],
+      ['03/10/2026', 'Spotify', '19.90', '3200'],
+      ['04/10/2026', 'שופרסל', '50.00', 512],
+      ['05/10/2026', 'Wolt', '80.00', '4580-1234-5678-9012'],
+    ];
+    const map = mapByDictionary(perRow)!;
+    expect(map.card).toBe(3);
+    // A number cell has lost its leading zero; a full number gives only its last four.
+    expect(readSheet(perRow, map, ctx).rows.map((r) => r.wire.l4)).toEqual(['3200', '0512', '9012']);
+
+    const titled: Cell[][] = [
+      ['פירוט עסקאות לכרטיס מקס 1234 לחודש 10/2026'],
+      ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה'],
+      ['03/10/2026', 'Spotify', '19.90'],
+    ];
+    expect(readSheet(titled, mapByDictionary(titled)!, ctx).rows[0]?.wire.l4).toBe('1234');
+    // A date is not a card, and two cards named say nothing.
+    expect(cardAbove([['כרטיס לחודש 10/2026']], 1)).toBe('');
+    expect(cardAbove([['כרטיס ****1234'], ['card ending 5678']], 2)).toBe('');
+    expect(cardAbove([['Card ending •••• 5678']], 1)).toBe('5678');
+    expect(readSheet(cardExport, mapByDictionary(cardExport)!, ctx).rows[0]?.wire.l4).toBe('');
   });
 
   it('is shown only the first rows, as text', () => {

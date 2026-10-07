@@ -44,6 +44,15 @@ describe('categoryFromText', () => {
     ).toBeUndefined();
   });
 
+  it('files a card company named and nothing more under Other: its bill or its loan, never a restaurant', () => {
+    const withOther = [...household, category('cat.otherExpense', 'expense')];
+    for (const text of ['מקס איט פיננסים', 'MAX IT FINANCE', 'ישראכרט', 'כאל - חיוב חודשי']) {
+      expect(categoryFromText(expense(text), withOther), text).toBe('cat.otherExpense');
+    }
+    expect(categoryFromText(expense('מקס איט פיננסים - הלוואה'), withOther)).toBe('cat.loans');
+    expect(categoryFromText(expense('כאלה ואחרים'), withOther)).toBeUndefined();
+  });
+
   it('leaves everything else to the history and the reading', () => {
     expect(categoryFromText(expense('מקס איט פיננסים'), household)).toBeUndefined();
     expect(categoryFromText(expense('Shufersal'), household)).toBeUndefined();

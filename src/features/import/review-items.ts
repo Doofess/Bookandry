@@ -81,6 +81,7 @@ export async function buildReview(
       categoryFromText(row, ctx.categories) ??
       (suggestedFits ? suggested : undefined) ??
       refund ??
+      otherOf(ctx.categories, row.kind) ??
       categoriesFor(ctx.categories, row.kind)[0]?.id ??
       '';
 
@@ -125,6 +126,12 @@ export async function buildReview(
     });
   }
   return items;
+}
+
+/** Where a row nothing places goes: Other - never whichever category happens to be listed first. */
+function otherOf(categories: readonly Category[], kind: 'expense' | 'income'): string | undefined {
+  const id = kind === 'expense' ? 'cat.otherExpense' : 'cat.otherIncome';
+  return categoriesFor(categories, kind).find((c) => c.id === id)?.id;
 }
 
 const sameName = (name: string): string => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();

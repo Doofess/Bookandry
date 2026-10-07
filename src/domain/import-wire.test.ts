@@ -348,6 +348,41 @@ describe('an answer', () => {
     expect(cleanMap({ ...map, amt: null }, 5, 4, ctx)).toBeUndefined();
     expect(cleanMap(null, 5, 4, ctx)).toBeUndefined();
   });
+
+  it('takes merchants by their number in the list, never a name retyped', () => {
+    const map = {
+      hr: 0,
+      date: 0,
+      desc: 1,
+      amt: 2,
+      debit: null,
+      credit: null,
+      cur: null,
+      chg: null,
+      chgCur: null,
+      chgDate: null,
+      plan: null,
+      card: 3,
+      dec: '.',
+      df: 'dmy',
+      mc: [
+        { i: 1, cat: 'c1' },
+        { i: 0, cat: null },
+        { i: 9, cat: 'c1' },
+      ],
+    };
+    const merchants = ['Wolt', 'SPOTIFY P2B3'];
+    const clean = cleanMap(map, 5, 4, ctx, merchants);
+    expect(clean?.card).toBe(3);
+    expect(clean?.mc).toEqual([
+      { m: 'SPOTIFY P2B3', cat: 'c1' },
+      { m: 'Wolt', cat: null },
+    ]);
+    // What the function already cleaned reaches the app with names, and passes as it is.
+    expect(cleanMap(clean, 5, 4, ctx)?.mc).toEqual(clean?.mc);
+    const asked = parseWireRequest({ mode: 'map', ctx, rows: [['a']], merchants, maxTokens: 500 });
+    expect(asked?.mode === 'map' && mapTask(asked)).toContain('1: "SPOTIFY P2B3"');
+  });
 });
 
 describe('what the model is given', () => {

@@ -197,6 +197,8 @@ export type WireMap = {
   readonly chgCur: number | null;
   readonly chgDate: number | null;
   readonly plan: number | null;
+  /** The card each row was charged to: its number, or its last digits. */
+  readonly card: number | null;
   readonly dec: '.' | ',';
   readonly df: 'dmy' | 'mdy' | 'ymd';
   readonly mc: readonly { readonly m: string; readonly cat: string | null }[];
@@ -593,8 +595,19 @@ export function cleanVerify(
   return { r: out };
 }
 
-/** A map answer, every index inside the block that was sent. */
-export function cleanMap(v: unknown, rows: number, cols: number, ctx: WireContext): WireMap | undefined {
+/**
+ * A map answer, every index inside the block that was sent. The model names
+ * each merchant by its number in the list it was given (`merchants`), never by
+ * retyping it: a name copied back with one letter changed would match nothing.
+ * An answer already cleaned - names, not numbers - passes as it is.
+ */
+export function cleanMap(
+  v: unknown,
+  rows: number,
+  cols: number,
+  ctx: WireContext,
+  merchants: readonly string[] = [],
+): WireMap | undefined {
   if (!isObject(v)) return undefined;
   const col = (x: unknown): number | null => (isInt(x, 0, cols - 1) ? x : null);
   const date = col(v.date);
@@ -607,7 +620,9 @@ export function cleanMap(v: unknown, rows: number, cols: number, ctx: WireContex
   const mc: { m: string; cat: string | null }[] = [];
   for (const entry of Array.isArray(v.mc) ? v.mc.slice(0, LIMITS.merchants) : []) {
     if (!isObject(entry)) continue;
-    const m = cleanText(entry.m, LIMITS.description);
+    const m = isInt(entry.i, 0, merchants.length - 1)
+      ? merchants[entry.i]
+      : cleanText(entry.m, LIMITS.description);
     if (m === undefined || m === '') continue;
     mc.push({ m, cat: alias(entry.cat, ctx.cats) });
   }
@@ -623,6 +638,7 @@ export function cleanMap(v: unknown, rows: number, cols: number, ctx: WireContex
     chgCur: col(v.chgCur),
     chgDate: col(v.chgDate),
     plan: col(v.plan),
+    card: col(v.card),
     dec: v.dec === ',' ? ',' : '.',
     df: v.df === 'mdy' ? 'mdy' : v.df === 'ymd' ? 'ymd' : 'dmy',
     mc,
@@ -832,14 +848,15 @@ export function mapSchema(ctx: WireContext): Record<string, unknown> {
       chgCur: col,
       chgDate: col,
       plan: col,
+      card: col,
       dec: { type: 'string', enum: ['.', ','] },
       df: { type: 'string', enum: ['dmy', 'mdy', 'ymd'] },
       mc: {
         type: 'array',
         items: {
           type: 'object',
-          properties: { m: { type: 'string' }, cat: aliasSchema(ctx.cats.map((c) => c.a)) },
-          required: ['m', 'cat'],
+          properties: { i: { type: 'integer' }, cat: aliasSchema(ctx.cats.map((c) => c.a)) },
+          required: ['i', 'cat'],
           additionalProperties: false,
         },
       },
@@ -856,6 +873,7 @@ export function mapSchema(ctx: WireContext): Record<string, unknown> {
       'chgCur',
       'chgDate',
       'plan',
+      'card',
       'dec',
       'df',
       'mc',
@@ -870,8 +888,10 @@ export function mapTask(request: MapRequest): string {
     .map((row, i) => `${String(i)}: ${row.map((cell) => JSON.stringify(cell)).join(' | ')}`)
     .join('\n');
   const merchants =
-    request.merchants.length === 0 ? 'none' : request.merchants.map((m) => JSON.stringify(m)).join('\n');
-  return `These are the first rows of a spreadsheet block (row index: cells by column index):\n${table}\n\nGive the header row's index and the column index of each field (null when absent): date = transaction date, desc = merchant, amt = amount (one signed column), or debit/credit columns, cur = currency, chg = charged amount, chgCur, chgDate = debit date, plan = instalment text. dec: the decimal mark the amounts use. df: date order.\nmc: for each merchant below, the best category alias, or null:\n${merchants}`;
+    request.merchants.length === 0
+      ? 'none'
+      : request.merchants.map((m, i) => `${String(i)}: ${JSON.stringify(m)}`).join('\n');
+  return `These are the first rows of a spreadsheet block (row index: cells by column index):\n${table}\n\nGive the header row's index and the column index of each field (null when absent): date = transaction date, desc = merchant, amt = amount (one signed column), or debit/credit columns, cur = currency, chg = charged amount, chgCur, chgDate = debit date, plan = instalment text, card = the card's number or last digits. dec: the decimal mark the amounts use. df: date order.\nmc: for each merchant below, by its number i, the best category alias for what the business or payment is, or null when unsure. A streaming, music or software service (Spotify, Netflix, Apple, Google) is a subscription; a card company or a bank (מקס איט פיננסים, ישראכרט, כאל) is never a restaurant, a shop or rent.\n${merchants}`;
 }
 
 /** The instruction for a verify call: re-read only these rows. */
