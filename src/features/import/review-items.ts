@@ -19,12 +19,16 @@ export type ReviewItem = {
   readonly ticked: boolean;
   /** The person changed it, or confirmed it: their word now, not the reader's. */
   readonly confirmed: boolean;
+  /** Whose the document says it is, when it prints their name. */
+  readonly holder?: string;
 };
 
 /** Which alias stood for which id, in the call the rows came from. */
 export type Aliases = {
   readonly categories: ReadonlyMap<string, string>;
   readonly methods: ReadonlyMap<string, string>;
+  /** A household's people; absent alone. */
+  readonly people?: ReadonlyMap<string, string>;
 };
 
 const REFUND_CATEGORY = 'cat.refund';
@@ -42,7 +46,9 @@ export function saveable(values: TxFormValues): boolean {
  *    refund;
  *  - its payment method: the card whose last four digits the document shows
  *    beside it, else the one the document named, else the batch choice;
- *  - its profile: whoever owns that card, else the batch choice;
+ *  - its profile: whoever owns that card, else whoever the document names as
+ *    its holder, else the batch choice - and when there is none of those, it
+ *    waits for the person to say;
  *  - ticked unless something about it needs a look.
  */
 export async function buildReview(
@@ -83,9 +89,9 @@ export async function buildReview(
       (row.methodAlias === null ? undefined : ctx.aliases.methods.get(row.methodAlias));
     const method = ctx.methods.find((m) => m.id === (named ?? ctx.defaultMethodId));
     const owner = method !== undefined && method.profileId !== SHARED_OWNER ? method.profileId : undefined;
-    const profileId = ctx.profiles.some((p) => p.id === owner)
-      ? (owner ?? ctx.defaultProfileId)
-      : ctx.defaultProfileId;
+    const holder = row.wire.w === undefined ? undefined : ctx.aliases.people?.get(row.wire.w);
+    const known = (id: string | undefined): id is string => ctx.profiles.some((p) => p.id === id);
+    const profileId = [owner, holder, ctx.defaultProfileId].find(known) ?? '';
 
     const draft = draftOf(row, {
       profileId,
@@ -97,12 +103,16 @@ export async function buildReview(
     });
     let found = draft === undefined ? row : withFlags(row, ...draft.flags);
     let values = draft?.values;
+    if (profileId === '') found = withFlags(found, 'whose_unknown');
     // A credit plan needs a credit card; without one it is saved as plain instalments.
     if (values !== undefined && !saveable(values) && values.mode === 'credit') {
       const plain: TxFormValues = { ...values, mode: 'installments' };
       if (saveable(plain)) values = plain;
     }
-    if (values === undefined || !saveable(values)) found = withFlags(found, 'not_saveable');
+    // Whose it is is asked apart; whether it would save is judged as if answered.
+    const judged =
+      values !== undefined && profileId === '' ? { ...values, profileId: ctx.profiles[0]?.id ?? '' } : values;
+    if (judged === undefined || !saveable(judged)) found = withFlags(found, 'not_saveable');
     items.push({
       id: row.id,
       found,
@@ -111,6 +121,7 @@ export async function buildReview(
       flags: found.flags,
       ticked: !found.flags.some((f) => BLOCKING.has(f)),
       confirmed: false,
+      ...(known(holder) ? { holder } : {}),
     });
   }
   return items;
@@ -163,10 +174,34 @@ export function applyBatch(
     const named = item.found.methodAlias !== null || cardOf(item.found, methods) !== undefined;
     const paymentMethodId =
       item.values.kind === 'expense' && !named ? batch.methodId : item.values.paymentMethodId;
-    // A card the document named keeps its owner; otherwise the batch card's owner, or the batch "For".
+    // A card the document named keeps its owner; otherwise the batch card's owner, whoever the
+    // document names, or the batch "For".
     const owner = method !== undefined && method.profileId !== SHARED_OWNER ? method.profileId : undefined;
-    const profileId = named ? item.values.profileId : (owner ?? batch.profileId);
+    const profileId = named ? item.values.profileId : (owner ?? item.holder ?? batch.profileId);
     const values: TxFormValues = { ...item.values, paymentMethodId, profileId };
-    return { ...item, values };
+    if (profileId === '' || !item.flags.includes('whose_unknown')) return { ...item, values };
+    // Answered: no longer waiting for it.
+    const flags = item.flags.filter((f) => f !== 'whose_unknown');
+    const found = { ...item.found, flags };
+    return { ...item, values, found, flags, ticked: !flags.some((f) => BLOCKING.has(f)) };
   });
+}
+
+/**
+ * Whose a found card or account is: the one person the rows from its file -
+ * those charged to it, for a card - were read as belonging to; undefined
+ * when they name nobody, or more than one.
+ */
+export function holderOfMethod(
+  items: readonly ReviewItem[],
+  file: number,
+  digits: string | undefined,
+): string | undefined {
+  const holders = new Set(
+    items
+      .filter((i) => i.found.file === file && (digits === undefined || rowDigits(i.found) === digits))
+      .map((i) => i.holder),
+  );
+  const [only, ...more] = [...holders];
+  return more.length === 0 ? only : undefined;
 }

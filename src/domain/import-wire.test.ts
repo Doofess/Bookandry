@@ -399,6 +399,47 @@ describe('what the model is given', () => {
     expect(first?.mode === 'extract' && extractTask(first, 50)).not.toContain('Skip');
   });
 
+  it('asks a household whose each row is - and only a household', () => {
+    const household: WireContext = {
+      ...ctx,
+      ppl: [
+        { a: 'u1', n: 'Dana' },
+        { a: 'u2', n: 'Yossi' },
+      ],
+    };
+    expect(contextText(household)).toContain('u2 Yossi');
+    expect(contextText(ctx)).not.toContain('People');
+    const rows = (schema: unknown) =>
+      (
+        schema as {
+          properties: { r: { items: { properties: Record<string, unknown>; required: string[] } } };
+        }
+      ).properties.r.items;
+    expect(rows(extractSchema(household)).properties.w).toEqual({
+      anyOf: [{ type: 'string', enum: ['u1', 'u2'] }, { type: 'null' }],
+    });
+    expect(rows(extractSchema(household)).required).toContain('w');
+    expect(rows(verifySchema(household, ['r1'])).required).toContain('w');
+    expect(rows(extractSchema(ctx)).properties.w).toBeUndefined();
+    expect(rows(extractSchema(ctx)).required).not.toContain('w');
+    for (const schema of [extractSchema(household), verifySchema(household, ['r1'])]) {
+      expect(unions(schema)).toBeLessThanOrEqual(16);
+      expect(closed(schema)).toBe(true);
+    }
+
+    // The answer: an offered alias, whatever its case; anything else is nobody's.
+    expect(cleanRow(row({ w: 'U2' }), 1, household)?.w).toBe('u2');
+    expect(cleanRow(row({ w: 'u9' }), 1, household)?.w).toBeUndefined();
+    expect(cleanRow(row({ w: 'u2' }), 1, ctx)?.w).toBeUndefined();
+
+    // The request: people are optional - an app from before households sends none - and bounded.
+    expect(parseWireRequest(extract({ ctx: household }))?.ctx.ppl).toEqual(household.ppl);
+    expect(parseWireRequest(extract())?.ctx.ppl).toBeUndefined();
+    const crowd = Array.from({ length: LIMITS.people + 1 }, (_, i) => ({ a: `u${String(i)}`, n: 'X' }));
+    expect(parseWireRequest(extract({ ctx: { ...ctx, ppl: crowd } }))).toBeUndefined();
+    expect(parseWireRequest(extract({ ctx: { ...ctx, ppl: [{ a: 'u1' }] } }))).toBeUndefined();
+  });
+
   it('frames a map and a verify', () => {
     const map = parseWireRequest({
       mode: 'map',

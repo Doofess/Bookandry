@@ -14,8 +14,7 @@
   "read_other": "Read {{count}} files",
   "readNone": "Read",
   "whose": "Whose spending and income is this?",
-  "whoseHint": "Everything found is added for them. You can still change any row before it's added.",
-  "whoseFirst": "Choose whose this is",
+  "whoseHint": "Where a file shows whose it is, that's filled in for you. The rest is added for whoever you pick here.",
   "remove": "Remove {{name}}",
   "stop": "Stop",
   "status": {
@@ -92,7 +91,8 @@
     "total_estimated": "Plan total worked out from the payment.",
     "total_mismatch": "Check it: the statement's total doesn't match.",
     "not_saveable": "Something is missing. Open it to finish.",
-    "rate_missing": "No exchange rate for this date."
+    "rate_missing": "No exchange rate for this date.",
+    "whose_unknown": "Choose whose this is."
   },
   "otherRead": "Other read: <amount></amount> on {{date}}",
   "plan": "Payment {{number}} of {{count}}",
@@ -155,5 +155,6 @@
     "deleted": "{{name}} deleted",
     "waiting_one": "1 card or account is still to finish. It's waiting in Smart import.",
     "waiting_other": "{{count}} cards and accounts are still to finish. They're waiting in Smart import."
-  }
+  },
+  "whoseChoose": "Choose…"
 }

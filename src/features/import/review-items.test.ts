@@ -6,7 +6,7 @@ import { defaultFormValues } from '@/domain/tx-form';
 import type { PaymentMethod } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
-import { applyBatch, linkToCard, type ReviewItem } from './review-items';
+import { applyBatch, holderOfMethod, linkToCard, type ReviewItem } from './review-items';
 
 const TODAY = '2026-10-06' as LocalDate;
 const NOW = '2026-10-06T00:00:00.000Z' as IsoInstant;
@@ -77,5 +77,29 @@ describe('rows and the card they were charged to', () => {
     );
     expect(named?.values?.paymentMethodId).toBe('visa');
     expect(plain?.values?.paymentMethodId).toBe('cash');
+  });
+});
+
+describe('whose a row is', () => {
+  it('the batch "For" answers a row nobody was named for, and leaves one the document named', () => {
+    const waiting = item('', {
+      values: { ...item('').values!, profileId: '' },
+      flags: ['whose_unknown'],
+      ticked: false,
+    });
+    const named = item('', { values: { ...item('').values!, profileId: 'p2' }, holder: 'p2' });
+    const [answered, kept] = applyBatch([waiting, named], { methodId: '', profileId: 'p1' }, []);
+    expect(answered).toMatchObject({ values: { profileId: 'p1' }, flags: [], ticked: true });
+    expect(kept?.values?.profileId).toBe('p2');
+  });
+
+  it("a found card or account goes to whoever its file's rows were read as being of - when that is one person", () => {
+    const of = (l4: string, holder?: string) => item(l4, holder === undefined ? {} : { holder });
+    expect(holderOfMethod([of('3214', 'p2'), of('3214', 'p2')], 0, '3214')).toBe('p2');
+    // Another card's rows do not count; a file read as two people's gives nobody.
+    expect(holderOfMethod([of('3214', 'p2'), of('9999', 'p1')], 0, '3214')).toBe('p2');
+    expect(holderOfMethod([of('3214', 'p2'), of('9999', 'p1')], 0, undefined)).toBeUndefined();
+    expect(holderOfMethod([of('3214', 'p2'), of('3214')], 0, '3214')).toBeUndefined();
+    expect(holderOfMethod([], 0, undefined)).toBeUndefined();
   });
 });

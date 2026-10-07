@@ -72,7 +72,15 @@ import {
 } from './found-methods';
 import { MethodPanel, MethodsGroup, UnfinishedGroup } from './found-methods-list';
 import { readSession, writeSession, type ImportSession } from './import-session';
-import { applyBatch, buildReview, linkToCard, saveable, type Aliases, type ReviewItem } from './review-items';
+import {
+  applyBatch,
+  buildReview,
+  holderOfMethod,
+  linkToCard,
+  saveable,
+  type Aliases,
+  type ReviewItem,
+} from './review-items';
 import { runImport, type FileState } from './run-import';
 import { CategoryField } from '../transaction/category-field';
 import { DateField } from '../transaction/date-field';
@@ -259,9 +267,12 @@ export function ImportSheet(props: ImportSheetProps) {
     // The household, as the reader is told about it: short aliases, names as the person sees them.
     const cats = props.categories.filter((c) => c.isArchived === 0).slice(0, 80);
     const methods = props.paymentMethods.filter(isActiveMethod).slice(0, 40);
+    // A household's people too, so a document that names whose it is fills that in.
+    const people = props.profiles.length < 2 ? [] : props.profiles.slice(0, 12);
     const aliases: Aliases = {
       categories: new Map(cats.map((c, i) => [`c${String(i + 1)}`, c.id])),
       methods: new Map(methods.map((m, i) => [`p${String(i + 1)}`, m.id])),
+      people: new Map(people.map((p, i) => [`u${String(i + 1)}`, p.id])),
     };
     const wire: WireContext = {
       today: props.today,
@@ -277,6 +288,9 @@ export function ImportSheet(props: ImportSheetProps) {
         n: methodDisplayName(m, t).slice(0, 60),
         t: m.type,
       })),
+      ...(people.length === 0
+        ? {}
+        : { ppl: people.map((p, i) => ({ a: `u${String(i + 1)}`, n: p.name.slice(0, 60) })) }),
     };
 
     try {
@@ -317,20 +331,27 @@ export function ImportSheet(props: ImportSheetProps) {
         categories: props.categories,
         methods: props.paymentMethods,
         profiles: props.profiles,
-        defaultProfileId: session.batch.profileId || defaultProfileId,
+        // Unanswered in a household: rows nothing names wait for the person to say.
+        defaultProfileId: session.batch.profileId || (props.profiles.length < 2 ? defaultProfileId : ''),
         defaultMethodId: session.batch.methodId,
         base: props.baseCurrency,
         today: props.today,
         primeRate: prime.primeRate,
       });
       const found = buildMethodReview(result.cards, result.accounts, props.paymentMethods);
-      // What the files showed only part of is kept apart, until it is finished or deleted.
-      const drafted = await keepUnfinished(
-        db,
-        found.filter(needsFilling).map(foundMethodOf),
-        owner,
-        systemClock.nowMs(),
-      );
+      // What the files showed only part of is kept apart, until it is finished or deleted -
+      // as whoever its file says it is of.
+      const drafted: UnfinishedMethod[] = [];
+      for (const method of found.filter(needsFilling)) {
+        drafted.push(
+          ...(await keepUnfinished(
+            db,
+            [foundMethodOf(method)],
+            methodOwner(method, items, owner),
+            systemClock.nowMs(),
+          )),
+        );
+      }
       setSession((s) => ({
         ...s,
         stage: 'review',
@@ -356,7 +377,7 @@ export function ImportSheet(props: ImportSheetProps) {
       let methodsSaved = 0;
       for (const method of session.methods) {
         if (!method.ticked || !tickable(method)) continue;
-        const saved = await saveFound(method, owner, i18n.language);
+        const saved = await saveFound(method, methodOwner(method, items, owner), i18n.language);
         items = linkToCard(items, saved);
         methodsSaved += 1;
       }
@@ -674,6 +695,12 @@ async function flagAgainstHousehold(
   return flagCardFees(flagExisting(rows, [...occurrences, ...fees]), method, cards);
 }
 
+/** Who a found card or account goes to: whoever its file was read as being of, else `fallback`. */
+function methodOwner(method: MethodReviewItem, items: readonly ReviewItem[], fallback: string): string {
+  const digits = method.kind === 'card' ? method.found.lastDigits : undefined;
+  return holderOfMethod(items, method.found.file, digits) ?? fallback;
+}
+
 function Picker({
   files,
   shared,
@@ -699,7 +726,6 @@ function Picker({
   const input = useRef<HTMLInputElement>(null);
   // Only a household asks; alone, it is always the one person's.
   const asks = profiles.length > 1;
-  const unanswered = asks && !profiles.some((p) => p.id === whose);
   const [dragging, setDragging] = useState(false);
   const add = (more: readonly File[]) => {
     onFiles([...files, ...more].slice(0, MAX_FILES));
@@ -818,17 +844,8 @@ function Picker({
         </span>
       </p>
 
-      <Button
-        type="button"
-        className="h-11 w-full"
-        disabled={files.length === 0 || unanswered}
-        onClick={onRead}
-      >
-        {files.length === 0
-          ? t('readNone')
-          : unanswered
-            ? t('whoseFirst')
-            : t('read', { count: files.length })}
+      <Button type="button" className="h-11 w-full" disabled={files.length === 0} onClick={onRead}>
+        {files.length === 0 ? t('readNone') : t('read', { count: files.length })}
       </Button>
     </div>
   );
@@ -1037,6 +1054,11 @@ function Review({
                 onBatch({ ...session.batch, profileId: event.target.value });
               }}
             >
+              {profiles.some((p) => p.id === session.batch.profileId) ? null : (
+                <option value="" disabled>
+                  {t('whoseChoose')}
+                </option>
+              )}
               {profiles.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -1052,21 +1074,21 @@ function Review({
         rows={check}
         open
         methods={methodsList}
-        {...{ categories, translate, onChange, onOpen, items }}
+        {...{ categories, profiles, translate, onChange, onOpen, items }}
       />
       <Group
         title={t('groups.ready', { count: ready.length })}
         rows={ready}
         open
         methods={methodsList}
-        {...{ categories, translate, onChange, onOpen, items }}
+        {...{ categories, profiles, translate, onChange, onOpen, items }}
       />
       <Group
         title={t('groups.existing', { count: existing.length })}
         rows={existing}
         open={false}
         methods={methodsList}
-        {...{ categories, translate, onChange, onOpen, items }}
+        {...{ categories, profiles, translate, onChange, onOpen, items }}
       />
 
       <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
@@ -1099,6 +1121,7 @@ function Group({
   open,
   items,
   categories,
+  profiles,
   methods,
   translate,
   onChange,
@@ -1109,6 +1132,7 @@ function Group({
   readonly open: boolean;
   readonly items: readonly ReviewItem[];
   readonly categories: readonly Category[];
+  readonly profiles: readonly Profile[];
   readonly methods: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly onChange: (items: ReviewItem[]) => void;
@@ -1141,6 +1165,7 @@ function Group({
               key={item.id}
               item={item}
               categories={categories}
+              profiles={profiles}
               methods={methods}
               translate={translate}
               onTick={(ticked) => {
@@ -1160,6 +1185,7 @@ function Group({
 function ReviewRow({
   item,
   categories,
+  profiles,
   methods,
   translate,
   onTick,
@@ -1167,6 +1193,7 @@ function ReviewRow({
 }: {
   readonly item: ReviewItem;
   readonly categories: readonly Category[];
+  readonly profiles: readonly Profile[];
   readonly methods: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly onTick: (ticked: boolean) => void;
@@ -1177,6 +1204,8 @@ function ReviewRow({
   const name = [values?.note, item.found.description].find((n) => n !== undefined && n.trim() !== '') ?? '—';
   const category = categories.find((c) => c.id === values?.categoryId);
   const method = methods.find((m) => m.id === values?.paymentMethodId);
+  // In a household, whose each row is - as read, or as chosen.
+  const person = profiles.length < 2 ? undefined : profiles.find((p) => p.id === values?.profileId);
   const amount = values === undefined ? undefined : safeMinor(values.amount, values.currency);
   const shown = item.flags.filter((f) => f !== 'twice_in_document' || item.flags.length === 1);
   const flag = shown.find((f) => BLOCKING.has(f) || f === 'total_mismatch') ?? shown[0];
@@ -1219,6 +1248,7 @@ function ReviewRow({
             date === undefined
               ? undefined
               : formatLocalDate(date, i18n.language, { day: 'numeric', month: 'short', year: 'numeric' }),
+            person?.name,
             category === undefined ? undefined : translate(category),
             method === undefined ? undefined : methodDisplayName(method, t),
             item.found.plan === null
