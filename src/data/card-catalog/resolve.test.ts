@@ -118,15 +118,35 @@ describe('resolveCard', () => {
     expect(r?.extra.cash?.from).toBe('issuer'); // bank has none: company's stays
   });
 
-  it('marks a deal changed only by an override as from the bank', () => {
+  it('keeps a rate from the card company when the bank override does not touch it', () => {
     const c: Catalog = {
       ...catalog,
       banks: [{ ...catalog.banks[0]!, rates: [] }, catalog.banks[1]!],
     };
     const r = resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold' });
     const credit = r?.deals.find((d) => d.kind === 'credit');
-    expect(credit?.from).toBe('bank');
+    expect(credit?.minDealMinor).toBe(50000);
+    expect(credit?.from).toBe('issuer');
     expect(credit?.rate).toBe(issuerCredit);
+  });
+
+  it('labels a rate from the bank when its override supplies one', () => {
+    const c: Catalog = {
+      ...catalog,
+      banks: [
+        {
+          ...catalog.banks[0]!,
+          rates: [],
+          dealOverrides: [{ issuer: 'cal', deal: { kind: 'credit', rate: tableCredit } }],
+        },
+        catalog.banks[1]!,
+      ],
+    };
+    const credit = resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold' })?.deals.find(
+      (d) => d.kind === 'credit',
+    );
+    expect(credit?.rate).toBe(tableCredit);
+    expect(credit?.from).toBe('bank');
   });
 
   it('keeps the card company values where the bank has none', () => {
