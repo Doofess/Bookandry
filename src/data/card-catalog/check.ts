@@ -1,0 +1,129 @@
+import { isLocalDate } from '@/lib/dates';
+import { addRates, annualEffectiveRate } from '@/lib/money';
+
+import type { Catalog, CatalogRate } from './types';
+
+const NOTE_RE = /^published nominal: (\d+(?:\.\d+)?); published effective: (\d+(?:\.\d+)?)$/;
+
+/** A percent in whole hundredths ("12.68" is 1268), by digits, never by float. */
+function hundredths(percent: string): number {
+  const [whole = '0', frac = ''] = percent.split('.');
+  return Number(whole + (frac + '00').slice(0, 2));
+}
+
+type Located = { where: string; rate: CatalogRate };
+
+function allRates(catalog: Catalog): Located[] {
+  const out: Located[] = [];
+  const add = (where: string, rate: CatalogRate | undefined) => {
+    if (rate) out.push({ where, rate });
+  };
+  for (const i of catalog.issuers) {
+    add(`${i.id}.lateRate`, i.lateRate);
+    for (const [k, r] of Object.entries(i.extraRates ?? {})) add(`${i.id}.extra.${k}`, r);
+    for (const d of i.deals) add(`${i.id}.deal.${d.kind}`, d.rate);
+  }
+  for (const b of catalog.banks) {
+    add(`${b.id}.lateRate`, b.lateRate);
+    for (const [k, r] of Object.entries(b.extraRates ?? {})) add(`${b.id}.extra.${k}`, r);
+    for (const o of b.dealOverrides ?? []) add(`${b.id}.override.${o.deal.kind}`, o.deal.rate);
+    for (const r of b.rates ?? []) add(`${b.id}.rates.${r.issuer}.${r.tier}.${r.deal}`, r.rate);
+  }
+  return out;
+}
+
+function duplicates(ids: readonly string[]): string[] {
+  return ids.filter((id, n) => ids.indexOf(id) !== n);
+}
+
+/**
+ * Everything wrong with a catalog, as readable lines; empty when it is sound.
+ * The data tests run this over the real catalog, and over small broken ones
+ * to show that each check catches what it is for.
+ */
+export function catalogProblems(catalog: Catalog): string[] {
+  const p: string[] = [];
+  const issuerIds = new Set(catalog.issuers.map((i) => i.id));
+
+  // Sources: https, and a real date.
+  const checkSource = (where: string, s: { url: string; seen: string }) => {
+    if (!s.url.startsWith('https://')) p.push(`${where}: source url is not https (${s.url})`);
+    if (!isLocalDate(s.seen)) p.push(`${where}: source date is not a valid date (${s.seen})`);
+  };
+  for (const { where, rate } of allRates(catalog)) checkSource(where, rate.source);
+  for (const i of catalog.issuers) for (const d of i.deals) checkSource(`${i.id}.deal.${d.kind}`, d.source);
+  for (const b of catalog.banks)
+    for (const o of b.dealOverrides ?? [])
+      if (o.deal.source) checkSource(`${b.id}.override.${o.deal.kind}`, o.deal.source);
+
+  // Duplicate ids.
+  for (const id of duplicates(catalog.issuers.map((i) => i.id))) p.push(`duplicate issuer ${id}`);
+  for (const id of duplicates(catalog.banks.map((b) => b.id))) p.push(`duplicate bank ${id}`);
+  for (const i of catalog.issuers) {
+    for (const id of duplicates(i.tiers.map((t) => t.id))) p.push(`${i.id}: duplicate tier ${id}`);
+    for (const k of duplicates(i.deals.map((d) => d.kind))) p.push(`${i.id}: duplicate deal ${k}`);
+  }
+
+  // Issuers: fees name real tiers, moved clubs go somewhere still issued, one late rate.
+  for (const i of catalog.issuers) {
+    for (const f of i.cardFees ?? [])
+      if (!i.tiers.some((t) => t.id === f.tier)) p.push(`${i.id}: card fee for unknown tier ${f.tier}`);
+    for (const c of i.clubs) {
+      if (!c.movedTo) continue;
+      const to = i.clubs.find((x) => x.id === c.movedTo);
+      if (!to) p.push(`${i.id}: club ${c.id} moved to unknown club ${c.movedTo}`);
+      else if (!to.issued) p.push(`${i.id}: club ${c.id} moved to ${c.movedTo}, which is not issued`);
+    }
+    if (i.lateRate && i.extraRates?.late) p.push(`${i.id}: late rate given twice`);
+  }
+
+  // Banks: references that must resolve and be reachable.
+  for (const b of catalog.banks) {
+    for (const id of b.issuers) if (!issuerIds.has(id)) p.push(`${b.id}: unknown card company ${id}`);
+    for (const id of Object.keys(b.fxFee ?? {}))
+      if (!b.issuers.includes(id as never)) p.push(`${b.id}: fxFee for undistributed ${id}`);
+    if (b.lateRate && b.extraRates?.late) p.push(`${b.id}: late rate given twice`);
+    for (const row of b.rates ?? []) {
+      const where = `${b.id}.rates.${row.issuer}.${row.tier}.${row.deal}`;
+      const issuer = catalog.issuers.find((i) => i.id === row.issuer);
+      if (!issuer) p.push(`${where}: unknown card company`);
+      else {
+        if (!issuer.tiers.some((t) => t.id === row.tier)) p.push(`${where}: unknown tier`);
+        if (!issuer.deals.some((d) => d.kind === row.deal)) p.push(`${where}: unknown deal`);
+      }
+      if (!b.issuers.includes(row.issuer)) p.push(`${where}: bank does not distribute it`);
+    }
+    for (const o of b.dealOverrides ?? []) {
+      const where = `${b.id}.override.${o.issuer}.${o.deal.kind}`;
+      const issuer = catalog.issuers.find((i) => i.id === o.issuer);
+      if (!issuer) p.push(`${where}: unknown card company`);
+      else if (!issuer.deals.some((d) => d.kind === o.deal.kind)) p.push(`${where}: unknown deal`);
+      if (!b.issuers.includes(o.issuer)) p.push(`${where}: bank does not distribute it`);
+    }
+  }
+
+  // Published nominal/effective pairs.
+  for (const { where, rate } of allRates(catalog)) {
+    const note = rate.source.note;
+    if (!note) continue;
+    const m = NOTE_RE.exec(note);
+    const nominal = m?.[1];
+    const effective = m?.[2];
+    if (nominal === undefined || effective === undefined) {
+      if (/published (nominal|effective)/.test(note))
+        p.push(`${where}: malformed published-pair note (${note})`);
+      continue;
+    }
+    if (!rate.basis) {
+      p.push(`${where}: a published pair on a rate with no basis`);
+      continue;
+    }
+    if (rate.basis.kind === 'fixed' && addRates(rate.basis.rate, '0') !== addRates(nominal, '0'))
+      p.push(`${where}: note nominal ${nominal} differs from fixed rate ${rate.basis.rate}`);
+    const computed = annualEffectiveRate(nominal, rate.compounding);
+    if (Math.abs(hundredths(computed) - hundredths(effective)) > 1)
+      p.push(`${where}: effective ${computed} vs published ${effective}`);
+  }
+
+  return p;
+}

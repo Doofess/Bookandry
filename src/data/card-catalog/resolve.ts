@@ -51,7 +51,7 @@ export function resolveCard(
     for (const o of bank?.dealOverrides ?? []) {
       if (o.issuer !== issuer.id || o.deal.kind !== deal.kind) continue;
       merged = { ...merged, ...o.deal };
-      from = 'bank';
+      if ('rate' in o.deal) from = 'bank'; // only a rate it supplies is the bank's
     }
     const row = bank?.rates?.find(
       (r) => r.issuer === issuer.id && r.tier === link.tier && r.deal === deal.kind,

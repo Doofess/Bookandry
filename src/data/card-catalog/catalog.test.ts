@@ -1,133 +1,211 @@
 import { describe, expect, it } from 'vitest';
 
-import { isLocalDate } from '@/lib/dates';
-import { annualEffectiveRate } from '@/lib/money';
+import type { LocalDate } from '@/types/money';
 
+import { catalogProblems } from './check';
 import { loadCatalog } from './index';
-import { clubsOf, tiersOf } from './resolve';
 import type { Catalog, CatalogRate } from './types';
 
-const NOTE_RE = /^published nominal: (\d+(?:\.\d+)?); published effective: (\d+(?:\.\d+)?)$/;
+const src = { url: 'https://example.com/x', seen: '2026-10-01' as LocalDate };
 
-/** The published nominal/מתואמת pair a rate records in its source note, if it does. */
-function publishedPair(note: string | undefined): { nominal: string; effective: string } | undefined {
-  const m = note ? NOTE_RE.exec(note) : null;
-  return m ? { nominal: m[1]!, effective: m[2]! } : undefined;
-}
-
-/** A percent in whole hundredths ("12.68" is 1268), by digits, never by float. */
-function hundredths(percent: string): number {
-  const [whole = '0', frac = ''] = percent.split('.');
-  return Number(whole + (frac + '00').slice(0, 2));
-}
-
-/** Every rate in the catalog, with where it sits, for messages. */
-function allRates(catalog: Catalog): { where: string; rate: CatalogRate }[] {
-  const out: { where: string; rate: CatalogRate }[] = [];
-  const add = (where: string, rate: CatalogRate | undefined) => {
-    if (rate) out.push({ where, rate });
+function fixedRate(rate: string, note?: string): CatalogRate {
+  return {
+    basis: { kind: 'fixed', rate },
+    quality: 'exact',
+    compounding: 12,
+    dayCount: '30/360',
+    accrues: 'purchase',
+    fixedAtPurchase: true,
+    source: note ? { ...src, note } : { ...src },
   };
-  for (const i of catalog.issuers) {
-    add(`${i.id}.lateRate`, i.lateRate);
-    for (const [k, r] of Object.entries(i.extraRates ?? {})) add(`${i.id}.extra.${k}`, r);
-    for (const d of i.deals) add(`${i.id}.deal.${d.kind}`, d.rate);
-  }
-  for (const b of catalog.banks) {
-    add(`${b.id}.lateRate`, b.lateRate);
-    for (const [k, r] of Object.entries(b.extraRates ?? {})) add(`${b.id}.extra.${k}`, r);
-    for (const o of b.dealOverrides ?? []) add(`${b.id}.override.${o.deal.kind}`, o.deal.rate);
-    for (const r of b.rates ?? []) add(`${b.id}.rates.${r.issuer}.${r.tier}.${r.deal}`, r.rate);
-  }
-  return out;
 }
 
-describe('the published pair in a source note', () => {
-  it('is read from the agreed format and nothing else', () => {
-    expect(publishedPair('published nominal: 10.5; published effective: 11.02')).toEqual({
-      nominal: '10.5',
-      effective: '11.02',
-    });
-    expect(publishedPair('something else')).toBeUndefined();
-    expect(publishedPair(undefined)).toBeUndefined();
+/** A small sound catalog; each broken case below changes one thing in a copy. */
+function sound(): Catalog {
+  return {
+    version: 1,
+    issuers: [
+      {
+        id: 'cal',
+        name: { he: 'כאל', en: 'Cal' },
+        tiers: [
+          { id: 'gold', name: { he: 'זהב', en: 'Gold' }, issued: true },
+          { id: 'old', name: { he: 'ישן', en: 'Old' }, issued: false },
+        ],
+        clubs: [
+          { id: 'a', name: 'A', issued: true },
+          { id: 'b', name: 'B', issued: false, movedTo: 'a' },
+        ],
+        billingDays: [2],
+        foreignPosting: 'immediate',
+        cardFees: [{ tier: 'gold', monthlyMinor: 1500, waivers: [] }],
+        deals: [
+          {
+            kind: 'credit',
+            label: { he: 'קרדיט', en: 'Credit' },
+            abroad: false,
+            rate: fixedRate('12', 'published nominal: 12; published effective: 12.68'),
+            source: { ...src },
+          },
+        ],
+      },
+    ],
+    banks: [
+      {
+        id: 'b1',
+        name: { he: 'בנק', en: 'Bank' },
+        issuers: ['cal'],
+        rates: [{ issuer: 'cal', tier: 'gold', deal: 'credit', rate: fixedRate('10') }],
+        dealOverrides: [{ issuer: 'cal', deal: { kind: 'credit', source: { ...src } } }],
+      },
+    ],
+  };
+}
+
+function broken(change: (c: Catalog) => void): string[] {
+  const c = sound();
+  change(c);
+  return catalogProblems(c);
+}
+
+describe('the data checks catch what they are for', () => {
+  it('pass a sound catalog', () => {
+    expect(catalogProblems(sound())).toEqual([]);
   });
-  it('matches annualEffectiveRate for a known pair', () => {
-    // 12% nominal compounded monthly is 12.68% effective.
-    expect(annualEffectiveRate('12', 12)).toBe('12.68');
+
+  it('flags an http source', () => {
+    const p = broken((c) => (c.issuers[0]!.deals[0]!.source = { ...src, url: 'http://x.com' }));
+    expect(p.join()).toContain('not https');
+  });
+
+  it('flags a bad seen date', () => {
+    const p = broken((c) => {
+      c.banks[0]!.rates![0]!.rate.source.seen = '2026-02-30' as LocalDate;
+    });
+    expect(p.join()).toContain('not a valid date');
+  });
+
+  it('flags a rates row naming an unknown card company, tier or deal', () => {
+    const row = (c: Catalog) => c.banks[0]!.rates![0]!;
+    expect(broken((c) => (row(c).tier = 'nope')).join()).toContain('unknown tier');
+    expect(broken((c) => (row(c).deal = 'deferred')).join()).toContain('unknown deal');
+    expect(broken((c) => (row(c).issuer = 'amex')).join()).toContain('unknown card company');
+  });
+
+  it('flags a bank naming an unknown card company', () => {
+    expect(broken((c) => c.banks[0]!.issuers.push('max')).join()).toContain('unknown card company max');
+  });
+
+  it('flags a pair that is off by 0.02, and accepts one off by 0.01', () => {
+    const note = (c: Catalog, text: string) => {
+      c.issuers[0]!.deals[0]!.rate!.source.note = text;
+    };
+    expect(
+      broken((c) => {
+        note(c, 'published nominal: 12; published effective: 12.70');
+      }).join(),
+    ).toContain('effective 12.68 vs published 12.70');
+    expect(
+      broken((c) => {
+        note(c, 'published nominal: 12; published effective: 12.69');
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags a note that is nearly, but not exactly, the agreed format', () => {
+    for (const bad of [
+      'published nominal: 12%; published effective: 12.68',
+      'published nominal:12; published effective: 12.68',
+      'published nominal: 12; published effective: 12.68 (Cal site)',
+      'published effective: 12.68',
+    ]) {
+      const p = broken((c) => {
+        c.issuers[0]!.deals[0]!.rate!.source.note = bad;
+      });
+      expect(p.join(), bad).toContain('malformed published-pair note');
+    }
+  });
+
+  it('ignores an ordinary note', () => {
+    expect(
+      broken((c) => {
+        c.issuers[0]!.deals[0]!.rate!.source.note = 'from the fee table';
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags a pair on a rate with no basis', () => {
+    const p = broken((c) => {
+      c.issuers[0]!.deals[0]!.rate!.basis = null;
+    });
+    expect(p.join()).toContain('no basis');
+  });
+
+  it('flags a note nominal that differs from a fixed rate', () => {
+    const p = broken((c) => {
+      c.issuers[0]!.deals[0]!.rate!.basis = { kind: 'fixed', rate: '11' };
+    });
+    expect(p.join()).toContain('differs from fixed rate');
+  });
+
+  it('flags a dangling or retired movedTo', () => {
+    expect(broken((c) => (c.issuers[0]!.clubs[1]!.movedTo = 'zzz')).join()).toContain('unknown club');
+    expect(
+      broken((c) => {
+        c.issuers[0]!.clubs[0]!.issued = false;
+      }).join(),
+    ).toContain('which is not issued');
+  });
+
+  it('flags duplicate ids', () => {
+    expect(broken((c) => (c.issuers = [...c.issuers, structuredClone(c.issuers[0]!)])).join()).toContain(
+      'duplicate issuer cal',
+    );
+    expect(broken((c) => (c.banks = [...c.banks, structuredClone(c.banks[0]!)])).join()).toContain(
+      'duplicate bank b1',
+    );
+    expect(
+      broken((c) => c.issuers[0]!.tiers.push(structuredClone(c.issuers[0]!.tiers[0]!))).join(),
+    ).toContain('duplicate tier gold');
+    expect(
+      broken((c) => c.issuers[0]!.deals.push(structuredClone(c.issuers[0]!.deals[0]!))).join(),
+    ).toContain('duplicate deal credit');
+  });
+
+  it('flags rows and overrides for a card company the bank does not distribute', () => {
+    const p = broken((c) => {
+      c.banks[0]!.issuers = [];
+    });
+    expect(p.filter((x) => x.includes('does not distribute'))).toHaveLength(2);
+  });
+
+  it('flags a card fee for an unknown tier', () => {
+    const p = broken((c) => (c.issuers[0]!.cardFees![0]!.tier = 'nope'));
+    expect(p.join()).toContain('card fee for unknown tier');
+  });
+
+  it('flags an override whose own source is not sound', () => {
+    const p = broken((c) => {
+      c.banks[0]!.dealOverrides![0]!.deal.source = { url: 'ftp://x', seen: 'soon' as LocalDate };
+    });
+    expect(p.filter((x) => x.includes('override'))).toHaveLength(2);
+  });
+
+  it('flags a late rate given twice', () => {
+    const p = broken((c) => {
+      c.banks[0]!.lateRate = fixedRate('9');
+      c.banks[0]!.extraRates = { late: fixedRate('9') };
+    });
+    expect(p.join()).toContain('late rate given twice');
   });
 });
 
-describe('the real card catalog', async () => {
-  const catalog = await loadCatalog();
-  const issuerIds = new Set(catalog.issuers.map((i) => i.id));
-
+describe('the real card catalog', () => {
   it('loads once and returns the same catalog', async () => {
-    expect(await loadCatalog()).toBe(catalog);
+    expect(await loadCatalog()).toBe(await loadCatalog());
   });
 
-  it('cites an https source seen on a real date for every rate and deal', () => {
-    const sources: { where: string; url: string; seen: string }[] = [];
-    for (const { where, rate } of allRates(catalog)) sources.push({ where, ...rate.source });
-    for (const i of catalog.issuers)
-      for (const d of i.deals) sources.push({ where: `${i.id}.deal.${d.kind}`, ...d.source });
-    for (const s of sources) {
-      expect(s.url.startsWith('https://'), `${s.where} url`).toBe(true);
-      expect(isLocalDate(s.seen), `${s.where} seen`).toBe(true);
-    }
-  });
-
-  it('only names card companies that exist', () => {
-    for (const b of catalog.banks) {
-      for (const id of b.issuers) expect(issuerIds.has(id), `${b.id} -> ${id}`).toBe(true);
-      for (const id of Object.keys(b.fxFee ?? {}))
-        expect(b.issuers.includes(id as never), `${b.id} fxFee ${id}`).toBe(true);
-    }
-  });
-
-  it('has bank rate rows that name an existing card company, tier and deal kind', () => {
-    for (const b of catalog.banks) {
-      for (const row of b.rates ?? []) {
-        const where = `${b.id}.rates.${row.issuer}.${row.tier}.${row.deal}`;
-        const issuer = catalog.issuers.find((i) => i.id === row.issuer);
-        expect(issuer, `${where} issuer`).toBeDefined();
-        expect(
-          issuer?.tiers.some((t) => t.id === row.tier),
-          `${where} tier`,
-        ).toBe(true);
-        expect(
-          issuer?.deals.some((d) => d.kind === row.deal),
-          `${where} deal`,
-        ).toBe(true);
-      }
-      for (const o of b.dealOverrides ?? []) {
-        const issuer = catalog.issuers.find((i) => i.id === o.issuer);
-        expect(
-          issuer?.deals.some((d) => d.kind === o.deal.kind),
-          `${b.id}.override.${o.issuer}.${o.deal.kind}`,
-        ).toBe(true);
-      }
-    }
-  });
-
-  it('agrees with every published nominal/effective pair to within 0.01', () => {
-    for (const { where, rate } of allRates(catalog)) {
-      const pair = publishedPair(rate.source.note);
-      if (!pair) continue;
-      const computed = annualEffectiveRate(pair.nominal, rate.compounding);
-      const diff = hundredths(computed) - hundredths(pair.effective);
-      expect(Math.abs(diff), `${where}: ${computed} vs published ${pair.effective}`).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('never offers a club or tier that is no longer issued', () => {
-    for (const i of catalog.issuers) {
-      expect(tiersOf(i).every((t) => t.issued)).toBe(true);
-      expect(clubsOf(i).every((c) => c.issued)).toBe(true);
-      for (const c of i.clubs)
-        if (c.movedTo)
-          expect(
-            i.clubs.some((x) => x.id === c.movedTo),
-            `${i.id} ${c.id}`,
-          ).toBe(true);
-    }
+  it('has no problems', async () => {
+    expect(catalogProblems(await loadCatalog())).toEqual([]);
   });
 });

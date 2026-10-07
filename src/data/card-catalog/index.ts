@@ -9,13 +9,16 @@ let loading: Promise<Catalog> | undefined;
  * would put every card company's and bank's table in the main chunk.
  */
 export function loadCatalog(): Promise<Catalog> {
-  loading ??= Promise.all([import('./issuers'), import('./banks')]).then(([i, b]): Catalog => ({
-    version: CATALOG_VERSION,
-    issuers: i.issuers,
-    banks: b.banks,
-  }));
-  loading.catch(() => {
-    loading = undefined; // a failed fetch must not stick
-  });
+  if (!loading) {
+    const attempt = Promise.all([import('./issuers'), import('./banks')]).then(([i, b]): Catalog => ({
+      version: CATALOG_VERSION,
+      issuers: i.issuers,
+      banks: b.banks,
+    }));
+    loading = attempt;
+    attempt.catch(() => {
+      if (loading === attempt) loading = undefined; // a failed fetch must not stick
+    });
+  }
   return loading;
 }
