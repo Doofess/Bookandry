@@ -17,7 +17,7 @@ Decided with them:
 - **What goes.** Transactions, credit cards, bank accounts, categories the
   household added, commitments and import drafts, for every account in the
   household.
-- **Linked.** Every *other* member confirms by a link in an email. The person
+- **Linked.** Every _other_ member confirms by a link in an email. The person
   who asks does not confirm by email: asking is their confirmation.
 
 ## Where
@@ -88,6 +88,7 @@ New migration, `wipes`:
   - `confirmed_at`, `declined_at`
 
   Both tables have RLS on and no policies.
+
 - **`private.erase_space(uid)`**: deletes every row of `public.records` for
   that `user_id`, zeroes its record and byte counts, and raises its epoch by 1.
 - **Membership changes.** A trigger on `household_members` (insert or delete)
@@ -135,6 +136,7 @@ New migration, `wipes`:
 ## The app
 
 **Sync engine**
+
 - Each space keeps its epoch in meta (`syncEpoch:<space>`), and pulls bring the
   current one.
 - **When a pull shows a higher epoch than this device holds**, in one Dexie
@@ -156,6 +158,7 @@ New migration, `wipes`:
   last `wipe_status`, and otherwise says "All data was deleted".
 
 **Screens**
+
 - Data & backup: the Delete section, the confirmation dialog, and the pending
   status (with Cancel for the requester).
 - A `/wipe` route, beside `/link`: the review page with Confirm and Decline,
@@ -170,13 +173,13 @@ linked deletion needs everyone's confirmation.
 
 ## Errors the person can see
 
-| Situation | What they see |
-|---|---|
-| Email could not be sent | "Couldn't send the confirmation emails. Nothing was deleted. Try again." |
-| A request is already pending | The pending status, not the button |
-| A link for another account | "This request isn't for this account. Sign in as [email-masked] to answer it." |
-| A link that's used, expired or cancelled | "This request is no longer open." |
-| Offline when deleting | The button is disabled while offline (signed in), with "Connect to delete" |
+| Situation                                | What they see                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| Email could not be sent                  | "Couldn't send the confirmation emails. Nothing was deleted. Try again."       |
+| A request is already pending             | The pending status, not the button                                             |
+| A link for another account               | "This request isn't for this account. Sign in as [email-masked] to answer it." |
+| A link that's used, expired or cancelled | "This request is no longer open."                                              |
+| Offline when deleting                    | The button is disabled while offline (signed in), with "Connect to delete"     |
 
 ## Testing
 

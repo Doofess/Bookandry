@@ -5,11 +5,13 @@
 **Goal:** Let a person erase all of their budgeting data from Settings › Data & backup. When they are linked to other accounts, every other member must first confirm by email, and the erase then covers the whole household.
 
 **Architecture:**
+
 - **Server erase.** The server erases a space by deleting its `records` rows and raising a per-space counter, `user_state.epoch`.
 - **Sync.** `pull_records` reports the epoch, and `push_records` refuses a push made under an older one. The sync engine clears local data the first time it sees a space's epoch rise.
 - **Linked households.** A request is held in `wipe_requests`/`wipe_confirmations`. The edge function `send-wipe-requests` emails each other member a one-account token. `/wipe?t=…` lets them confirm or decline, and the last confirmation erases every member's space.
 
 **Tech Stack:**
+
 - Supabase Postgres (plpgsql, RLS), tested on PGlite (`src/test/pg-harness.ts`).
 - Deno edge function with Resend.
 - React 19, Dexie (`withoutTracking`), Vitest (projects `unit`/`db`/`dom`), Playwright, i18next (en/he).
@@ -44,10 +46,12 @@
 ### Task 1: Server — erase counter, erasing alone, and the sync guard
 
 **Files:**
+
 - Create: `supabase/migrations/20261008000000_wipes.sql`
 - Test: `src/services/supabase/wipes.sql.test.ts`
 
 **Interfaces:**
+
 - Produces, for SQL callers:
   - `public.wipe_my_data() returns integer`: the new epoch.
   - `public.push_records(p_records jsonb, p_space uuid default null, p_epoch integer default null) returns jsonb`.
@@ -88,7 +92,15 @@ async function account(id: string, email: string): Promise<Session> {
   );
   const s = t.as(id);
   await setupKeys(s.rpc, [
-    { kind: 'account', id: 'a', keyVersion: 1, salt: toBase64Url(new Uint8Array(16)), iv: toBase64Url(new Uint8Array(12)), ct: toBase64Url(new Uint8Array(48)), kdf: 'none' },
+    {
+      kind: 'account',
+      id: 'a',
+      keyVersion: 1,
+      salt: toBase64Url(new Uint8Array(16)),
+      iv: toBase64Url(new Uint8Array(12)),
+      ct: toBase64Url(new Uint8Array(48)),
+      kdf: 'none',
+    },
   ]);
   return s;
 }
@@ -111,7 +123,11 @@ const push = (s: Session, records: EncryptedRecord[], epoch?: number, space?: st
     ...(space === undefined ? {} : { p_space: space }),
   });
 const pull = (s: Session, space?: string) =>
-  s.rpc('pull_records', { p_cursor: 0, p_limit: 100, ...(space === undefined ? {} : { p_space: space }) }) as Promise<{
+  s.rpc('pull_records', {
+    p_cursor: 0,
+    p_limit: 100,
+    ...(space === undefined ? {} : { p_space: space }),
+  }) as Promise<{
     records: unknown[];
     epoch: number;
   }>;
@@ -156,16 +172,21 @@ describe('erasing alone', () => {
   it('counts the account as empty again, so its quota is free', async () => {
     await push(alice, [record(), record(), record()], 0);
     await alice.rpc('wipe_my_data', {});
-    const [state] = await t.pg.query<{ record_count: number; bytes_used: number }>(
-      'select record_count, bytes_used from public.user_state where user_id = $1',
-      [ALICE],
-    ).then((r) => r.rows);
+    const [state] = await t.pg
+      .query<{ record_count: number; bytes_used: number }>(
+        'select record_count, bytes_used from public.user_state where user_id = $1',
+        [ALICE],
+      )
+      .then((r) => r.rows);
     expect(state).toEqual({ record_count: 0, bytes_used: 0 });
   });
 
   it('is refused to an account linked with others: they must agree first', async () => {
     await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0 });
-    const { token } = (await alice.rpc('create_invite', { p_email: 'bob@example.com', p_currency: 'ILS' })) as {
+    const { token } = (await alice.rpc('create_invite', {
+      p_email: 'bob@example.com',
+      p_currency: 'ILS',
+    })) as {
       token: string;
     };
     // Waiting on its own invitation, still alone: allowed.
@@ -246,6 +267,7 @@ $$;
 ```
 
 CHANGE 2: in `pull_records`, `create or replace` the function with its body from `20261007000000_households.sql`. Make these edits:
+
 - At the top of `begin`, add `declare epoch_now integer;` to the declare block, then `select coalesce((select s.epoch from public.user_state s where s.user_id = target), 0) into epoch_now;`.
 - Add `'epoch', epoch_now` to both `jsonb_build_object(...)` returns: the empty page and the full page.
 
@@ -273,10 +295,12 @@ git commit -m "Delete all data, server: erase a space alone, and refuse pushes f
 ### Task 2: Server — a household's request, everyone's confirmation
 
 **Files:**
+
 - Modify: `supabase/migrations/20261008000000_wipes.sql` (append)
 - Test: `src/services/supabase/wipes.sql.test.ts` (append)
 
 **Interfaces:**
+
 - Consumes: `private.erase_space`, `private.household_size` (Task 1).
 - Produces (RPCs):
   - `request_wipe() returns jsonb`: `{ id: uuid, asks: [{ userId, email, token }] }`.
@@ -295,7 +319,9 @@ const CAROL = '00000000-0000-4000-8000-00000000000c';
 async function linkAll(...others: [Session, string, string][]): Promise<void> {
   await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0 });
   for (const [s, email, name] of others) {
-    const { token } = (await alice.rpc('create_invite', { p_email: email, p_currency: 'ILS' })) as { token: string };
+    const { token } = (await alice.rpc('create_invite', { p_email: email, p_currency: 'ILS' })) as {
+      token: string;
+    };
     await s.rpc('accept_invite', { p_token: token, p_currency: 'ILS', p_display_name: name });
   }
 }
@@ -318,7 +344,11 @@ describe('erasing a household', () => {
     expect(asks.asks.map((a) => a.email).sort()).toEqual(['bob@example.com', 'carol@example.com']);
     expect(asks.asks.every((a) => /^[0-9a-f]{64}$/.test(a.token))).toBe(true);
 
-    const status = (await bob.rpc('wipe_status', {})) as { status: string; waitingFor: string[]; mine: boolean };
+    const status = (await bob.rpc('wipe_status', {})) as {
+      status: string;
+      waitingFor: string[];
+      mine: boolean;
+    };
     expect(status).toMatchObject({ status: 'pending', mine: false });
     expect(status.waitingFor.sort()).toEqual(['Bob', 'Carol']);
     expect(await bob.rpc('peek_wipe', { p_token: tokenFor(asks, BOB) })).toMatchObject({
@@ -330,15 +360,20 @@ describe('erasing a household', () => {
     expect((await pull(alice)).records).toHaveLength(1);
     expect(await carol.rpc('confirm_wipe', { p_token: tokenFor(asks, CAROL) })).toBe('done');
 
-    for (const s of [alice, bob, carol]) expect(await pull(s)).toEqual(expect.objectContaining({ records: [], epoch: 1 }));
+    for (const s of [alice, bob, carol])
+      expect(await pull(s)).toEqual(expect.objectContaining({ records: [], epoch: 1 }));
     expect(await alice.rpc('wipe_status', {})).toMatchObject({ status: 'done', requesterName: 'Alice' });
   });
 
   it('works once, and only for the account the email was sent to', async () => {
     await linkAll([bob, 'bob@example.com', 'Bob'], [carol, 'carol@example.com', 'Carol']);
     const asks = (await alice.rpc('request_wipe', {})) as Asks;
-    expect(await refused(carol.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_wrong_account');
-    expect(await refused(carol.rpc('peek_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_wrong_account');
+    expect(await refused(carol.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe(
+      'wipe_wrong_account',
+    );
+    expect(await refused(carol.rpc('peek_wipe', { p_token: tokenFor(asks, BOB) }))).toBe(
+      'wipe_wrong_account',
+    );
     await bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) });
     expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
     expect(await refused(bob.rpc('peek_wipe', { p_token: 'nonsense' }))).toBe('wipe_invalid');
@@ -361,7 +396,10 @@ describe('erasing a household', () => {
 
     await t.pg.query(`update public.wipe_requests set created_at = now() - interval '2 hours'`);
     asks = (await alice.rpc('request_wipe', {})) as Asks;
-    await t.pg.query(`update public.wipe_requests set expires_at = now() - interval '1 second' where id = $1`, [asks.id]);
+    await t.pg.query(
+      `update public.wipe_requests set expires_at = now() - interval '1 second' where id = $1`,
+      [asks.id],
+    );
     expect(await alice.rpc('wipe_status', {})).toBeNull();
     expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
     expect((await pull(bob)).records).toHaveLength(1);
@@ -370,7 +408,10 @@ describe('erasing a household', () => {
   it('is called off when someone joins or leaves before it completes', async () => {
     await linkAll([bob, 'bob@example.com', 'Bob']);
     const asks = (await alice.rpc('request_wipe', {})) as Asks;
-    const { token } = (await alice.rpc('create_invite', { p_email: 'carol@example.com', p_currency: 'ILS' })) as {
+    const { token } = (await alice.rpc('create_invite', {
+      p_email: 'carol@example.com',
+      p_currency: 'ILS',
+    })) as {
       token: string;
     };
     await carol.rpc('accept_invite', { p_token: token, p_currency: 'ILS', p_display_name: 'Carol' });
@@ -648,6 +689,7 @@ git commit -m "Delete all data, server: a household's request, confirmed by ever
 ### Task 3: Transport — epochs on the wire, and the client's calls
 
 **Files:**
+
 - Modify: `src/db/sync/protocol.ts` (`PullPage.epoch`, `push(records, epoch?)`, `SpaceWipedError`)
 - Modify: `src/db/sync/codec.ts` (`EncryptedTransport` and `encryptingTransport` pass the epoch through)
 - Modify: `src/services/supabase/transport.ts` (send `p_epoch`, read `epoch`, map `wiped`, new codes)
@@ -656,6 +698,7 @@ git commit -m "Delete all data, server: a household's request, confirmed by ever
 - Test: `src/services/supabase/transport.test.ts` (or the existing transport test file), `src/services/supabase/wipe.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `class SpaceWipedError extends Error`.
   - `PullPage = { records; cursor; hasMore; epoch?: number }`.
@@ -693,8 +736,13 @@ describe('the wipe calls', () => {
     rpc.mockResolvedValueOnce(null);
     expect(await wipeStatus(rpc)).toBeNull();
     rpc.mockResolvedValueOnce({
-      id: 'r', status: 'pending', mine: true, requesterName: 'Dana',
-      createdAt: '2026-10-07T10:00:00Z', expiresAt: '2026-10-14T10:00:00Z', waitingFor: ['Noa'],
+      id: 'r',
+      status: 'pending',
+      mine: true,
+      requesterName: 'Dana',
+      createdAt: '2026-10-07T10:00:00Z',
+      expiresAt: '2026-10-14T10:00:00Z',
+      waitingFor: ['Noa'],
     });
     expect(await wipeStatus(rpc)).toMatchObject({ status: 'pending', waitingFor: ['Noa'] });
     rpc.mockResolvedValueOnce({ status: 'odd' });
@@ -715,10 +763,37 @@ describe('epochs on the wire', () => {
     rpc.mockResolvedValueOnce({ records: [], cursor: 0, hasMore: false, epoch: 3 });
     expect((await rpcTransport(rpc).pull(0, 10)).epoch).toBe(3);
     rpc.mockResolvedValueOnce([]);
-    await rpcTransport(rpc, 'space').push([{ rid: 'r'.repeat(43), rev: '0000000000000001.abcd.00000001' as never, keyVersion: 1, iv: 'i'.repeat(16), ct: 'c'.repeat(22) }], 3);
-    expect(rpc).toHaveBeenLastCalledWith('push_records', expect.objectContaining({ p_epoch: 3, p_space: 'space' }));
+    await rpcTransport(rpc, 'space').push(
+      [
+        {
+          rid: 'r'.repeat(43),
+          rev: '0000000000000001.abcd.00000001' as never,
+          keyVersion: 1,
+          iv: 'i'.repeat(16),
+          ct: 'c'.repeat(22),
+        },
+      ],
+      3,
+    );
+    expect(rpc).toHaveBeenLastCalledWith(
+      'push_records',
+      expect.objectContaining({ p_epoch: 3, p_space: 'space' }),
+    );
     rpc.mockRejectedValueOnce(new ServerError('wiped'));
-    await expect(rpcTransport(rpc).push([{ rid: 'r'.repeat(43), rev: '0000000000000001.abcd.00000001' as never, keyVersion: 1, iv: 'i'.repeat(16), ct: 'c'.repeat(22) }], 0)).rejects.toBeInstanceOf(SpaceWipedError);
+    await expect(
+      rpcTransport(rpc).push(
+        [
+          {
+            rid: 'r'.repeat(43),
+            rev: '0000000000000001.abcd.00000001' as never,
+            keyVersion: 1,
+            iv: 'i'.repeat(16),
+            ct: 'c'.repeat(22),
+          },
+        ],
+        0,
+      ),
+    ).rejects.toBeInstanceOf(SpaceWipedError);
   });
 });
 ```
@@ -759,11 +834,13 @@ export class SpaceWipedError extends Error {
 ```
 
 In `codec.ts`:
+
 - Add `epoch?: number` to `EncryptedTransport.pull`'s return type, and `push(records, epoch?: number)`.
 - In `encryptingTransport`, make `push(records, epoch)` call `inner.push(sealed, epoch)`.
 - Make `pull` return `{ records, cursor: page.cursor, hasMore: page.hasMore, ...(page.epoch === undefined ? {} : { epoch: page.epoch }) }`.
 
 In `transport.ts` `rpcTransport`:
+
 - Push: add `...(epoch === undefined ? {} : { p_epoch: epoch })` to the args. Wrap the `await rpc('push_records', …)` in `try { … } catch (error) { if (error instanceof ServerError && error.code === 'wiped') throw new SpaceWipedError(); throw error; }`.
 - Pull: read `epoch` from the answer. If present, it must be a non-negative safe integer, or the call throws `MalformedResponseError('pull page')`. Return it.
 - Add the six codes to `ServerErrorCode` and `KNOWN`.
@@ -810,27 +887,46 @@ export async function wipeStatus(rpc: Rpc): Promise<WipeStatus | null> {
   const v = await rpc('wipe_status', {});
   if (v === null) return null;
   if (
-    !isObject(v) || !isText(v['id']) || (v['status'] !== 'pending' && v['status'] !== 'done') ||
-    typeof v['mine'] !== 'boolean' || !isText(v['requesterName']) || !isText(v['createdAt']) ||
-    !isText(v['expiresAt']) || !Array.isArray(v['waitingFor']) || !v['waitingFor'].every(isText)
+    !isObject(v) ||
+    !isText(v['id']) ||
+    (v['status'] !== 'pending' && v['status'] !== 'done') ||
+    typeof v['mine'] !== 'boolean' ||
+    !isText(v['requesterName']) ||
+    !isText(v['createdAt']) ||
+    !isText(v['expiresAt']) ||
+    !Array.isArray(v['waitingFor']) ||
+    !v['waitingFor'].every(isText)
   ) {
     throw new MalformedResponseError('wipe status');
   }
   return {
-    id: v['id'], status: v['status'], mine: v['mine'], requesterName: v['requesterName'],
-    createdAt: v['createdAt'], expiresAt: v['expiresAt'], waitingFor: v['waitingFor'],
+    id: v['id'],
+    status: v['status'],
+    mine: v['mine'],
+    requesterName: v['requesterName'],
+    createdAt: v['createdAt'],
+    expiresAt: v['expiresAt'],
+    waitingFor: v['waitingFor'],
   };
 }
 
 export async function peekWipe(rpc: Rpc, token: string): Promise<WipePreview> {
   const v = await rpc('peek_wipe', { p_token: token });
   if (
-    !isObject(v) || !isText(v['requesterName']) || !isText(v['createdAt']) || !isText(v['expiresAt']) ||
+    !isObject(v) ||
+    !isText(v['requesterName']) ||
+    !isText(v['createdAt']) ||
+    !isText(v['expiresAt']) ||
     typeof v['members'] !== 'number'
   ) {
     throw new MalformedResponseError('wipe preview');
   }
-  return { requesterName: v['requesterName'], createdAt: v['createdAt'], expiresAt: v['expiresAt'], members: v['members'] };
+  return {
+    requesterName: v['requesterName'],
+    createdAt: v['createdAt'],
+    expiresAt: v['expiresAt'],
+    members: v['members'],
+  };
 }
 
 export async function confirmWipe(rpc: Rpc, token: string): Promise<'waiting' | 'done'> {
@@ -857,6 +953,7 @@ export type SendWipeOutcome =
 ```
 
 In `memory-sync-server.ts` (`MemorySyncServer`):
+
 - Add `epoch = 0;`.
 - Add `erase(): void { this.reset(); this.epoch += 1; }`.
 - `transport().push = (records, epoch) => (epoch ?? 0) < this.epoch ? Promise.reject(new SpaceWipedError()) : Promise.resolve(…as before)`.
@@ -879,12 +976,14 @@ git commit -m "Delete all data: epochs on the wire, and the client's calls"
 ### Task 4: Sync engine — clear once when a space's epoch rises
 
 **Files:**
+
 - Modify: `src/db/sync/tables.ts` (`SYNC_EPOCH_KEY`, `epochKeyOf`)
 - Create: `src/db/sync/erase.ts` (`eraseLocalData`)
 - Modify: `src/db/sync/engine.ts` (pass epochs on push, watch them on pull, `SyncReport.wiped`)
 - Test: `src/db/sync/erase.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SpaceWipedError`, `PullPage.epoch`, `push(records, epoch)`, `MemorySyncServer.erase()` (Task 3).
 - Produces:
   - `epochKeyOf(space: string | undefined): string`.
@@ -927,7 +1026,12 @@ describe('an erase reaching a device', () => {
     expect(await b.db.settings.get('singleton')).toBeDefined();
     expect((await b.db.meta.get(epochKeyOf(undefined)))?.value).toBe(1);
     // The server got settings and people back - never t2, nor anything erased.
-    expect(server.snapshot().map((r) => r.tbl).sort()).toEqual(['profiles', 'settings']);
+    expect(
+      server
+        .snapshot()
+        .map((r) => r.tbl)
+        .sort(),
+    ).toEqual(['profiles', 'settings']);
 
     // A, syncing later, clears too and converges on the same.
     expect((await a.sync()).wiped).toBe(true);
@@ -949,12 +1053,30 @@ describe('an erase reaching a device', () => {
     server.erase();
     theirs.erase();
     // Their device already re-sent its settings after the erase.
-    await theirs.transport().push(
-      [{ tbl: 'categories', id: 'cat.after', rev: '9999999999999999.ffff.zzzzzzzz' as never, deleted: false,
-         row: { id: 'cat.after', kind: 'expense', name: 'After', icon: 'Circle', source: 'custom', sortOrder: 99, isArchived: 0,
-                createdAt: now(), updatedAt: now() } }],
-      1,
-    );
+    await theirs
+      .transport()
+      .push(
+        [
+          {
+            tbl: 'categories',
+            id: 'cat.after',
+            rev: '9999999999999999.ffff.zzzzzzzz' as never,
+            deleted: false,
+            row: {
+              id: 'cat.after',
+              kind: 'expense',
+              name: 'After',
+              icon: 'Circle',
+              source: 'custom',
+              sortOrder: 99,
+              isArchived: 0,
+              createdAt: now(),
+              updatedAt: now(),
+            },
+          },
+        ],
+        1,
+      );
 
     const report = await syncBoth();
     expect(report.wiped).toBe(true);
@@ -962,7 +1084,7 @@ describe('an erase reaching a device', () => {
     expect(await b.db.categories.get('cat.after')).toBeDefined();
   });
 
-  it("takes the epoch of a space it has never pulled from without clearing anything", async () => {
+  it('takes the epoch of a space it has never pulled from without clearing anything', async () => {
     server.erase();
     await addProfile(b.db, 'p1');
     await b.db.transactions.put(tx('t1'));
@@ -1048,7 +1170,10 @@ export async function eraseLocalData(db: BookandryDB): Promise<void> {
     await db.meta.bulkDelete(
       keys.filter(
         (k) =>
-          k === SYNC_CURSOR_KEY || k.startsWith(`${SYNC_CURSOR_KEY}:`) || k.startsWith(DRAFT_PREFIX) || k === PULLED_TO_HEAD_KEY,
+          k === SYNC_CURSOR_KEY ||
+          k.startsWith(`${SYNC_CURSOR_KEY}:`) ||
+          k.startsWith(DRAFT_PREFIX) ||
+          k === PULLED_TO_HEAD_KEY,
       ),
     );
   });
@@ -1058,56 +1183,57 @@ export async function eraseLocalData(db: BookandryDB): Promise<void> {
 > Import cycle check: `engine.ts` will import `erase.ts`, and `erase.ts` imports `PULLED_TO_HEAD_KEY` from `engine.ts`. Move `PULLED_TO_HEAD_KEY` into `tables.ts`, re-export it from `engine.ts` (`export { PULLED_TO_HEAD_KEY } from './tables'`) so `account.ts` keeps working, and import it from `./tables` in `erase.ts`.
 
 `engine.ts`:
+
 - `syncOnce` gets a `wiped` flag and reads the epochs. Replace the first `pushAll` and the pull loop with the following.
 
 ```ts
-    const pulledBefore = new Set<string | undefined>();
-    for (const space of [set.own, ...set.linked]) {
-      const id = space === set.own ? undefined : space.id;
-      if ((await db.meta.get(cursorKeyOf(id))) !== undefined) pulledBefore.add(id);
-    }
+const pulledBefore = new Set<string | undefined>();
+for (const space of [set.own, ...set.linked]) {
+  const id = space === set.own ? undefined : space.id;
+  if ((await db.meta.get(cursorKeyOf(id))) !== undefined) pulledBefore.add(id);
+}
 
-    // A push into a space erased since this device last pulled is refused: the
-    // pull below clears, and the second push sends what is left.
-    let first = { pushed: 0, stale: 0 };
-    try {
-      first = await pushAll(db, set, batch);
-    } catch (error) {
-      if (!(error instanceof SpaceWipedError)) throw error;
-    }
+// A push into a space erased since this device last pulled is refused: the
+// pull below clears, and the second push sends what is left.
+let first = { pushed: 0, stale: 0 };
+try {
+  first = await pushAll(db, set, batch);
+} catch (error) {
+  if (!(error instanceof SpaceWipedError)) throw error;
+}
 
-    let wiped = false;
-    let applied = 0;
-    let skipped = 0;
-    let rejected = 0;
-    for (const space of [set.own, ...set.linked]) {
-      const id = space === set.own ? undefined : space.id;
-      let cursor = await readCursor(db, id);
-      let known = await readEpoch(db, id);
-      for (let round = 0; ; round += 1) {
-        if (round >= MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
-        const page = await space.transport.pull(cursor, batch);
-        if (page.epoch !== undefined && page.epoch > known) {
-          await db.meta.put({ key: epochKeyOf(id), value: page.epoch });
-          known = page.epoch;
-          if (pulledBefore.has(id)) {
-            // Erased since this device last looked. One household erase raises
-            // every member's space at once: clear once, then only start over.
-            if (!wiped) await eraseLocalData(db);
-            wiped = true;
-            await db.meta.delete(cursorKeyOf(id));
-            cursor = 0;
-            continue;
-          }
-        }
-        const report = await applyPage(db, page.records, page.cursor, id);
-        applied += report.applied;
-        skipped += report.skipped;
-        rejected += report.rejected;
-        cursor = page.cursor;
-        if (!page.hasMore) break;
+let wiped = false;
+let applied = 0;
+let skipped = 0;
+let rejected = 0;
+for (const space of [set.own, ...set.linked]) {
+  const id = space === set.own ? undefined : space.id;
+  let cursor = await readCursor(db, id);
+  let known = await readEpoch(db, id);
+  for (let round = 0; ; round += 1) {
+    if (round >= MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
+    const page = await space.transport.pull(cursor, batch);
+    if (page.epoch !== undefined && page.epoch > known) {
+      await db.meta.put({ key: epochKeyOf(id), value: page.epoch });
+      known = page.epoch;
+      if (pulledBefore.has(id)) {
+        // Erased since this device last looked. One household erase raises
+        // every member's space at once: clear once, then only start over.
+        if (!wiped) await eraseLocalData(db);
+        wiped = true;
+        await db.meta.delete(cursorKeyOf(id));
+        cursor = 0;
+        continue;
       }
     }
+    const report = await applyPage(db, page.records, page.cursor, id);
+    applied += report.applied;
+    skipped += report.skipped;
+    rejected += report.rejected;
+    cursor = page.cursor;
+    if (!page.hasMore) break;
+  }
+}
 ```
 
 - Return `wiped` in the report. Add `readonly wiped: boolean;` to `SyncReport`.
@@ -1141,12 +1267,14 @@ git commit -m "Delete all data, sync: a device clears once when a space it pulls
 ### Task 5: The account — deleting, asking, answering, and being told
 
 **Files:**
+
 - Modify: `src/app/sync-runner.ts` (`onWiped` dependency)
 - Modify: `src/app/account.ts` (methods and the wipe notice)
 - Create: `src/app/erase-device.ts` (`eraseThisDevice`, for signed out and after a solo erase)
 - Test: `src/app/erase-device.test.ts`, `src/app/sync-runner.test.ts` (append)
 
 **Interfaces:**
+
 - Consumes: `eraseLocalData` (Task 4), and the `wipe.ts` calls and `SendWipeOutcome` (Task 3). It also uses `sendWipeRequests` from `@/services/supabase/send-wipe` (Task 6), imported dynamically. Until Task 6 lands, create that file with only `export async function sendWipeRequests(): Promise<SendWipeOutcome> { return { ok: false, error: 'email_failed' }; }` so this task compiles; Task 6 replaces it.
 - Produces on `AccountController`:
   - `wipeMyData(): Promise<void>`: alone, signed in.
@@ -1178,7 +1306,7 @@ describe('erasing this device', () => {
     const { db } = freshDb();
     await db.open();
     // seed via the app's own repos: a custom category, a transaction, a card
-    await createCategory(db, /* id, name, kind… copy the call shape from categories.test.ts */);
+    await createCategory(db /* id, name, kind… copy the call shape from categories.test.ts */);
     const people = await db.profiles.count();
     await eraseThisDevice(db, '2026-10-07T10:00:00.000Z' as never);
     expect(await db.transactions.count()).toBe(0);
@@ -1222,10 +1350,12 @@ export async function eraseThisDevice(db: BookandryDB, now: IsoInstant): Promise
 ```
 
 `sync-runner.ts`:
+
 - Add `readonly onWiped?: () => Promise<void> | void;` to `SyncRunnerDeps`.
 - In `run()` after `syncOnce`: `if (report.wiped) await deps.onWiped?.();`, before `onState(...)`.
 
 `account.ts`:
+
 - Pass `onWiped: () => this.afterWipe()` to `startSyncRunner`.
 - Add these methods, following the existing `peekInvite`/`acceptInvite` style. They use `this.connect()` and the `wipe.ts` calls:
 
@@ -1312,11 +1442,13 @@ git commit -m "Delete all data, account: erase alone, ask the household, answer,
 ### Task 6: Edge function — `send-wipe-requests`
 
 **Files:**
+
 - Create: `supabase/functions/send-wipe-requests/index.ts`
 - Create: `src/services/supabase/send-wipe.ts`
 - Test: `src/services/supabase/send-wipe.test.ts`
 
 **Interfaces:**
+
 - Consumes: `request_wipe()` and `cancel_wipe()` (Task 2).
 - Produces:
   - `sendWipeRequests(client: SupabaseClient, language: 'en' | 'he', requesterName: string): Promise<SendWipeOutcome>`.
@@ -1324,6 +1456,7 @@ git commit -m "Delete all data, account: erase alone, ask the household, answer,
 - [ ] **Step 1: Write the failing test** (`src/services/supabase/send-wipe.test.ts`)
 
 Copy the structure of the existing `send-invite` client test. Find it with `ls src/services/supabase/send-invite*.test.ts`; if there is none, test against a fake `{ functions: { invoke } }` client:
+
 - a 200 `{ ok: true, asked: 2 }` maps to `{ ok: true, asked: 2 }`;
 - a `FunctionsHttpError` with body `{ error: 'wipe_pending' }` maps to `{ ok: false, error: 'wipe_pending' }`;
 - an unknown error body maps to `email_failed`;
@@ -1339,16 +1472,26 @@ const client = (invoke: ReturnType<typeof vi.fn>) => ({ functions: { invoke } })
 
 describe('sending the confirmation emails', () => {
   it('says how many were asked, or why not', async () => {
-    expect(await sendWipeRequests(client(vi.fn().mockResolvedValue({ data: { ok: true, asked: 2 }, error: null })), 'en', 'Dana'))
-      .toEqual({ ok: true, asked: 2 });
-    const refused = new FunctionsHttpError(new Response(JSON.stringify({ error: 'wipe_pending' }), { status: 400 }));
-    expect(await sendWipeRequests(client(vi.fn().mockResolvedValue({ data: null, error: refused })), 'en', 'Dana'))
-      .toEqual({ ok: false, error: 'wipe_pending' });
+    expect(
+      await sendWipeRequests(
+        client(vi.fn().mockResolvedValue({ data: { ok: true, asked: 2 }, error: null })),
+        'en',
+        'Dana',
+      ),
+    ).toEqual({ ok: true, asked: 2 });
+    const refused = new FunctionsHttpError(
+      new Response(JSON.stringify({ error: 'wipe_pending' }), { status: 400 }),
+    );
+    expect(
+      await sendWipeRequests(client(vi.fn().mockResolvedValue({ data: null, error: refused })), 'en', 'Dana'),
+    ).toEqual({ ok: false, error: 'wipe_pending' });
     const odd = new FunctionsHttpError(new Response(JSON.stringify({ error: 'weird' }), { status: 502 }));
-    expect(await sendWipeRequests(client(vi.fn().mockResolvedValue({ data: null, error: odd })), 'en', 'Dana'))
-      .toEqual({ ok: false, error: 'email_failed' });
-    expect(await sendWipeRequests(client(vi.fn().mockRejectedValue(new TypeError('net'))), 'en', 'Dana'))
-      .toEqual({ ok: false, error: 'offline' });
+    expect(
+      await sendWipeRequests(client(vi.fn().mockResolvedValue({ data: null, error: odd })), 'en', 'Dana'),
+    ).toEqual({ ok: false, error: 'email_failed' });
+    expect(
+      await sendWipeRequests(client(vi.fn().mockRejectedValue(new TypeError('net'))), 'en', 'Dana'),
+    ).toEqual({ ok: false, error: 'offline' });
   });
 });
 ```
@@ -1363,11 +1506,13 @@ Expected: FAIL. The module is not found.
 `send-wipe.ts`: mirror `src/services/supabase/send-invite.ts` line for line. Call `client.functions.invoke('send-wipe-requests', { body: { language, requesterName } })`, map `FunctionsHttpError` bodies whose `error` is one of `not_linked | wipe_pending | too_many_wipe_requests` through, map any other error body to `email_failed`, and map a thrown network error to `offline`.
 
 `supabase/functions/send-wipe-requests/index.ts`: copy `supabase/functions/send-invite/index.ts` as the template. It keeps:
+
 - the same `ORIGINS`/`cors`, `SENDER`, `escape`, the email layout (header and band images) and the Resend call;
 - `createSupabaseContext` with auth 'user', and the user-scoped `createClient`;
 - the `RESEND_API_KEY` check.
 
 It differs as follows.
+
 - The input is `{ language: 'en' | 'he'; requesterName: string ≤ 80 }`.
 - `KNOWN = new Set(['not_linked', 'wipe_pending', 'too_many_wipe_requests'])`.
 - It calls `db.rpc('request_wipe')`. On error it maps a known message through with status 400, and anything else to `email_failed` with status 502.
@@ -1377,6 +1522,7 @@ It differs as follows.
 The email copy:
 
 English:
+
 - **subject:** `${name} asked to delete all of your household's data on Bookandry`
 - **title:** `A request to delete your household's data`
 - **body:** `${who} asked to delete all of the data you share on Bookandry: every transaction, card, bank account, category and commitment, for everyone in the household. Nothing is deleted unless everyone else agrees. Your logins, pictures and the link between your accounts stay.`
@@ -1385,6 +1531,7 @@ English:
 - **ignore:** `Not expecting this? Don't confirm: nothing is deleted without you.`
 
 Hebrew:
+
 - **subject:** `${name} ביקש/ה למחוק את כל הנתונים של משק הבית ב־Bookandry`
 - **title:** `בקשה למחוק את נתוני משק הבית`
 - **body:** `${who} ביקש/ה למחוק את כל הנתונים המשותפים לכם ב־Bookandry: כל התנועות, הכרטיסים, חשבונות הבנק, הקטגוריות וההתחייבויות, של כל מי שבמשק הבית. שום דבר לא יימחק בלי הסכמה של כל השאר. החשבונות, התמונות והקישור ביניכם נשארים.`
@@ -1409,12 +1556,14 @@ git commit -m "Delete all data: the emails asking every other member to confirm"
 ### Task 7: Settings › Data & backup — the Delete section
 
 **Files:**
+
 - Create: `src/features/settings/delete-data.tsx` (the section, its dialog and the pending status)
 - Modify: `src/features/settings/data-card.tsx` (render `<DeleteData />` last, after storage)
 - Modify: `src/i18n/locales/en/common.json`, `src/i18n/locales/he/common.json` (the `settings.delete.*` keys)
 - Test: `src/features/settings/delete-data.test.tsx`
 
 **Interfaces:**
+
 - Consumes:
   - From `accountController()`: `wipeMyData`, `requestWipe`, `wipeStatus`, `cancelWipe` (Task 5).
   - `useAccount()`: `status`, `household?.members`.
@@ -1422,6 +1571,7 @@ git commit -m "Delete all data: the emails asking every other member to confirm"
 - Produces: `<DeleteData onBackup={…} />`.
 
 **Behaviour:**
+
 - **Alone or signed out:** the button "Delete all data" opens an `AlertDialog`. It shows the list of what's erased and what stays, a secondary "Download a backup first" button (calls `onBackup`), a text input labelled "Type DELETE to confirm", and a destructive "Delete everything" button. That button is enabled only when `matchesWord(input)`.
   - On success: toast "All data was deleted", and the dialog closes.
 - **Linked** (`household.members.length > 1`): the button reads "Ask to delete everyone's data". The dialog lists the other members by name ("Dana and Noa will each get an email…"), with the same word gate. The submit button is "Send the requests".
@@ -1443,6 +1593,7 @@ export function matchesWord(input: string): boolean {
 - [ ] **Step 1: Write the failing tests** (`delete-data.test.tsx`)
 
 Mock `@/app/account` the way `src/features/import/import-sheet.test.tsx` does, with a controller whose methods are `vi.fn()`. Test:
+
 1. `matchesWord`: `' Delete '`, `'DELETE'` and `'מחיקה'` are true; `'delet'` and `''` are false.
 2. **Alone:** the "Delete everything" button stays disabled until "DELETE" is typed. Clicking it calls `wipeMyData` once, and the toast text appears.
 3. **Linked** (two members, Dana is me, Noa is the other): the dialog names Noa. Sending calls `requestWipe('en')`; a `{ ok: false, error: 'email_failed' }` result shows "Couldn't send the confirmation emails. Nothing was deleted. Try again."
@@ -1459,28 +1610,28 @@ Mock `@/app/account` the way `src/features/import/import-sheet.test.tsx` does, w
 
 Add the copy:
 
-| key | en | he |
-|---|---|---|
-| `settings.delete.title` | Delete all data | מחיקת כל הנתונים |
-| `settings.delete.body` | Erase every transaction, card, bank account, category and commitment. Your login, pictures and settings stay. | מחיקת כל התנועות, הכרטיסים, חשבונות הבנק, הקטגוריות וההתחייבויות. החשבון, התמונות וההגדרות נשארים. |
-| `settings.delete.open` | Delete all data | מחיקת כל הנתונים |
-| `settings.delete.openLinked` | Ask to delete everyone's data | בקשה למחוק את הנתונים של כולם |
-| `settings.delete.erased` | Erased: transactions, cards, bank accounts, categories you added, commitments, import drafts. | יימחקו: תנועות, כרטיסים, חשבונות בנק, קטגוריות שהוספתם, התחייבויות וטיוטות ייבוא. |
-| `settings.delete.kept` | Kept: your login, pictures, settings and the people in your household. | יישארו: החשבון, התמונות, ההגדרות והאנשים במשק הבית. |
-| `settings.delete.linkedAsk` | {{names}} will each get an email to confirm. Nothing is deleted until everyone does, and then it's deleted for everyone. | {{names}} יקבלו מייל לאישור. שום דבר לא יימחק עד שכולם יאשרו, ואז הנתונים יימחקו לכולם. |
-| `settings.delete.backupFirst` | Download a backup first | קודם להוריד גיבוי |
-| `settings.delete.typeLabel` | Type DELETE to confirm | כדי לאשר, הקלידו מחיקה |
-| `settings.delete.confirm` | Delete everything | למחוק הכול |
-| `settings.delete.send` | Send the requests | לשלוח את הבקשות |
-| `settings.delete.done` | All data was deleted | כל הנתונים נמחקו |
-| `settings.delete.sent` | Requests sent. Nothing is deleted until everyone confirms. | הבקשות נשלחו. שום דבר לא יימחק עד שכולם יאשרו. |
-| `settings.delete.waiting` | Waiting for {{names}} to confirm · expires {{when}} | ממתינים לאישור של {{names}} · בתוקף עד {{when}} |
-| `settings.delete.cancel` | Cancel the request | ביטול הבקשה |
-| `settings.delete.cancelled` | Request cancelled | הבקשה בוטלה |
-| `settings.delete.offline` | Connect to delete | צריך חיבור לאינטרנט כדי למחוק |
-| `settings.delete.emailFailed` | Couldn't send the confirmation emails. Nothing was deleted. Try again. | לא הצלחנו לשלוח את מיילי האישור. שום דבר לא נמחק. אפשר לנסות שוב. |
-| `settings.delete.pending` | A request is already waiting for answers. | כבר יש בקשה שממתינה לתשובות. |
-| `settings.delete.tooSoon` | A request was made in the last hour. Try again later. | נשלחה בקשה בשעה האחרונה. אפשר לנסות שוב מאוחר יותר. |
+| key                           | en                                                                                                                       | he                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `settings.delete.title`       | Delete all data                                                                                                          | מחיקת כל הנתונים                                                                                   |
+| `settings.delete.body`        | Erase every transaction, card, bank account, category and commitment. Your login, pictures and settings stay.            | מחיקת כל התנועות, הכרטיסים, חשבונות הבנק, הקטגוריות וההתחייבויות. החשבון, התמונות וההגדרות נשארים. |
+| `settings.delete.open`        | Delete all data                                                                                                          | מחיקת כל הנתונים                                                                                   |
+| `settings.delete.openLinked`  | Ask to delete everyone's data                                                                                            | בקשה למחוק את הנתונים של כולם                                                                      |
+| `settings.delete.erased`      | Erased: transactions, cards, bank accounts, categories you added, commitments, import drafts.                            | יימחקו: תנועות, כרטיסים, חשבונות בנק, קטגוריות שהוספתם, התחייבויות וטיוטות ייבוא.                  |
+| `settings.delete.kept`        | Kept: your login, pictures, settings and the people in your household.                                                   | יישארו: החשבון, התמונות, ההגדרות והאנשים במשק הבית.                                                |
+| `settings.delete.linkedAsk`   | {{names}} will each get an email to confirm. Nothing is deleted until everyone does, and then it's deleted for everyone. | {{names}} יקבלו מייל לאישור. שום דבר לא יימחק עד שכולם יאשרו, ואז הנתונים יימחקו לכולם.            |
+| `settings.delete.backupFirst` | Download a backup first                                                                                                  | קודם להוריד גיבוי                                                                                  |
+| `settings.delete.typeLabel`   | Type DELETE to confirm                                                                                                   | כדי לאשר, הקלידו מחיקה                                                                             |
+| `settings.delete.confirm`     | Delete everything                                                                                                        | למחוק הכול                                                                                         |
+| `settings.delete.send`        | Send the requests                                                                                                        | לשלוח את הבקשות                                                                                    |
+| `settings.delete.done`        | All data was deleted                                                                                                     | כל הנתונים נמחקו                                                                                   |
+| `settings.delete.sent`        | Requests sent. Nothing is deleted until everyone confirms.                                                               | הבקשות נשלחו. שום דבר לא יימחק עד שכולם יאשרו.                                                     |
+| `settings.delete.waiting`     | Waiting for {{names}} to confirm · expires {{when}}                                                                      | ממתינים לאישור של {{names}} · בתוקף עד {{when}}                                                    |
+| `settings.delete.cancel`      | Cancel the request                                                                                                       | ביטול הבקשה                                                                                        |
+| `settings.delete.cancelled`   | Request cancelled                                                                                                        | הבקשה בוטלה                                                                                        |
+| `settings.delete.offline`     | Connect to delete                                                                                                        | צריך חיבור לאינטרנט כדי למחוק                                                                      |
+| `settings.delete.emailFailed` | Couldn't send the confirmation emails. Nothing was deleted. Try again.                                                   | לא הצלחנו לשלוח את מיילי האישור. שום דבר לא נמחק. אפשר לנסות שוב.                                  |
+| `settings.delete.pending`     | A request is already waiting for answers.                                                                                | כבר יש בקשה שממתינה לתשובות.                                                                       |
+| `settings.delete.tooSoon`     | A request was made in the last hour. Try again later.                                                                    | נשלחה בקשה בשעה האחרונה. אפשר לנסות שוב מאוחר יותר.                                                |
 
 Names join with `Intl.ListFormat(lang, { type: 'conjunction' })`.
 
@@ -1498,6 +1649,7 @@ git commit -m "Delete all data: the section in Data & backup, alone and for a ho
 ### Task 8: `/wipe` — reviewing a request from the email
 
 **Files:**
+
 - Create: `src/features/household/wipe-screen.tsx`
 - Create: `src/features/household/pending-wipe.ts` (session key `greenback.pendingWipe`)
 - Modify: `src/app/routes.ts` (`LINKED_ROUTES.wipe = '/wipe'`)
@@ -1509,12 +1661,14 @@ git commit -m "Delete all data: the section in Data & backup, alone and for a ho
 - Test: `src/features/household/wipe-screen.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `peekWipe`, `confirmWipe` and `declineWipe` on `accountController()`, plus `view.wipeNotice` (Task 5).
 - Produces:
   - `<WipeScreen />`.
   - `rememberPendingWipe(token)`, `pendingWipe()` and `forgetPendingWipe()`. These are the same shape as `pending-invite.ts`, with the same token regex `^[0-9a-f]{64}$`.
 
 **Behaviour (mirrors `link-screen.tsx`):**
+
 - **Signed out:** remember the token, show "Sign in to answer this request", and the sign-in entry the link screen uses.
 - **Signed in:** call `peekWipe(token)`. The states are `loading | ready | invalid | wrong_account | offline`.
   - `ready`: "{{name}} asked to delete all of your household's data" (the copy names the requester by their display name), the erased/kept lists (reusing `settings.delete.erased`/`kept`), "Asked {{date}} · open until {{date}}", and the buttons **Confirm** (destructive) and **Decline** (outline).
@@ -1531,20 +1685,20 @@ Use `MemoryRouter` with `initialEntries={['/wipe?t=' + 'a'.repeat(64)]}` and a m
 
 - [ ] **Step 3: Implement** by copying `link-screen.tsx`'s structure: the state machine, the effects and the leave handler. Remove the reconvert step. Add the copy:
 
-| key | en | he |
-|---|---|---|
-| `wipe.title` | {{name}} asked to delete all of your household's data | {{name}} ביקש/ה למחוק את כל הנתונים של משק הבית |
-| `wipe.when` | Asked {{asked}} · open until {{until}} | נשלחה {{asked}} · בתוקף עד {{until}} |
-| `wipe.forEveryone` | If everyone confirms, it's deleted for all {{count}} of you. | אם כולם יאשרו, הנתונים יימחקו לכל {{count}} החשבונות. |
-| `wipe.confirm` | Confirm | אישור |
-| `wipe.decline` | Decline | דחייה |
-| `wipe.waiting` | Thanks. Waiting for the others. | תודה. ממתינים לשאר. |
-| `wipe.declined` | Request declined. Nothing was deleted. | הבקשה נדחתה. שום דבר לא נמחק. |
-| `wipe.invalid` | This request is no longer open. | הבקשה הזו כבר לא פתוחה. |
+| key                 | en                                                                          | he                                                                  |
+| ------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `wipe.title`        | {{name}} asked to delete all of your household's data                       | {{name}} ביקש/ה למחוק את כל הנתונים של משק הבית                     |
+| `wipe.when`         | Asked {{asked}} · open until {{until}}                                      | נשלחה {{asked}} · בתוקף עד {{until}}                                |
+| `wipe.forEveryone`  | If everyone confirms, it's deleted for all {{count}} of you.                | אם כולם יאשרו, הנתונים יימחקו לכל {{count}} החשבונות.               |
+| `wipe.confirm`      | Confirm                                                                     | אישור                                                               |
+| `wipe.decline`      | Decline                                                                     | דחייה                                                               |
+| `wipe.waiting`      | Thanks. Waiting for the others.                                             | תודה. ממתינים לשאר.                                                 |
+| `wipe.declined`     | Request declined. Nothing was deleted.                                      | הבקשה נדחתה. שום דבר לא נמחק.                                       |
+| `wipe.invalid`      | This request is no longer open.                                             | הבקשה הזו כבר לא פתוחה.                                             |
 | `wipe.wrongAccount` | This request isn't for this account. Sign in with the email it was sent to. | הבקשה לא מיועדת לחשבון הזה. צריך להתחבר עם כתובת המייל שאליה נשלחה. |
-| `wipe.signIn` | Sign in to answer this request | כדי לענות על הבקשה צריך להתחבר |
-| `wipe.notice` | All data was deleted at {{name}}'s request | כל הנתונים נמחקו לבקשת {{name}} |
-| `wipe.noticeAnon` | All data was deleted | כל הנתונים נמחקו |
+| `wipe.signIn`       | Sign in to answer this request                                              | כדי לענות על הבקשה צריך להתחבר                                      |
+| `wipe.notice`       | All data was deleted at {{name}}'s request                                  | כל הנתונים נמחקו לבקשת {{name}}                                     |
+| `wipe.noticeAnon`   | All data was deleted                                                        | כל הנתונים נמחקו                                                    |
 
 - [ ] **Step 4: Run the tests.** Run: `pnpm exec vitest run src/features/household src/app`. Expected: PASS. The `app-shell` tests stay green.
 
@@ -1560,6 +1714,7 @@ git commit -m "Delete all data: the page an emailed request opens, to confirm or
 ### Task 9: Documents, browser test, and going live
 
 **Files:**
+
 - Modify: `public/privacy.html` (en and he: one sentence each in the data section)
 - Modify: `README.md` (one line under Data & backup)
 - Create: `e2e/delete-data.spec.ts`
@@ -1568,6 +1723,7 @@ git commit -m "Delete all data: the page an emailed request opens, to confirm or
 - [ ] **Step 1: Write the browser test** (`e2e/delete-data.spec.ts`)
 
 Follow the existing local-build specs (`e2e/*.spec.ts` with the demo-data helper) for setup.
+
 1. Load demo data and open Settings › Data & backup.
 2. Click "Delete all data". Check that "Delete everything" is disabled; type `DELETE`; click it.
 3. Expect the toast "All data was deleted".
