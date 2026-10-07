@@ -674,5 +674,20 @@
     "decline": "Decline",
     "joined": "Linked. Everything is in one place now.",
     "home": "Go to the feed"
+  },
+  "wipe": {
+    "title": "{{name}} asked to delete all of your household's data",
+    "when": "Asked {{asked}} · open until {{until}}",
+    "forEveryone": "If everyone confirms, it's deleted for all {{count}} of you.",
+    "confirm": "Confirm",
+    "decline": "Decline",
+    "waiting": "Thanks. Waiting for the others.",
+    "declined": "Request declined. Nothing was deleted.",
+    "invalid": "This request is no longer open.",
+    "wrongAccount": "This request isn't for this account. Sign in with the email it was sent to.",
+    "signIn": "Sign in to answer this request",
+    "loading": "Opening the request…",
+    "notice": "All data was deleted at {{name}}'s request",
+    "noticeAnon": "All data was deleted"
   }
 }

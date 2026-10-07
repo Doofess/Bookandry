@@ -35,6 +35,7 @@ import { FeedScreen } from '@/features/feed/feed-screen';
 import { FirstRun } from '@/features/first-run/first-run';
 import { HouseholdScreen } from '@/features/household/household-screen';
 import { LinkScreen } from '@/features/household/link-screen';
+import { WipeScreen } from '@/features/household/wipe-screen';
 import { CategoriesScreen } from '@/features/settings/categories-screen';
 import { DataScreen } from '@/features/settings/data-screen';
 import { PreferencesScreen } from '@/features/settings/preferences-screen';
@@ -62,6 +63,7 @@ const router = createBrowserRouter([
       { path: ROUTES.household, element: <HouseholdScreen /> },
       { path: LINKED_ROUTES.profiles, element: <Navigate to={ROUTES.household} replace /> },
       { path: LINKED_ROUTES.link, element: <LinkScreen /> },
+      { path: LINKED_ROUTES.wipe, element: <WipeScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
       { path: SETTINGS_ROUTES.account, element: <AccountScreen /> },
       { path: SETTINGS_ROUTES.security, element: <SecurityScreen /> },

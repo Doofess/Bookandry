@@ -36,6 +36,8 @@ export const LINKED_ROUTES = {
   profiles: '/profiles',
   /** Where an emailed invitation to link accounts lands. */
   link: '/link',
+  /** Where an emailed request to delete a household's data lands. */
+  wipe: '/wipe',
 } as const;
 
 /** Settings, one page per subject. `/settings` itself lists them. */
