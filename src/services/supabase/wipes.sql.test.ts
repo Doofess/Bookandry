@@ -297,6 +297,32 @@ describe('erasing a household', () => {
     expect(await refused(bob.rpc('request_wipe', {}))).toBe('too_many_wipe_requests');
   });
 
+  it('lets the mailer remove a request no email went out for, so trying again is not refused', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob']);
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    await t.pg.transaction(async (tx) => {
+      await tx.exec('set local role service_role');
+      await tx.query('select public.discard_wipe($1)', [asks.id]);
+    });
+    const { rows } = await t.pg.query<{ n: number }>(
+      `select (select count(*) from public.wipe_requests)::int
+            + (select count(*) from public.wipe_confirmations)::int as n`,
+    );
+    expect(rows[0]?.n).toBe(0);
+    expect(await refused(bob.rpc('peek_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+    // Not counted against the hour: the request can be made again at once.
+    expect(await refused(alice.rpc('request_wipe', {}))).toBe('accepted');
+  });
+
+  it('keeps removing a request to the mailer: no member can call it', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob']);
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    for (const s of [alice, bob, t.as(null)]) {
+      expect(await refused(s.rpc('discard_wipe', { p_id: asks.id }))).toMatch(/permission denied/);
+    }
+    expect(await bob.rpc('wipe_status', {})).toMatchObject({ status: 'pending' });
+  });
+
   it('lets no one read or write the request tables directly', async () => {
     for (const table of ['wipe_requests', 'wipe_confirmations']) {
       expect(await refused(alice.query(`select * from public.${table}`))).toMatch(/permission denied/);
