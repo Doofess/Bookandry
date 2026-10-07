@@ -619,12 +619,10 @@ export class AccountController {
   /** Ask the household to agree to an erase: each member is emailed a link. */
   async requestWipe(language: 'en' | 'he'): Promise<SendWipeOutcome> {
     if (this.view.status !== 'signed_in') return { ok: false, error: 'not_linked' };
-    const user = this.view.user;
-    const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
     try {
       const { sendWipeRequests } = await import('@/services/supabase/send-wipe');
       await this.connect();
-      return await sendWipeRequests(await getSupabase(), language, name);
+      return await sendWipeRequests(await getSupabase(), language);
     } catch {
       return { ok: false, error: 'offline' };
     }
