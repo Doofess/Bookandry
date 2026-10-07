@@ -461,6 +461,12 @@ export function redirectId(tbl: RedirectTable, from: string): string {
   return `${tbl}:${from}`;
 }
 
+/** The kinds of purchase terms a card company offers; the card catalog's deal rules are keyed by these. */
+export type DealKind = 'regular' | 'installments' | 'credit' | 'long_credit' | 'deferred' | 'split_purchase';
+
+/** Rates a card carries beyond its deals. */
+export type ExtraRateKind = 'late' | 'over_limit' | 'cash';
+
 export type Settings = {
   readonly id: 'singleton';
   readonly defaultCurrency: Currency;

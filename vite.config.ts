@@ -184,7 +184,7 @@ export default defineConfig(({ mode }) => ({
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['src/{lib,domain,i18n}/**/*.test.ts'],
+          include: ['src/{lib,domain,i18n,data}/**/*.test.ts'],
         },
       },
       {
