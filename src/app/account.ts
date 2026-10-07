@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from 'react';
 
 import type { BookandryDB } from '@/db/db';
+import { LOCK_SYNC, withLock } from '@/db/lock';
 import { ensureMember } from '@/db/members';
 import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
 import type { SyncSpace, SyncSpaces } from '@/db/sync/engine';
 import { PULLED_TO_HEAD_KEY } from '@/db/sync/engine';
+import { eraseLocalData } from '@/db/sync/erase';
 import { loadKeys, loadSpaceKeys } from '@/db/sync/keystore';
 import { connectLinked } from '@/db/sync/linked';
 import { forgetSpace, knownSpaces } from '@/db/sync/spaces';
@@ -45,6 +47,17 @@ import {
   setupKeys,
   type Rpc,
 } from '@/services/supabase/transport';
+import {
+  cancelWipe,
+  confirmWipe,
+  declineWipe,
+  peekWipe,
+  wipeMyData,
+  wipeStatus,
+  type SendWipeOutcome,
+  type WipePreview,
+  type WipeStatus,
+} from '@/services/supabase/wipe';
 import type { Kind } from '@/types/money';
 
 import {
@@ -55,6 +68,7 @@ import {
   storeAvatar,
   storeMemberAvatar,
 } from './avatar-store';
+import { eraseThisDevice } from './erase-device';
 import { idleExpired, touch, watchIdle, type IdleWatch } from './idle-lock';
 import { clearShared } from './shared-files';
 import { startSyncRunner, type SyncRunner, type SyncState } from './sync-runner';
@@ -130,6 +144,8 @@ export type AccountView =
        * the server has been asked.
        */
       readonly household?: Household | null;
+      /** This device was cleared by someone's erase: who asked, and when. */
+      readonly wipeNotice?: { readonly by: string | undefined; readonly at: number };
     };
 
 type SignedIn = Extract<AccountView, { status: 'signed_in' }>;
@@ -446,6 +462,7 @@ export class AccountController {
         };
         return { own, linked: await this.linkedSpaces(rpc, userId) };
       },
+      onWiped: () => this.afterWipe(),
       onState: (sync) => {
         this.patch({ sync });
         if (sync.kind === 'idle' || sync.kind === 'rebasing') void this.afterSync();
@@ -555,6 +572,75 @@ export class AccountController {
     } catch {
       // Initials stand in until the next sync brings it.
     }
+  }
+
+  // -- deleting all data ----------------------------------------------------------
+
+  /**
+   * An erase reached this device: the engine already cleared it, so what is
+   * left is to start over as a new member would, and say who asked.
+   */
+  private async afterWipe(): Promise<void> {
+    // The person is queued again by the erase; ensureMember waits for the next pull to head.
+    this.memberReady = false;
+    let by: string | undefined;
+    try {
+      const status = await wipeStatus(await this.connect());
+      if (status?.status === 'done') by = status.requesterName;
+    } catch {
+      // Named or not, the notice still shows.
+    }
+    this.patch({ wipeNotice: { by, at: systemClock.nowMs() } });
+  }
+
+  /** Alone: erase everything, on the server and here. Signed out: here only. */
+  async wipeMyData(): Promise<void> {
+    if (this.view.status !== 'signed_in') {
+      await eraseThisDevice(this.db);
+      return;
+    }
+    const userId = this.view.user.id;
+    const epoch = await wipeMyData(await this.connect());
+    await withLock(LOCK_SYNC, () => eraseLocalData(this.db, { epochs: new Map([[userId, epoch]]) }));
+    this.memberReady = false;
+    this.runner?.now();
+  }
+
+  /** Ask the household to agree to an erase: each member is emailed a link. */
+  async requestWipe(language: 'en' | 'he'): Promise<SendWipeOutcome> {
+    if (this.view.status !== 'signed_in') return { ok: false, error: 'not_linked' };
+    const user = this.view.user;
+    const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
+    const { sendWipeRequests } = await import('@/services/supabase/send-wipe');
+    try {
+      await this.connect();
+      return await sendWipeRequests(await getSupabase(), language, name);
+    } catch {
+      return { ok: false, error: 'offline' };
+    }
+  }
+
+  async wipeStatus(): Promise<WipeStatus | null> {
+    return wipeStatus(await this.connect());
+  }
+
+  async peekWipe(token: string): Promise<WipePreview> {
+    return peekWipe(await this.connect(), token);
+  }
+
+  /** The last confirmation erases; this device is told by its next sync, so ask for one. */
+  async confirmWipe(token: string): Promise<'waiting' | 'done'> {
+    const outcome = await confirmWipe(await this.connect(), token);
+    if (outcome === 'done') this.runner?.now();
+    return outcome;
+  }
+
+  async declineWipe(token: string): Promise<void> {
+    await declineWipe(await this.connect(), token);
+  }
+
+  async cancelWipe(): Promise<void> {
+    await cancelWipe(await this.connect());
   }
 
   /** Ask the server who is in the household now. */

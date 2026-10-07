@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureSettings } from '@/db/repos/settings';
 import { DATA_OWNER_KEY } from '@/db/sync/account';
 import { adoptKeyring, loadKeys } from '@/db/sync/keystore';
+import { epochKeyOf } from '@/db/sync/tables';
 import { instantFromMs } from '@/lib/dates';
 import { deriveKeyring, newDataKey } from '@/services/crypto/keys';
 import type * as Client from '@/services/supabase/client';
@@ -555,5 +556,39 @@ describe('two-step sign-in', () => {
     await c.cancelSecondStep();
     expect(c.getView()).toMatchObject({ status: 'locked' });
     expect(restarted).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleting all data', () => {
+  it('alone: erases here and on the server, and remembers the erase under the account', async () => {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    await device.db.transactions.put({ id: 't1' } as never);
+
+    await c.wipeMyData();
+
+    expect(await device.db.transactions.count()).toBe(0);
+    expect(await device.db.categories.count()).toBeGreaterThan(20);
+    const epoch = (await device.db.meta.get(epochKeyOf(USER)))?.value;
+    expect(typeof epoch).toBe('number');
+    expect(c.getView()).not.toHaveProperty('wipeNotice');
+  });
+
+  it('signed out: clears only the device', async () => {
+    fake.session = null;
+    const c = make();
+    c.start();
+    await vi.waitFor(() => {
+      expect(c.getView().status).toBe('signed_out');
+    });
+    await device.db.transactions.put({ id: 't1' } as never);
+
+    await c.wipeMyData();
+
+    expect(await device.db.transactions.count()).toBe(0);
+    expect(await device.db.meta.get(epochKeyOf(USER))).toBeUndefined();
   });
 });

@@ -45,6 +45,8 @@ export type SyncRunnerDeps = {
    */
   readonly transport: () => Promise<SyncTransport | SyncSpaces>;
   readonly onState: (state: SyncState) => void;
+  /** A sync cleared this device: another account's erase reached it. Once per erase. */
+  readonly onWiped?: () => Promise<void> | void;
   /** Tests pass fakes; the app passes the window. */
   readonly target?: Pick<Window, 'addEventListener' | 'removeEventListener'>;
   readonly isOnline?: () => boolean;
@@ -105,6 +107,7 @@ export function startSyncRunner(deps: SyncRunnerDeps): SyncRunner {
       });
       lastSyncedAt = systemClock.nowMs();
       backoff = 0;
+      if (report.wiped) await deps.onWiped?.();
       onState(stateAfter(report, lastSyncedAt));
     } catch (error) {
       const kind = classify(error, isOnline());
