@@ -280,6 +280,30 @@ describe('a spreadsheet', () => {
     ]);
   });
 
+  it("keeps the merchants' categories when the answer's columns do not hold, and tries a failed call twice", async () => {
+    const rows = [
+      ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה'],
+      ['04/10/2026', 'בית קפה חדש', '18.00'],
+    ];
+    // Only categories came back: the dictionary already knows the columns.
+    const onlyCats = await run([sheet(rows)], { map: [ok({ mc: [{ m: 'בית קפה חדש', cat: 'c1' }] })] });
+    expect(onlyCats.result.rows.map((r) => r.categoryAlias)).toEqual(['c1']);
+
+    const failed: ExtractOutcome = { ok: false, error: 'upstream' };
+    const retried = await run([sheet(rows)], {
+      map: [failed, ok({ mc: [{ m: 'בית קפה חדש', cat: 'c1' }] })],
+    });
+    expect(retried.calls).toHaveLength(2);
+    expect(retried.result.rows.map((r) => r.categoryAlias)).toEqual(['c1']);
+
+    // Twice failed, or out of quota: the rows still come, for the person to file.
+    const twice = await run([sheet(rows)], { map: [failed, failed] });
+    expect(twice.result.rows.map((r) => [r.amountMinor, r.categoryAlias])).toEqual([[1_800, null]]);
+    const quota = await run([sheet(rows)], { map: [{ ok: false, error: 'quota' }] });
+    expect(quota.calls).toHaveLength(1);
+    expect(quota.result.rows).toHaveLength(1);
+  });
+
   it('asks which column is which only when the headers are unknown', async () => {
     const { result, calls } = await run(
       [

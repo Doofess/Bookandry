@@ -35,6 +35,7 @@ import {
 import {
   cleanExtract,
   cleanMap,
+  cleanMerchantCats,
   cleanVerify,
   LIMITS,
   tokensForRows,
@@ -567,16 +568,45 @@ async function readWorkbook(
     }
     if (unknown.length > 0) {
       const header = sheet.rows.slice(map.headerRow, map.headerRow + 3);
-      const answer = await askMap(header, unknown.slice(0, LIMITS.merchants), ctx, ask).catch(
-        () => undefined,
-      );
-      merchantCats = new Map((answer?.mc ?? []).map((m) => [m.m, m.cat]));
+      const cats = await askCategories(header, unknown.slice(0, LIMITS.merchants), ctx, ask);
+      merchantCats = new Map(cats.map((m) => [m.m, m.cat]));
     }
     out.push(
       ...read.rows.map((row) => ({ ...row, categoryAlias: merchantCats.get(row.description) ?? null })),
     );
   }
   return out;
+}
+
+/**
+ * Categories for merchants the household has not filed before. Worth a second
+ * try: without them every row falls to Other. Only the categories are read -
+ * the columns came from the dictionary or an earlier call.
+ */
+const NO_RETRY: ReadonlySet<ExtractError> = new Set(['aborted', 'quota', 'unauthorized', 'offline']);
+
+async function askCategories(
+  header: readonly (readonly Cell[])[],
+  merchants: readonly string[],
+  ctx: ImportContext,
+  ask: (r: WireRequest) => Promise<unknown>,
+): Promise<{ m: string; cat: string | null }[]> {
+  const request: WireRequest = {
+    mode: 'map',
+    ctx: ctx.wire,
+    rows: sampleRows(header),
+    merchants,
+    maxTokens: tokensForRows(10 + merchants.length / 2),
+  };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return cleanMerchantCats(await ask(request), ctx.wire);
+    } catch (error) {
+      // Stopped, or out of quota: no second try - and the rows still come, filed as Other.
+      if (!(error instanceof Failure) || NO_RETRY.has(error.code)) break;
+    }
+  }
+  return [];
 }
 
 async function askMap(
