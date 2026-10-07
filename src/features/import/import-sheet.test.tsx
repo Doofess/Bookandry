@@ -323,13 +323,23 @@ describe('Smart import', () => {
     expect(await db.paymentMethods.filter((m) => m.label === 'Dream Card VIP').count()).toBe(1);
   });
 
-  it('in a household, asks whose the files are before reading, and adds what is found for them', async () => {
+  it('in a household, fills in whose each row is where the file says, and asks for the rest', async () => {
     writeSession(undefined);
     reader.answers = [
       {
         ok: true,
         usage,
-        result: { r: [wireRow({ d: '06/09/26', a: '42.00', m: 'Aroma' })], t: [], per: null, done: true },
+        result: {
+          r: [
+            // The statement names Yossi as the holder.
+            wireRow({ d: '06/09/26', a: '42.00', m: 'Aroma', w: 'u2' }),
+            // Nothing says whose this is.
+            wireRow({ d: '07/09/26', a: '18.00', m: 'Kiosk' }),
+          ],
+          t: [],
+          per: null,
+          done: true,
+        },
       },
       { ok: true, usage, result: { r: [] } },
     ];
@@ -353,24 +363,36 @@ describe('Smart import', () => {
     );
 
     const whose = screen.getByRole('radiogroup', { name: 'Whose spending and income is this?' });
-    // Looking at everyone: not answered for them.
+    // Looking at everyone: not answered for them - and reading need not wait for it.
     expect(within(whose).getByRole('radio', { name: 'Dana' })).not.toBeChecked();
     expect(within(whose).getByRole('radio', { name: 'Yossi' })).not.toBeChecked();
+    const text = '06/09/26 Aroma 42.00\n07/09/26 Kiosk 18.00\n';
     await user.upload(
       screen.getByTestId('import-input'),
-      new File(['06/09/26 Aroma 42.00\n'], 'card.txt', { type: 'text/plain' }),
+      new File([text], 'card.txt', { type: 'text/plain' }),
     );
-    expect(screen.getByRole('button', { name: 'Choose whose this is' })).toBeDisabled();
-
-    await user.click(within(whose).getByRole('radio', { name: 'Yossi' }));
     await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+
     await screen.findByRole('button', { name: 'Ready (1)' });
+    // The reader was told who is in the household, by alias.
+    const request = reader.calls.at(-1);
+    expect(request?.ctx.ppl).toEqual([
+      { a: 'u1', n: 'Dana' },
+      { a: 'u2', n: 'Yossi' },
+    ]);
+    expect(screen.getByText('Choose whose this is.')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Add Aroma' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Add Kiosk' })).not.toBeChecked();
+
+    // "For" answers the rest; the row the file named stays Yossi's.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'For' }), 'Dana');
+    expect(await screen.findByRole('checkbox', { name: 'Add Kiosk' })).toBeChecked();
     await user.click(screen.getByTestId('import-add'));
 
     await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith('2026-09-06');
+      expect(onSaved).toHaveBeenCalled();
     });
-    const aroma = await db.transactions.filter((t) => t.note === 'Aroma').toArray();
-    expect(aroma.map((t) => t.profileId)).toEqual(['p2']);
+    const saved = await db.transactions.filter((t) => t.note === 'Aroma' || t.note === 'Kiosk').toArray();
+    expect(Object.fromEntries(saved.map((t) => [t.note, t.profileId]))).toEqual({ Aroma: 'p2', Kiosk: 'p1' });
   });
 });

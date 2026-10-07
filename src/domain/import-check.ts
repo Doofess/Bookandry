@@ -36,7 +36,8 @@ export type Flag =
   | 'total_estimated'
   | 'total_mismatch'
   | 'not_saveable'
-  | 'rate_missing';
+  | 'rate_missing'
+  | 'whose_unknown';
 
 /** Flags that leave a row unticked: it is not added unless the person says so. */
 export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
@@ -54,6 +55,7 @@ export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
   'card_fee_counted',
   'not_saveable',
   'rate_missing',
+  'whose_unknown',
 ]);
 
 export type FoundPlan = {

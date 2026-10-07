@@ -20,6 +20,8 @@
 
 export type WireCategory = { readonly a: string; readonly n: string; readonly k: 'e' | 'i' };
 export type WireMethod = { readonly a: string; readonly n: string; readonly t: string };
+/** A person of the household, by the name they go by. */
+export type WirePerson = { readonly a: string; readonly n: string };
 
 export type WireContext = {
   readonly today: string;
@@ -27,6 +29,8 @@ export type WireContext = {
   readonly lang: 'he' | 'en';
   readonly cats: readonly WireCategory[];
   readonly pms: readonly WireMethod[];
+  /** Only a household of two or more sends its people: whose a document is, is asked then. */
+  readonly ppl?: readonly WirePerson[];
 };
 
 export const IMAGE_MEDIA = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
@@ -117,6 +121,8 @@ export type WireRow = {
   readonly pl: WirePlan | null;
   /** The last four digits of the card it was charged to, when printed; '' otherwise. */
   readonly l4: string;
+  /** Whose it is - a person's alias - when the document prints their name as its holder. */
+  readonly w?: string;
 };
 
 /**
@@ -216,6 +222,7 @@ export const LIMITS = {
   label: 80,
   cats: 80,
   pms: 40,
+  people: 12,
   name: 60,
   alias: 6,
   sheetRows: 20,
@@ -253,7 +260,7 @@ export function base64Bytes(data: string): number {
 
 function parseContext(v: unknown): WireContext | undefined {
   if (!isObject(v)) return undefined;
-  const { today, base, lang, cats, pms } = v;
+  const { today, base, lang, cats, pms, ppl } = v;
   if (!isText(today, 10) || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return undefined;
   if (!isText(base, 3) || !/^[A-Z]{3}$/.test(base)) return undefined;
   if (lang !== 'he' && lang !== 'en') return undefined;
@@ -279,7 +286,14 @@ function parseContext(v: unknown): WireContext | undefined {
     }
     outPms.push({ a: p.a, n: p.n, t: p.t });
   }
-  return { today, base, lang, cats: outCats, pms: outPms };
+  // Absent from an app from before households.
+  if (ppl !== undefined && (!Array.isArray(ppl) || ppl.length > LIMITS.people)) return undefined;
+  const outPpl: WirePerson[] = [];
+  for (const p of ppl ?? []) {
+    if (!isObject(p) || !isText(p.a, LIMITS.alias) || !isText(p.n, LIMITS.name)) return undefined;
+    outPpl.push({ a: p.a, n: p.n });
+  }
+  return { today, base, lang, cats: outCats, pms: outPms, ...(outPpl.length === 0 ? {} : { ppl: outPpl }) };
 }
 
 function parseSources(v: unknown): WireSource[] | undefined {
@@ -455,6 +469,7 @@ export function cleanRow(v: unknown, sourceCount: number, ctx: WireContext): Wir
   const cat = alias(v.cat, ctx.cats);
   // A category of the other kind is no answer at all.
   const catKind = ctx.cats.find((c) => c.a === cat)?.k;
+  const w = alias(v.w, ctx.ppl ?? []);
   return {
     s: v.s,
     p: isInt(v.p, 0, 10_000) ? v.p : null,
@@ -473,6 +488,7 @@ export function cleanRow(v: unknown, sourceCount: number, ctx: WireContext): Wir
     pm: alias(v.pm, ctx.pms),
     pl: cleanPlan(v.pl),
     l4: lastFour(v.l4),
+    ...(w === null ? {} : { w }),
   };
 }
 
@@ -642,7 +658,12 @@ t: totals the document prints (סה"כ לחיוב, total charge), with l the lab
 export function contextText(ctx: WireContext): string {
   const cats = ctx.cats.map((c) => `${c.a} ${c.n} (${c.k})`).join('\n');
   const pms = ctx.pms.map((p) => `${p.a} ${p.n} (${p.t})`).join('\n');
-  return `Today: ${ctx.today}. Base currency: ${ctx.base}.\nCategories (alias name kind):\n${cats}\nPayment methods:\n${pms === '' ? 'none' : pms}`;
+  const people = ctx.ppl ?? [];
+  const whose =
+    people.length === 0
+      ? ''
+      : `\nPeople in the household (alias name):\n${people.map((p) => `${p.a} ${p.n}`).join('\n')}\nw: whose the row is - the alias of the person whose name the document prints as its holder: the cardholder of a statement or of a card's section of one, the account holder, the customer on a receipt or notification. Match a printed name to these names in any language, spelling or form (a first name, a full name, initials with a surname). null when no holder's name is printed, it matches none of them, or several of them hold the account.`;
+  return `Today: ${ctx.today}. Base currency: ${ctx.base}.\nCategories (alias name kind):\n${cats}\nPayment methods:\n${pms === '' ? 'none' : pms}${whose}`;
 }
 
 /** The instruction that ends an extract request. */
@@ -687,8 +708,14 @@ function rowProperties(ctx: WireContext): Record<string, unknown> {
       additionalProperties: false,
     }),
     l4: text,
+    // Asked only of a household: alone, every row is the one person's.
+    ...(ctx.ppl === undefined || ctx.ppl.length === 0 ? {} : { w: aliasSchema(ctx.ppl.map((p) => p.a)) }),
   };
 }
+
+/** Every row field, all required; `w` only when people were sent. */
+const rowKeys = (ctx: WireContext): string[] =>
+  ctx.ppl === undefined || ctx.ppl.length === 0 ? ROW_KEYS : [...ROW_KEYS, 'w'];
 
 const ROW_KEYS = [
   's',
@@ -735,7 +762,7 @@ export function extractSchema(ctx: WireContext): Record<string, unknown> {
         items: {
           type: 'object',
           properties: rowProperties(ctx),
-          required: ROW_KEYS,
+          required: rowKeys(ctx),
           additionalProperties: false,
         },
       },
@@ -779,7 +806,7 @@ export function verifySchema(ctx: WireContext, ids: readonly string[]): Record<s
         items: {
           type: 'object',
           properties: { id: { type: 'string', enum: [...ids] }, ...rowProperties(ctx) },
-          required: ['id', ...ROW_KEYS],
+          required: ['id', ...rowKeys(ctx)],
           additionalProperties: false,
         },
       },
