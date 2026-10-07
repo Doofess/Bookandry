@@ -1053,30 +1053,28 @@ describe('an erase reaching a device', () => {
     server.erase();
     theirs.erase();
     // Their device already re-sent its settings after the erase.
-    await theirs
-      .transport()
-      .push(
-        [
-          {
-            tbl: 'categories',
+    await theirs.transport().push(
+      [
+        {
+          tbl: 'categories',
+          id: 'cat.after',
+          rev: '9999999999999999.ffff.zzzzzzzz' as never,
+          deleted: false,
+          row: {
             id: 'cat.after',
-            rev: '9999999999999999.ffff.zzzzzzzz' as never,
-            deleted: false,
-            row: {
-              id: 'cat.after',
-              kind: 'expense',
-              name: 'After',
-              icon: 'Circle',
-              source: 'custom',
-              sortOrder: 99,
-              isArchived: 0,
-              createdAt: now(),
-              updatedAt: now(),
-            },
+            kind: 'expense',
+            name: 'After',
+            icon: 'Circle',
+            source: 'custom',
+            sortOrder: 99,
+            isArchived: 0,
+            createdAt: now(),
+            updatedAt: now(),
           },
-        ],
-        1,
-      );
+        },
+      ],
+      1,
+    );
 
     const report = await syncBoth();
     expect(report.wiped).toBe(true);
