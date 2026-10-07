@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureSettings } from '@/db/repos/settings';
 import { KeyUnavailableError } from '@/db/sync/codec';
 import type { SyncTransport } from '@/db/sync/protocol';
+import { SYNC_WIPED_KEY } from '@/db/sync/tables';
 import { instantFromMs } from '@/lib/dates';
 import { ServerError } from '@/services/supabase/transport';
 import { freshDb, type TestDb } from '@/test/db-harness';
@@ -164,6 +165,43 @@ describe('the sync runner', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     await settle();
     expect(calls).toBe(0);
+  });
+});
+
+describe('being told the data was erased', () => {
+  const startWith = (onWiped: () => void): void => {
+    runner = startSyncRunner({
+      db: handle.db,
+      transport: () => Promise.resolve(transport()),
+      onState: (s) => states.push(s),
+      onWiped,
+      target,
+      isOnline: () => online,
+    });
+  };
+
+  it('says so once, when a sync reports the device was cleared', async () => {
+    await handle.db.meta.put({ key: SYNC_WIPED_KEY, value: true });
+    const onWiped = vi.fn<() => void>();
+    startWith(onWiped);
+    await vi.waitFor(() => {
+      expect(last()).toBe('idle');
+    });
+    runner?.now();
+    await vi.waitFor(() => {
+      expect(pulls).toBeGreaterThan(1);
+    });
+    await settle();
+    expect(onWiped).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing otherwise', async () => {
+    const onWiped = vi.fn<() => void>();
+    startWith(onWiped);
+    await vi.waitFor(() => {
+      expect(last()).toBe('idle');
+    });
+    expect(onWiped).not.toHaveBeenCalled();
   });
 });
 
