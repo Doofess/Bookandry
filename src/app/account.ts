@@ -7,7 +7,6 @@ import { connectDevice, dataOwner, type KeyServer } from '@/db/sync/account';
 import { encryptingTransport, KeyUnavailableError } from '@/db/sync/codec';
 import type { SyncSpace, SyncSpaces } from '@/db/sync/engine';
 import { PULLED_TO_HEAD_KEY } from '@/db/sync/engine';
-import { eraseLocalData } from '@/db/sync/erase';
 import { loadKeys, loadSpaceKeys } from '@/db/sync/keystore';
 import { connectLinked } from '@/db/sync/linked';
 import { forgetSpace, knownSpaces } from '@/db/sync/spaces';
@@ -145,7 +144,12 @@ export type AccountView =
        */
       readonly household?: Household | null;
       /** This device was cleared by someone's erase: who asked, and when. */
-      readonly wipeNotice?: { readonly by: string | undefined; readonly at: number };
+      readonly wipeNotice?: {
+        readonly by: string | undefined;
+        readonly at: number;
+        /** Who asked is still being looked up: the notice waits briefly for it. */
+        readonly naming?: boolean;
+      };
     };
 
 type SignedIn = Extract<AccountView, { status: 'signed_in' }>;
@@ -462,7 +466,9 @@ export class AccountController {
         };
         return { own, linked: await this.linkedSpaces(rpc, userId) };
       },
-      onWiped: () => this.afterWipe(),
+      onWiped: () => {
+        this.afterWipe();
+      },
       onState: (sync) => {
         this.patch({ sync });
         if (sync.kind === 'idle' || sync.kind === 'rebasing') void this.afterSync();
@@ -580,17 +586,30 @@ export class AccountController {
    * An erase reached this device: the engine already cleared it, so what is
    * left is to start over as a new member would, and say who asked.
    */
-  private async afterWipe(): Promise<void> {
+  private afterWipe(): void {
     // The person is queued again by the erase; ensureMember waits for the next pull to head.
     this.memberReady = false;
+    // Shared files are the data too, and the engine's clear does not reach them.
+    void clearShared().catch(() => undefined);
+    // Told at once, so the sync's own state is not held up by the server; who
+    // asked is looked up after, and the notice waits a moment for the name.
+    const at = systemClock.nowMs();
+    this.patch({ wipeNotice: { by: undefined, at, naming: true } });
+    void this.nameWipe(at);
+  }
+
+  private async nameWipe(at: number): Promise<void> {
     let by: string | undefined;
     try {
       const status = await wipeStatus(await this.connect());
-      if (status?.status === 'done') by = status.requesterName;
+      // A blank name reads as no name: "at 's request" is worse than none.
+      if (status?.status === 'done') by = status.requesterName || undefined;
     } catch {
       // Named or not, the notice still shows.
     }
-    this.patch({ wipeNotice: { by, at: systemClock.nowMs() } });
+    // Only for the erase it was asked about: a later one has its own lookup.
+    if (this.view.status !== 'signed_in' || this.view.wipeNotice?.at !== at) return;
+    this.patch({ wipeNotice: { by, at } });
   }
 
   /** Alone: erase everything, on the server and here. With no account on the device: here only. */
@@ -610,7 +629,7 @@ export class AccountController {
     // someone else's erase.
     await withLock(LOCK_SYNC, async () => {
       const epoch = await wipeMyData(rpc);
-      await eraseLocalData(this.db, { epochs: new Map([[userId, epoch]]) });
+      await eraseThisDevice(this.db, { epochs: new Map([[userId, epoch]]) });
     });
     this.memberReady = false;
     this.runner?.now();
