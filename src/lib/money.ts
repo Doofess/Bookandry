@@ -642,3 +642,81 @@ export function percentOf(minor: Minor, percent: string): Minor {
   const rate = decimalToRational(percent);
   return toSafeNumber(divRound(BigInt(minor) * rate.n, rate.d * 100n));
 }
+
+/**
+ * The מתואמת rate: what a nominal annual rate really costs once the interest
+ * compounds `periodsPerYear` times a year - (1 + nominal/m)^m − 1, as a percent
+ * rounded half-up to two places ("15.25" monthly is "16.36").
+ *
+ * Exact, like the rest of this file: with r = a/b the power is
+ * ((b+a)^m − b^m) / b^m, so the whole thing is one integer division.
+ */
+export function annualEffectiveRate(nominalPercent: string, periodsPerYear: 12 | 4): string {
+  const rate = decimalToRational(nominalPercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  const m = BigInt(periodsPerYear);
+  const a = rate.n;
+  const b = rate.d * 100n * m;
+  const bPower = b ** m;
+  // Percent with two places: ×100 for percent, ×100 for the places.
+  const hundredths = divRound(10000n * ((b + a) ** m - bPower), bPower);
+  const digits = hundredths.toString().padStart(3, '0');
+  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+/**
+ * A קרדיט פלוס rate after prime moves: the rate at purchase plus however far
+ * prime has travelled since, never below zero. Exact decimal strings in and out.
+ */
+export function resetRate(rateAtPurchase: string, primeAtPurchase: string, primeNow: string): string {
+  const was = primeAtPurchase.trim();
+  const change = addRates(primeNow, was.startsWith('-') ? was.slice(1) : `-${was}`);
+  const next = addRates(rateAtPurchase, change);
+  return next.startsWith('-') ? '0' : next;
+}
+
+/**
+ * The payments of a long קרדיט plan whose rate follows prime. Payments before
+ * `reset.atPayment` are the level Spitzer payment over all the months; at the
+ * reset the balance still owed is re-amortized at the new rate over the
+ * payments left.
+ *
+ *   B_k = P(1+i)^k − p((1+i)^k − 1)/i,  i = rate/1200,  k = atPayment − 1
+ *
+ * With i = a/b that is (P·a·G − p·b·(G − b^k)) / (a·b^k), G = (b+a)^k, and p
+ * the exact (unrounded) level payment: exact, rounded once.
+ */
+export function longCreditPayments(
+  principalMinor: Minor,
+  ratePercent: string,
+  months: number,
+  reset: { atPayment: number; rate: string } | undefined,
+): { first: Minor; afterReset?: Minor } {
+  const first = spitzerPayment(principalMinor, ratePercent, months);
+  if (reset === undefined) return { first };
+  const k = reset.atPayment - 1;
+  if (!Number.isSafeInteger(k) || k < 0 || k >= months) {
+    throw new RangeError(`the reset must fall on a payment from 1 to ${String(months)}`);
+  }
+
+  const rate = decimalToRational(ratePercent);
+  let balance: bigint;
+  if (rate.n === 0n) {
+    balance = BigInt(principalMinor) - BigInt(first) * BigInt(k);
+  } else {
+    const a = rate.n;
+    const b = rate.d * 1200n;
+    const bPower = b ** BigInt(k);
+    const grown = (b + a) ** BigInt(k);
+    // The exact level payment N/D, not the agora-rounded one: rounding it
+    // would compound through k months into the balance.
+    const grownAll = (b + a) ** BigInt(months);
+    const level = { n: BigInt(principalMinor) * a * grownAll, d: b * (grownAll - b ** BigInt(months)) };
+    balance = divRound(
+      BigInt(principalMinor) * a * grown * level.d - level.n * b * (grown - bPower),
+      level.d * a * bPower,
+    );
+  }
+  if (balance < 0n) balance = 0n;
+  return { first, afterReset: spitzerPayment(toSafeNumber(balance), reset.rate, months - k) };
+}
