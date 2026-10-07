@@ -17,12 +17,11 @@ const REFUSALS = new Set(['not_linked', 'wipe_pending', 'too_many_wipe_requests'
 export async function sendWipeRequests(
   supabase: SupabaseClient,
   language: 'en' | 'he',
-  requesterName: string,
 ): Promise<SendWipeOutcome> {
   let result;
   try {
     result = await supabase.functions.invoke('send-wipe-requests', {
-      body: { language, requesterName: requesterName.slice(0, 80) },
+      body: { language },
     });
   } catch {
     return { ok: false, error: 'offline' };

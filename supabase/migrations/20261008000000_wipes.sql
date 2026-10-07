@@ -240,6 +240,7 @@ create trigger household_members_cancel_wipes
 
 -- Returns each other member's one-time token, not their address: members share
 -- no email beyond the one an inviter typed. The mailer looks addresses up itself.
+-- The requester is named here, by the server: a name the client sent could pose as anyone.
 create function public.request_wipe() returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -281,7 +282,8 @@ begin
     values (rid, m.user_id, private.token_hash(token));
     asks := asks || jsonb_build_object('userId', m.user_id, 'token', token);
   end loop;
-  return jsonb_build_object('id', rid, 'asks', asks);
+  return jsonb_build_object('id', rid, 'asks', asks, 'requesterName',
+    coalesce((select display_name from public.household_members where user_id = uid), ''));
 end
 $$;
 

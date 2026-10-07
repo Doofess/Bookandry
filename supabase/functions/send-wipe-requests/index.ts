@@ -3,7 +3,7 @@
  * by email.
  *
  * The request is made by the database, as the signed-in caller (request_wipe:
- * supabase/migrations/20261008000000_wipes.sql), which returns one single-use
+ * supabase/migrations/20261008000000_wipes.sql), which returns the requester's name (as the server has it) and one single-use
  * token per other member - not their address, because members never learn
  * each other's sign-in address. This function looks each address up itself,
  * with the project's service-role key (SUPABASE_SERVICE_ROLE_KEY, which
@@ -16,7 +16,7 @@
  * the request is taken back (cancel_wipe), so no link exists that nobody
  * received. Emails, tokens and keys are never logged.
  *
- * Sent to Resend: each member's address, the requester's name and email, and
+ * Sent to Resend: each member's address, the requester's name (as the server has it) and
  * the link. Deployed with the Supabase MCP / CLI: `supabase functions deploy send-wipe-requests`.
  */
 import { createSupabaseContext } from 'npm:@supabase/server';
@@ -35,14 +35,13 @@ function cors(origin: string | null): Record<string, string> {
   };
 }
 
-type Input = { language: 'en' | 'he'; requesterName: string };
+type Input = { language: 'en' | 'he' };
 
 function parse(body: unknown): Input | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
-  const { language, requesterName } = body as Record<string, unknown>;
+  const { language } = body as Record<string, unknown>;
   if (language !== 'en' && language !== 'he') return undefined;
-  if (typeof requesterName !== 'string' || requesterName.length > 80) return undefined;
-  return { language, requesterName: requesterName.trim() };
+  return { language };
 }
 
 const escape = (s: string): string =>
@@ -50,13 +49,14 @@ const escape = (s: string): string =>
 
 function letter(
   input: Input,
-  from: string,
+  requester: string,
   to: string,
   link: string,
 ): { subject: string; html: string; text: string } {
   const he = input.language === 'he';
-  const name = input.requesterName === '' ? from : input.requesterName;
-  const who = `${escape(name)} (<span dir="ltr" style="unicode-bidi:embed">${escape(from)}</span>)`;
+  // Never the requester's address: members do not learn each other's.
+  const name = requester !== '' ? requester : he ? 'חבר/ה במשק הבית' : 'A member of your household';
+  const who = escape(name);
   const copy = he
     ? {
         subject: `${name} ביקש/ה למחוק את כל הנתונים של משק הבית ב־Bookandry`,
@@ -104,7 +104,6 @@ function letter(
   const text = [
     copy.title,
     '',
-    `${name} (${from})`,
     copy.body.replace(/<[^>]+>/g, ''),
     '',
     link,
@@ -129,7 +128,9 @@ export default {
     if (input === undefined) return Response.json({ error: 'email_failed' }, { status: 400, headers });
 
     const key = Deno.env.get('RESEND_API_KEY');
-    if (key === undefined || key === '')
+    // Checked before the request is made: a request made and taken back burns the hourly allowance.
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (key === undefined || key === '' || serviceKey === undefined || serviceKey === '')
       return Response.json({ error: 'email_failed' }, { status: 503, headers });
 
     const url = Deno.env.get('SUPABASE_URL') ?? '';
@@ -143,27 +144,28 @@ export default {
       const code = KNOWN.has(made.error.message) ? made.error.message : 'email_failed';
       return Response.json({ error: code }, { status: code === 'email_failed' ? 502 : 400, headers });
     }
-    const asks = (made.data as { asks: { userId: string; token: string }[] }).asks;
+    const answer = made.data as { asks?: unknown; requesterName?: unknown } | null;
+    const asks = answer?.asks;
+    const requester = typeof answer?.requesterName === 'string' ? answer.requesterName : '';
 
     // Taking the request back leaves no link that nobody received.
     const fail = async (status: number): Promise<Response> => {
-      await db.rpc('cancel_wipe');
-      console.log(JSON.stringify({ fn: 'send-wipe-requests', status }));
+      const cancelled = await db.rpc('cancel_wipe');
+      console.log(JSON.stringify({ fn: 'send-wipe-requests', status, cancelled: cancelled.error === null }));
       return Response.json({ error: 'email_failed' }, { status: 502, headers });
     };
 
+    if (!Array.isArray(asks) || asks.length === 0) return await fail(0);
+
     // Addresses are looked up here, never returned by the database. The
     // service-role key is used for these lookups and nothing else.
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (serviceKey === undefined || serviceKey === '') return await fail(0);
     const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
     const base = origin !== null && ORIGINS.has(origin) ? origin : 'https://bookandry.com';
-    const from = typeof ctx.userClaims.email === 'string' ? ctx.userClaims.email : '';
 
     // Every address first, so a missing one sends nothing at all.
     const recipients: { to: string; token: string }[] = [];
-    for (const ask of asks) {
+    for (const ask of asks as { userId: string; token: string }[]) {
       const found = await admin.auth.admin.getUserById(ask.userId).catch(() => undefined);
       const to = found?.error === null ? found.data.user?.email : undefined;
       if (typeof to !== 'string' || to === '') return await fail(0);
@@ -172,7 +174,7 @@ export default {
 
     for (const { to, token } of recipients) {
       const link = `${base}/wipe?t=${encodeURIComponent(token)}`;
-      const { subject, html, text } = letter(input, from, to, link);
+      const { subject, html, text } = letter(input, requester, to, link);
       const sent = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

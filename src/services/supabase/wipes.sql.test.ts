@@ -168,7 +168,7 @@ async function linkAll(...others: [Session, string, string][]): Promise<void> {
   // The first invitation is what makes Alice's household, so she can only be named after it.
   await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0 });
 }
-type Asks = { id: string; asks: { userId: string; token: string }[] };
+type Asks = { id: string; requesterName: string; asks: { userId: string; token: string }[] };
 const tokenFor = (asks: Asks, id: string) => asks.asks.find((a) => a.userId === id)!.token;
 
 describe('erasing a household', () => {
@@ -187,6 +187,7 @@ describe('erasing a household', () => {
     expect(asks.asks.map((a) => a.userId).sort()).toEqual([BOB, CAROL]);
     // Members share no email: a member who asks learns no one's address.
     expect(asks.asks.some((a) => 'email' in a)).toBe(false);
+    expect(asks.requesterName).toBe('Alice');
     expect(asks.asks.every((a) => /^[0-9a-f]{64}$/.test(a.token))).toBe(true);
 
     const status = (await bob.rpc('wipe_status', {})) as {
