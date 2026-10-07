@@ -702,7 +702,8 @@ export function longCreditPayments(
   const rate = decimalToRational(ratePercent);
   let balance: bigint;
   if (rate.n === 0n) {
-    balance = BigInt(principalMinor) - BigInt(first) * BigInt(k);
+    // P·(months−k)/months: the exact share still owed, rounded once.
+    balance = divRound(BigInt(principalMinor) * BigInt(months - k), BigInt(months));
   } else {
     const a = rate.n;
     const b = rate.d * 1200n;
@@ -717,6 +718,5 @@ export function longCreditPayments(
       level.d * a * bPower,
     );
   }
-  if (balance < 0n) balance = 0n;
   return { first, afterReset: spitzerPayment(toSafeNumber(balance), reset.rate, months - k) };
 }

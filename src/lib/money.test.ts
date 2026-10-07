@@ -859,6 +859,7 @@ describe('resetRate', () => {
     expect(resetRate('1', '5', '3')).toBe('0');
     expect(resetRate('1', '-2', '-3')).toBe('0');
     expect(resetRate('1', '-2', '-1')).toBe('2');
+    expect(resetRate('15.5', '0', '0.75')).toBe('16.25');
   });
 });
 describe('longCreditPayments', () => {
@@ -874,12 +875,35 @@ describe('longCreditPayments', () => {
     const free = longCreditPayments(120_000, '0', 12, { atPayment: 7, rate: '12' });
     expect(free.first).toBe(10_000);
     expect(free.afterReset).toBe(spitzerPayment(60_000, '12', 6));
-    // Rounded-up payments can outrun a tiny principal; the balance floors at 0.
-    expect(longCreditPayments(5, '0', 8, { atPayment: 8, rate: '10' }).afterReset).toBe(0);
+    // The balance is the exact share P*(months-k)/months = 5/8 -> 1, not P minus rounded-up payments.
+    expect(longCreditPayments(5, '0', 8, { atPayment: 8, rate: '10' }).afterReset).toBe(1);
     const atOnce = longCreditPayments(300_000, '15.5', 24, { atPayment: 1, rate: '10' });
     expect(atOnce.afterReset).toBe(spitzerPayment(300_000, '10', 24));
     expect(() => longCreditPayments(1000, '10', 12, { atPayment: 0, rate: '10' })).toThrow(RangeError);
     expect(() => longCreditPayments(1000, '10', 12, { atPayment: 13, rate: '10' })).toThrow(RangeError);
+  });
+});
+describe('longCreditPayments balance', () => {
+  it('matches a month-by-month amortization in exact rationals', () => {
+    const P = 300_000n;
+    const i = { n: 155n, d: 12000n }; // 15.5% / 12
+    const n = 24;
+    // Exact level payment p = P·i / (1 − (1+i)^−n), as a fraction N/D.
+    const g = i.d + i.n;
+    const gn = g ** BigInt(n);
+    const dn = i.d ** BigInt(n);
+    const pN = P * i.n * gn;
+    const pD = i.d * (gn - dn);
+    // Walk 18 payments, B <- B(1+i) − p, keeping B exactly as num/(den·pD).
+    let num = P * pD;
+    let den = 1n;
+    for (let m = 0; m < 18; m++) {
+      num = num * g - pN * den * i.d;
+      den = den * i.d;
+    }
+    const balance = Number((2n * num + den * pD) / (2n * den * pD));
+    const out = longCreditPayments(300_000, '15.5', 24, { atPayment: 19, rate: '16.5' });
+    expect(out.afterReset).toBe(spitzerPayment(balance, '16.5', 6));
   });
 });
 describe('annualEffectiveRate guards', () => {
