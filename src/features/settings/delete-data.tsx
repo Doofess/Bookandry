@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { systemClock } from '@/lib/clock';
+import { ServerError } from '@/services/supabase/transport';
 import type { WipeStatus } from '@/services/supabase/wipe';
 
 import { matchesWord } from './delete-word';
@@ -58,9 +59,15 @@ export function DeleteData({ onBackup }: { readonly onBackup: () => Promise<void
   const pending = signedIn && wipe?.status === 'pending' ? wipe : null;
 
   // Locked, at the code step, still loading: this device holds an account's
-  // data, and erasing it alone would only sync it back.
+  // data, and erasing it alone would only sync it back. Signed in, it waits for
+  // the household too: until the server says who is in it, alone or linked is
+  // not known, and the wrong one must not be offered.
   const offline = signedIn && !online;
-  const disabled = !(signedIn || view.status === 'signed_out' || view.status === 'unavailable') || offline;
+  const householdUnknown = signedIn && view.household === undefined;
+  const disabled =
+    !(signedIn || view.status === 'signed_out' || view.status === 'unavailable') ||
+    offline ||
+    householdUnknown;
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -95,8 +102,20 @@ export function DeleteData({ onBackup }: { readonly onBackup: () => Promise<void
       await accountController().wipeMyData();
       close();
       toast.success(t('settings.delete.done'));
-    } catch {
-      toast.error(t('tx.toastFailed'));
+    } catch (error) {
+      if (error instanceof ServerError && error.code === 'linked_needs_confirmation') {
+        // Linked since this was opened: the server refused, nothing was
+        // deleted. Look again, and the section offers to ask the others.
+        close();
+        toast.error(t('settings.delete.nowLinked'));
+        await accountController()
+          .refreshHousehold()
+          .catch(() => undefined);
+        return;
+      }
+      // Whether the server's erase went through is not known: this device
+      // follows on its next sync if it did.
+      toast.error(t('settings.delete.failed'));
     } finally {
       setBusy(false);
     }
@@ -221,7 +240,7 @@ export function DeleteData({ onBackup }: { readonly onBackup: () => Promise<void
             </AlertDialogTitle>
             <AlertDialogDescription>
               {linked
-                ? t('settings.delete.linkedAsk', { names: names.format(others) })
+                ? t('settings.delete.linkedAsk', { names: names.format(others), count: others.length })
                 : t('settings.delete.body')}
             </AlertDialogDescription>
           </AlertDialogHeader>

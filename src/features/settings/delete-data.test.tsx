@@ -2,6 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ServerError } from '@/services/supabase/transport';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
 const account = vi.hoisted(() => ({
@@ -113,9 +114,51 @@ describe('deleting all data', () => {
     await user.click(screen.getByRole('button', { name: 'Delete everything' }));
 
     await waitFor(() => {
-      expect(toasts.error).toHaveBeenCalled();
+      expect(toasts.error).toHaveBeenCalledWith(
+        "Couldn't confirm the delete. If it went through, this device clears on its next sync.",
+      );
     });
     expect(screen.getByRole('button', { name: 'Delete everything' })).toBeEnabled();
+  });
+
+  it('alone, but linked meanwhile: says everyone must now confirm, and looks at the household again', async () => {
+    account.view = alone;
+    account.controller.wipeMyData.mockRejectedValue(new ServerError('linked_needs_confirmation'));
+    const user = userEvent.setup();
+    render();
+
+    await user.click(screen.getByRole('button', { name: 'Delete all data' }));
+    await user.type(screen.getByLabelText('Type DELETE to confirm'), 'DELETE');
+    await user.click(screen.getByRole('button', { name: 'Delete everything' }));
+
+    await waitFor(() => {
+      expect(toasts.error).toHaveBeenCalledWith(
+        'Your account is now linked with others, so everyone must confirm. Open this again to ask them.',
+      );
+    });
+    expect(account.controller.refreshHousehold).toHaveBeenCalledTimes(1);
+    expect(toasts.success).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('signed in: waits for the household before offering either way to delete', async () => {
+    const loading = { status: 'signed_in', user: { id: 'u1' } };
+    account.view = loading;
+    render();
+
+    expect(screen.getByRole('button', { name: 'Delete all data' })).toBeDisabled();
+    await waitFor(() => {
+      expect(account.controller.wipeStatus).toHaveBeenCalled();
+    });
+  });
+
+  it('signed in alone, once the household is known: offers to delete', () => {
+    account.view = alone;
+    render();
+
+    expect(screen.getByRole('button', { name: 'Delete all data' })).toBeEnabled();
   });
 
   it('linked: names the other member and reports emails that could not be sent', async () => {
@@ -125,8 +168,11 @@ describe('deleting all data', () => {
     render();
 
     await user.click(screen.getByRole('button', { name: ASK_EVERYONE }));
-    expect(screen.getByText(/Noa will each get an email/)).toBeInTheDocument();
-    expect(screen.queryByText(/Dana will each/)).not.toBeInTheDocument();
+    // One other member: asked as one.
+    expect(
+      screen.getByText(/^Noa will get an email to confirm. Nothing is deleted until they do/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Dana will/)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Type DELETE to confirm'), 'DELETE');
     await user.click(screen.getByRole('button', { name: 'Send the requests' }));
@@ -137,6 +183,25 @@ describe('deleting all data', () => {
       );
     });
     expect(account.controller.requestWipe).toHaveBeenCalledWith('en');
+  });
+
+  it('linked with several: asks each of them, by name', async () => {
+    const three = {
+      ...linked,
+      household: {
+        members: [...linked.household.members, { userId: 'u3', displayName: 'Omer' }],
+      },
+    };
+    account.view = three;
+    const user = userEvent.setup();
+    render();
+
+    await user.click(screen.getByRole('button', { name: ASK_EVERYONE }));
+    expect(
+      screen.getByText(
+        /^Noa and Omer will each get an email to confirm. Nothing is deleted until everyone does/,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('linked: a sent request says so and asks the server for the pending status', async () => {
@@ -203,6 +268,19 @@ describe('deleting all data', () => {
     await waitFor(() => {
       expect(account.controller.wipeStatus).toHaveBeenCalled();
     });
+  });
+
+  it('in Hebrew, says when a pending request expires', async () => {
+    await initTestI18n('he');
+    try {
+      account.view = linked;
+      account.controller.wipeStatus.mockResolvedValue(status({}));
+      render();
+
+      expect(await screen.findByText(/^ממתינים לאישור של Noa · פג תוקף /)).toBeInTheDocument();
+    } finally {
+      await initTestI18n('en');
+    }
   });
 
   it('in Hebrew, asks for the Hebrew word', async () => {
