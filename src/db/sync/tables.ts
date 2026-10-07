@@ -67,12 +67,21 @@ export function cursorKeyOf(space: string | undefined): string {
   return space === undefined ? SYNC_CURSOR_KEY : `${SYNC_CURSOR_KEY}:${space}`;
 }
 
-/** A space's erase counter, as this device last saw it (see 20261008000000_wipes.sql). */
+/**
+ * A space's erase counter, as this device last saw it (see
+ * 20261008000000_wipes.sql). Recorded on every pull, by the space's own id -
+ * the account's user id for its own space - and kept through signing out and
+ * through an erase: its presence is how a device knows it holds that space's
+ * data, cursor or not.
+ */
 export const SYNC_EPOCH_KEY = 'syncEpoch';
 
-export function epochKeyOf(space: string | undefined): string {
-  return space === undefined ? SYNC_EPOCH_KEY : `${SYNC_EPOCH_KEY}:${space}`;
+export function epochKeyOf(space: string): string {
+  return `${SYNC_EPOCH_KEY}:${space}`;
 }
+
+/** Present after a sync cleared this device, until a sync finishes and reports it. */
+export const SYNC_WIPED_KEY = 'syncWiped';
 
 /** When this device last saw everything the server had. */
 export const PULLED_TO_HEAD_KEY = 'syncPulledToHeadAt';
