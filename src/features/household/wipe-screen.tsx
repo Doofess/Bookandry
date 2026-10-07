@@ -1,5 +1,5 @@
 import { ShieldAlert } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -38,6 +38,8 @@ export function WipeScreen() {
   const signedIn = view.status === 'signed_in';
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
+  // State only lands on the next render; this stops a second click before it.
+  const inFlight = useRef(false);
 
   useEffect(() => {
     if (valid) rememberPendingWipe(token);
@@ -76,12 +78,15 @@ export function WipeScreen() {
 
   /** The request closed while the page was open, or the answer did not go through. */
   const failed = (error: unknown): void => {
-    if (error instanceof ServerError && error.code === 'wipe_invalid') setState({ kind: 'invalid' });
+    const code = error instanceof ServerError ? error.code : undefined;
+    if (code === 'wipe_invalid') setState({ kind: 'invalid' });
+    else if (code === 'wipe_wrong_account') setState({ kind: 'wrong_account' });
     else toast.error(t('household.err'));
   };
 
   const confirm = async (): Promise<void> => {
-    if (!valid) return;
+    if (!valid || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       const outcome = await accountController().confirmWipe(token);
@@ -91,12 +96,14 @@ export function WipeScreen() {
     } catch (error) {
       failed(error);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
   const decline = async (): Promise<void> => {
-    if (!valid) return;
+    if (!valid || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       await accountController().declineWipe(token);
@@ -105,6 +112,7 @@ export function WipeScreen() {
     } catch (error) {
       failed(error);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };

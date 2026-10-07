@@ -106,6 +106,29 @@ describe('WipeScreen', () => {
     expect(await screen.findByText('feed page')).toBeInTheDocument();
   });
 
+  it('an answer refused for the wrong account shows that, for Confirm and for Decline', async () => {
+    account.controller.confirmWipe.mockRejectedValue(new ServerError('wipe_wrong_account'));
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByText(/isn't for this account/)).toBeInTheDocument();
+    expect(toasts.toast.error).not.toHaveBeenCalled();
+  });
+
+  it('a decline refused for the wrong account shows that too', async () => {
+    account.controller.declineWipe.mockRejectedValue(new ServerError('wipe_wrong_account'));
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: 'Decline' }));
+    expect(await screen.findByText(/isn't for this account/)).toBeInTheDocument();
+  });
+
+  it('two quick clicks send one answer', async () => {
+    account.controller.confirmWipe.mockReturnValue(new Promise(() => undefined));
+    render();
+    const button = await screen.findByRole('button', { name: 'Confirm' });
+    await userEvent.dblClick(button);
+    expect(account.controller.confirmWipe).toHaveBeenCalledTimes(1);
+  });
+
   it('a request meant for another account says to sign in with the right email', async () => {
     account.controller.peekWipe.mockRejectedValue(new ServerError('wipe_wrong_account'));
     render();
