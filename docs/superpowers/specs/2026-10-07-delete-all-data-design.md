@@ -73,10 +73,9 @@ apart from export and import.
 
 New migration, `wipes`:
 
-- **`public.space_epochs (user_id uuid primary key, epoch integer not null default 0)`**
-  holds one erase counter per account's space. There is no row until the first
-  erase, and a missing row means 0. RLS is on, with no policies; it is reached
-  only through functions.
+- **`user_state.epoch integer not null default 0`** is each account space's
+  erase counter. It goes on the existing per-space row, which `push_records`
+  already locks.
 - **`public.wipe_requests`**:
   - `id`, `household_id`, `requested_by`, `created_at`
   - `expires_at` (created + 7 days)
@@ -90,7 +89,10 @@ New migration, `wipes`:
 
   Both tables have RLS on and no policies.
 - **`private.erase_space(uid)`**: deletes every row of `public.records` for
-  that `user_id`, and raises its epoch by 1.
+  that `user_id`, zeroes its record and byte counts, and raises its epoch by 1.
+- **Membership changes.** A trigger on `household_members` (insert or delete)
+  cancels the household's pending request, so `accept_invite`,
+  `leave_household`, `remove_member` and `delete_my_account` need no change.
 - **RPCs**, each `security definer` and requiring the user:
   - **`wipe_my_data()`**: alone only. A household member gets
     `linked_needs_confirmation`. Erases the caller's space.
@@ -112,8 +114,6 @@ New migration, `wipes`:
 - **Expiry and membership changes.**
   - `wipe_status`, `peek_wipe` and `confirm_wipe` treat a request past
     `expires_at` as cancelled.
-  - `accept_invite`, `leave_household`, `remove_member` and
-    `delete_my_account` cancel any pending request for the household.
 - **Sync guard.**
   - `pull_records` returns the space's epoch alongside the records.
   - `push_records` takes `p_epoch`. A push whose epoch is below the space's
@@ -142,11 +142,14 @@ New migration, `wipes`:
   - Delete every replicated row whose home is that space, and drop its outbox
     entries and cursor. For your own space, that also covers rows homed
     "everywhere": categories, settings, redirects and shared payment methods.
-  - Keep settings and any local-only meta (theme, language, device keys).
+  - Keep settings and people (profiles) and any local-only meta (theme,
+    language, device keys). Settings and people are queued to be sent again,
+    since the server no longer holds them.
   - Store the new epoch.
 - **Then:**
   - Re-seed built-in categories (`ensureBuiltinCategories`).
-  - Mark the settings row dirty, so it is pushed again under the new epoch.
+  - (Settings and people were queued above; they are pushed under the new
+    epoch in the same sync.)
 - A push refused with `wiped` triggers a pull first, which runs the clearing
   above. The refused rows are dropped: they belonged to the erased data.
 - The toast names the requester when known ("at Dana's request"), from the
