@@ -100,12 +100,6 @@ export function syncOnce(
     let skipped = 0;
     let rejected = 0;
     let clears = 0;
-    /*
-     * Spaces not pulled again since this sync cleared the device. One household
-     * erase raises every member's space at once; met in one of these, a raised
-     * epoch is that same erase, already answered - clear once, never twice.
-     */
-    let fresh = new Set<string>();
     const order = [set.own, ...set.linked];
     /** Pull one space to its head; true when its erase cleared this device instead. */
     const pullSpace = async (space: SyncSpace): Promise<boolean> => {
@@ -116,22 +110,25 @@ export function syncOnce(
         const page = await space.transport.pull(cursor, batch);
         if (page.epoch !== undefined) {
           const known = await readEpoch(db, space.id);
-          // Holding this space's data: its epoch was recorded, or (a device
-          // from before epochs) it has a cursor.
+          /*
+           * Holding this space's data: its epoch was recorded, or (a device
+           * from before epochs) it has a cursor. A clear forgets both for every
+           * space but the one it answered, so one household erase, raising
+           * every member's space at once, clears once - in this sync or, if it
+           * fails part way, the next.
+           */
           const held = known !== undefined || (await db.meta.get(cursorKeyOf(at))) !== undefined;
-          if (held && page.epoch > (known ?? 0) && !fresh.has(space.id)) {
+          if (held && page.epoch > (known ?? 0)) {
             // Erased since this device last looked: everything goes.
             clears += 1;
             if (clears > MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
             await eraseLocalData(db, { epochs: new Map([[space.id, page.epoch]]), bySync: true });
-            fresh = new Set(order.map((s) => s.id));
             return true;
           }
           if (known === undefined || page.epoch > known) {
             await db.meta.put({ key: epochKeyOf(space.id), value: page.epoch });
           }
         }
-        fresh.delete(space.id);
         const report = await applyPage(db, page.records, page.cursor, at);
         applied += report.applied;
         skipped += report.skipped;
