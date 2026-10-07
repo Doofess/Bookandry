@@ -168,7 +168,7 @@ async function linkAll(...others: [Session, string, string][]): Promise<void> {
   // The first invitation is what makes Alice's household, so she can only be named after it.
   await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0 });
 }
-type Asks = { id: string; asks: { userId: string; email: string; token: string }[] };
+type Asks = { id: string; asks: { userId: string; token: string }[] };
 const tokenFor = (asks: Asks, id: string) => asks.asks.find((a) => a.userId === id)!.token;
 
 describe('erasing a household', () => {
@@ -184,7 +184,9 @@ describe('erasing a household', () => {
     await push(carol, [record()], 0);
 
     const asks = (await alice.rpc('request_wipe', {})) as Asks;
-    expect(asks.asks.map((a) => a.email).sort()).toEqual(['bob@example.com', 'carol@example.com']);
+    expect(asks.asks.map((a) => a.userId).sort()).toEqual([BOB, CAROL]);
+    // Members share no email: a member who asks learns no one's address.
+    expect(asks.asks.some((a) => 'email' in a)).toBe(false);
     expect(asks.asks.every((a) => /^[0-9a-f]{64}$/.test(a.token))).toBe(true);
 
     const status = (await bob.rpc('wipe_status', {})) as {
@@ -261,6 +263,28 @@ describe('erasing a household', () => {
     await carol.rpc('accept_invite', { p_token: token, p_currency: 'ILS', p_display_name: 'Carol' });
     expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
     expect(await alice.rpc('wipe_status', {})).toBeNull();
+  });
+
+  it('is called off, and erases nothing, when a member leaves before it completes', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob'], [carol, 'carol@example.com', 'Carol']);
+    await push(bob, [record()], 0);
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    await carol.rpc('leave_household', {});
+    expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+    expect(await bob.rpc('wipe_status', {})).toBeNull();
+    expect((await pull(bob)).records).toHaveLength(1);
+    expect((await pull(bob)).epoch).toBe(0);
+  });
+
+  it('answers "cancelled", and erases nothing, if the household changed unseen by the trigger', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob']);
+    await push(bob, [record()], 0);
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    // A member added while the request was being made: the trigger saw no pending request then.
+    await t.pg.query(`update public.wipe_requests set member_ids = array[$1::uuid]`, [ALICE]);
+    expect(await bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) })).toBe('cancelled');
+    expect(await alice.rpc('wipe_status', {})).toBeNull();
+    expect((await pull(bob)).records).toHaveLength(1);
   });
 
   it('refuses one alone, a second while one is pending, and more than one an hour', async () => {

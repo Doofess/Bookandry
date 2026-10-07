@@ -238,6 +238,8 @@ create trigger household_members_cancel_wipes
   after insert or delete on public.household_members
   for each row execute function private.cancel_wipes_on_change();
 
+-- Returns each other member's one-time token, not their address: members share
+-- no email beyond the one an inviter typed. The mailer looks addresses up itself.
 create function public.request_wipe() returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -263,17 +265,21 @@ begin
   end if;
 
   select array_agg(user_id order by user_id) into members from public.household_members where household_id = hid;
-  insert into public.wipe_requests (household_id, requested_by, member_ids) values (hid, uid, members)
-  returning id into rid;
+  begin
+    insert into public.wipe_requests (household_id, requested_by, member_ids) values (hid, uid, members)
+    returning id into rid;
+  exception when unique_violation then
+    raise exception 'wipe_pending' using errcode = '55000';
+  end;
 
   for m in
-    select hm.user_id, u.email from public.household_members hm join auth.users u on u.id = hm.user_id
+    select hm.user_id from public.household_members hm
      where hm.household_id = hid and hm.user_id <> uid
   loop
     token := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
     insert into public.wipe_confirmations (request_id, user_id, token_hash)
     values (rid, m.user_id, private.token_hash(token));
-    asks := asks || jsonb_build_object('userId', m.user_id, 'email', m.email, 'token', token);
+    asks := asks || jsonb_build_object('userId', m.user_id, 'token', token);
   end loop;
   return jsonb_build_object('id', rid, 'asks', asks);
 end
@@ -319,6 +325,7 @@ begin
 end
 $$;
 
+-- 'waiting', 'done', or 'cancelled' (the household changed since the request).
 create function public.confirm_wipe(p_token text) returns text
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -329,9 +336,13 @@ declare
 begin
   -- Lock the request first: the last two confirmers must take turns, so the
   -- second sees the first's confirmation. open_confirmation ran before the
-  -- lock, so the request may have been called off meanwhile.
+  -- lock, so the request, or this answer, may have changed meanwhile.
   select * into r from public.wipe_requests where id = c.request_id for update;
-  if r.status <> 'pending' then
+  if r.status <> 'pending' or not exists (
+    select 1 from public.wipe_confirmations
+     where request_id = c.request_id and user_id = c.user_id
+       and confirmed_at is null and declined_at is null)
+  then
     raise exception 'wipe_invalid' using errcode = '22023';
   end if;
 
@@ -346,7 +357,7 @@ begin
     from public.household_members where household_id = r.household_id;
   if now_members is distinct from r.member_ids then
     update public.wipe_requests set status = 'cancelled' where id = r.id;
-    raise exception 'wipe_invalid' using errcode = '22023';
+    return 'cancelled';
   end if;
   foreach member in array r.member_ids loop
     perform private.erase_space(member);
@@ -362,9 +373,13 @@ declare
   c public.wipe_confirmations := private.open_confirmation(p_token, private.require_user());
   r public.wipe_requests;
 begin
-  -- Same lock and re-check as confirm_wipe.
+  -- Same lock and re-checks as confirm_wipe.
   select * into r from public.wipe_requests where id = c.request_id for update;
-  if r.status <> 'pending' then
+  if r.status <> 'pending' or not exists (
+    select 1 from public.wipe_confirmations
+     where request_id = c.request_id and user_id = c.user_id
+       and confirmed_at is null and declined_at is null)
+  then
     raise exception 'wipe_invalid' using errcode = '22023';
   end if;
   update public.wipe_confirmations set declined_at = now()
