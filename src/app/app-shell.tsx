@@ -1,18 +1,15 @@
 import { cn } from 'cn';
 import { BarChart3, CreditCard, Receipt, Settings, Users } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 
 import { Logo } from '@/components/logo';
 import { UserMenu } from '@/features/account/user-menu';
-import { pendingInvite } from '@/features/household/pending-invite';
-import { pendingWipe } from '@/features/household/pending-wipe';
 
-import { useAccount } from './account';
-import { LINKED_ROUTES, NAV_ORDER, ROUTES, type RouteKey } from './routes';
+import { NAV_ORDER, ROUTES, type RouteKey } from './routes';
 import { Toaster } from './toaster';
+import { useReturnToInvite } from './use-return-to-invite';
 import { useWipeNotice } from './use-wipe-notice';
 
 const ICONS: Record<RouteKey, ComponentType<{ className?: string }>> = {
@@ -94,24 +91,6 @@ function PrimaryNav() {
       })}
     </nav>
   );
-}
-
-/**
- * Back from signing in (or from the first-run steps) with an invitation, or a
- * request to delete everyone's data, still waiting: straight back to it.
- */
-function useReturnToInvite(): void {
-  const signedIn = useAccount().status === 'signed_in';
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (!signedIn) return;
-    if (pathname !== LINKED_ROUTES.link && pendingInvite() !== undefined) {
-      void navigate(LINKED_ROUTES.link, { replace: true });
-    } else if (pathname !== LINKED_ROUTES.wipe && pendingWipe() !== undefined) {
-      void navigate(LINKED_ROUTES.wipe, { replace: true });
-    }
-  }, [signedIn, pathname, navigate]);
 }
 
 export function AppShell() {
