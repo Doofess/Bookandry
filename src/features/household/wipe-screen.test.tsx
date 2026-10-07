@@ -24,7 +24,7 @@ vi.mock('@/app/account', () => ({
 vi.mock('sonner', () => toasts);
 
 const { WipeScreen } = await import('./wipe-screen');
-const { useWipeNotice } = await import('@/app/use-wipe-notice');
+const { useWipeNotice, NAME_WAIT_MS } = await import('@/app/use-wipe-notice');
 
 const TOKEN = 'a'.repeat(64);
 const KEY = 'greenback.pendingWipe';
@@ -190,6 +190,40 @@ describe('useWipeNotice', () => {
     rerender();
     expect(toasts.toast).toHaveBeenCalledTimes(2);
     expect(toasts.toast).toHaveBeenLastCalledWith('All data was deleted');
+  });
+
+  it('waits briefly for who asked, then toasts once, named', () => {
+    vi.useFakeTimers();
+    try {
+      account.view = { status: 'signed_in', wipeNotice: { by: undefined, at: 3, naming: true } };
+      const { rerender } = renderHook(useNotice, { wrapper });
+      expect(toasts.toast).not.toHaveBeenCalled();
+
+      account.view = { status: 'signed_in', wipeNotice: { by: 'Dana', at: 3 } };
+      rerender();
+      vi.advanceTimersByTime(NAME_WAIT_MS * 2);
+      expect(toasts.toast).toHaveBeenCalledTimes(1);
+      expect(toasts.toast).toHaveBeenCalledWith("All data was deleted at Dana's request");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('toasts unnamed once the wait is up, and not again when the name comes late', () => {
+    vi.useFakeTimers();
+    try {
+      account.view = { status: 'signed_in', wipeNotice: { by: undefined, at: 4, naming: true } };
+      const { rerender } = renderHook(useNotice, { wrapper });
+      vi.advanceTimersByTime(NAME_WAIT_MS);
+      expect(toasts.toast).toHaveBeenCalledTimes(1);
+      expect(toasts.toast).toHaveBeenLastCalledWith('All data was deleted');
+
+      account.view = { status: 'signed_in', wipeNotice: { by: 'Dana', at: 4 } };
+      rerender();
+      expect(toasts.toast).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says nothing without a notice', () => {

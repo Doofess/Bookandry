@@ -630,8 +630,9 @@ describe('deleting all data', () => {
 });
 
 describe('being told the data was deleted', () => {
-  const afterWipe = (c: InstanceType<typeof AccountController>): Promise<void> =>
-    (c as unknown as { afterWipe(): Promise<void> }).afterWipe();
+  const afterWipe = (c: InstanceType<typeof AccountController>): void => {
+    (c as unknown as { afterWipe(): void }).afterWipe();
+  };
 
   async function signedIn(): Promise<InstanceType<typeof AccountController>> {
     const c = make();
@@ -658,9 +659,51 @@ describe('being told the data was deleted', () => {
           })
         : inner(fn, args);
 
-    await afterWipe(c);
+    afterWipe(c);
 
-    expect(c.getView()).toMatchObject({ wipeNotice: { by: 'Dana' } });
+    // Told at once, still unnamed: the sync is not held up by the lookup.
+    expect(c.getView()).toMatchObject({ wipeNotice: { by: undefined, naming: true } });
+    await vi.waitFor(() => {
+      expect(c.getView()).toMatchObject({ wipeNotice: { by: 'Dana' } });
+    });
+    const view = c.getView();
+    expect(view.status === 'signed_in' && view.wipeNotice?.naming).toBeUndefined();
+  });
+
+  it('reads a blank name as no name', async () => {
+    const c = await signedIn();
+    const inner = fake.rpc!;
+    fake.rpc = (fn, args) =>
+      fn === 'wipe_status'
+        ? Promise.resolve({
+            id: 'w1',
+            status: 'done',
+            mine: false,
+            requesterName: '',
+            createdAt: '2026-10-07T10:00:00.000Z',
+            expiresAt: '2026-10-08T10:00:00.000Z',
+            waitingFor: [],
+          })
+        : inner(fn, args);
+
+    afterWipe(c);
+
+    await vi.waitFor(() => {
+      const view = c.getView();
+      expect(view.status === 'signed_in' && view.wipeNotice?.naming).toBeUndefined();
+    });
+    expect(c.getView()).toMatchObject({ wipeNotice: { by: undefined } });
+  });
+
+  it('tells at once, even when the server never answers who asked', async () => {
+    const c = await signedIn();
+    const inner = fake.rpc!;
+    fake.rpc = (fn, args) => (fn === 'wipe_status' ? new Promise<never>(() => undefined) : inner(fn, args));
+
+    afterWipe(c);
+
+    const view = c.getView();
+    expect(view.status === 'signed_in' && view.wipeNotice).toMatchObject({ by: undefined, naming: true });
   });
 
   it('still tells, unnamed, when the server cannot be asked', async () => {
@@ -668,8 +711,12 @@ describe('being told the data was deleted', () => {
     const inner = fake.rpc!;
     fake.rpc = (fn, args) => (fn === 'wipe_status' ? Promise.reject(new Error('offline')) : inner(fn, args));
 
-    await afterWipe(c);
+    afterWipe(c);
 
+    await vi.waitFor(() => {
+      const settled = c.getView();
+      expect(settled.status === 'signed_in' && settled.wipeNotice?.naming).toBeUndefined();
+    });
     const view = c.getView();
     expect(view.status === 'signed_in' && view.wipeNotice).toMatchObject({ by: undefined });
     expect(view.status === 'signed_in' && typeof view.wipeNotice?.at).toBe('number');
