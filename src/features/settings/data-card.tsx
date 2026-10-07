@@ -12,6 +12,7 @@ import { systemClock } from '@/lib/clock';
 import { daysBetween, externalTimestampToLocalDate } from '@/lib/dates';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
+import { DeleteData } from './delete-data';
 import { downloadJson } from './download';
 
 /**
@@ -213,6 +214,8 @@ export function DataCard({
             </p>
           )}
         </div>
+
+        <DeleteData onBackup={exportNow} />
       </CardContent>
     </Card>
   );
