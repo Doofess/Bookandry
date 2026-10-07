@@ -1,6 +1,7 @@
 import { instantFromMs } from '@/lib/dates';
 
 import { withoutTracking, type BookandryDB } from '../db';
+import { DRAFT_PREFIX } from '../import-drafts';
 import { buildSeedCategories, buildSeedPaymentMethods } from '../seed';
 import {
   epochKeyOf,
@@ -13,7 +14,6 @@ import {
 } from './tables';
 
 const KEPT = new Set<string>(['settings', 'profiles']);
-const DRAFT_PREFIX = 'importDraft:';
 
 export type EraseOptions = {
   /**
@@ -29,7 +29,8 @@ export type EraseOptions = {
 
 /**
  * Everything erased - here, untracked: the server already holds nothing, or
- * (signed out) there is no server. Settings and people stay, and are queued to
+ * (signed out) there is no server. Settings and people stay (each person's
+ * opening balance back to nothing), and are queued to
  * be sent again into a space that no longer holds them. The built-ins come
  * back as on a new install. Where every pull resumes is forgotten, so the next
  * sync starts from the top, and so is every space's erase counter but those
@@ -45,6 +46,10 @@ export async function eraseLocalData(db: BookandryDB, options: EraseOptions = {}
     const now = instantFromMs(db.syncNowMs());
     await db.categories.bulkAdd(buildSeedCategories(now));
     await db.paymentMethods.bulkAdd(buildSeedPaymentMethods(now));
+
+    // The people stay, but the balance each started from was data too: left
+    // behind, it would still show once everything else is gone.
+    await db.profiles.toCollection().modify({ openingBalanceMinor: 0 });
 
     await db.outbox.clear();
     // What has a rev: every person, and the settings once someone chose a
