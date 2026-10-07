@@ -146,7 +146,8 @@ export async function updatePaymentMethod(
  */
 /** Card details the rest of the app can read, or a thrown error - the same rule an import is held to. */
 function checkedCard(card: CardDetails): CardDetails {
-  return cardSchema.parse(card);
+  // A newer version may store keys this one doesn't know; an edit here must not erase them.
+  return { ...card, ...cardSchema.parse(card) };
 }
 
 function checkedAccount(account: BankAccountDetails): BankAccountDetails {

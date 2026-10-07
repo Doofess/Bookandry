@@ -183,10 +183,32 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
     !isInstallmentPlan(transaction.recurrence) &&
     !sameRecurrence(parsed.recurrence, transaction.recurrence)
   ) {
-    patch.recurrence = parsed.recurrence;
+    patch.recurrence = keepingUnknownKeys(parsed.recurrence, transaction.recurrence);
   }
 
   return patch;
+}
+
+/** The recurrence keys the transaction form builds; any other key on a stored plan is not this version's. */
+const FORM_RECURRENCE_KEYS: ReadonlySet<string> = new Set([
+  'type',
+  'dayOfMonth',
+  'endDate',
+  'installments',
+  'plan',
+  'creditAnnualRate',
+  'rateBasis',
+  'primeMargin',
+]);
+
+/** The form's recurrence, plus the keys of the stored one it doesn't know, when the plan kind is unchanged. */
+function keepingUnknownKeys(next: Recurrence, previous: Recurrence): Recurrence {
+  if (next.type !== 'monthly' || previous.type !== 'monthly' || next.plan !== previous.plan) return next;
+  // A newer version may store keys this one doesn't know; an edit here must not erase them.
+  const unknown = Object.fromEntries(
+    Object.entries(previous).filter(([key]) => !FORM_RECURRENCE_KEYS.has(key)),
+  );
+  return { ...unknown, ...next };
 }
 
 /** True when a patch would write nothing, so the sheet can just close. */

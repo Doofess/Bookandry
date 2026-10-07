@@ -324,6 +324,46 @@ describe('buildPatch', () => {
     expect(patch).toEqual({ note: 'fixed' });
   });
 
+  it('keeps unknown plan fields when an edit keeps the plan kind', () => {
+    const future = rent({
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 10,
+        reset: { every: 3 },
+      } as unknown as Transaction['recurrence'],
+    });
+    const target = occurrenceOf(future, [], '2026-09-10');
+    const values = occurrenceToFormValues(target, future);
+    const patch = buildPatch({
+      parsed: parse({ ...values, dayOfMonth: '12' }),
+      occurrence: target,
+      transaction: future,
+      scope: 'all',
+      money: target.money,
+    });
+    expect(patch.recurrence).toMatchObject({ type: 'monthly', dayOfMonth: 12, reset: { every: 3 } });
+  });
+
+  it('does not carry unknown plan fields into a different kind of recurrence', () => {
+    const future = rent({
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 10,
+        reset: { every: 3 },
+      } as unknown as Transaction['recurrence'],
+    });
+    const target = occurrenceOf(future, [], '2026-09-10');
+    const values = occurrenceToFormValues(target, future);
+    const patch = buildPatch({
+      parsed: parse({ ...values, mode: 'one_time' }),
+      occurrence: target,
+      transaction: future,
+      scope: 'all',
+      money: target.money,
+    });
+    expect(patch.recurrence).toEqual({ type: 'one_time' });
+  });
+
   it('combines several changes into one patch', () => {
     const changed: MoneySnapshot = { ...occurrence.money, amountMinor: 5000, baseAmountMinor: 5000 };
     const patch = buildPatch({
