@@ -1,25 +1,54 @@
+import { instantFromMs } from '@/lib/dates';
+
 import { withoutTracking, type BookandryDB } from '../db';
-import { PULLED_TO_HEAD_KEY, SYNC_CURSOR_KEY, SYNCED_TABLES, type OutboxRow } from './tables';
+import { buildSeedCategories, buildSeedPaymentMethods } from '../seed';
+import {
+  epochKeyOf,
+  PULLED_TO_HEAD_KEY,
+  SYNC_CURSOR_KEY,
+  SYNC_WIPED_KEY,
+  SYNCED_TABLES,
+  type OutboxRow,
+} from './tables';
 
 const KEPT = new Set<string>(['settings', 'profiles']);
 const DRAFT_PREFIX = 'importDraft:';
 
+export type EraseOptions = {
+  /**
+   * Erase counters to record, by space id, in the same transaction: the clear
+   * and the erase it answers are one step, so neither survives a crash alone.
+   */
+  readonly epochs?: ReadonlyMap<string, number>;
+  /** Cleared by a sync: the next sync to finish reports it (SYNC_WIPED_KEY). */
+  readonly bySync?: boolean;
+};
+
 /**
  * Everything erased - here, untracked: the server already holds nothing, or
  * (signed out) there is no server. Settings and people stay, and are queued to
- * be sent again into a space that no longer holds them. Where every pull
- * resumes is forgotten, so the next sync starts from the top.
+ * be sent again into a space that no longer holds them. The built-ins come
+ * back as on a new install. Where every pull resumes is forgotten, so the next
+ * sync starts from the top; each space's erase counter is kept, so a later
+ * erase still reaches this device.
  */
-export async function eraseLocalData(db: BookandryDB): Promise<void> {
+export async function eraseLocalData(db: BookandryDB, options: EraseOptions = {}): Promise<void> {
   const tables = [...SYNCED_TABLES.map((t) => db.table(t)), db.syncState, db.outbox, db.meta];
   await withoutTracking(db, tables, async () => {
     for (const table of SYNCED_TABLES) if (!KEPT.has(table)) await db.table(table).clear();
     await db.syncState.filter((s) => !KEPT.has(s.tbl)).delete();
+    // Never synced, so no pull brings them back - and without them every
+    // transaction pulled in a built-in category would be "repaired" away.
+    const now = instantFromMs(db.syncNowMs());
+    await db.categories.bulkAdd(buildSeedCategories(now));
+    await db.paymentMethods.bulkAdd(buildSeedPaymentMethods(now));
+
     await db.outbox.clear();
     // What has a rev: every person, and the settings once someone chose a
     // currency. A pristine default row was never sent, and is not now.
     const kept = await db.syncState.filter((s) => KEPT.has(s.tbl) && s.deleted === 0).toArray();
     await db.outbox.bulkPut(kept.map(({ tbl, id }): OutboxRow => ({ tbl, id })));
+
     const keys = (await db.meta.toCollection().primaryKeys()).map(String);
     await db.meta.bulkDelete(
       keys.filter(
@@ -30,5 +59,9 @@ export async function eraseLocalData(db: BookandryDB): Promise<void> {
           k === PULLED_TO_HEAD_KEY,
       ),
     );
+    for (const [space, epoch] of options.epochs ?? []) {
+      await db.meta.put({ key: epochKeyOf(space), value: epoch });
+    }
+    if (options.bySync === true) await db.meta.put({ key: SYNC_WIPED_KEY, value: true });
   });
 }

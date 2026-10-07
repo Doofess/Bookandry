@@ -10,7 +10,7 @@ import { SpaceWipedError, type PushResult, type SyncRecord, type SyncTransport }
 import { rebaseStaleRows, type RebaseDeps, type RebaseReport } from './rebase';
 import { deliveries, homeOf, storedHomeValue, type Spaces } from './route';
 import { shareWith } from './spaces';
-import { cursorKeyOf, epochKeyOf, PULLED_TO_HEAD_KEY } from './tables';
+import { cursorKeyOf, epochKeyOf, PULLED_TO_HEAD_KEY, SYNC_WIPED_KEY } from './tables';
 import { purgeExpiredDeletions } from '../repos/transactions';
 
 export { PULLED_TO_HEAD_KEY } from './tables';
@@ -87,14 +87,6 @@ export function syncOnce(
     // structure first, so its space holds everything its rows rely on.
     for (const space of set.linked) await shareWith(db, space.id);
 
-    // Read before anything can clear them: a space with a cursor is one this
-    // device has pulled from, and an erase of it must reach this device.
-    const pulledBefore = new Set<string | undefined>();
-    for (const space of [set.own, ...set.linked]) {
-      const id = space === set.own ? undefined : space.id;
-      if ((await db.meta.get(cursorKeyOf(id))) !== undefined) pulledBefore.add(id);
-    }
-
     // A push into a space erased since this device last pulled is refused: the
     // pull below clears, and the second push sends what is left.
     let first = { pushed: 0, stale: 0 };
@@ -104,42 +96,59 @@ export function syncOnce(
       if (!(error instanceof SpaceWipedError)) throw error;
     }
 
-    let wiped = false;
     let applied = 0;
     let skipped = 0;
     let rejected = 0;
-    // This account's own space first: its rows are the ones a person is
-    // waiting to see on a new device.
-    for (const space of [set.own, ...set.linked]) {
-      const id = space === set.own ? undefined : space.id;
-      let cursor = await readCursor(db, id);
-      let known = await readEpoch(db, id);
+    let clears = 0;
+    /*
+     * Spaces not pulled again since this sync cleared the device. One household
+     * erase raises every member's space at once; met in one of these, a raised
+     * epoch is that same erase, already answered - clear once, never twice.
+     */
+    let fresh = new Set<string>();
+    const order = [set.own, ...set.linked];
+    /** Pull one space to its head; true when its erase cleared this device instead. */
+    const pullSpace = async (space: SyncSpace): Promise<boolean> => {
+      const at = space === set.own ? undefined : space.id;
+      let cursor = await readCursor(db, at);
       for (let round = 0; ; round += 1) {
         if (round >= MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
         const page = await space.transport.pull(cursor, batch);
-        if (page.epoch !== undefined && page.epoch > known) {
-          if (pulledBefore.has(id)) {
-            // Erased since this device last looked. One household erase raises
-            // every member's space at once: clear once, then only start over.
-            // Cleared BEFORE the new epoch is kept, so a crash in between
-            // clears on the next sync instead of pushing the old data back.
-            if (!wiped) await eraseLocalData(db);
-            wiped = true;
-            await db.meta.delete(cursorKeyOf(id));
-            await db.meta.put({ key: epochKeyOf(id), value: page.epoch });
-            known = page.epoch;
-            cursor = 0;
-            continue;
+        if (page.epoch !== undefined) {
+          const known = await readEpoch(db, space.id);
+          // Holding this space's data: its epoch was recorded, or (a device
+          // from before epochs) it has a cursor.
+          const held = known !== undefined || (await db.meta.get(cursorKeyOf(at))) !== undefined;
+          if (held && page.epoch > (known ?? 0) && !fresh.has(space.id)) {
+            // Erased since this device last looked: everything goes.
+            clears += 1;
+            if (clears > MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
+            await eraseLocalData(db, { epochs: new Map([[space.id, page.epoch]]), bySync: true });
+            fresh = new Set(order.map((s) => s.id));
+            return true;
           }
-          await db.meta.put({ key: epochKeyOf(id), value: page.epoch });
-          known = page.epoch;
+          if (known === undefined || page.epoch > known) {
+            await db.meta.put({ key: epochKeyOf(space.id), value: page.epoch });
+          }
         }
-        const report = await applyPage(db, page.records, page.cursor, id);
+        fresh.delete(space.id);
+        const report = await applyPage(db, page.records, page.cursor, at);
         applied += report.applied;
         skipped += report.skipped;
         rejected += report.rejected;
         cursor = page.cursor;
-        if (!page.hasMore) break;
+        if (!page.hasMore) return false;
+      }
+    };
+    // This account's own space first: its rows are the ones a person is
+    // waiting to see on a new device. After a clear, every space again from
+    // the top, own first - what was pulled before the clear went with the rest.
+    let again = true;
+    while (again) {
+      again = false;
+      for (const space of order) {
+        again = await pullSpace(space);
+        if (again) break;
       }
     }
     await db.meta.put({ key: PULLED_TO_HEAD_KEY, value: options.now });
@@ -156,6 +165,11 @@ export function syncOnce(
     const repair = await repairIntegrity(db, options.now);
     // Repairs, and deletions decided while applying, are ordinary queued edits.
     const second = await pushAll(db, set, batch);
+
+    // Read back, not remembered: a sync that cleared this device and then
+    // failed still has it reported by the next one to finish.
+    const wiped = (await db.meta.get(SYNC_WIPED_KEY)) !== undefined;
+    if (wiped) await db.meta.delete(SYNC_WIPED_KEY);
 
     return {
       pushed: first.pushed + second.pushed,
@@ -206,7 +220,7 @@ async function pushAll(
     for (const [space, records] of bySpace) {
       const transport = transports.get(space);
       if (transport === undefined) continue;
-      const epoch = await readEpoch(db, space === set.own.id ? undefined : space);
+      const epoch = (await readEpoch(db, space)) ?? 0;
       for (const r of await transport.push(records, epoch)) answers.set(answerKey(space, r), r.status);
     }
 
@@ -253,9 +267,10 @@ async function plan(db: BookandryDB, outgoing: Outgoing, spaces: Spaces): Promis
   };
 }
 
-async function readEpoch(db: BookandryDB, space: string | undefined): Promise<number> {
+/** The space's erase counter as last seen, or undefined for a space never pulled. */
+async function readEpoch(db: BookandryDB, space: string): Promise<number | undefined> {
   const row = await db.meta.get(epochKeyOf(space));
-  return typeof row?.value === 'number' ? row.value : 0;
+  return typeof row?.value === 'number' ? row.value : undefined;
 }
 
 async function readCursor(db: BookandryDB, space: string | undefined): Promise<number> {

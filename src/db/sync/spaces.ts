@@ -1,6 +1,13 @@
 import { withoutTracking, type BookandryDB } from '../db';
 import { LINKED_SPACES_KEY, spaceKeysKey } from './keystore';
-import { cursorKeyOf, EVERYWHERE, REPLICATED_TABLES, SYNCED_TABLES, type OutboxRow } from './tables';
+import {
+  cursorKeyOf,
+  epochKeyOf,
+  EVERYWHERE,
+  REPLICATED_TABLES,
+  SYNCED_TABLES,
+  type OutboxRow,
+} from './tables';
 
 /**
  * Linked accounts' spaces, as this device knows them.
@@ -52,7 +59,9 @@ export async function forgetSpace(db: BookandryDB, space: string): Promise<numbe
     const keys = theirs.map((s) => [s.tbl, s.id] as [string, string]);
     await db.syncState.bulkDelete(keys);
     await db.outbox.bulkDelete(keys);
-    await db.meta.bulkDelete([cursorKeyOf(space), spaceKeysKey(space)]);
+    // Its erase counter too: an erase of a space this device no longer holds
+    // anything from is not one to answer by clearing.
+    await db.meta.bulkDelete([cursorKeyOf(space), epochKeyOf(space), spaceKeysKey(space)]);
     return theirs.length;
   });
   await rememberSpaces(
