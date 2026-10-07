@@ -52,6 +52,10 @@ export const BUILTIN_EXPENSE: readonly BuiltinSeed[] = [
   { id: 'cat.travel', nameKey: 'categories:builtin.travel', icon: 'Plane' },
   { id: 'cat.kids', nameKey: 'categories:builtin.kids', icon: 'Baby' },
   { id: 'cat.pets', nameKey: 'categories:builtin.pets', icon: 'PawPrint' },
+  // A gym or a sports club, and buying foreign currency (רכישת מט"ח) - neither
+  // of which is shopping, and an import has to put them somewhere.
+  { id: 'cat.fitness', nameKey: 'categories:builtin.fitness', icon: 'Dumbbell' },
+  { id: 'cat.currencyExchange', nameKey: 'categories:builtin.currencyExchange', icon: 'ArrowLeftRight' },
   // Where a loan's repayments go by default (the form's Loan type picks it).
   { id: 'cat.loans', nameKey: 'categories:builtin.loans', icon: 'HandCoins' },
   // Where a credit card's monthly fee lands (worked out from the card, not typed).

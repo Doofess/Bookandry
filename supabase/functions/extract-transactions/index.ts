@@ -30,6 +30,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   cleanExtract,
   cleanMap,
+  cleanMerchantCats,
   cleanVerify,
   contextText,
   extractSchema,
@@ -139,7 +140,13 @@ function plan(request: WireRequest): Plan {
 
 type ModelAnswer =
   | { ok: true; json: unknown; usage: WireUsage }
-  | { ok: false; code: 'refused' | 'partial' | 'upstream' | 'timeout' | 'too_large'; usage?: WireUsage };
+  | {
+      ok: false;
+      code: 'refused' | 'partial' | 'upstream' | 'timeout' | 'too_large';
+      usage?: WireUsage;
+      /** Why, for the log: an HTTP status or a stop reason - never content. */
+      why?: string;
+    };
 
 async function ask(request: WireRequest, key: string): Promise<ModelAnswer> {
   const p = plan(request);
@@ -179,7 +186,11 @@ async function ask(request: WireRequest, key: string): Promise<ModelAnswer> {
   if (!response.ok) {
     // Never the body: it can quote the request.
     await response.body?.cancel();
-    return { ok: false, code: response.status === 400 ? 'too_large' : 'upstream' };
+    return {
+      ok: false,
+      code: response.status === 400 ? 'too_large' : 'upstream',
+      why: `http_${String(response.status)}`,
+    };
   }
   const message = (await response.json()) as {
     stop_reason?: string;
@@ -199,12 +210,13 @@ async function ask(request: WireRequest, key: string): Promise<ModelAnswer> {
   };
   if (message.stop_reason === 'refusal') return { ok: false, code: 'refused', usage };
   if (message.stop_reason === 'max_tokens') return { ok: false, code: 'partial', usage };
-  if (message.stop_reason !== 'end_turn') return { ok: false, code: 'upstream', usage };
+  if (message.stop_reason !== 'end_turn')
+    return { ok: false, code: 'upstream', usage, why: `stop_${String(message.stop_reason)}` };
   const text = message.content?.find((block) => block.type === 'text')?.text;
   try {
     return { ok: true, json: JSON.parse(text ?? ''), usage };
   } catch {
-    return { ok: false, code: 'upstream', usage };
+    return { ok: false, code: 'upstream', usage, why: 'not_json' };
   }
 }
 
@@ -245,7 +257,12 @@ function check(request: WireRequest, json: unknown): unknown {
   if (request.mode === 'extract') return cleanExtract(json, request.sources.length, request.ctx);
   if (request.mode === 'map') {
     const cols = Math.max(...request.rows.map((row) => row.length));
-    return cleanMap(json, request.rows.length, cols, request.ctx, request.merchants);
+    const map = cleanMap(json, request.rows.length, cols, request.ctx, request.merchants);
+    // Asked for merchants' categories: those stand even when the columns do not.
+    if (map === undefined && request.merchants.length > 0) {
+      return { mc: cleanMerchantCats(json, request.ctx, request.merchants) };
+    }
+    return map;
   }
   return cleanVerify(
     json,
@@ -295,11 +312,12 @@ export default {
         p_output: answer.usage.out,
       });
     }
-    const log = (status: number, code: string, rows = 0) => {
+    const log = (status: number, code: string, rows = 0, why?: string) => {
       console.log(
         JSON.stringify({
           status,
           code,
+          ...(why === undefined ? {} : { why }),
           mode: request.mode,
           sources: 'sources' in request ? request.sources.length : 0,
           rows,
@@ -310,12 +328,12 @@ export default {
 
     if (!answer.ok) {
       const status = answer.code === 'too_large' ? 413 : answer.code === 'timeout' ? 504 : 502;
-      log(status, answer.code);
+      log(status, answer.code, 0, answer.why);
       return Response.json({ error: answer.code, usage: answer.usage }, { status, headers });
     }
     const result = check(request, answer.json);
     if (result === undefined) {
-      log(502, 'upstream');
+      log(502, 'upstream', 0, 'check');
       return Response.json({ error: 'upstream', usage: answer.usage }, { status: 502, headers });
     }
     const rows =

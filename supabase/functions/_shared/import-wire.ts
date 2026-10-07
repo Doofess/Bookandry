@@ -617,15 +617,7 @@ export function cleanMap(
   const debit = col(v.debit);
   const credit = col(v.credit);
   if (amt === null && debit === null && credit === null) return undefined;
-  const mc: { m: string; cat: string | null }[] = [];
-  for (const entry of Array.isArray(v.mc) ? v.mc.slice(0, LIMITS.merchants) : []) {
-    if (!isObject(entry)) continue;
-    const m = isInt(entry.i, 0, merchants.length - 1)
-      ? merchants[entry.i]
-      : cleanText(entry.m, LIMITS.description);
-    if (m === undefined || m === '') continue;
-    mc.push({ m, cat: alias(entry.cat, ctx.cats) });
-  }
+  const mc = cleanMerchantCats(v, ctx, merchants);
   return {
     hr: v.hr,
     date,
@@ -648,6 +640,28 @@ export function cleanMap(
 // ---------------------------------------------------------------------------
 // The model's side: instructions and answer schemas
 // ---------------------------------------------------------------------------
+
+/**
+ * Only the categories of a map answer - for a call that asked for merchants'
+ * categories: they are worth keeping even when its columns are not.
+ */
+export function cleanMerchantCats(
+  v: unknown,
+  ctx: WireContext,
+  merchants: readonly string[] = [],
+): { m: string; cat: string | null }[] {
+  const mc: { m: string; cat: string | null }[] = [];
+  if (!isObject(v)) return mc;
+  for (const entry of Array.isArray(v.mc) ? v.mc.slice(0, LIMITS.merchants) : []) {
+    if (!isObject(entry)) continue;
+    const m = isInt(entry.i, 0, merchants.length - 1)
+      ? merchants[entry.i]
+      : cleanText(entry.m, LIMITS.description);
+    if (m === undefined || m === '') continue;
+    mc.push({ m, cat: alias(entry.cat, ctx.cats) });
+  }
+  return mc;
+}
 
 /** The fixed instructions every mode shares - short, and the same every call so they cache. */
 export const INSTRUCTIONS = `You read financial documents for a household budgeting app in Israel: card and bank statements, card companies' lists of cards and their rates, receipts, wallet and bank notifications (Bit, PayBox, Apple Pay, Google Pay), spreadsheets.

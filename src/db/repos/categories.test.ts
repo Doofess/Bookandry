@@ -162,6 +162,8 @@ describe('the built-in categories on an older install', () => {
       'cat.travel',
       'cat.kids',
       'cat.pets',
+      'cat.fitness',
+      'cat.currencyExchange',
       'cat.loans',
       'cat.cardFees',
     ]) {
@@ -173,12 +175,14 @@ describe('the built-in categories on an older install', () => {
     await ensureBuiltinCategories(handle.db, NOW);
 
     const names = (await listCategories(handle.db, { kind: 'expense' })).map((c) => c.id);
-    expect(names.slice(-8)).toEqual([
+    expect(names.slice(-10)).toEqual([
       'cat.aiSoftware',
       'cat.phoneInternet',
       'cat.travel',
       'cat.kids',
       'cat.pets',
+      'cat.fitness',
+      'cat.currencyExchange',
       'cat.loans',
       'cat.cardFees',
       'cat.otherExpense',
