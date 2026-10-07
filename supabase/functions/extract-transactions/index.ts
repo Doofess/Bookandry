@@ -245,7 +245,7 @@ function check(request: WireRequest, json: unknown): unknown {
   if (request.mode === 'extract') return cleanExtract(json, request.sources.length, request.ctx);
   if (request.mode === 'map') {
     const cols = Math.max(...request.rows.map((row) => row.length));
-    return cleanMap(json, request.rows.length, cols, request.ctx);
+    return cleanMap(json, request.rows.length, cols, request.ctx, request.merchants);
   }
   return cleanVerify(
     json,
