@@ -529,8 +529,8 @@ export class AccountController {
       if (mine === undefined || this.rpc === undefined) return;
       const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
       const version = user.avatarVersion ?? 0;
-      if (mine.displayName !== name || mine.avatarVersion !== version) {
-        await setMyMember(this.rpc, name, version);
+      if (mine.displayName !== name || mine.avatarVersion !== version || mine.pictureUrl !== user.picture) {
+        await setMyMember(this.rpc, name, version, user.picture);
       }
     } catch {
       // Offline, or the device being cleared; the next sync tries again.
@@ -574,7 +574,9 @@ export class AccountController {
     try {
       await this.connect();
       // The others see this name in the email and on the invitation.
-      await setMyMember(await this.connect(), name, user.avatarVersion ?? 0).catch(() => undefined);
+      await setMyMember(await this.connect(), name, user.avatarVersion ?? 0, user.picture).catch(
+        () => undefined,
+      );
       const outcome = await sendInvite(await getSupabase(), email, currency, language, name);
       if (outcome.ok) await this.refreshHousehold().catch(() => undefined);
       return outcome;

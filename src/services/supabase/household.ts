@@ -12,6 +12,8 @@ export type HouseholdMember = {
   readonly role: 'owner' | 'member';
   readonly displayName: string;
   readonly avatarVersion: number;
+  /** Google's picture, for a member with none uploaded to Bookandry. */
+  readonly pictureUrl?: string;
 };
 
 export type HouseholdInvite = { readonly id: string; readonly email: string; readonly expiresAt: string };
@@ -33,10 +35,11 @@ export type InvitePreview = {
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const GOOGLE_PICTURE = /^https:\/\/lh3\.googleusercontent\.com\/[A-Za-z0-9/_=.-]+$/;
 
 function parseMember(v: unknown): HouseholdMember | undefined {
   if (!isObject(v)) return undefined;
-  const { userId, role, displayName, avatarVersion } = v;
+  const { userId, role, displayName, avatarVersion, pictureUrl } = v;
   if (
     typeof userId !== 'string' ||
     !UUID.test(userId) ||
@@ -47,7 +50,15 @@ function parseMember(v: unknown): HouseholdMember | undefined {
   ) {
     return undefined;
   }
-  return { userId, role, displayName, avatarVersion };
+  // Only ever an address on Google's image host; anything else is no picture.
+  const picture = typeof pictureUrl === 'string' && GOOGLE_PICTURE.test(pictureUrl) ? pictureUrl : undefined;
+  return {
+    userId,
+    role,
+    displayName,
+    avatarVersion,
+    ...(picture === undefined ? {} : { pictureUrl: picture }),
+  };
 }
 
 function parseInvite(v: unknown): HouseholdInvite | undefined {
@@ -76,9 +87,21 @@ export async function getHousehold(rpc: Rpc): Promise<Household | null> {
   return parseHousehold(await rpc('household', {}));
 }
 
-/** What this account calls itself to the others, and its picture's version (0 for none). */
-export async function setMyMember(rpc: Rpc, displayName: string, avatarVersion: number): Promise<void> {
-  await rpc('set_my_member', { p_display_name: displayName.slice(0, 80), p_avatar_version: avatarVersion });
+/**
+ * What this account calls itself to the others, its picture's version (0 for
+ * none), and Google's picture for it - shown to them when it has none of its own.
+ */
+export async function setMyMember(
+  rpc: Rpc,
+  displayName: string,
+  avatarVersion: number,
+  pictureUrl: string | undefined,
+): Promise<void> {
+  await rpc('set_my_member', {
+    p_display_name: displayName.slice(0, 80),
+    p_avatar_version: avatarVersion,
+    p_picture_url: pictureUrl !== undefined && GOOGLE_PICTURE.test(pictureUrl) ? pictureUrl : null,
+  });
 }
 
 export async function peekInvite(rpc: Rpc, token: string): Promise<InvitePreview> {

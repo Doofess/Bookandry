@@ -79,7 +79,13 @@ async function refused(promise: Promise<unknown>): Promise<string> {
 type Invite = { id: string; token: string };
 type Household = {
   id: string;
-  members: { userId: string; role: string; displayName: string; avatarVersion: number }[];
+  members: {
+    userId: string;
+    role: string;
+    displayName: string;
+    avatarVersion: number;
+    pictureUrl?: string | null;
+  }[];
   invites: { id: string; email: string }[];
 } | null;
 
@@ -367,6 +373,37 @@ describe('pictures', () => {
 
     await bob.rpc('leave_household', {});
     expect(await names(bob)).toEqual([]);
+  });
+
+  it("shows members each other's Google picture - only an address on Google's image host", async () => {
+    const google = 'https://lh3.googleusercontent.com/a/ACg8ocK_x-1=s96-c';
+    await link();
+    await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0, p_picture_url: google });
+    const seen = (await household(bob))?.members.find((m) => m.userId === ALICE);
+    expect(seen?.pictureUrl).toBe(google);
+
+    // An app from before keeps calling without one: the picture is left as it was.
+    await alice.rpc('set_my_member', { p_display_name: 'Alicia', p_avatar_version: 0 });
+    expect((await household(bob))?.members.find((m) => m.userId === ALICE)?.pictureUrl).toBe(google);
+
+    for (const elsewhere of [
+      'https://evil.example/a.png',
+      'http://lh3.googleusercontent.com/a/x',
+      `${google}"`,
+    ]) {
+      expect(
+        await refused(
+          alice.rpc('set_my_member', {
+            p_display_name: 'Alice',
+            p_avatar_version: 0,
+            p_picture_url: elsewhere,
+          }),
+        ),
+      ).toBe('malformed_member');
+    }
+    await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0, p_picture_url: null });
+    expect((await household(bob))?.members.find((m) => m.userId === ALICE)?.pictureUrl).toBeNull();
+    expect(await household(carol)).toBeNull();
   });
 });
 
