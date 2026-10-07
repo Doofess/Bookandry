@@ -21,3 +21,6 @@ Thumbs.db
 # they are build output, not source, and a 400KB PNG per run bloats history.
 artifacts/
 *.tsbuildinfo
+
+# Browser-automation scratch (Playwright MCP)
+.playwright-mcp/
