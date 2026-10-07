@@ -155,3 +155,138 @@ describe('erase_space', () => {
     expect(src.indexOf('for update')).toBeLessThan(src.indexOf('delete from public.records'));
   });
 });
+
+const CAROL = '00000000-0000-4000-8000-00000000000c';
+
+async function linkAll(...others: [Session, string, string][]): Promise<void> {
+  for (const [s, email, name] of others) {
+    const { token } = (await alice.rpc('create_invite', { p_email: email, p_currency: 'ILS' })) as {
+      token: string;
+    };
+    await s.rpc('accept_invite', { p_token: token, p_currency: 'ILS', p_display_name: name });
+  }
+  // The first invitation is what makes Alice's household, so she can only be named after it.
+  await alice.rpc('set_my_member', { p_display_name: 'Alice', p_avatar_version: 0 });
+}
+type Asks = { id: string; asks: { userId: string; email: string; token: string }[] };
+const tokenFor = (asks: Asks, id: string) => asks.asks.find((a) => a.userId === id)!.token;
+
+describe('erasing a household', () => {
+  let carol: Session;
+  beforeEach(async () => {
+    carol = await account(CAROL, 'carol@example.com');
+  });
+
+  it('erases every member’s space only once every other member confirms', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob'], [carol, 'carol@example.com', 'Carol']);
+    await push(alice, [record()], 0);
+    await push(bob, [record()], 0);
+    await push(carol, [record()], 0);
+
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    expect(asks.asks.map((a) => a.email).sort()).toEqual(['bob@example.com', 'carol@example.com']);
+    expect(asks.asks.every((a) => /^[0-9a-f]{64}$/.test(a.token))).toBe(true);
+
+    const status = (await bob.rpc('wipe_status', {})) as {
+      status: string;
+      waitingFor: string[];
+      mine: boolean;
+    };
+    expect(status).toMatchObject({ status: 'pending', mine: false });
+    expect(status.waitingFor.sort()).toEqual(['Bob', 'Carol']);
+    expect(await bob.rpc('peek_wipe', { p_token: tokenFor(asks, BOB) })).toMatchObject({
+      requesterName: 'Alice',
+      members: 3,
+    });
+
+    expect(await bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) })).toBe('waiting');
+    expect((await pull(alice)).records).toHaveLength(1);
+    expect(await carol.rpc('confirm_wipe', { p_token: tokenFor(asks, CAROL) })).toBe('done');
+
+    for (const s of [alice, bob, carol]) {
+      expect(await pull(s)).toEqual(expect.objectContaining({ records: [], epoch: 1 }));
+    }
+    expect(await alice.rpc('wipe_status', {})).toMatchObject({ status: 'done', requesterName: 'Alice' });
+  });
+
+  it('works once, and only for the account the email was sent to', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob'], [carol, 'carol@example.com', 'Carol']);
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    expect(await refused(carol.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe(
+      'wipe_wrong_account',
+    );
+    expect(await refused(carol.rpc('peek_wipe', { p_token: tokenFor(asks, BOB) }))).toBe(
+      'wipe_wrong_account',
+    );
+    await bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) });
+    expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+    expect(await refused(bob.rpc('peek_wipe', { p_token: 'nonsense' }))).toBe('wipe_invalid');
+  });
+
+  it('is called off by a decline, by the one who asked, or by seven days passing', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob']);
+    await push(bob, [record()], 0);
+
+    let asks = (await alice.rpc('request_wipe', {})) as Asks;
+    await bob.rpc('decline_wipe', { p_token: tokenFor(asks, BOB) });
+    expect(await alice.rpc('wipe_status', {})).toBeNull();
+    expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+
+    await t.pg.query(`update public.wipe_requests set created_at = now() - interval '2 hours'`);
+    asks = (await alice.rpc('request_wipe', {})) as Asks;
+    expect(await refused(bob.rpc('cancel_wipe', {}))).toBe('wipe_invalid');
+    await alice.rpc('cancel_wipe', {});
+    expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+
+    await t.pg.query(`update public.wipe_requests set created_at = now() - interval '2 hours'`);
+    asks = (await alice.rpc('request_wipe', {})) as Asks;
+    await t.pg.query(
+      `update public.wipe_requests set expires_at = now() - interval '1 second' where id = $1`,
+      [asks.id],
+    );
+    expect(await alice.rpc('wipe_status', {})).toBeNull();
+    expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+    expect((await pull(bob)).records).toHaveLength(1);
+  });
+
+  it('is called off when someone joins or leaves before it completes', async () => {
+    await linkAll([bob, 'bob@example.com', 'Bob']);
+    const asks = (await alice.rpc('request_wipe', {})) as Asks;
+    const { token } = (await alice.rpc('create_invite', {
+      p_email: 'carol@example.com',
+      p_currency: 'ILS',
+    })) as {
+      token: string;
+    };
+    await carol.rpc('accept_invite', { p_token: token, p_currency: 'ILS', p_display_name: 'Carol' });
+    expect(await refused(bob.rpc('confirm_wipe', { p_token: tokenFor(asks, BOB) }))).toBe('wipe_invalid');
+    expect(await alice.rpc('wipe_status', {})).toBeNull();
+  });
+
+  it('refuses one alone, a second while one is pending, and more than one an hour', async () => {
+    expect(await refused(alice.rpc('request_wipe', {}))).toBe('not_linked');
+    await linkAll([bob, 'bob@example.com', 'Bob']);
+    await alice.rpc('request_wipe', {});
+    expect(await refused(bob.rpc('request_wipe', {}))).toBe('wipe_pending');
+    await alice.rpc('cancel_wipe', {});
+    expect(await refused(bob.rpc('request_wipe', {}))).toBe('too_many_wipe_requests');
+  });
+
+  it('lets no one read or write the request tables directly', async () => {
+    for (const table of ['wipe_requests', 'wipe_confirmations']) {
+      expect(await refused(alice.query(`select * from public.${table}`))).toMatch(/permission denied/);
+    }
+  });
+
+  it('locks the request before recording a confirmation, so the last two confirmers take turns', async () => {
+    for (const fn of ['confirm_wipe', 'decline_wipe']) {
+      const { rows } = await t.pg.query<{ src: string }>(
+        `select prosrc as src from pg_proc where proname = $1`,
+        [fn],
+      );
+      const src = rows[0]?.src ?? '';
+      expect(src.indexOf('for update')).toBeGreaterThan(-1);
+      expect(src.indexOf('for update')).toBeLessThan(src.indexOf('update public.wipe_confirmations'));
+    }
+  });
+});
