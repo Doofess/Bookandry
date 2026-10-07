@@ -6,6 +6,9 @@ import type { Minor } from '@/types/money';
 import { CURRENCY_EXPONENTS, exponentOf } from './currency-meta';
 import {
   add,
+  annualEffectiveRate,
+  longCreditPayments,
+  resetRate,
   AmountOverflowError,
   convertMinor,
   creditSchedule,
@@ -835,5 +838,52 @@ describe('addPercentFee', () => {
     [12_345, '2.75', 12_684],
   ])('%i + %s%% = %i', (minor, percent, expected) => {
     expect(addPercentFee(minor, percent)).toBe(expected);
+  });
+});
+
+describe('annualEffectiveRate', () => {
+  it('matches the published pairs', () => {
+    expect(annualEffectiveRate('15.25', 12)).toBe('16.36');
+    expect(annualEffectiveRate('14.15', 12)).toBe('15.10');
+    expect(annualEffectiveRate('8.75', 12)).toBe('9.11');
+    expect(annualEffectiveRate('20.90', 4)).toBe('22.60'); // Isracard late interest, quarterly
+    expect(annualEffectiveRate('0', 12)).toBe('0.00');
+  });
+});
+describe('resetRate', () => {
+  it('moves by the change in prime', () => {
+    expect(resetRate('15.5', '4.75', '5.25')).toBe('16');
+    expect(resetRate('15.5', '4.75', '4.25')).toBe('15');
+  });
+  it('never goes below zero', () => {
+    expect(resetRate('1', '5', '3')).toBe('0');
+    expect(resetRate('1', '-2', '-3')).toBe('0');
+    expect(resetRate('1', '-2', '-1')).toBe('2');
+  });
+});
+describe('longCreditPayments', () => {
+  it('is plain Spitzer with no reset, and re-amortizes the balance at payment 19', () => {
+    const plain = longCreditPayments(300_000, '15.5', 24, undefined);
+    expect(plain.first).toBe(spitzerPayment(300_000, '15.5', 24));
+    const same = longCreditPayments(300_000, '15.5', 24, { atPayment: 19, rate: '15.5' });
+    expect(Math.abs(same.afterReset! - same.first)).toBeLessThanOrEqual(1); // unchanged rate, same payment within an agora
+    const up = longCreditPayments(300_000, '15.5', 24, { atPayment: 19, rate: '16.5' });
+    expect(up.afterReset!).toBeGreaterThan(up.first);
+  });
+  it('handles an interest-free plan, a reset on the first payment, and bad input', () => {
+    const free = longCreditPayments(120_000, '0', 12, { atPayment: 7, rate: '12' });
+    expect(free.first).toBe(10_000);
+    expect(free.afterReset).toBe(spitzerPayment(60_000, '12', 6));
+    // Rounded-up payments can outrun a tiny principal; the balance floors at 0.
+    expect(longCreditPayments(5, '0', 8, { atPayment: 8, rate: '10' }).afterReset).toBe(0);
+    const atOnce = longCreditPayments(300_000, '15.5', 24, { atPayment: 1, rate: '10' });
+    expect(atOnce.afterReset).toBe(spitzerPayment(300_000, '10', 24));
+    expect(() => longCreditPayments(1000, '10', 12, { atPayment: 0, rate: '10' })).toThrow(RangeError);
+    expect(() => longCreditPayments(1000, '10', 12, { atPayment: 13, rate: '10' })).toThrow(RangeError);
+  });
+});
+describe('annualEffectiveRate guards', () => {
+  it('rejects a negative rate', () => {
+    expect(() => annualEffectiveRate('-1', 12)).toThrow(RangeError);
   });
 });
