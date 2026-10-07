@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createCategory } from '@/db/repos/categories';
 import { createPaymentMethod } from '@/db/repos/payment-methods';
@@ -6,11 +6,13 @@ import { freshDb, type TestDb } from '@/test/db-harness';
 import type { IsoInstant } from '@/types/money';
 
 import { eraseThisDevice } from './erase-device';
+import { SHARED_FILES_CACHE } from './shared-files';
 
 const NOW = '2026-10-07T10:00:00.000Z' as IsoInstant;
 
 let handle: TestDb;
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await handle.dispose();
 });
 
@@ -31,5 +33,27 @@ describe('erasing this device', () => {
     expect(await db.categories.count()).toBeGreaterThan(20);
     expect(await db.paymentMethods.filter((m) => m.type === 'credit_card').count()).toBe(0);
     expect(await db.profiles.get('p1')).toBeDefined();
+  });
+
+  it('clears the files shared to the app and not yet read', async () => {
+    handle = freshDb();
+    await handle.db.open();
+    const remove = vi.fn(() => Promise.resolve(true));
+    vi.stubGlobal('caches', { delete: remove });
+
+    await eraseThisDevice(handle.db);
+
+    expect(remove).toHaveBeenCalledWith(SHARED_FILES_CACHE);
+  });
+
+  it('is done even if the shared files cannot be cleared', async () => {
+    handle = freshDb();
+    await handle.db.open();
+    await handle.db.transactions.put({ id: 't1' } as never);
+    vi.stubGlobal('caches', { delete: () => Promise.reject(new Error('blocked')) });
+
+    await eraseThisDevice(handle.db);
+
+    expect(await handle.db.transactions.count()).toBe(0);
   });
 });

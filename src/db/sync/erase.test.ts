@@ -436,10 +436,13 @@ describe('eraseLocalData', () => {
       { key: 'importDraft:k', value: {} },
       { key: 'deviceId', value: 'd1' },
     ]);
+    await a.db.profiles.update('p1', { openingBalanceMinor: 12_345 });
     await eraseLocalData(a.db);
     expect(await a.db.transactions.count()).toBe(0);
     expect(await customCategories(a.db)).toBe(0);
     expect(await a.db.profiles.count()).toBe(1);
+    // The person stays; the balance they started from was data, and goes.
+    expect((await a.db.profiles.get('p1'))?.openingBalanceMinor).toBe(0);
     expect((await a.db.settings.get('singleton'))?.defaultCurrency).toBe('ILS');
     expect((await a.db.outbox.toArray()).map((o) => o.tbl).sort()).toEqual(['profiles', 'settings']);
     for (const key of [

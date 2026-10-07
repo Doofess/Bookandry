@@ -9,7 +9,7 @@ import type { BookandryDB } from './db';
  * what was found is added. Kept in `meta`, on this device, and cleared with it.
  */
 
-const PREFIX = 'importDraft:';
+export const DRAFT_PREFIX = 'importDraft:';
 
 /** A card or an account, as a reading found it. */
 export type FoundMethod =
@@ -53,9 +53,9 @@ export async function keepUnfinished(
     const kept: UnfinishedMethod[] = [];
     for (const method of methods) {
       const key = unfinishedKey(method);
-      const earlier = (await db.meta.get(`${PREFIX}${key}`))?.value as UnfinishedMethod | undefined;
+      const earlier = (await db.meta.get(`${DRAFT_PREFIX}${key}`))?.value as UnfinishedMethod | undefined;
       const entry = { ...method, key, at: earlier?.at ?? nowMs, owner } as UnfinishedMethod;
-      await db.meta.put({ key: `${PREFIX}${key}`, value: entry });
+      await db.meta.put({ key: `${DRAFT_PREFIX}${key}`, value: entry });
       kept.push(entry);
     }
     return kept;
@@ -64,7 +64,7 @@ export async function keepUnfinished(
 
 /** Everything still to finish, oldest first. */
 export async function listUnfinished(db: BookandryDB): Promise<UnfinishedMethod[]> {
-  const rows = await db.meta.where('key').startsWith(PREFIX).toArray();
+  const rows = await db.meta.where('key').startsWith(DRAFT_PREFIX).toArray();
   return rows
     .map((row) => row.value as UnfinishedMethod)
     .sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
@@ -72,10 +72,10 @@ export async function listUnfinished(db: BookandryDB): Promise<UnfinishedMethod[
 
 /** Finished, or deleted by the person: gone. */
 export async function dropUnfinished(db: BookandryDB, key: string): Promise<void> {
-  await db.meta.delete(`${PREFIX}${key}`);
+  await db.meta.delete(`${DRAFT_PREFIX}${key}`);
 }
 
 /** Undo of a delete: back as it was. */
 export async function restoreUnfinished(db: BookandryDB, entry: UnfinishedMethod): Promise<void> {
-  await db.meta.put({ key: `${PREFIX}${entry.key}`, value: entry });
+  await db.meta.put({ key: `${DRAFT_PREFIX}${entry.key}`, value: entry });
 }
