@@ -96,6 +96,8 @@ export function Segmented<T extends string>({
     >
       {options.map((option, index) => {
         const selected = option.value === value;
+        // Nothing chosen yet: the first option is the way in.
+        const entry = selected || (index === 0 && !options.some((o) => o.value === value));
         return (
           <button
             key={option.value}
@@ -103,7 +105,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={selected}
             // One tab stop for the group, per the ARIA radio pattern.
-            tabIndex={selected ? 0 : -1}
+            tabIndex={entry ? 0 : -1}
             onClick={() => {
               onChange(option.value);
             }}
