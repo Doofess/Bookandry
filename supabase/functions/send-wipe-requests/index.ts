@@ -8,13 +8,19 @@
  * each other's sign-in address. This function looks each address up itself,
  * with the project's service-role key (SUPABASE_SERVICE_ROLE_KEY, which
  * Supabase provides to hosted functions; never stored or handled by us), used
- * only for those lookups. Each token goes into a link mailed to its member and
- * nowhere else: it is not returned to the requester.
+ * only for those lookups and to remove a request no email went out for. Each
+ * token goes into a link mailed to its member. This function does not hand the
+ * tokens back, but request_wipe can be called directly by a signed-in member,
+ * who then holds them: that is safe because a token works only for the account
+ * it was made for (wipe_wrong_account), so whoever holds it cannot confirm for
+ * anyone else.
  *
  * Mailed through Resend (RESEND_API_KEY, in this project's Edge Function
- * secrets only). If an address cannot be found or any email cannot be sent,
- * the request is taken back (cancel_wipe), so no link exists that nobody
- * received. Emails, tokens and keys are never logged.
+ * secrets only). If an address cannot be found or an email cannot be sent, no
+ * link is left that nobody received: when no email has gone out yet, the
+ * request is removed outright (discard_wipe), so it does not count against the
+ * hourly limit and "Try again" works; once one has, it is cancelled
+ * (cancel_wipe), and the limit stands. Emails, tokens and keys are never logged.
  *
  * Sent to Resend: each member's address, the requester's name (as the server has it) and
  * the link. Deployed with the Supabase MCP / CLI: `supabase functions deploy send-wipe-requests`.
@@ -128,7 +134,8 @@ export default {
     if (input === undefined) return Response.json({ error: 'email_failed' }, { status: 400, headers });
 
     const key = Deno.env.get('RESEND_API_KEY');
-    // Checked before the request is made: a request made and taken back burns the hourly allowance.
+    // Checked before the request is made: without both keys no email can go out, so
+    // there is no point making one only to remove it again.
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (key === undefined || key === '' || serviceKey === undefined || serviceKey === '')
       return Response.json({ error: 'email_failed' }, { status: 503, headers });
@@ -144,22 +151,30 @@ export default {
       const code = KNOWN.has(made.error.message) ? made.error.message : 'email_failed';
       return Response.json({ error: code }, { status: code === 'email_failed' ? 502 : 400, headers });
     }
-    const answer = made.data as { asks?: unknown; requesterName?: unknown } | null;
+    const answer = made.data as { id?: unknown; asks?: unknown; requesterName?: unknown } | null;
     const asks = answer?.asks;
     const requester = typeof answer?.requesterName === 'string' ? answer.requesterName : '';
 
-    // Taking the request back leaves no link that nobody received.
+    // Addresses are looked up here, never returned by the database. The
+    // service-role key is used for these lookups, and to remove a request no
+    // email went out for (discard_wipe, which only service_role may call).
+    const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
+    let sent = 0;
+
+    // Taking the request back leaves no link that nobody received. With no email
+    // out yet it is removed, so the hourly limit does not refuse "Try again";
+    // after a partial send it is cancelled, and the limit stands.
     const fail = async (status: number): Promise<Response> => {
-      const cancelled = await db.rpc('cancel_wipe');
-      console.log(JSON.stringify({ fn: 'send-wipe-requests', status, cancelled: cancelled.error === null }));
+      const discarded =
+        sent === 0 && typeof answer?.id === 'string'
+          ? (await admin.rpc('discard_wipe', { p_id: answer.id })).error === null
+          : false;
+      const cancelled = discarded ? false : (await db.rpc('cancel_wipe')).error === null;
+      console.log(JSON.stringify({ fn: 'send-wipe-requests', status, sent, discarded, cancelled }));
       return Response.json({ error: 'email_failed' }, { status: 502, headers });
     };
 
     if (!Array.isArray(asks) || asks.length === 0) return await fail(0);
-
-    // Addresses are looked up here, never returned by the database. The
-    // service-role key is used for these lookups and nothing else.
-    const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
     const base = origin !== null && ORIGINS.has(origin) ? origin : 'https://bookandry.com';
 
@@ -175,12 +190,13 @@ export default {
     for (const { to, token } of recipients) {
       const link = `${base}/wipe?t=${encodeURIComponent(token)}`;
       const { subject, html, text } = letter(input, requester, to, link);
-      const sent = await fetch('https://api.resend.com/emails', {
+      const mailed = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: SENDER, to: [to], subject, html, text }),
       }).catch(() => undefined);
-      if (sent?.ok !== true) return await fail(sent?.status ?? 0);
+      if (mailed?.ok !== true) return await fail(mailed?.status ?? 0);
+      sent += 1;
     }
     return Response.json({ ok: true, asked: asks.length }, { headers });
   },

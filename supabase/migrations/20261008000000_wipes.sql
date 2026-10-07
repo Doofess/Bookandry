@@ -402,6 +402,15 @@ begin
 end
 $$;
 
+-- For the mailer only (service_role): a request whose emails never went out is
+-- removed, not cancelled, so it does not count against the hourly limit and
+-- "Try again" works. Its confirmations go with it. Once any email has gone out,
+-- the mailer cancels instead (cancel_wipe), and the limit stands.
+create function public.discard_wipe(p_id uuid) returns void
+language sql security definer set search_path = '' as $$
+  delete from public.wipe_requests where id = p_id and status = 'pending'
+$$;
+
 -- The household's open request, or its last erase in the past 30 days (for the
 -- "deleted at Dana's request" notice), or null.
 create function public.wipe_status() returns jsonb
@@ -442,3 +451,5 @@ revoke all on function public.request_wipe(), public.peek_wipe(text), public.con
   public.decline_wipe(text), public.cancel_wipe(), public.wipe_status() from public, anon;
 grant execute on function public.request_wipe(), public.peek_wipe(text), public.confirm_wipe(text),
   public.decline_wipe(text), public.cancel_wipe(), public.wipe_status() to authenticated;
+revoke all on function public.discard_wipe(uuid) from public, anon, authenticated;
+grant execute on function public.discard_wipe(uuid) to service_role;
