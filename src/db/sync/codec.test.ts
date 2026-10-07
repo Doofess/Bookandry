@@ -14,7 +14,12 @@ import type { Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { CURSOR_KEY } from './apply';
-import { encryptingTransport, KeyUnavailableError, type EncryptedRecord } from './codec';
+import {
+  encryptingTransport,
+  KeyUnavailableError,
+  type EncryptedRecord,
+  type EncryptedTransport,
+} from './codec';
 import { syncOnce } from './engine';
 import { adoptKeyring, dropOlderKeys, loadKeys } from './keystore';
 import { requeueEverything } from './rotate';
@@ -331,5 +336,25 @@ describe('the keystore', () => {
       v instanceof Uint8Array ? toBase64Url(v) : v,
     );
     expect(meta).not.toMatch(/[A-Za-z0-9_-]{43}/);
+  });
+});
+
+describe('the erase counter', () => {
+  // Dropped here, it would silently switch off the server's refusal of a stale push.
+  it('passes through the codec both ways', async () => {
+    const pushed: (number | undefined)[] = [];
+    const inner: EncryptedTransport = {
+      push: (_records, epoch) => {
+        pushed.push(epoch);
+        return Promise.resolve([]);
+      },
+      pull: (cursor) => Promise.resolve({ records: [], cursor, hasMore: false, epoch: 4 }),
+    };
+    const keys = { current: ringV1, byVersion: new Map([[1, ringV1]]) };
+    const transport = encryptingTransport(inner, { userId: USER, keys: () => keys });
+
+    await transport.push([], 3);
+    expect(pushed).toEqual([3]);
+    expect((await transport.pull(0, 50)).epoch).toBe(4);
   });
 });

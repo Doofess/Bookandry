@@ -67,6 +67,16 @@ export function cursorKeyOf(space: string | undefined): string {
   return space === undefined ? SYNC_CURSOR_KEY : `${SYNC_CURSOR_KEY}:${space}`;
 }
 
+/** A space's erase counter, as this device last saw it (see 20261008000000_wipes.sql). */
+export const SYNC_EPOCH_KEY = 'syncEpoch';
+
+export function epochKeyOf(space: string | undefined): string {
+  return space === undefined ? SYNC_EPOCH_KEY : `${SYNC_EPOCH_KEY}:${space}`;
+}
+
+/** When this device last saw everything the server had. */
+export const PULLED_TO_HEAD_KEY = 'syncPulledToHeadAt';
+
 /**
  * A row's `home` when it lives in every linked account's space: the
  * household's structure (categories, the currency, merges) and its joint

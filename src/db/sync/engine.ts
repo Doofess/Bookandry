@@ -4,16 +4,16 @@ import type { BookandryDB } from '../db';
 import { repairIntegrity, type RepairReport } from '../integrity';
 import { LOCK_SYNC, withLock } from '../lock';
 import { applyPage } from './apply';
+import { eraseLocalData } from './erase';
 import { acknowledge, collectOutgoing, type Outgoing } from './outbox';
-import type { PushResult, SyncRecord, SyncTransport } from './protocol';
+import { SpaceWipedError, type PushResult, type SyncRecord, type SyncTransport } from './protocol';
 import { rebaseStaleRows, type RebaseDeps, type RebaseReport } from './rebase';
 import { deliveries, homeOf, storedHomeValue, type Spaces } from './route';
 import { shareWith } from './spaces';
-import { cursorKeyOf } from './tables';
+import { cursorKeyOf, epochKeyOf, PULLED_TO_HEAD_KEY } from './tables';
 import { purgeExpiredDeletions } from '../repos/transactions';
 
-/** When this device last saw everything the server had. */
-export const PULLED_TO_HEAD_KEY = 'syncPulledToHeadAt';
+export { PULLED_TO_HEAD_KEY } from './tables';
 
 export type SyncOptions = {
   readonly now: IsoInstant;
@@ -37,6 +37,8 @@ export type SyncReport = {
   readonly rebase: RebaseReport | undefined;
   readonly purged: number;
   readonly repair: RepairReport;
+  /** A space this device pulled from before was erased, so this device was cleared. */
+  readonly wiped: boolean;
 };
 
 /** One account's space, and the way to it. */
@@ -85,8 +87,24 @@ export function syncOnce(
     // structure first, so its space holds everything its rows rely on.
     for (const space of set.linked) await shareWith(db, space.id);
 
-    const first = await pushAll(db, set, batch);
+    // Read before anything can clear them: a space with a cursor is one this
+    // device has pulled from, and an erase of it must reach this device.
+    const pulledBefore = new Set<string | undefined>();
+    for (const space of [set.own, ...set.linked]) {
+      const id = space === set.own ? undefined : space.id;
+      if ((await db.meta.get(cursorKeyOf(id))) !== undefined) pulledBefore.add(id);
+    }
 
+    // A push into a space erased since this device last pulled is refused: the
+    // pull below clears, and the second push sends what is left.
+    let first = { pushed: 0, stale: 0 };
+    try {
+      first = await pushAll(db, set, batch);
+    } catch (error) {
+      if (!(error instanceof SpaceWipedError)) throw error;
+    }
+
+    let wiped = false;
     let applied = 0;
     let skipped = 0;
     let rejected = 0;
@@ -95,9 +113,27 @@ export function syncOnce(
     for (const space of [set.own, ...set.linked]) {
       const id = space === set.own ? undefined : space.id;
       let cursor = await readCursor(db, id);
+      let known = await readEpoch(db, id);
       for (let round = 0; ; round += 1) {
         if (round >= MAX_ROUNDS) throw new Error('Sync pull did not reach the head');
         const page = await space.transport.pull(cursor, batch);
+        if (page.epoch !== undefined && page.epoch > known) {
+          if (pulledBefore.has(id)) {
+            // Erased since this device last looked. One household erase raises
+            // every member's space at once: clear once, then only start over.
+            // Cleared BEFORE the new epoch is kept, so a crash in between
+            // clears on the next sync instead of pushing the old data back.
+            if (!wiped) await eraseLocalData(db);
+            wiped = true;
+            await db.meta.delete(cursorKeyOf(id));
+            await db.meta.put({ key: epochKeyOf(id), value: page.epoch });
+            known = page.epoch;
+            cursor = 0;
+            continue;
+          }
+          await db.meta.put({ key: epochKeyOf(id), value: page.epoch });
+          known = page.epoch;
+        }
         const report = await applyPage(db, page.records, page.cursor, id);
         applied += report.applied;
         skipped += report.skipped;
@@ -130,6 +166,7 @@ export function syncOnce(
       rebase,
       purged,
       repair,
+      wiped,
     };
   });
 }
@@ -169,7 +206,8 @@ async function pushAll(
     for (const [space, records] of bySpace) {
       const transport = transports.get(space);
       if (transport === undefined) continue;
-      for (const r of await transport.push(records)) answers.set(answerKey(space, r), r.status);
+      const epoch = await readEpoch(db, space === set.own.id ? undefined : space);
+      for (const r of await transport.push(records, epoch)) answers.set(answerKey(space, r), r.status);
     }
 
     const results: PushResult[] = [];
@@ -213,6 +251,11 @@ async function plan(db: BookandryDB, outgoing: Outgoing, spaces: Spaces): Promis
     home: storedHomeValue(home, spaces),
     sends: deliveries(record, home, previous, spaces),
   };
+}
+
+async function readEpoch(db: BookandryDB, space: string | undefined): Promise<number> {
+  const row = await db.meta.get(epochKeyOf(space));
+  return typeof row?.value === 'number' ? row.value : 0;
 }
 
 async function readCursor(db: BookandryDB, space: string | undefined): Promise<number> {
