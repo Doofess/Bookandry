@@ -593,15 +593,25 @@ export class AccountController {
     this.patch({ wipeNotice: { by, at: systemClock.nowMs() } });
   }
 
-  /** Alone: erase everything, on the server and here. Signed out: here only. */
+  /** Alone: erase everything, on the server and here. With no account on the device: here only. */
   async wipeMyData(): Promise<void> {
-    if (this.view.status !== 'signed_in') {
+    if (this.view.status === 'signed_out' || this.view.status === 'unavailable') {
       await eraseThisDevice(this.db);
       return;
     }
+    // A device that holds an account's data but is not signed in (locked, at
+    // the code step, still loading) must not erase locally alone: the server
+    // would still hold everything, and it would sync straight back.
+    if (this.view.status !== 'signed_in') throw new Error('not signed in');
     const userId = this.view.user.id;
-    const epoch = await wipeMyData(await this.connect());
-    await withLock(LOCK_SYNC, () => eraseLocalData(this.db, { epochs: new Map([[userId, epoch]]) }));
+    const rpc = await this.connect();
+    // The server's erase and ours are one step under the sync lock: no sync can
+    // meet the new erase counter before it is recorded, and mistake it for
+    // someone else's erase.
+    await withLock(LOCK_SYNC, async () => {
+      const epoch = await wipeMyData(rpc);
+      await eraseLocalData(this.db, { epochs: new Map([[userId, epoch]]) });
+    });
     this.memberReady = false;
     this.runner?.now();
   }
@@ -611,8 +621,8 @@ export class AccountController {
     if (this.view.status !== 'signed_in') return { ok: false, error: 'not_linked' };
     const user = this.view.user;
     const name = (await this.db.profiles.get(user.id))?.name ?? displayNameOf(user);
-    const { sendWipeRequests } = await import('@/services/supabase/send-wipe');
     try {
+      const { sendWipeRequests } = await import('@/services/supabase/send-wipe');
       await this.connect();
       return await sendWipeRequests(await getSupabase(), language, name);
     } catch {
