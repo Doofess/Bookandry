@@ -29,6 +29,17 @@ const method = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
 const draft = (over: Partial<CardDraft> = {}): CardDraft => ({ ...EMPTY_CARD_DRAFT, ...over });
 
 describe('the card editor', () => {
+  it('keeps fields a newer version added when the card is edited', () => {
+    const previous = {
+      issuer: 'max',
+      billingDay: 10,
+      catalog: { issuer: 'max', bank: '20', tier: 'international', version: 1 },
+    } as unknown as CardDetails;
+    const opened = cardDraftOf(method({ card: previous }));
+    const result = cardFromDraft({ ...opened, billingDay: '15' }, previous);
+    expect(result.ok && result.card).toMatchObject({ billingDay: 15, catalog: { bank: '20' } });
+  });
+
   it('reads the expiry the way the card prints it', () => {
     expect(parseExpires('09/28')).toBe('2028-09');
     expect(parseExpires('9/2028')).toBe('2028-09');

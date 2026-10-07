@@ -156,6 +156,27 @@ const text = (value: string): string | undefined => {
   return trimmed === '' ? undefined : trimmed;
 };
 
+/** Every `CardDetails` key the editor manages; any other key on a stored card is not this version's to touch. */
+const DRAFT_KEYS: ReadonlySet<string> = new Set([
+  'issuer',
+  'network',
+  'kind',
+  'bank',
+  'accountId',
+  'tier',
+  'club',
+  'lastDigits',
+  'expiresMonth',
+  'billingDay',
+  'creditLimitMinor',
+  'monthlyFeeMinor',
+  'feeSince',
+  'feeDiscount',
+  'fxFeeRate',
+  'creditPrimeMargin',
+  'lateRate',
+]);
+
 export type CardDraftResult =
   | {
       readonly ok: true;
@@ -211,7 +232,13 @@ export function cardFromDraft(
 
   if (invalid.length > 0) return { ok: false, invalid };
 
+  // A newer version may store keys this one doesn't know; an edit here must not erase them.
+  const unknown = Object.fromEntries(
+    Object.entries(context.previous ?? {}).filter(([key]) => !DRAFT_KEYS.has(key)),
+  );
+
   const card: CardDetails = {
+    ...unknown,
     ...(draft.issuer === '' ? {} : { issuer: draft.issuer }),
     ...(draft.network === '' ? {} : { network: draft.network }),
     ...(draft.kind === '' ? {} : { kind: draft.kind }),

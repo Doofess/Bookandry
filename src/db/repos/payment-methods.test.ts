@@ -344,6 +344,24 @@ describe('a credit card’s details', () => {
     expect((await handle.db.paymentMethods.get('visa'))?.card).toBeUndefined();
   });
 
+  it('are validated but stored with the keys this version does not know', async () => {
+    await createPaymentMethod(
+      handle.db,
+      'visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1', card },
+      NOW,
+    );
+    const next = await updatePaymentMethod(
+      handle.db,
+      'visa',
+      { card: { billingDay: 2, future: { x: 1 } } as never },
+      NOW,
+    );
+    expect(next.card).toMatchObject({ billingDay: 2, future: { x: 1 } });
+    expect((await handle.db.paymentMethods.get('visa'))?.card).toMatchObject({ future: { x: 1 } });
+    await expect(updatePaymentMethod(handle.db, 'visa', { card: { billingDay: 99 } }, NOW)).rejects.toThrow();
+  });
+
   it('are refused when they do not read, by the repository and not only the screen', async () => {
     await expect(
       createPaymentMethod(
