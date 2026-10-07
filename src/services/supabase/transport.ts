@@ -1,4 +1,5 @@
 import type { EncryptedPushResult, EncryptedRecord, EncryptedTransport } from '@/db/sync/codec';
+import { SpaceWipedError } from '@/db/sync/protocol';
 import { isRev } from '@/lib/rev';
 import type { WrappedKey } from '@/services/crypto/wrap';
 
@@ -40,7 +41,13 @@ export type ServerErrorCode =
   | 'household_full'
   | 'too_many_invites'
   | 'currency_mismatch'
-  | 'not_owner';
+  | 'not_owner'
+  | 'wiped'
+  | 'linked_needs_confirmation'
+  | 'wipe_pending'
+  | 'too_many_wipe_requests'
+  | 'wipe_invalid'
+  | 'wipe_wrong_account';
 
 const KNOWN: ReadonlySet<string> = new Set<ServerErrorCode>([
   'not_signed_in',
@@ -68,6 +75,12 @@ const KNOWN: ReadonlySet<string> = new Set<ServerErrorCode>([
   'too_many_invites',
   'currency_mismatch',
   'not_owner',
+  'wiped',
+  'linked_needs_confirmation',
+  'wipe_pending',
+  'too_many_wipe_requests',
+  'wipe_invalid',
+  'wipe_wrong_account',
 ]);
 
 export class ServerError extends Error {
@@ -150,19 +163,26 @@ function chunks(records: readonly EncryptedRecord[]): EncryptedRecord[][] {
 export function rpcTransport(rpc: Rpc, space?: string): EncryptedTransport {
   const where = space === undefined ? {} : { p_space: space };
   return {
-    async push(records) {
+    async push(records, epoch) {
       const results: EncryptedPushResult[] = [];
       for (const chunk of chunks(records)) {
-        const answer = await rpc('push_records', {
-          ...where,
-          p_records: chunk.map((r) => ({
-            rid: r.rid,
-            rev: r.rev,
-            keyVersion: r.keyVersion,
-            iv: r.iv,
-            ct: r.ct,
-          })),
-        });
+        let answer: unknown;
+        try {
+          answer = await rpc('push_records', {
+            ...where,
+            ...(epoch === undefined ? {} : { p_epoch: epoch }),
+            p_records: chunk.map((r) => ({
+              rid: r.rid,
+              rev: r.rev,
+              keyVersion: r.keyVersion,
+              iv: r.iv,
+              ct: r.ct,
+            })),
+          });
+        } catch (error) {
+          if (error instanceof ServerError && error.code === 'wiped') throw new SpaceWipedError();
+          throw error;
+        }
         if (!Array.isArray(answer) || !answer.every(isPushResult)) {
           throw new MalformedResponseError('push result');
         }
@@ -176,7 +196,9 @@ export function rpcTransport(rpc: Rpc, space?: string): EncryptedTransport {
         records?: unknown;
         cursor?: unknown;
         hasMore?: unknown;
+        epoch?: unknown;
       } | null;
+      const epoch = answer?.epoch;
       const records = answer?.records;
       const next = answer?.cursor;
       if (
@@ -185,11 +207,12 @@ export function rpcTransport(rpc: Rpc, space?: string): EncryptedTransport {
         typeof next !== 'number' ||
         !Number.isSafeInteger(next) ||
         next < cursor ||
-        typeof answer?.hasMore !== 'boolean'
+        typeof answer?.hasMore !== 'boolean' ||
+        (epoch !== undefined && (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0))
       ) {
         throw new MalformedResponseError('pull page');
       }
-      return { records, cursor: next, hasMore: answer.hasMore };
+      return { records, cursor: next, hasMore: answer.hasMore, ...(epoch === undefined ? {} : { epoch }) };
     },
   };
 }

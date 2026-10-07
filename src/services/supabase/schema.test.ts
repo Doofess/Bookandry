@@ -290,6 +290,7 @@ describe('push and pull', () => {
       records: [],
       cursor: rest.cursor,
       hasMore: false,
+      epoch: 0,
     });
   });
 

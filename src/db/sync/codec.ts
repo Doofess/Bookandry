@@ -40,11 +40,11 @@ export type EncryptedPushResult = {
 };
 
 export type EncryptedTransport = {
-  push(records: readonly EncryptedRecord[]): Promise<readonly EncryptedPushResult[]>;
+  push(records: readonly EncryptedRecord[], epoch?: number): Promise<readonly EncryptedPushResult[]>;
   pull(
     cursor: number,
     limit: number,
-  ): Promise<{ records: readonly EncryptedRecord[]; cursor: number; hasMore: boolean }>;
+  ): Promise<{ records: readonly EncryptedRecord[]; cursor: number; hasMore: boolean; epoch?: number }>;
 };
 
 export type Keys = {
@@ -113,7 +113,7 @@ function recordAad(userId: string, rid: string, rev: string, keyVersion: number)
  */
 export function encryptingTransport(inner: EncryptedTransport, options: CodecOptions): SyncTransport {
   return {
-    async push(records) {
+    async push(records, epoch) {
       const { current } = options.keys();
       const byRid = new Map<string, SyncRecord>();
       const sealed: EncryptedRecord[] = [];
@@ -142,7 +142,7 @@ export function encryptingTransport(inner: EncryptedTransport, options: CodecOpt
         });
       }
 
-      const results = await inner.push(sealed);
+      const results = await inner.push(sealed, epoch);
       return results.flatMap((result): PushResult[] => {
         const record = byRid.get(result.rid);
         // An answer about a record we did not send is ignored, not trusted.
@@ -172,7 +172,12 @@ export function encryptingTransport(inner: EncryptedTransport, options: CodecOpt
         records.push(opened);
       }
 
-      return { records, cursor: page.cursor, hasMore: page.hasMore };
+      return {
+        records,
+        cursor: page.cursor,
+        hasMore: page.hasMore,
+        ...(page.epoch === undefined ? {} : { epoch: page.epoch }),
+      };
     },
   };
 }
