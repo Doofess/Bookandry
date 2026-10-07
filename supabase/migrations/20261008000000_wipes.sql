@@ -17,6 +17,10 @@ create function private.erase_space(target uuid) returns integer
 language plpgsql security definer set search_path = '' as $$
 declare next_epoch integer;
 begin
+  -- Lock the space first: push_records holds this row for its whole run, so the
+  -- delete below then sees every push already in flight, and later pushes see
+  -- the raised epoch.
+  perform 1 from public.user_state where user_id = target for update;
   delete from public.records where user_id = target;
   update public.user_state
      set epoch = epoch + 1, record_count = 0, bytes_used = 0
