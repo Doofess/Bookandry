@@ -188,3 +188,240 @@ $$;
 
 revoke all on function public.wipe_my_data(), public.push_records(jsonb, uuid, integer) from public, anon;
 grant execute on function public.wipe_my_data(), public.push_records(jsonb, uuid, integer) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- A household's request: everyone else confirms by an emailed link
+-- ---------------------------------------------------------------------------
+
+create table public.wipe_requests (
+  id           uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households (id) on delete cascade,
+  requested_by uuid not null references auth.users (id) on delete cascade,
+  member_ids   uuid[] not null,
+  status       text not null default 'pending' check (status in ('pending', 'done', 'cancelled')),
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null default now() + interval '7 days',
+  done_at      timestamptz
+);
+create unique index wipe_requests_one_pending on public.wipe_requests (household_id) where status = 'pending';
+
+create table public.wipe_confirmations (
+  request_id   uuid not null references public.wipe_requests (id) on delete cascade,
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  token_hash   text not null unique,
+  confirmed_at timestamptz,
+  declined_at  timestamptz,
+  primary key (request_id, user_id)
+);
+
+alter table public.wipe_requests      enable row level security;
+alter table public.wipe_confirmations enable row level security;
+revoke all on table public.wipe_requests, public.wipe_confirmations from public, anon, authenticated;
+
+-- Past its time, a pending request is a cancelled one.
+create function private.expire_wipes(hid uuid) returns void
+language sql security definer set search_path = '' as $$
+  update public.wipe_requests set status = 'cancelled'
+   where household_id = hid and status = 'pending' and expires_at <= now()
+$$;
+
+-- Someone joined or left: what was agreed was for a different household.
+create function private.cancel_wipes_on_change() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  update public.wipe_requests set status = 'cancelled'
+   where household_id = coalesce(new.household_id, old.household_id) and status = 'pending';
+  return null;
+end
+$$;
+create trigger household_members_cancel_wipes
+  after insert or delete on public.household_members
+  for each row execute function private.cancel_wipes_on_change();
+
+create function public.request_wipe() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  uid uuid := private.require_user();
+  hid uuid;
+  members uuid[];
+  rid uuid;
+  asks jsonb := '[]'::jsonb;
+  m record;
+  token text;
+begin
+  select household_id into hid from public.household_members where user_id = uid;
+  if hid is null or private.household_size(uid) < 2 then
+    raise exception 'not_linked' using errcode = '42501';
+  end if;
+  perform private.expire_wipes(hid);
+  if exists (select 1 from public.wipe_requests where household_id = hid and status = 'pending') then
+    raise exception 'wipe_pending' using errcode = '55000';
+  end if;
+  if exists (select 1 from public.wipe_requests
+              where household_id = hid and created_at > now() - interval '1 hour') then
+    raise exception 'too_many_wipe_requests' using errcode = '54000';
+  end if;
+
+  select array_agg(user_id order by user_id) into members from public.household_members where household_id = hid;
+  insert into public.wipe_requests (household_id, requested_by, member_ids) values (hid, uid, members)
+  returning id into rid;
+
+  for m in
+    select hm.user_id, u.email from public.household_members hm join auth.users u on u.id = hm.user_id
+     where hm.household_id = hid and hm.user_id <> uid
+  loop
+    token := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+    insert into public.wipe_confirmations (request_id, user_id, token_hash)
+    values (rid, m.user_id, private.token_hash(token));
+    asks := asks || jsonb_build_object('userId', m.user_id, 'email', m.email, 'token', token);
+  end loop;
+  return jsonb_build_object('id', rid, 'asks', asks);
+end
+$$;
+
+-- The caller's confirmation and its request, checked: theirs, open, unanswered.
+create function private.open_confirmation(p_token text, uid uuid)
+returns public.wipe_confirmations
+language plpgsql security definer set search_path = '' as $$
+declare
+  c public.wipe_confirmations;
+  r public.wipe_requests;
+begin
+  select * into c from public.wipe_confirmations where token_hash = private.token_hash(p_token);
+  if not found then
+    raise exception 'wipe_invalid' using errcode = '22023';
+  end if;
+  if c.user_id <> uid then
+    raise exception 'wipe_wrong_account' using errcode = '42501';
+  end if;
+  select * into r from public.wipe_requests where id = c.request_id;
+  perform private.expire_wipes(r.household_id);
+  select * into r from public.wipe_requests where id = c.request_id;
+  if r.status <> 'pending' or c.confirmed_at is not null or c.declined_at is not null then
+    raise exception 'wipe_invalid' using errcode = '22023';
+  end if;
+  return c;
+end
+$$;
+
+create function public.peek_wipe(p_token text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  c public.wipe_confirmations := private.open_confirmation(p_token, private.require_user());
+  r public.wipe_requests;
+begin
+  select * into r from public.wipe_requests where id = c.request_id;
+  return jsonb_build_object(
+    'requesterName', coalesce((select display_name from public.household_members where user_id = r.requested_by), ''),
+    'createdAt', r.created_at,
+    'expiresAt', r.expires_at,
+    'members', cardinality(r.member_ids));
+end
+$$;
+
+create function public.confirm_wipe(p_token text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  c public.wipe_confirmations := private.open_confirmation(p_token, private.require_user());
+  r public.wipe_requests;
+  now_members uuid[];
+  member uuid;
+begin
+  -- Lock the request first: the last two confirmers must take turns, so the
+  -- second sees the first's confirmation. open_confirmation ran before the
+  -- lock, so the request may have been called off meanwhile.
+  select * into r from public.wipe_requests where id = c.request_id for update;
+  if r.status <> 'pending' then
+    raise exception 'wipe_invalid' using errcode = '22023';
+  end if;
+
+  update public.wipe_confirmations set confirmed_at = now()
+   where request_id = c.request_id and user_id = c.user_id;
+  if exists (select 1 from public.wipe_confirmations
+              where request_id = c.request_id and confirmed_at is null) then
+    return 'waiting';
+  end if;
+
+  select array_agg(user_id order by user_id) into now_members
+    from public.household_members where household_id = r.household_id;
+  if now_members is distinct from r.member_ids then
+    update public.wipe_requests set status = 'cancelled' where id = r.id;
+    raise exception 'wipe_invalid' using errcode = '22023';
+  end if;
+  foreach member in array r.member_ids loop
+    perform private.erase_space(member);
+  end loop;
+  update public.wipe_requests set status = 'done', done_at = now() where id = r.id;
+  return 'done';
+end
+$$;
+
+create function public.decline_wipe(p_token text) returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  c public.wipe_confirmations := private.open_confirmation(p_token, private.require_user());
+  r public.wipe_requests;
+begin
+  -- Same lock and re-check as confirm_wipe.
+  select * into r from public.wipe_requests where id = c.request_id for update;
+  if r.status <> 'pending' then
+    raise exception 'wipe_invalid' using errcode = '22023';
+  end if;
+  update public.wipe_confirmations set declined_at = now()
+   where request_id = c.request_id and user_id = c.user_id;
+  update public.wipe_requests set status = 'cancelled' where id = c.request_id;
+end
+$$;
+
+create function public.cancel_wipe() returns void
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := private.require_user();
+begin
+  update public.wipe_requests set status = 'cancelled'
+   where requested_by = uid and status = 'pending' and expires_at > now();
+  if not found then
+    raise exception 'wipe_invalid' using errcode = '22023';
+  end if;
+end
+$$;
+
+-- The household's open request, or its last erase in the past 30 days (for the
+-- "deleted at Dana's request" notice), or null.
+create function public.wipe_status() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  uid uuid := private.require_user();
+  hid uuid;
+  r public.wipe_requests;
+begin
+  select household_id into hid from public.household_members where user_id = uid;
+  if hid is null then
+    return null;
+  end if;
+  perform private.expire_wipes(hid);
+  select * into r from public.wipe_requests
+   where household_id = hid and (status = 'pending' or (status = 'done' and done_at > now() - interval '30 days'))
+   order by (status = 'pending') desc, created_at desc limit 1;
+  if not found then
+    return null;
+  end if;
+  return jsonb_build_object(
+    'id', r.id,
+    'status', r.status,
+    'mine', r.requested_by = uid,
+    'requesterName', coalesce((select display_name from public.household_members where user_id = r.requested_by), ''),
+    'createdAt', r.created_at,
+    'expiresAt', r.expires_at,
+    'waitingFor', coalesce((
+      select jsonb_agg(hm.display_name order by hm.display_name)
+        from public.wipe_confirmations c join public.household_members hm on hm.user_id = c.user_id
+       where c.request_id = r.id and c.confirmed_at is null), '[]'::jsonb));
+end
+$$;
+
+revoke all on function private.expire_wipes(uuid), private.open_confirmation(text, uuid),
+  private.cancel_wipes_on_change() from public, anon, authenticated;
+revoke all on function public.request_wipe(), public.peek_wipe(text), public.confirm_wipe(text),
+  public.decline_wipe(text), public.cancel_wipe(), public.wipe_status() from public, anon;
+grant execute on function public.request_wipe(), public.peek_wipe(text), public.confirm_wipe(text),
+  public.decline_wipe(text), public.cancel_wipe(), public.wipe_status() to authenticated;
