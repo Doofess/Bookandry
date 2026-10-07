@@ -1,5 +1,11 @@
 import type { EncryptedPushResult, EncryptedRecord, EncryptedTransport } from '@/db/sync/codec';
-import type { PullPage, PushResult, SyncRecord, SyncTransport } from '@/db/sync/protocol';
+import {
+  SpaceWipedError,
+  type PullPage,
+  type PushResult,
+  type SyncRecord,
+  type SyncTransport,
+} from '@/db/sync/protocol';
 
 /**
  * The server's rules, in memory, for the two-device scenario suites.
@@ -112,22 +118,34 @@ class MemoryServer<R extends { readonly rev: string }> {
 
 /** Plaintext records, keyed by table and id: the merge engine's view. */
 export class MemorySyncServer extends MemoryServer<SyncRecord> {
+  /** The erase counter: a push carrying an older one is refused. */
+  epoch = 0;
+
   constructor() {
     super((r) => `${r.tbl}/${r.id}`);
   }
 
+  /** Forget everything and move the epoch on: what deleting all data does. */
+  erase(): void {
+    this.reset();
+    this.epoch += 1;
+  }
+
   transport(): SyncTransport {
     return {
-      push: (records) =>
-        Promise.resolve(
-          this.pushRecords(records).map(({ record, status }): PushResult => ({
-            tbl: record.tbl,
-            id: record.id,
-            rev: record.rev,
-            status,
-          })),
-        ),
-      pull: (cursor, limit): Promise<PullPage> => Promise.resolve(this.pullRecords(cursor, limit)),
+      push: (records, epoch) =>
+        (epoch ?? 0) < this.epoch
+          ? Promise.reject(new SpaceWipedError())
+          : Promise.resolve(
+              this.pushRecords(records).map(({ record, status }): PushResult => ({
+                tbl: record.tbl,
+                id: record.id,
+                rev: record.rev,
+                status,
+              })),
+            ),
+      pull: (cursor, limit): Promise<PullPage> =>
+        Promise.resolve({ ...this.pullRecords(cursor, limit), epoch: this.epoch }),
     };
   }
 }

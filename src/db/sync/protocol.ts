@@ -41,10 +41,13 @@ export type PullPage = {
   /** Resume point for the next pull. Opaque to the engine. */
   readonly cursor: number;
   readonly hasMore: boolean;
+  /** The space's erase counter; absent from a server that keeps none. */
+  readonly epoch?: number;
 };
 
 export type SyncTransport = {
-  push(records: readonly SyncRecord[]): Promise<readonly PushResult[]>;
+  /** `epoch`: the space's erase counter as this device last saw it. A newer one refuses the push. */
+  push(records: readonly SyncRecord[], epoch?: number): Promise<readonly PushResult[]>;
   /**
    * Records changed since `cursor`, oldest first. The server never splits one
    * push across two pages, so a transaction and the first-payment override
@@ -52,3 +55,11 @@ export type SyncTransport = {
    */
   pull(cursor: number, limit: number): Promise<PullPage>;
 };
+
+/** The space was erased since this device last pulled: pull, and clear, before pushing again. */
+export class SpaceWipedError extends Error {
+  constructor() {
+    super('space wiped');
+    this.name = 'SpaceWipedError';
+  }
+}
