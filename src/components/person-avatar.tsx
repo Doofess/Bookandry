@@ -8,8 +8,8 @@ import { db } from '@/db/db';
 
 /**
  * A person of the household, as a round picture: their account's picture
- * when they are a linked account that has one, else their initials on their
- * colour. This account's own person shows the account's picture (its own
+ * when they are a linked account that has one - uploaded, else Google's -
+ * else their initials on their colour. This account's own person shows the account's picture (its own
  * upload, else Google's).
  *
  * Decorative unless given a `label`: whatever sits next to it carries the name.
@@ -37,7 +37,12 @@ export function PersonAvatar({
     async () => (await db.meta.get(memberAvatarKey(person.id)))?.value,
     [person.id],
   );
-  const src = person.id === me ? own.src : isStored(stored) ? urlFor(person.id, stored) : undefined;
+  // Another member: the picture they uploaded, else Google's, which they share with the household.
+  const google =
+    view.status === 'signed_in'
+      ? view.household?.members.find((m) => m.userId === person.id)?.pictureUrl
+      : undefined;
+  const src = person.id === me ? own.src : isStored(stored) ? urlFor(person.id, stored) : google;
   const px = PERSON_SIZES[size];
   const initials = initialsOf(person.name, undefined);
 
