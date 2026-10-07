@@ -6,6 +6,7 @@ import {
   epochKeyOf,
   PULLED_TO_HEAD_KEY,
   SYNC_CURSOR_KEY,
+  SYNC_EPOCH_KEY,
   SYNC_WIPED_KEY,
   SYNCED_TABLES,
   type OutboxRow,
@@ -18,6 +19,8 @@ export type EraseOptions = {
   /**
    * Erase counters to record, by space id, in the same transaction: the clear
    * and the erase it answers are one step, so neither survives a crash alone.
+   * Every other space's is forgotten: this device holds nothing of it now, so
+   * its next pull takes its counter instead of clearing again.
    */
   readonly epochs?: ReadonlyMap<string, number>;
   /** Cleared by a sync: the next sync to finish reports it (SYNC_WIPED_KEY). */
@@ -29,8 +32,8 @@ export type EraseOptions = {
  * (signed out) there is no server. Settings and people stay, and are queued to
  * be sent again into a space that no longer holds them. The built-ins come
  * back as on a new install. Where every pull resumes is forgotten, so the next
- * sync starts from the top; each space's erase counter is kept, so a later
- * erase still reaches this device.
+ * sync starts from the top, and so is every space's erase counter but those
+ * this clear answers (see EraseOptions.epochs).
  */
 export async function eraseLocalData(db: BookandryDB, options: EraseOptions = {}): Promise<void> {
   const tables = [...SYNCED_TABLES.map((t) => db.table(t)), db.syncState, db.outbox, db.meta];
@@ -55,6 +58,7 @@ export async function eraseLocalData(db: BookandryDB, options: EraseOptions = {}
         (k) =>
           k === SYNC_CURSOR_KEY ||
           k.startsWith(`${SYNC_CURSOR_KEY}:`) ||
+          k.startsWith(`${SYNC_EPOCH_KEY}:`) ||
           k.startsWith(DRAFT_PREFIX) ||
           k === PULLED_TO_HEAD_KEY,
       ),

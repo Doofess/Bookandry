@@ -149,23 +149,28 @@ async function household(): Promise<void> {
   await b.sync();
 }
 
-/** Two spaces, and a way to break the next pull from the second. */
+type Hook = (() => void) | undefined;
+
+/** Two spaces, and a way to step in before the next pull from either. */
 function linkedPair() {
   const theirs = new MemorySyncServer();
-  const hooks = { beforeTheirPull: undefined as (() => void) | undefined };
-  const spaces = (): SyncSpaces => {
-    const inner = theirs.transport();
-    const transport: SyncTransport = {
-      push: (records, epoch) => inner.push(records, epoch),
-      pull: (cursor, limit) => {
-        const hook = hooks.beforeTheirPull;
-        hooks.beforeTheirPull = undefined;
-        hook?.();
-        return inner.pull(cursor, limit);
-      },
-    };
-    return { own: { id: ME, transport: server.transport() }, linked: [{ id: 'them', transport }] };
+  const hooks: { beforeOwnPull: Hook; beforeTheirPull: Hook } = {
+    beforeOwnPull: undefined,
+    beforeTheirPull: undefined,
   };
+  const hooked = (inner: SyncTransport, which: keyof typeof hooks): SyncTransport => ({
+    push: (records, epoch) => inner.push(records, epoch),
+    pull: (cursor, limit) => {
+      const hook = hooks[which];
+      hooks[which] = undefined;
+      hook?.();
+      return inner.pull(cursor, limit);
+    },
+  });
+  const spaces = (): SyncSpaces => ({
+    own: { id: ME, transport: hooked(server.transport(), 'beforeOwnPull') },
+    linked: [{ id: 'them', transport: hooked(theirs.transport(), 'beforeTheirPull') }],
+  });
   const syncBoth = () => syncOnce(b.db, spaces(), { now: now(), batchSize: 50 });
   return { theirs, hooks, syncBoth };
 }
@@ -295,6 +300,59 @@ describe('an erase reaching a device', () => {
     expect((await syncBoth()).wiped).toBe(false);
   });
 
+  it('keeps what was made after a clear whose sync then failed: the next sync does not clear again', async () => {
+    const { theirs, hooks, syncBoth } = linkedPair();
+    await addProfile(b.db, 'p1');
+    await b.db.transactions.put(tx('t1'));
+    await syncBoth();
+
+    server.erase();
+    theirs.erase();
+    hooks.beforeTheirPull = () => {
+      throw new Error('network: pull dropped');
+    };
+    await expect(syncBoth()).rejects.toThrow('pull dropped');
+
+    // Offline, after the clear: one row of this account's own, one of the household's.
+    tick();
+    await b.db.transactions.put(tx('t5'));
+    await createCategory(b.db, 'cat.later', { name: 'Later', kind: 'expense', icon: 'Circle' }, now());
+
+    expect((await syncBoth()).wiped).toBe(true);
+    expect(await b.db.transactions.get('t5')).toBeDefined();
+    expect(await b.db.categories.get('cat.later')).toBeDefined();
+    const ids = (s: MemorySyncServer) => s.snapshot().map((r) => r.id);
+    expect(ids(server)).toEqual(expect.arrayContaining(['t5', 'cat.later']));
+    expect(ids(theirs)).toContain('cat.later');
+  });
+
+  it("keeps what was made after a clear when this account's own space then failed to pull", async () => {
+    const { theirs, hooks, syncBoth } = linkedPair();
+    await addProfile(b.db, 'p1');
+    await syncBoth();
+
+    // The household's erase shows first in their space: the clear records
+    // theirs only, and pulling this account's own space again fails.
+    hooks.beforeTheirPull = () => {
+      server.erase();
+      theirs.erase();
+      hooks.beforeOwnPull = () => {
+        throw new Error('network: pull dropped');
+      };
+    };
+    await expect(syncBoth()).rejects.toThrow('pull dropped');
+    expect(await b.db.meta.get(epochKeyOf(ME))).toBeUndefined();
+
+    tick();
+    await b.db.transactions.put(tx('t5'));
+    // The push into this account's own space carries no epoch and is refused;
+    // the pull takes the epoch without clearing, and the second push sends t5.
+    expect((await syncBoth()).wiped).toBe(true);
+    expect(await b.db.transactions.get('t5')).toBeDefined();
+    expect(server.snapshot().map((r) => r.id)).toContain('t5');
+    expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(1);
+  });
+
   it('reaches a device that signed out keeping its data, and back in', async () => {
     await household();
     // What joining again does: keys and cursors forgotten, the data kept and
@@ -338,15 +396,15 @@ describe('an erase reaching a device', () => {
     expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(0);
   });
 
-  it('clears again, harmlessly, after a clear whose epoch was never recorded', async () => {
+  it('takes the epoch, without clearing again, after a clear that recorded none', async () => {
     await household();
     server.erase();
     tick();
     // A crash between clearing and recording what was answered.
     await eraseLocalData(b.db);
-    expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(0);
+    expect(await b.db.meta.get(epochKeyOf(ME))).toBeUndefined();
 
-    await b.sync();
+    expect((await b.sync()).wiped).toBe(false);
     expect(await b.db.transactions.count()).toBe(0);
     expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(1);
     expect(held()).toEqual(['profiles', 'settings']);
@@ -384,12 +442,16 @@ describe('eraseLocalData', () => {
     expect(await a.db.profiles.count()).toBe(1);
     expect((await a.db.settings.get('singleton'))?.defaultCurrency).toBe('ILS');
     expect((await a.db.outbox.toArray()).map((o) => o.tbl).sort()).toEqual(['profiles', 'settings']);
-    for (const key of [cursorKeyOf(undefined), cursorKeyOf('x'), 'importDraft:k', SYNC_WIPED_KEY]) {
+    for (const key of [
+      cursorKeyOf(undefined),
+      cursorKeyOf('x'),
+      epochKeyOf('x'),
+      'importDraft:k',
+      SYNC_WIPED_KEY,
+    ]) {
       expect(await a.db.meta.get(key)).toBeUndefined();
     }
     expect(await a.db.meta.get('deviceId')).toBeDefined();
-    // An erase counter is how a later erase still reaches this device.
-    expect((await a.db.meta.get(epochKeyOf('x')))?.value).toBe(3);
   });
 
   it('brings the built-ins back as on a new install', async () => {
@@ -410,9 +472,15 @@ describe('eraseLocalData', () => {
     expect((await b.db.outbox.toArray()).map((o) => o.tbl)).toEqual(['profiles']);
   });
 
-  it('records the epochs it answers, and marks a clear made by a sync', async () => {
+  it('records the epochs it answers, forgets the rest, and marks a clear made by a sync', async () => {
+    await a.db.meta.bulkPut([
+      { key: epochKeyOf('x'), value: 3 },
+      { key: epochKeyOf('y'), value: 2 },
+    ]);
     await eraseLocalData(a.db, { epochs: new Map([['x', 4]]), bySync: true });
     expect((await a.db.meta.get(epochKeyOf('x')))?.value).toBe(4);
+    // Nothing of that space is held any more: its next pull just takes its epoch.
+    expect(await a.db.meta.get(epochKeyOf('y'))).toBeUndefined();
     expect(await a.db.meta.get(SYNC_WIPED_KEY)).toBeDefined();
   });
 });
