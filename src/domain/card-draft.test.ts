@@ -30,14 +30,20 @@ const draft = (over: Partial<CardDraft> = {}): CardDraft => ({ ...EMPTY_CARD_DRA
 
 describe('the card editor', () => {
   it('keeps fields a newer version added when the card is edited', () => {
-    const previous = {
+    const previous: CardDetails & { catalog: object } = {
       issuer: 'max',
       billingDay: 10,
+      fxFeeRate: '2.5',
       catalog: { issuer: 'max', bank: '20', tier: 'international', version: 1 },
-    } as unknown as CardDetails;
+    };
     const opened = cardDraftOf(method({ card: previous }));
     const result = cardFromDraft({ ...opened, billingDay: '15' }, previous);
     expect(result.ok && result.card).toMatchObject({ billingDay: 15, catalog: { bank: '20' } });
+
+    // A managed field the user cleared stays cleared.
+    const cleared = cardFromDraft({ ...opened, fxFee: '' }, previous);
+    expect(cleared.ok && cleared.card).not.toHaveProperty('fxFeeRate');
+    expect(cleared.ok && cleared.card).toHaveProperty('catalog');
   });
 
   it('reads the expiry the way the card prints it', () => {

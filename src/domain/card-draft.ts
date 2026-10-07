@@ -175,7 +175,7 @@ const DRAFT_KEYS: ReadonlySet<string> = new Set([
   'fxFeeRate',
   'creditPrimeMargin',
   'lateRate',
-]);
+] satisfies readonly (keyof CardDetails)[]);
 
 export type CardDraftResult =
   | {
