@@ -155,6 +155,14 @@ describe('WipeScreen', () => {
     expect(await screen.findByText(/Couldn't reach your account/)).toBeInTheDocument();
   });
 
+  it('unreachable, offers the way to the feed, and forgets the request on the way', async () => {
+    account.controller.peekWipe.mockRejectedValue(new Error('offline'));
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: 'Go to the feed' }));
+    expect(await screen.findByText('feed page')).toBeInTheDocument();
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
+
   it('signed out: keeps the token for the visit and offers to sign in', async () => {
     account.view = { status: 'signed_out' };
     render();

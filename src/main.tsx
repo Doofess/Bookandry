@@ -15,6 +15,7 @@ import { initAccount } from '@/app/account';
 import { AccountGate } from '@/app/account-gate';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
+import { capturePendingLinks } from '@/app/capture-pending';
 import { AppDirection } from '@/app/direction-provider';
 import { startPrimeWatcher } from '@/app/prime';
 import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
@@ -51,6 +52,10 @@ import { captureArrival } from '@/services/supabase/id-token';
  * finishes the sign-in when it starts.
  */
 captureArrival();
+
+// An emailed invitation's or delete request's token, kept before the gates
+// below can show the welcome screen in place of its page: see the file.
+capturePendingLinks();
 
 const router = createBrowserRouter([
   {

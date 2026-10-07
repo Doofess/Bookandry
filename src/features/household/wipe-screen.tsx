@@ -184,7 +184,11 @@ export function WipeScreen() {
     );
   }
 
-  const done = state.kind === 'invalid' || state.kind === 'wrong_account' || !valid;
+  // Every end state offers the way out, and forgets the token on the way, so
+  // the app stops bringing the person back here. Unreachable too: the link in
+  // the email still works once there is a connection.
+  const done =
+    state.kind === 'invalid' || state.kind === 'wrong_account' || state.kind === 'offline' || !valid;
 
   return (
     <section className="mx-auto max-w-lg space-y-4 px-4 py-10">
