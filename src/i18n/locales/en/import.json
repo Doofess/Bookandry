@@ -13,6 +13,9 @@
   "read_one": "Read 1 file",
   "read_other": "Read {{count}} files",
   "readNone": "Read",
+  "whose": "Whose spending and income is this?",
+  "whoseHint": "Everything found is added for them. You can still change any row before it's added.",
+  "whoseFirst": "Choose whose this is",
   "remove": "Remove {{name}}",
   "stop": "Stop",
   "status": {

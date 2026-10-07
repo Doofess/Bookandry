@@ -9,6 +9,7 @@ import { accountController, useAccount } from '@/app/account';
 import { usePrime } from '@/app/prime';
 import { forgetShared, readShared } from '@/app/shared-files';
 import { Money } from '@/components/money';
+import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -150,8 +151,17 @@ export function ImportSheet(props: ImportSheetProps) {
   const defaultProfileId = props.profiles.some((p) => p.id === props.activeProfileId)
     ? props.activeProfileId
     : (props.profiles.find((p) => p.id === me)?.id ?? props.profiles[0]?.id ?? '');
+  /*
+   * Whose the files are is asked before they are read. Looking at one person,
+   * the answer starts as them; looking at everyone in a household, it starts
+   * unanswered, so nobody's statement is filed under someone else by default.
+   */
+  const presetProfileId =
+    props.profiles.length < 2 || props.profiles.some((p) => p.id === props.activeProfileId)
+      ? defaultProfileId
+      : '';
   const [session, setSession] = useState<ImportSession>(
-    () => readSession() ?? EMPTY_SESSION(defaultProfileId),
+    () => readSession() ?? EMPTY_SESSION(presetProfileId),
   );
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -187,12 +197,12 @@ export function ImportSheet(props: ImportSheetProps) {
     void readShared(sharedId).then((files) => {
       if (cancelled) return;
       if (files.length === 0) setSharedGone(true);
-      else setSession({ ...EMPTY_SESSION(defaultProfileId), files, sharedId });
+      else setSession({ ...EMPTY_SESSION(presetProfileId), files, sharedId });
     });
     return () => {
       cancelled = true;
     };
-  }, [sharedId, session.sharedId, defaultProfileId]);
+  }, [sharedId, session.sharedId, presetProfileId]);
 
   const close = () => {
     abort.current?.abort();
@@ -529,6 +539,11 @@ export function ImportSheet(props: ImportSheetProps) {
                   files={session.files}
                   shared={session.sharedId !== undefined}
                   sharedGone={sharedGone}
+                  profiles={props.profiles}
+                  whose={session.batch.profileId}
+                  onWhose={(profileId) => {
+                    setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
+                  }}
                   onFiles={(files) => {
                     setSession((s) => ({ ...s, files }));
                   }}
@@ -663,17 +678,28 @@ function Picker({
   files,
   shared,
   sharedGone,
+  profiles,
+  whose,
+  onWhose,
   onFiles,
   onRead,
 }: {
   readonly files: readonly File[];
   readonly shared: boolean;
   readonly sharedGone: boolean;
+  readonly profiles: readonly Profile[];
+  /** Whose spending and income the files are; '' until answered. */
+  readonly whose: string;
+  readonly onWhose: (profileId: string) => void;
   readonly onFiles: (files: File[]) => void;
   readonly onRead: () => void;
 }) {
   const { t } = useTranslation('import');
+  const whoseId = useId();
   const input = useRef<HTMLInputElement>(null);
+  // Only a household asks; alone, it is always the one person's.
+  const asks = profiles.length > 1;
+  const unanswered = asks && !profiles.some((p) => p.id === whose);
   const [dragging, setDragging] = useState(false);
   const add = (more: readonly File[]) => {
     onFiles([...files, ...more].slice(0, MAX_FILES));
@@ -698,6 +724,20 @@ function Picker({
     <div className="space-y-4">
       {sharedGone ? (
         <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">{t('sharedGone')}</p>
+      ) : null}
+      {asks ? (
+        <div className="space-y-1.5">
+          <p id={whoseId} className="text-sm font-medium">
+            {t('whose')}
+          </p>
+          <Segmented
+            value={whose}
+            onChange={onWhose}
+            options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+            labelledBy={whoseId}
+          />
+          <p className="text-xs text-muted-foreground">{t('whoseHint')}</p>
+        </div>
       ) : null}
       <div
         className={cn(
@@ -778,8 +818,17 @@ function Picker({
         </span>
       </p>
 
-      <Button type="button" className="h-11 w-full" disabled={files.length === 0} onClick={onRead}>
-        {files.length === 0 ? t('readNone') : t('read', { count: files.length })}
+      <Button
+        type="button"
+        className="h-11 w-full"
+        disabled={files.length === 0 || unanswered}
+        onClick={onRead}
+      >
+        {files.length === 0
+          ? t('readNone')
+          : unanswered
+            ? t('whoseFirst')
+            : t('read', { count: files.length })}
       </Button>
     </div>
   );

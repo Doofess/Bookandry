@@ -322,4 +322,55 @@ describe('Smart import', () => {
     });
     expect(await db.paymentMethods.filter((m) => m.label === 'Dream Card VIP').count()).toBe(1);
   });
+
+  it('in a household, asks whose the files are before reading, and adds what is found for them', async () => {
+    writeSession(undefined);
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: { r: [wireRow({ d: '06/09/26', a: '42.00', m: 'Aroma' })], t: [], per: null, done: true },
+      },
+      { ok: true, usage, result: { r: [] } },
+    ];
+    const partner = { ...profile, id: 'p2', name: 'Yossi', sortOrder: 1 } as Profile;
+    const onSaved = vi.fn<(date: LocalDate) => void>();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ImportSheet
+        target={{ mode: 'import' }}
+        onOpenChange={() => undefined}
+        onOpenRow={() => undefined}
+        onOpenCard={() => undefined}
+        profiles={[profile, partner]}
+        categories={[category('cat.groceries', 'expense')]}
+        paymentMethods={[]}
+        activeProfileId="all"
+        baseCurrency="ILS"
+        today={'2026-09-15' as LocalDate}
+        onSaved={onSaved}
+      />,
+    );
+
+    const whose = screen.getByRole('radiogroup', { name: 'Whose spending and income is this?' });
+    // Looking at everyone: not answered for them.
+    expect(within(whose).getByRole('radio', { name: 'Dana' })).not.toBeChecked();
+    expect(within(whose).getByRole('radio', { name: 'Yossi' })).not.toBeChecked();
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['06/09/26 Aroma 42.00\n'], 'card.txt', { type: 'text/plain' }),
+    );
+    expect(screen.getByRole('button', { name: 'Choose whose this is' })).toBeDisabled();
+
+    await user.click(within(whose).getByRole('radio', { name: 'Yossi' }));
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+    await screen.findByRole('button', { name: 'Ready (1)' });
+    await user.click(screen.getByTestId('import-add'));
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith('2026-09-06');
+    });
+    const aroma = await db.transactions.filter((t) => t.note === 'Aroma').toArray();
+    expect(aroma.map((t) => t.profileId)).toEqual(['p2']);
+  });
 });
