@@ -466,6 +466,7 @@ the background.
 - **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.
+- **Delete all data** (Settings › Data & backup): immediate when alone; a linked household's every other member confirms by an emailed link first.
 - **Two-step sign-in**, optional: a code from an authenticator app after the
   password (or Google). Enforced by the database, not just the screens: every
   function refuses an account with codes turned on unless the session has
