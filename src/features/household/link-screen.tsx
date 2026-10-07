@@ -187,8 +187,16 @@ export function LinkScreen() {
     );
   }
 
+  // Every end state offers the way out, and forgets the token on the way, so
+  // the app stops bringing the person back here. Unreachable, or already in
+  // the household, is one too: the link in the email still works later.
   const done =
-    state.kind === 'invalid' || state.kind === 'wrong_account' || token === undefined || token === '';
+    state.kind === 'invalid' ||
+    state.kind === 'wrong_account' ||
+    state.kind === 'offline' ||
+    (state.kind === 'ready' && state.preview.alreadyMember) ||
+    token === undefined ||
+    token === '';
 
   return (
     <section className="mx-auto max-w-lg space-y-4 px-4 py-10">
