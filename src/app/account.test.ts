@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { LOCK_SYNC, LockBusyError, withLock } from '@/db/lock';
 import { ensureSettings } from '@/db/repos/settings';
 import { DATA_OWNER_KEY } from '@/db/sync/account';
 import { adoptKeyring, loadKeys } from '@/db/sync/keystore';
@@ -577,6 +578,41 @@ describe('deleting all data', () => {
     expect(c.getView()).not.toHaveProperty('wipeNotice');
   });
 
+  it('holds the sync lock from the server call to the end of the local erase', async () => {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    const inner = fake.rpc!;
+    let lockHeldDuringCall: boolean | undefined;
+    fake.rpc = async (fn, args) => {
+      if (fn === 'wipe_my_data') {
+        lockHeldDuringCall = await withLock(LOCK_SYNC, () => Promise.resolve(false), {
+          ifAvailable: true,
+        }).catch((error: unknown) => error instanceof LockBusyError);
+      }
+      return inner(fn, args);
+    };
+
+    await c.wipeMyData();
+
+    expect(lockHeldDuringCall).toBe(true);
+  });
+
+  it('refuses to erase alone a device that holds an account it is not signed in to', async () => {
+    await ownedBy(USER);
+    fake.session = null;
+    const c = make();
+    c.start();
+    await vi.waitFor(() => {
+      expect(c.getView().status).toBe('locked');
+    });
+
+    await expect(c.wipeMyData()).rejects.toThrow('not signed in');
+    expect(await device.db.profiles.count()).toBe(1);
+  });
+
   it('signed out: clears only the device', async () => {
     fake.session = null;
     const c = make();
@@ -590,5 +626,52 @@ describe('deleting all data', () => {
 
     expect(await device.db.transactions.count()).toBe(0);
     expect(await device.db.meta.get(epochKeyOf(USER))).toBeUndefined();
+  });
+});
+
+describe('being told the data was deleted', () => {
+  const afterWipe = (c: InstanceType<typeof AccountController>): Promise<void> =>
+    (c as unknown as { afterWipe(): Promise<void> }).afterWipe();
+
+  async function signedIn(): Promise<InstanceType<typeof AccountController>> {
+    const c = make();
+    await c.connect();
+    await vi.waitFor(() => {
+      expect(status()).toBe('ready');
+    });
+    return c;
+  }
+
+  it('names who asked, once the server says it is done', async () => {
+    const c = await signedIn();
+    const inner = fake.rpc!;
+    fake.rpc = (fn, args) =>
+      fn === 'wipe_status'
+        ? Promise.resolve({
+            id: 'w1',
+            status: 'done',
+            mine: false,
+            requesterName: 'Dana',
+            createdAt: '2026-10-07T10:00:00.000Z',
+            expiresAt: '2026-10-08T10:00:00.000Z',
+            waitingFor: [],
+          })
+        : inner(fn, args);
+
+    await afterWipe(c);
+
+    expect(c.getView()).toMatchObject({ wipeNotice: { by: 'Dana' } });
+  });
+
+  it('still tells, unnamed, when the server cannot be asked', async () => {
+    const c = await signedIn();
+    const inner = fake.rpc!;
+    fake.rpc = (fn, args) => (fn === 'wipe_status' ? Promise.reject(new Error('offline')) : inner(fn, args));
+
+    await afterWipe(c);
+
+    const view = c.getView();
+    expect(view.status === 'signed_in' && view.wipeNotice).toMatchObject({ by: undefined });
+    expect(view.status === 'signed_in' && typeof view.wipeNotice?.at).toBe('number');
   });
 });
