@@ -9,6 +9,7 @@ import {
   CloseOnScroll,
   POPUP_SURFACE,
   PopupActionsContext,
+  PopupBackdrop,
   type PopupActions,
 } from './popup-parts';
 
@@ -38,6 +39,7 @@ function DropdownMenuContent({
   anchor,
   arrow = false,
   closeOnScroll = arrow,
+  backdrop = arrow,
   className,
   children,
   ...props
@@ -49,9 +51,12 @@ function DropdownMenuContent({
     readonly arrow?: boolean;
     /** Close once the page scrolls; on for a pop-out with an arrow, which points at nothing after a scroll. */
     readonly closeOnScroll?: boolean;
+    /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
+    readonly backdrop?: boolean;
   }) {
   return (
     <MenuPrimitive.Portal>
+      {backdrop ? <PopupBackdrop /> : null}
       <MenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         anchor={anchor}
@@ -65,8 +70,9 @@ function DropdownMenuContent({
           className={cn(
             'z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto bg-popover p-1 text-popover-foreground duration-100 outline-none data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-start-2 data-[side=inline-start]:slide-in-from-end-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
             POPUP_SURFACE,
-            // overflow-y-auto would clip the arrow, which sits outside the popup's box.
-            arrow ? 'overflow-visible' : null,
+            // overflow-y-auto would clip the arrow, which sits outside the popup's box:
+            // the items scroll in a box of their own instead.
+            arrow ? 'flex flex-col overflow-visible' : null,
             className,
           )}
           {...props}
@@ -77,7 +83,13 @@ function DropdownMenuContent({
               <ArrowSvg />
             </MenuPrimitive.Arrow>
           ) : null}
-          {children}
+          {arrow ? (
+            <div data-slot="popup-scroll" className="min-h-0 overflow-x-hidden overflow-y-auto">
+              {children}
+            </div>
+          ) : (
+            children
+          )}
         </MenuPrimitive.Popup>
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
@@ -230,7 +242,7 @@ function DropdownMenuRadioItem({
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
       className={cn(
-        "relative flex min-h-11 cursor-default items-center gap-1.5 rounded-lg py-1 ps-1.5 pe-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-7 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex min-h-11 cursor-default items-center gap-1.5 rounded-lg py-1 ps-1.5 pe-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-7 sm:min-h-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

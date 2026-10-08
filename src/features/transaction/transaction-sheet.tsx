@@ -189,7 +189,10 @@ export function TransactionSheet({
   // A source deleted meanwhile ('gone') leaves a plain add form of the same kind.
   const addInitial =
     from !== undefined && source.status === 'ready'
-      ? duplicateFormValues(source.target.occurrence, source.target.transaction, adding, today)
+      ? duplicateFormValues(source.target.occurrence, source.target.transaction, adding, today, {
+          profiles,
+          methods: paymentMethods,
+        })
       : adding;
 
   const isAdd = target.mode === 'add';
