@@ -83,6 +83,8 @@ describe('ProfileSwitcher', () => {
 
     expect(trigger).toHaveClass('rounded-full', 'border-white/35', 'min-h-11', 'ps-1.5', 'pe-3');
     expect(trigger).not.toHaveClass('bg-card');
+    // Below sm only the faces show; the name is still the trigger's accessible name.
+    expect(screen.getByText('Everyone')).toHaveClass('max-sm:sr-only');
   });
 });
 

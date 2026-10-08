@@ -42,6 +42,15 @@ describe('ScreenPanel', () => {
     expect(home).toHaveClass('lg:hidden');
   });
 
+  it('has a square foot on desktop, so the sheet rises into it as on a phone', () => {
+    const { container } = renderPanel('Cards');
+
+    expect(container.querySelector('[data-slot="brand-panel"]')).toHaveClass(
+      'lg:rounded-3xl',
+      'lg:rounded-b-none',
+    );
+  });
+
   it('gives the account menu a 44px target', () => {
     renderPanel();
 

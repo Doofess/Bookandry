@@ -34,7 +34,8 @@ export function PrimePill() {
       >
         {t('prime.pill')}
         <Percent rate={prime.primeRate} className="font-semibold tabular-nums" />
-        <Info className="size-4 opacity-80" strokeWidth={1.75} aria-hidden="true" />
+        {/* Dropped on a phone so the pill fits beside the profile pill. */}
+        <Info className="size-4 opacity-80 max-sm:hidden" strokeWidth={1.75} aria-hidden="true" />
       </PopoverTrigger>
       <PopoverContent data-testid="prime-popout" align="start" className="w-64">
         <PopoverTitle className="flex items-baseline justify-between gap-3">

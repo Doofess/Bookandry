@@ -1,14 +1,15 @@
 import { defaultRangeExtractor, useWindowVirtualizer, type Range } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import { activeHeaderIndex, headerIndices, type FeedRow } from '@/domain/feed';
+import { activeHeaderIndex, headerIndices, indexAtOffset, type FeedRow } from '@/domain/feed';
 import { formatLocalDate } from '@/lib/dates';
 import type { Occurrence } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 import { DayHeader, TransactionRow, type RowContext } from './feed-rows';
+import { useDocumentTop } from './use-document-top';
 
 /**
  * AUTHORITATIVE heights, not estimates.
@@ -73,25 +74,11 @@ export function VirtualFeed({
 }) {
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollMargin, setScrollMargin] = useState(0);
   const fontsReady = useFontsReady();
-
-  useLayoutEffect(() => {
-    // The distance from the top of the document to the list. Re-read on resize
-    // because the summary header above it changes height when it wraps.
-    // From the DOCUMENT, not `offsetTop`: that is relative to the nearest
-    // positioned ancestor, and the list sits inside the panel's sheet, which is
-    // `relative` so it can rise over the panel's foot.
-    const measure = (): void => {
-      const list = containerRef.current;
-      setScrollMargin(list === null ? 0 : list.getBoundingClientRect().top + window.scrollY);
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => {
-      window.removeEventListener('resize', measure);
-    };
-  }, [rows.length]);
+  // The distance from the top of the document to the list, kept current as the
+  // panel above it settles and wraps. Measured again once the list replaces the
+  // font skeleton.
+  const scrollMargin = useDocumentTop(containerRef, fontsReady);
 
   const headers = useMemo(() => headerIndices(rows), [rows]);
 
@@ -155,11 +142,16 @@ export function VirtualFeed({
    *
    * A ref written inside the extractor and read during render is a render-phase
    * ref access: React can re-render without re-running the extractor, and the
-   * pinned header would then be one scroll position out of date. Because the
-   * extractor PREPENDS the active header, `items[0]` is that header whenever
-   * one is pinned - so the same answer falls out of the range itself.
+   * pinned header would then be one scroll position out of date.
+   *
+   * From the row AT the top of the screen, not `items[0]`: the range opens
+   * with eight rows of overscan above the screen, so the first item drawn
+   * kept the first day pinned over later days' rows for a screenful of scroll.
+   * The scroll offset itself, not shifted for the collapsed bar: the
+   * virtualizer re-renders when the row at the offset changes, so this never
+   * lags a row behind.
    */
-  const stickyIndex = activeHeaderIndex(headers, items[0]?.index ?? 0);
+  const stickyIndex = activeHeaderIndex(headers, indexAtOffset(items, virtualizer.scrollOffset ?? 0) ?? 0);
 
   return (
     <div ref={containerRef} className="relative" style={{ height: virtualizer.getTotalSize() }} role="list">
