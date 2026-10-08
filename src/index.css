@@ -273,7 +273,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   The front door's engraving (src/features/account/engraving.tsx).
+   The front door's engraving (src/components/engraving.tsx).
 
    Its one moment of motion: the lines are drawn in once, as the page opens,
    the way a banknote's guilloche is cut. Every path has pathLength="1", so one
@@ -336,6 +336,11 @@
   stroke-width: calc(1px / var(--engrave-scale, 1));
   stroke-dasharray: 1;
   animation: engrave calc(1.8s * var(--engrave-scale, 1)) var(--ease-out-soft) both;
+}
+
+/* Drawn already: every panel after the first screen's (see engraving.tsx). */
+.engraving.engraving-drawn path {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
