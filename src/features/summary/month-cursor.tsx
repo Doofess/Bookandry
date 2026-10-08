@@ -150,7 +150,7 @@ function MonthPicker({
       >
         {label}
       </PopoverTrigger>
-      <PopoverContent arrow align="center" className="w-72 gap-3">
+      <PopoverContent arrow align="center" className="w-72 gap-3" aria-label={t('month.choose')}>
         <div className="flex items-center justify-between">
           <Button
             type="button"
@@ -190,8 +190,14 @@ function MonthPicker({
                 key={cell.month}
                 type="button"
                 aria-pressed={selected}
-                disabled={cell.state === 'beyond'}
-                title={cell.state === 'beyond' ? t('month.beyond') : undefined}
+                disabled={cell.state === 'beyond' || cell.state === 'before'}
+                title={
+                  cell.state === 'beyond'
+                    ? t('month.beyond')
+                    : cell.state === 'before'
+                      ? t('month.before')
+                      : undefined
+                }
                 onClick={() => {
                   pick(cell.month);
                 }}

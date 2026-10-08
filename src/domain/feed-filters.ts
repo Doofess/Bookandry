@@ -211,7 +211,7 @@ export function isAtHorizon(month: LocalDate, today: LocalDate): boolean {
   return compareLocal(month, startOfMonth(addMonthsClamped(startOfMonth(today), MONTHS_FORWARD, 1))) >= 0;
 }
 
-export type MonthCellState = 'actual' | 'forecast' | 'beyond';
+export type MonthCellState = 'actual' | 'forecast' | 'beyond' | 'before';
 export type MonthCell = {
   readonly month: LocalDate;
   readonly state: MonthCellState;
@@ -222,16 +222,24 @@ export type MonthCell = {
  * A year's twelve months, as the month pop-out offers them, January first.
  *
  * `beyond` is everything › cannot reach: the same bound as `isAtHorizon`,
- * so the grid never offers a month the arrows refuse. `forecast` is a month
+ * and `before` everything ‹ cannot reach, so the grid never offers a month
+ * the cursor refuses, and picking one never clamps silently. `forecast` is a month
  * still to come, shown but muted, because what it holds is projected.
  */
 export function monthGrid(year: number, today: LocalDate): readonly MonthCell[] {
   const thisMonth = startOfMonth(today);
   const latest = startOfMonth(addMonthsClamped(thisMonth, MONTHS_FORWARD, 1));
+  const earliest = startOfMonth(addMonthsClamped(thisMonth, -MONTHS_BACK, 1));
   return Array.from({ length: 12 }, (_, index) => {
     const month = makeLocalDate(year, index + 1, 1);
     const state: MonthCellState =
-      compareLocal(month, latest) > 0 ? 'beyond' : compareLocal(month, thisMonth) > 0 ? 'forecast' : 'actual';
+      compareLocal(month, latest) > 0
+        ? 'beyond'
+        : compareLocal(month, earliest) < 0
+          ? 'before'
+          : compareLocal(month, thisMonth) > 0
+            ? 'forecast'
+            : 'actual';
     return { month, state, isThisMonth: month === thisMonth };
   });
 }
