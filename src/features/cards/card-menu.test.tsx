@@ -131,6 +131,26 @@ describe('CardMenu', () => {
     expect(anchor).toHaveFocus();
   });
 
+  it('offers Restore, then Edit, for an archived card, and reports restore', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    renderWithProviders(
+      <CardMenu
+        target={{ card: card(true), anchor: anchorButton() }}
+        variant="archived"
+        aiAvailable
+        onClose={vi.fn()}
+        onAction={onAction}
+      />,
+    );
+    const items = await screen.findAllByRole('menuitem');
+
+    expect(items.map((i) => i.textContent)).toEqual(['Restore', 'Edit card']);
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Restore' }));
+    expect(onAction).toHaveBeenCalledWith('restore', expect.objectContaining({ id: 'card-1' }));
+  });
+
   it('says it in Hebrew', async () => {
     await initTestI18n('he');
     try {

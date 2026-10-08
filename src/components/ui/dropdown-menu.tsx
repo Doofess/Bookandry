@@ -11,6 +11,7 @@ import {
   PopupActionsContext,
   PopupBackdrop,
   type PopupActions,
+  useCollisionPadding,
 } from './popup-parts';
 
 function DropdownMenu({ actionsRef, ...props }: MenuPrimitive.Root.Props) {
@@ -54,12 +55,15 @@ function DropdownMenuContent({
     /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
     readonly backdrop?: boolean;
   }) {
+  const padding = useCollisionPadding();
   return (
     <MenuPrimitive.Portal>
       {backdrop ? <PopupBackdrop /> : null}
       <MenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         anchor={anchor}
+        // Anchored to something on the page: clear of the phone's tab bar too.
+        {...(anchor === undefined ? {} : { collisionPadding: padding })}
         align={align}
         alignOffset={alignOffset}
         side={side}

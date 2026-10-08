@@ -55,7 +55,12 @@ beforeEach(async () => {
   await createPaymentMethod(
     db,
     'card-1',
-    { label: 'Max Gold', type: 'credit_card', profileId: 'p1', card: { issuer: 'max', billingDay: 10 } },
+    {
+      label: 'Max Gold',
+      type: 'credit_card',
+      profileId: 'p1',
+      card: { issuer: 'max', billingDay: 10, lastDigits: '4821' },
+    },
     NOW,
   );
 });
@@ -133,5 +138,31 @@ describe('a card on the Cards screen', () => {
     const [, options_] = toasts.toast.mock.calls[0] as [string, { action: { onClick: () => void } }];
     options_.action.onClick();
     await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(0);
+  });
+
+  it('keeps an archived card under Archived cards, and Restore brings it back', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Archive' }));
+    await expect.poll(() => screen.queryByTestId('card-face')).toBeNull();
+
+    // Quiet: folded, with the count.
+    const disclosure = await screen.findByRole('button', { name: 'Archived cards (1)' });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    await user.click(disclosure);
+    const list = screen.getByRole('list', { name: 'Archived cards (1)' });
+    expect(within(list).getByText('Max Gold')).toBeInTheDocument();
+    expect(within(list).getByText('•••• 4821')).toBeInTheDocument();
+    expect(within(list).getByText('Max')).toBeInTheDocument();
+
+    await user.click(within(list).getByRole('button', { name: 'Options for Max Gold' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Restore' }));
+
+    await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(0);
+    expect((await db.paymentMethods.get('card-1'))?.archivedAt).toBeUndefined();
+    expect(await screen.findByTestId('card-face')).toBeInTheDocument();
+    await expect.poll(() => screen.queryByRole('button', { name: /^Archived cards/ })).toBeNull();
+    expect(toasts.toast).toHaveBeenLastCalledWith('Max Gold restored', expect.anything());
   });
 });

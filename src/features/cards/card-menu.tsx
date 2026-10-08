@@ -1,4 +1,4 @@
-import { Archive, Pencil, Percent, ReceiptText, Sparkles } from 'lucide-react';
+import { Archive, ArchiveRestore, Pencil, Percent, ReceiptText, Sparkles } from 'lucide-react';
 import type { ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -8,10 +8,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { PopupItemContent, useAnchoredPopup } from '@/components/ui/popup-parts';
+import { PopupItemContent, useAnchoredPopup, useHeldWhileClosing } from '@/components/ui/popup-parts';
 import type { PaymentMethod } from '@/types/domain';
 
-export type CardMenuAction = 'edit' | 'rates' | 'transactions' | 'import' | 'archive';
+export type CardMenuAction = 'edit' | 'rates' | 'transactions' | 'import' | 'archive' | 'restore';
 
 export type CardMenuTarget = { readonly card: PaymentMethod; readonly anchor: HTMLElement };
 
@@ -25,15 +25,22 @@ export type CardMenuTarget = { readonly card: PaymentMethod; readonly anchor: HT
  *  - IMPORT A STATEMENT needs the account server, which reads the file. Without
  *    one it is shown disabled with the reason, as the Add menu's import is.
  *  - ARCHIVE puts the card away, with the same Undo toast as the row menu's.
+ *
+ * An archived card's menu (`variant="archived"`, under "Archived cards") is
+ * shorter: RESTORE, then EDIT. Its rates, transactions and statements wait
+ * until it is back.
  */
 export function CardMenu({
   target,
+  variant = 'active',
   aiAvailable,
   onClose,
   onAction,
 }: {
   /** The card whose menu is open, with what was pressed; undefined when closed. */
   readonly target: CardMenuTarget | undefined;
+  /** A card on the screen, or one under "Archived cards". */
+  readonly variant?: 'active' | 'archived';
   /** Whether Smart import can run: there is an account server to read the file. */
   readonly aiAvailable: boolean;
   readonly onClose: () => void;
@@ -42,6 +49,8 @@ export function CardMenu({
   const { t } = useTranslation(['cards', 'common']);
   const { shown, anchor, popupRef, finalFocus } = useAnchoredPopup(target, onClose);
 
+  // Worked out from the open card, so it clears with it: held, like the card, through the fade.
+  const shownVariant = useHeldWhileClosing(variant, target !== undefined);
   const card = shown?.card;
   const act = (action: CardMenuAction) => () => {
     if (card !== undefined) onAction(action, card);
@@ -68,7 +77,12 @@ export function CardMenu({
         ref={popupRef}
         finalFocus={finalFocus}
       >
-        {card === undefined ? null : (
+        {card === undefined ? null : shownVariant === 'archived' ? (
+          <>
+            <MenuRow icon={ArchiveRestore} label={t('cardMenu.restore')} onClick={act('restore')} />
+            <MenuRow icon={Pencil} label={t('cardMenu.edit')} onClick={act('edit')} />
+          </>
+        ) : (
           <>
             <MenuRow icon={Pencil} label={t('cardMenu.edit')} onClick={act('edit')} />
             {card.card?.catalog === undefined ? null : (

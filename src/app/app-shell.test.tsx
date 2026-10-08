@@ -33,6 +33,8 @@ describe('AppShell', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav).toBeInTheDocument();
+    // Where anchored pop-outs find the phone's tab bar, to keep clear of it.
+    expect(nav).toHaveAttribute('data-slot', 'tab-bar');
     for (const label of ['Feed', 'Chart', 'Household']) {
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
     }

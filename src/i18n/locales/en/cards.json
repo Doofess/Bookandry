@@ -181,7 +181,11 @@
     "transactions": "Transactions on this card",
     "import": "Import a statement",
     "archive": "Archive",
-    "archived": "{{name}} archived"
+    "archived": "{{name}} archived",
+    "restore": "Restore",
+    "restored": "{{name}} restored",
+    "archivedCards_one": "Archived cards ({{count}})",
+    "archivedCards_other": "Archived cards ({{count}})"
   },
   "menu": {
     "label": "Cards and payment methods",
