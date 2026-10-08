@@ -291,3 +291,67 @@ describe('editing a payment of a plan', () => {
     expect(await screen.findByRole('radio', { name: 'This and future' })).toBeInTheDocument();
   });
 });
+
+describe('adding', () => {
+  const salary: Category = {
+    ...groceries,
+    id: 'cat.salary',
+    kind: 'income',
+    nameKey: 'categories:builtin.salary',
+  };
+
+  function add(target: Parameters<typeof TransactionSheet>[0]['target']) {
+    renderWithProviders(
+      <TransactionSheet
+        target={target}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries, salary]}
+        paymentMethods={[maxCard]}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={() => undefined}
+      />,
+    );
+  }
+
+  it('starts on income, in an income category, when the Add menu chose income', () => {
+    add({ mode: 'add', kind: 'income' });
+
+    expect(screen.getByRole('radio', { name: 'Income' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: /Category/ })).toHaveAccessibleName(/Salary/);
+  });
+
+  it('duplicates a row: its amount, card and name, dated today and one-time', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'sofa',
+        date: '2026-03-10' as LocalDate,
+        recurrence: { type: 'monthly', dayOfMonth: 10, installments: 12 },
+        paymentMethodId: 'pm.max',
+        note: 'Sofa',
+        money: {
+          ...MONEY,
+          amountMinor: 45_000,
+          baseAmountMinor: 45_000,
+          currency: 'ILS',
+          baseCurrency: 'ILS',
+        },
+      }),
+    );
+    add({ mode: 'add', kind: 'expense', from: { transactionId: 'sofa', at: '2026-09-10' as LocalDate } });
+
+    expect(await screen.findByDisplayValue('Sofa')).toBeInTheDocument();
+    expect(screen.getByLabelText('Amount')).toHaveValue('450.00');
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Max/);
+    expect(screen.getByRole('radio', { name: 'Regular' })).toBeChecked();
+  });
+
+  it('falls back to a plain add form when the row it names is gone', async () => {
+    add({ mode: 'add', kind: 'expense', from: { transactionId: 'nowhere', at: '2026-09-10' as LocalDate } });
+
+    expect(await screen.findByLabelText('Amount')).toHaveValue('');
+    expect(screen.getByRole('radio', { name: 'Expense' })).toBeChecked();
+  });
+});

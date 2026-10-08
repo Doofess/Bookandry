@@ -132,6 +132,34 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
   };
 }
 
+/**
+ * The add form, prefilled from a row: what it was, how much, in what currency,
+ * on which card, under what name. It is dated today and one-time, whatever the
+ * source's recurrence was, because a duplicate is a new purchase, not a second
+ * copy of a plan. The amount is the row's own (one payment, for a plan), as
+ * the row shows it. Everything else, the profile included, is the add form's
+ * own default (`base`).
+ */
+export function duplicateFormValues(
+  occurrence: Occurrence,
+  transaction: Transaction,
+  base: TxFormValues,
+  today: LocalDate,
+): TxFormValues {
+  const from = occurrenceToFormValues(occurrence, transaction);
+  return {
+    ...base,
+    kind: from.kind,
+    categoryId: from.categoryId,
+    amount: from.amount,
+    currency: from.currency,
+    paymentMethodId: from.paymentMethodId,
+    note: from.note,
+    date: today,
+    mode: 'one_time',
+  };
+}
+
 function dayOfMonthOf(recurrence: Recurrence, date: LocalDate): number {
   if (recurrence.type === 'monthly') return recurrence.dayOfMonth;
   return parseLocalDate(date).day;

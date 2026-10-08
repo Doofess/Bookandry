@@ -155,7 +155,7 @@ export const TransactionRow = memo(function TransactionRow({
   position: number;
   setSize: number;
   onOpen?: (occurrence: Occurrence) => void;
-  onMenu?: (occurrence: Occurrence) => void;
+  onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories']);
 
@@ -283,7 +283,7 @@ export const TransactionRow = memo(function TransactionRow({
         size="icon"
         className="size-11 shrink-0 max-sm:-mx-1"
         aria-label={t('a11y.rowActions', { name: label })}
-        onClick={() => onMenu?.(occurrence)}
+        onClick={(event) => onMenu?.(occurrence, event.currentTarget)}
       >
         <MoreHorizontal className="size-4" aria-hidden="true" />
       </Button>
