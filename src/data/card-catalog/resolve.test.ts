@@ -118,7 +118,7 @@ describe('resolveCard', () => {
     expect(r?.extra.cash?.from).toBe('issuer'); // bank has none: company's stays
   });
 
-  it('keeps a rate from the card company when the bank override does not touch it', () => {
+  it('keeps the card company’s rules but not its rate figure when the bank supplies none', () => {
     const c: Catalog = {
       ...catalog,
       banks: [{ ...catalog.banks[0]!, rates: [] }, catalog.banks[1]!],
@@ -127,7 +127,9 @@ describe('resolveCard', () => {
     const credit = r?.deals.find((d) => d.kind === 'credit');
     expect(credit?.minDealMinor).toBe(50000);
     expect(credit?.from).toBe('issuer');
-    expect(credit?.rate).toBe(issuerCredit);
+    // On a bank card the bank sets the rates: the card company's figure is for its own cards.
+    expect(credit?.rate).toEqual({ ...issuerCredit, basis: null });
+    expect(credit?.payments).toEqual({ min: 3, max: 12 });
   });
 
   it('labels a rate from the bank when its override supplies one', () => {
@@ -152,7 +154,7 @@ describe('resolveCard', () => {
   it('keeps the card company’s rules where the bank has none, but never its fees', () => {
     const r = resolveCard(catalog, { issuer: 'cal', bank: 'b2', tier: 'gold' });
     expect(r?.billingDays).toEqual([2, 10]);
-    expect(r?.deals.find((d) => d.kind === 'credit')?.rate).toBe(issuerCredit);
+    expect(r?.deals.find((d) => d.kind === 'credit')?.rate).toEqual({ ...issuerCredit, basis: null });
     // A bank card pays the bank's fees: the card company's tariff is for its own cards.
     expect(r?.fxFee).toBeUndefined();
     expect(r?.monthlyFeeMinor).toBeUndefined();
@@ -243,7 +245,7 @@ describe('resolveCard', () => {
       (d) => d.kind === 'credit',
     );
     expect(credit?.from).toBe('issuer');
-    expect(credit?.rate).toBe(issuerCredit);
+    expect(credit?.rate).toEqual({ ...issuerCredit, basis: null });
   });
 
   it('takes a bank’s rate for a club over its rate for the tier, and club and tier over club alone', () => {

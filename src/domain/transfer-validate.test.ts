@@ -372,7 +372,6 @@ describe('referential integrity', () => {
       { catalog: { issuer: 'max', bank: '20', tier: 'international', version: 1.5 } },
       { catalog: { issuer: 'max', bank: '20', version: 1 } },
       { catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1, updatedOn: '2026-02-30' } },
-      { overrides: { surcharge: { basis: 'prime', margin: '1' } } },
       { overrides: { late: { basis: 'boi', margin: '+1' } } },
       { overrides: { credit: { basis: 'fixed', rate: '-1' } } },
       { catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1, filled: { fxFeeRate: '1e1' } } },
@@ -406,7 +405,8 @@ describe('referential integrity', () => {
     };
     expect(Object.keys(every).sort()).toEqual([...DEAL_KINDS, ...EXTRA_RATE_KINDS].sort());
     for (const kind of Object.keys(every)) expect(withOverride(kind), kind).toBe(true);
-    expect(withOverride('surcharge')).toBe(false);
+    // A kind a later release adds is kept as it came, so this one never refuses the card.
+    expect(withOverride('surcharge')).toBe(true);
   });
 
   it('rejects an impossible calendar date', () => {

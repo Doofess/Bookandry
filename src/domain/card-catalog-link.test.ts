@@ -61,6 +61,15 @@ function catalogWith(
         name: { he: 'מזרחי', en: 'Mizrahi' },
         issuers: ['cal'],
         fxFee: { cal: '2.7' },
+        // On a bank card the bank sets the rates (resolveCard): Mizrahi's credit rate is its own.
+        rates: [
+          {
+            issuer: 'cal',
+            tier: 'gold',
+            deal: 'credit',
+            rate: over.credit ?? rate({ kind: 'prime', margin: '9.5' }),
+          },
+        ],
         lateRate: over.late ?? rate({ kind: 'prime', margin: '13.80' }, 'max'),
         ...(over.billingDays ? { billingDays: over.billingDays } : {}),
       },
@@ -402,6 +411,14 @@ describe('cardDealRate', () => {
       term: { basis: 'boi', margin: '3' },
       source: 'override',
     });
+  });
+
+  it('reads an override on a basis a later release added as a rate still to be given, never 0%', () => {
+    const card = {
+      ...linked,
+      overrides: { credit: { basis: 'cpi', margin: '2' } },
+    } as unknown as CardDetails;
+    expect(cardDealRate(card, resolved(), 'credit')).toEqual({ term: null, source: 'override' });
   });
 
   it('then the catalog’s rate, with its quality', () => {

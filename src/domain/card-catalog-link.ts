@@ -48,6 +48,11 @@ function catalogRate(resolved: ResolvedCard, kind: DealKind | ExtraRateKind): Ca
   return resolved.deals.find((d) => d.kind === kind)?.rate;
 }
 
+/** Whether a stored term has a basis this release knows how to price. */
+export function isKnownTerm(term: { readonly basis: string }): term is CardRateTerm {
+  return term.basis === 'prime' || term.basis === 'fixed' || term.basis === 'boi';
+}
+
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -228,7 +233,9 @@ export function cardDealRate(
   kind: DealKind | ExtraRateKind,
 ): CardDealRate | undefined {
   const override = card.overrides?.[kind];
-  if (override !== undefined) return { term: override, source: 'override' };
+  // A basis a later release added: the person's rate stands, but this release
+  // cannot price it, so it reads as a rate still to be given, never as 0%.
+  if (override !== undefined) return { term: isKnownTerm(override) ? override : null, source: 'override' };
 
   const rate = resolved ? catalogRate(resolved, kind) : undefined;
   const published = rate ? termOf(rate) : null;

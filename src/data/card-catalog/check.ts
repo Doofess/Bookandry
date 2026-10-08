@@ -1,6 +1,7 @@
 import { isLocalDate } from '@/lib/dates';
 import { addRates, annualEffectiveRate } from '@/lib/money';
 
+import { resolveCard } from './resolve';
 import type { Catalog, CatalogRate } from './types';
 
 const DECIMAL_RE = /^\d+(?:\.\d+)?$/;
@@ -173,6 +174,20 @@ export function catalogProblems(catalog: Catalog): string[] {
       if (!issuer) p.push(`${where}: unknown card company`);
       else if (!issuer.deals.some((d) => d.kind === o.deal.kind)) p.push(`${where}: unknown deal`);
       if (!b.issuers.includes(o.issuer)) p.push(`${where}: bank does not distribute it`);
+    }
+  }
+
+  // A bank card shows only the bank's rates: a figure from the card company would pass for the bank's.
+  for (const b of catalog.banks) {
+    for (const id of b.issuers) {
+      const issuer = catalog.issuers.find((i) => i.id === id);
+      for (const t of issuer?.tiers ?? []) {
+        const card = resolveCard(catalog, { issuer: id, bank: b.id, tier: t.id });
+        for (const d of card?.deals ?? []) {
+          if (d.from === 'issuer' && d.rate?.basis)
+            p.push(`${b.id}.${id}.${t.id}.${d.kind}: a card company rate shown on a bank card`);
+        }
+      }
     }
   }
 

@@ -90,6 +90,15 @@ export function resolveCard(
     }
     const row = bankRow(bank?.rates ?? [], issuer.id, deal.kind, link);
     if (row) return { ...merged, rate: row.rate, from: 'bank_table' as const };
+    /*
+     * On a bank card the bank sets the rates. A deal whose rate the bank does
+     * not supply keeps the card company's rules but none of its figure: the
+     * card company's rate is for its own cards, and shown here it would pass
+     * for the bank's. The person gives it from their statement instead.
+     */
+    if (bank && from === 'issuer' && merged.rate?.basis) {
+      return { ...merged, rate: { ...merged.rate, basis: null }, from };
+    }
     return { ...merged, from };
   });
 
