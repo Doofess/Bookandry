@@ -85,7 +85,8 @@ export function BankAccountsScreen() {
               <li key={account.id}>
                 <AccountPanel
                   account={account}
-                  cards={data.cards.filter((card) => card.card?.accountId === account.id)}
+                  // An archived card still owed on is still debited from the account.
+                  cards={[...data.cards, ...data.owing].filter((card) => card.card?.accountId === account.id)}
                   occurrences={data.occurrences}
                   profiles={data.profiles}
                   onEdit={() => {

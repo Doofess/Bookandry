@@ -170,28 +170,41 @@ function tabBarInset(): number {
 }
 
 /**
- * The bar's inset as last measured: measured when an anchored pop-out opens,
- * and again when the window or the bar changes size while one is open. Read
+ * The bar's inset as last measured, a small store every open anchored pop-out
+ * subscribes to: measured when one opens, and again when the window or the bar
+ * changes size while any is open, and then every one of them is told. Read
  * from here, never from the layout, while rendering.
  */
 let measuredInset = 0;
+const insetListeners = new Set<() => void>();
+let stopWatching: (() => void) | undefined;
+
+function remeasure(): void {
+  const next = tabBarInset();
+  if (next === measuredInset) return;
+  measuredInset = next;
+  for (const listener of insetListeners) listener();
+}
 
 function watchTabBar(change: () => void): () => void {
-  const measure = (): void => {
-    const next = tabBarInset();
-    if (next === measuredInset) return;
-    measuredInset = next;
-    change();
-  };
-  measure();
-  window.addEventListener('resize', measure);
-  const bar = document.querySelector('[data-slot="tab-bar"]');
-  const observer =
-    bar === null || typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
-  if (bar !== null) observer?.observe(bar);
+  insetListeners.add(change);
+  if (stopWatching === undefined) {
+    window.addEventListener('resize', remeasure);
+    const bar = document.querySelector('[data-slot="tab-bar"]');
+    const observer =
+      bar === null || typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(remeasure);
+    if (bar !== null) observer?.observe(bar);
+    stopWatching = () => {
+      window.removeEventListener('resize', remeasure);
+      observer?.disconnect();
+    };
+  }
+  remeasure();
   return () => {
-    window.removeEventListener('resize', measure);
-    observer?.disconnect();
+    insetListeners.delete(change);
+    if (insetListeners.size > 0) return;
+    stopWatching?.();
+    stopWatching = undefined;
   };
 }
 

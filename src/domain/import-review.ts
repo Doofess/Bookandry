@@ -3,6 +3,7 @@ import { rateFromAmounts, toDecimalString } from '@/lib/money';
 import type { Occurrence, PaymentMethod } from '@/types/domain';
 import type { Currency, LocalDate, RateString } from '@/types/money';
 
+import { chargesFeeIn } from './cards';
 import { withFlags, type Flag, type FoundRow } from './import-check';
 import { defaultFormValues, NOTE_MAX_LENGTH, type TxFormValues } from './tx-form';
 
@@ -100,7 +101,12 @@ export function flagExisting(rows: readonly FoundRow[], occurrences: readonly Oc
   });
 }
 
-/** A card's monthly fee the app already charges - a statement's fee line is that, not a new expense. */
+/**
+ * A card's monthly fee the app already charges - a statement's fee line is
+ * that, not a new expense. Only for the line's own month: an archived card's
+ * fee stops after the month it was archived (`chargesFeeIn`), so a later line
+ * is new, and a household whose only fee card has closed counts no fee at all.
+ */
 export function flagCardFees(
   rows: readonly FoundRow[],
   method: (row: FoundRow) => PaymentMethod | undefined,
@@ -110,9 +116,7 @@ export function flagCardFees(
     if (!row.cardFee) return row;
     const own = method(row);
     const charged =
-      own === undefined
-        ? cards.some((c) => (c.card?.monthlyFeeMinor ?? 0) > 0)
-        : (own.card?.monthlyFeeMinor ?? 0) > 0;
+      own === undefined ? cards.some((c) => chargesFeeIn(c, row.date)) : chargesFeeIn(own, row.date);
     return charged ? withFlags(row, 'card_fee_counted') : row;
   });
 }
