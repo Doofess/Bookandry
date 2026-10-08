@@ -98,7 +98,7 @@ export function CardFields({
           onChange(linkedDraft(draft, resolved, link, { keepOverrides, month, language: i18n.language }));
         }}
         onUnlink={() => {
-          onChange({ catalog: undefined });
+          onChange({ catalog: undefined, overrides: undefined });
         }}
       />
 

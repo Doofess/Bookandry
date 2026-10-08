@@ -225,8 +225,7 @@ export function IssuerChooser({
   // An existing card whose own fields name a catalog entry.
   const suggestion = (():
     { bank: CatalogBank; issuer: CatalogIssuer; tier?: string; club?: string } | undefined => {
-    if (value !== undefined || picked?.bank === UNLISTED || picked?.issuer === UNLISTED || dismissed)
-      return undefined;
+    if (value !== undefined || picked !== undefined || dismissed) return undefined;
     if (stored.kind !== 'bank') return undefined; // otherwise the bank is the debit account's
     const company = catalog.issuers.find((i) => i.id === stored.issuer);
     const bank = company === undefined ? undefined : bankOf(catalog, company.id, stored.bank);

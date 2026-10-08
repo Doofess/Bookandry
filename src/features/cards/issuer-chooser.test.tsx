@@ -148,7 +148,7 @@ describe('the chooser', () => {
     await choose(user, 'Bank', 'Not in the list');
     expect(chooser().queryByRole('radiogroup', { name: 'Card company' })).toBeNull();
     expect(drafted().catalog).toBeUndefined();
-    expect(screen.getByLabelText('Card level')).toBeInTheDocument();
+    expect(screen.getByLabelText('Card level (manual)')).toBeInTheDocument();
   });
 
   it('says so when the list cannot be loaded, and the manual fields stay', async () => {
@@ -157,7 +157,7 @@ describe('the chooser', () => {
     expect(
       await screen.findByText("Couldn't load the card list. You can still fill the card in yourself."),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Card level')).toBeInTheDocument();
+    expect(screen.getByLabelText('Card level (manual)')).toBeInTheDocument();
   });
 });
 
@@ -299,10 +299,10 @@ describe('fix round 1', () => {
     renderWithProviders(<Harness start={linked} />);
     await chooser().findByRole('radiogroup', { name: 'Bank' });
     expect(screen.getAllByRole('radiogroup', { name: 'Card company' })).toHaveLength(1);
-    expect(screen.queryByLabelText('Card level')).toBeNull();
+    expect(screen.queryByLabelText('Card level (manual)')).toBeNull();
     expect(screen.queryByRole('radiogroup', { name: 'Issued by' })).toBeNull();
     await choose(user, 'Card company', 'Not in the list');
-    expect(screen.getByLabelText('Card level')).toBeInTheDocument();
+    expect(screen.getByLabelText('Card level (manual)')).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Card company (manual)' })).toBeInTheDocument();
   });
 
@@ -370,6 +370,66 @@ describe('fix round 1', () => {
     await choose(user, 'Bank', 'Mizrahi');
     expect(drafted().catalog?.issuer).toBe('cal');
     expect(screen.getByText('Nothing changes until you pick the card type.')).toBeInTheDocument();
+  });
+});
+
+describe('fix round 2', () => {
+  const linked: Partial<CardDraft> = {
+    catalog: { issuer: 'cal', bank: '10', tier: 'classic', version: 1 },
+    issuer: 'cal',
+    kind: 'bank',
+    bank: 'Leumi',
+  };
+  const withOverride = { ...linked, overrides: { credit: { basis: 'prime' as const, margin: '1' } } };
+  const focused = (step: string) =>
+    chooser().getByRole('radiogroup', { name: step }).contains(document.activeElement);
+
+  it('clears the overrides when the card is unlinked', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={withOverride} />);
+    await choose(user, 'Card company', 'Not in the list');
+    expect(drafted().catalog).toBeUndefined();
+    expect(drafted().overrides).toBeUndefined();
+  });
+
+  it('hides the banner once any step is picked', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={{ kind: 'bank', issuer: 'cal', bank: 'Leumi' }} />);
+    await user.click(await screen.findByRole('button', { name: 'Link' }));
+    expect(screen.queryByRole('button', { name: 'Link' })).toBeNull();
+    await choose(user, 'Bank', 'Mizrahi');
+    expect(screen.queryByRole('button', { name: 'Link' })).toBeNull();
+  });
+
+  it('returns focus to the type step on Escape and on the new-rates answer', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={withOverride} />);
+    await choose(user, 'Card type', 'Cal Gold');
+    await screen.findByRole('alertdialog');
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(focused('Card type')).toBe(true);
+    });
+    await choose(user, 'Card type', 'Cal Gold');
+    await user.click(await screen.findByRole('button', { name: "Use the new card's rates" }));
+    await waitFor(() => {
+      expect(focused('Card type')).toBe(true);
+    });
+  });
+
+  it('keeps the debit-bank field on a linked non-bank card', async () => {
+    renderWithProviders(
+      <Harness
+        start={{
+          ...linked,
+          catalog: { issuer: 'cal', bank: 'none', tier: 'classic', version: 1 },
+          kind: 'non_bank',
+          bank: 'Leumi',
+        }}
+      />,
+    );
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+    expect(screen.getByLabelText('Charged to the account at')).toHaveValue('Leumi');
   });
 });
 
