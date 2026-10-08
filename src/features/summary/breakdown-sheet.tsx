@@ -166,7 +166,7 @@ function BreakdownRow({
 
   return (
     <li className="flex items-center gap-2.5 py-1.5">
-      <CategoryIcon name={category?.icon ?? 'Circle'} className="size-4 shrink-0 text-muted-foreground" />
+      <CategoryIcon name={category?.icon ?? 'Circle'} className="size-4 shrink-0 text-accent-foreground" />
       <span className="min-w-0 flex-1 truncate text-sm">{occurrence.note ?? name}</span>
       <span className="shrink-0 text-xs text-muted-foreground">
         {formatLocalDate(occurrence.date, i18n.language, { day: 'numeric', month: 'short' })}

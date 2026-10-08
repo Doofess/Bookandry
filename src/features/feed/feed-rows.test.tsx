@@ -262,6 +262,28 @@ describe('TransactionRow', () => {
     expect(screen.queryByText('Standing order')).not.toBeInTheDocument();
   });
 
+  it('draws the same sapphire chip for income and expense; the amount carries direction', () => {
+    const income = occurrence({
+      transaction: makeTx({
+        id: 't2',
+        kind: 'income',
+        date: d('2026-09-10'),
+        recurrence: { type: 'one_time' },
+      }),
+    });
+    const { container } = render(
+      <>
+        <TransactionRow occurrence={occurrence()} context={context()} position={1} setSize={2} />
+        <TransactionRow occurrence={income} context={context()} position={2} setSize={2} />
+      </>,
+    );
+    const chips = container.querySelectorAll('[data-slot="category-chip"]');
+
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) expect(chip).toHaveClass('bg-accent', 'text-accent-foreground');
+    expect(container.querySelectorAll('.bg-muted.text-muted-foreground.size-9')).toHaveLength(0);
+  });
+
   it('falls back to the category id when the category is gone', () => {
     render(
       <TransactionRow

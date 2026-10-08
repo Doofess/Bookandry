@@ -4,7 +4,7 @@ import { CreditCard, HandCoins, Layers, MoreHorizontal, Percent, Repeat } from '
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CategoryIcon } from '@/components/category-icon';
+import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
@@ -200,14 +200,7 @@ export const TransactionRow = memo(function TransactionRow({
         aria-label={label}
         className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
-        <span
-          className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-full',
-            isIncome ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground',
-          )}
-        >
-          <CategoryIcon name={category?.icon ?? 'Circle'} className="size-4" />
-        </span>
+        <CategoryChip icon={category?.icon ?? 'Circle'} />
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{occurrence.note ?? categoryName}</span>
