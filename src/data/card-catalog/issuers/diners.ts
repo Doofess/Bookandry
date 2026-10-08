@@ -47,7 +47,11 @@ export const diners: CatalogIssuer = {
       name: 'FlyCard Premium',
       issued: false,
       movedTo: 'flyall',
-      source: at(CAL_FEES, 'Legacy aviation-club card; FlyCard moved to Isracard (June 2026).'),
+      monthlyMinor: 3490,
+      source: at(
+        CAL_FEES,
+        'Cal’s 06.2026 schedule: aviation-club premium ₪38.90, ₪4 off on Diners. Legacy card; FlyCard moved to Isracard (June 2026).',
+      ),
     },
     { id: 'flyall', name: 'FlyAll', issued: true, source: at(FLYALL, 'On Diners or Mastercard.') },
     { id: 'extra', name: 'Diners Extra', issued: true },

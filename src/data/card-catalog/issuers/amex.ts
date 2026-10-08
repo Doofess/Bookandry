@@ -5,6 +5,7 @@
 import type { LocalDate } from '@/types/money';
 
 import type { CatalogIssuer, CatalogRate, CatalogSource } from '../types';
+import { overLimit, retroCredit } from './isracard';
 
 const SEEN = '2026-10-08' as LocalDate;
 const at = (url: string, note?: string): CatalogSource =>
@@ -169,8 +170,16 @@ export const amex: CatalogIssuer = {
       ),
       source: at(CALC),
     },
+    {
+      kind: 'split_purchase',
+      label: { he: 'העברה לקרדיט', en: 'Move to credit' },
+      abroad: true,
+      rate: retroCredit(),
+      source: at(AG25),
+    },
   ],
   extraRates: {
+    over_limit: overLimit(),
     late: {
       basis: { kind: 'boi', margin: '16.40' },
       quality: 'typical',

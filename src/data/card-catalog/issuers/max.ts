@@ -211,14 +211,14 @@ export const max: CatalogIssuer = {
       abroad: true,
       rate: {
         basis: null,
-        quality: 'exact',
+        quality: 'typical',
         compounding: 12,
         dayCount: 'actual/365',
         accrues: 'billing_date',
         fixedAtPurchase: false,
         source: at(
           AGR,
-          '"אשראי 30 פלוס" (§7.3(ו)): prime-based variable rate, on the days from the billing date to the next one.',
+          '"אשראי 30 פלוס" (§7.3(ו)): prime-based variable rate, on the days from the billing date to the next one. Monthly compounding is assumed (UNCONFIRMED): Max publishes no rate or pair for it.',
         ),
       },
       source: at(AGR),
@@ -236,7 +236,7 @@ export const max: CatalogIssuer = {
         quality: 'typical',
         compounding: 12,
         dayCount: '30/360',
-        accrues: 'purchase',
+        accrues: 'request',
         fixedAtPurchase: true,
         reset: { atPayment: 19, rule: 'prime_delta' },
         source: at(
@@ -257,7 +257,7 @@ export const max: CatalogIssuer = {
       fixedAtPurchase: false,
       source: at(
         AGR,
-        '§18: the legal maximum, or the highest rate Max charges, or the maximum rate. The Fair Credit Law late cap is 1.2 × (Bank of Israel rate + 15), 21.9% today. Actual days over 365 or 366; may be added to principal; the period is not stated (UNCONFIRMED).',
+        '§18: the legal maximum, or the highest rate Max charges, or the maximum rate. The Fair Credit Law late cap is 1.2 × (Bank of Israel rate + 15), 21.9% today. Actual days over 365 or 366 (§18). Added to principal at the end of each month: "כל ריבית ... תצטרף לקרן – בתום כל חודש" (§19).',
       ),
     },
   },
