@@ -55,7 +55,13 @@ import {
   type TxFormParsed,
   type TxFormValues,
 } from '@/domain/tx-form';
-import { categoriesFor, methodFits, standingViaOf, type StandingVia } from '@/domain/tx-options';
+import {
+  categoriesFor,
+  methodFits,
+  methodOwnedBy,
+  standingViaOf,
+  type StandingVia,
+} from '@/domain/tx-options';
 import { MethodForm } from '@/features/cards/method-editor';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
@@ -1079,7 +1085,16 @@ function TransactionForm({
                 <Segmented
                   value={field.value}
                   labelledBy={profileLabelId}
-                  onChange={field.onChange}
+                  onChange={(next) => {
+                    field.onChange(next);
+                    // A card the new person cannot pay with is let go: the
+                    // picker stops offering it, so it would be saved unseen.
+                    const method = paymentMethods.find((m) => m.id === form.getValues('paymentMethodId'));
+                    if (method !== undefined && !methodOwnedBy(method, next)) {
+                      setValue('paymentMethodId', '');
+                      changeMethod('');
+                    }
+                  }}
                   size="sm"
                   options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
                 />
