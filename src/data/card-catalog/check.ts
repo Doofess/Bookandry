@@ -52,6 +52,12 @@ export function catalogProblems(catalog: Catalog): string[] {
   };
   for (const { where, rate } of allRates(catalog)) checkSource(where, rate.source);
   for (const i of catalog.issuers) for (const d of i.deals) checkSource(`${i.id}.deal.${d.kind}`, d.source);
+  for (const i of catalog.issuers) {
+    for (const [k, s] of Object.entries(i.sources ?? {})) checkSource(`${i.id}.sources.${k}`, s);
+    for (const t of i.tiers) if (t.source) checkSource(`${i.id}.tier.${t.id}`, t.source);
+    for (const c of i.clubs) if (c.source) checkSource(`${i.id}.club.${c.id}`, c.source);
+    for (const f of i.cardFees ?? []) if (f.source) checkSource(`${i.id}.fee.${f.tier}`, f.source);
+  }
   for (const b of catalog.banks)
     for (const o of b.dealOverrides ?? [])
       if (o.deal.source) checkSource(`${b.id}.override.${o.deal.kind}`, o.deal.source);
