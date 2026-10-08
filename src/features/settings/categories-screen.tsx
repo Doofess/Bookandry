@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
 import { PanelSheet } from '@/components/brand-panel';
-import { CategoryIcon } from '@/components/category-icon';
+import { CategoryChip, CategoryIcon } from '@/components/category-icon';
 import { ICON_NAMES } from '@/components/category-icons';
 import { Segmented } from '@/components/segmented';
 import {
@@ -162,9 +162,7 @@ function CategoryRow({
 
   return (
     <li className={`flex items-center gap-3 p-3 ${isArchived ? 'opacity-60' : ''}`}>
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <CategoryIcon name={category.icon} className="size-4" />
-      </span>
+      <CategoryChip icon={category.icon} />
 
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{name}</span>

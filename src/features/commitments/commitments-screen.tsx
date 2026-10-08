@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBaseCurrency, useToday } from '@/app/app-context';
 import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
 import { PanelSheet } from '@/components/brand-panel';
-import { CategoryIcon } from '@/components/category-icon';
+import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/db/db';
@@ -151,9 +151,7 @@ function CommitmentRow({
         disabled={next === undefined}
         className="flex w-full items-center gap-3 p-3 text-start transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <CategoryIcon name={category?.icon ?? 'Circle'} className="size-4" />
-        </span>
+        <CategoryChip icon={category?.icon ?? 'Circle'} />
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{name}</span>
