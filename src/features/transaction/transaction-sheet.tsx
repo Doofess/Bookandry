@@ -33,7 +33,13 @@ import { applySeriesEdit } from '@/db/series-edit';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
-import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } from '@/domain/tx-edit';
+import {
+  buildPatch,
+  duplicateFormValues,
+  isEmptyPatch,
+  isInstallmentPlan,
+  occurrenceToFormValues,
+} from '@/domain/tx-edit';
 import {
   chargesInterest,
   defaultFormValues,
@@ -172,6 +178,20 @@ export function TransactionSheet({
     [defaultProfileId, baseCurrency, today, categories, prime.primeRate, addKind],
   );
 
+  // Duplicate: the row named by the URL, loaded exactly as the edit form loads one.
+  const from = target.mode === 'add' ? target.from : undefined;
+  const source = useEditTarget(
+    from === undefined
+      ? { mode: 'closed' }
+      : { mode: 'edit', transactionId: from.transactionId, at: from.at },
+    today,
+  );
+  // A source deleted meanwhile ('gone') leaves a plain add form of the same kind.
+  const addInitial =
+    from !== undefined && source.status === 'ready'
+      ? duplicateFormValues(source.target.occurrence, source.target.transaction, adding, today)
+      : adding;
+
   const isAdd = target.mode === 'add';
   const open = target.mode === 'add' || target.mode === 'edit';
 
@@ -191,19 +211,24 @@ export function TransactionSheet({
          * and "add another", or opening a different row, silently inherits it.
          */}
         {isAdd ? (
-          <TransactionForm
-            key={`add-${addKind}`}
-            initial={adding}
-            profiles={profiles}
-            categories={categories}
-            paymentMethods={paymentMethods}
-            baseCurrency={baseCurrency}
-            today={today}
-            onSaved={onSaved}
-            onCancel={() => {
-              onOpenChange(false);
-            }}
-          />
+          from !== undefined && (source.status === 'loading' || source.status === 'idle') ? (
+            <FormSkeleton />
+          ) : (
+            <TransactionForm
+              // A fresh form for each kind and each source row.
+              key={`add-${addKind}-${from === undefined ? 'new' : `${from.transactionId}@${from.at}`}`}
+              initial={addInitial}
+              profiles={profiles}
+              categories={categories}
+              paymentMethods={paymentMethods}
+              baseCurrency={baseCurrency}
+              today={today}
+              onSaved={onSaved}
+              onCancel={() => {
+                onOpenChange(false);
+              }}
+            />
+          )
         ) : target.mode === 'edit' ? (
           <EditBody
             key={`${target.transactionId}#${target.at}`}
@@ -221,6 +246,17 @@ export function TransactionSheet({
         ) : null}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** The form's place while the row it opens on loads. */
+function FormSkeleton() {
+  return (
+    <div className="space-y-3 px-4 pb-6" aria-busy="true">
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-11 w-full rounded-lg" />
+      ))}
+    </div>
   );
 }
 
@@ -245,15 +281,7 @@ function EditBody({
 }) {
   const { t } = useTranslation();
 
-  if (state.status === 'loading' || state.status === 'idle') {
-    return (
-      <div className="space-y-3 px-4 pb-6" aria-busy="true">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-11 w-full rounded-lg" />
-        ))}
-      </div>
-    );
-  }
+  if (state.status === 'loading' || state.status === 'idle') return <FormSkeleton />;
 
   if (state.status === 'gone') {
     /*

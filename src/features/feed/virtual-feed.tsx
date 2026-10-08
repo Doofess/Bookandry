@@ -72,7 +72,7 @@ export function VirtualFeed({
   rows: readonly FeedRow[];
   context: RowContext;
   onOpen?: (occurrence: Occurrence) => void;
-  onMenu?: (occurrence: Occurrence) => void;
+  onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -228,7 +228,7 @@ export function VirtualFeed({
 type RenderOptions = {
   readonly context: RowContext;
   readonly onOpen?: (occurrence: Occurrence) => void;
-  readonly onMenu?: (occurrence: Occurrence) => void;
+  readonly onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
   readonly position: number;
   readonly setSize: number;
   readonly horizonLabel: (date: LocalDate) => string;

@@ -7,6 +7,7 @@ import { expandOccurrences } from './occurrences';
 import { d, makeTx, modify, MONEY } from './test-factories';
 import {
   buildPatch,
+  duplicateFormValues,
   isEmptyPatch,
   isInstallmentPlan,
   frequencyOf,
@@ -15,7 +16,7 @@ import {
   scopeAllowsMove,
   scopeAllowsRecurrence,
 } from './tx-edit';
-import { txFormSchema, type TxFormValues } from './tx-form';
+import { defaultFormValues, txFormSchema, type TxFormValues } from './tx-form';
 
 const TODAY = d('2026-09-15');
 
@@ -427,5 +428,43 @@ describe('long credit and 30+ rows, and rows from before them', () => {
       // Only the note: nothing that would drop, or add, a deferral.
       expect(patch).toEqual({ note: 'tv' });
     }
+  });
+});
+
+describe('duplicateFormValues', () => {
+  it('copies what the row says, dated today and one-time, whatever the source was', () => {
+    const plan = makeTx({
+      id: 'sofa',
+      date: d('2026-03-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10, installments: 12 },
+      note: 'Sofa',
+      paymentMethodId: 'card-1',
+    });
+    const occurrence = occurrenceOf(plan, [], '2026-09-10');
+    const base = defaultFormValues({ profileId: 'p-active', currency: 'ILS', today: d('2026-10-08') });
+
+    expect(duplicateFormValues(occurrence, plan, base, d('2026-10-08'))).toMatchObject({
+      profileId: 'p-active',
+      kind: plan.kind,
+      categoryId: occurrence.categoryId,
+      amount: occurrenceToFormValues(occurrence, plan).amount,
+      currency: occurrence.money.currency,
+      paymentMethodId: 'card-1',
+      note: 'Sofa',
+      date: '2026-10-08',
+      mode: 'one_time',
+      installmentCount: '',
+    });
+  });
+
+  it('copies an occurrence’s own edits, not the series’', () => {
+    const patched: MoneySnapshot = { ...MONEY, amountMinor: 9900, currency: 'ILS', baseCurrency: 'ILS' };
+    const override = modify('rent', d('2026-09-10'), { money: patched, note: 'with the fee' });
+    const tx = rent({}, [override]);
+    const base = defaultFormValues({ profileId: 'p1', currency: 'ILS', today: d('2026-10-08') });
+
+    expect(
+      duplicateFormValues(occurrenceOf(tx, [override], '2026-09-10'), tx, base, d('2026-10-08')),
+    ).toMatchObject({ amount: '99.00', note: 'with the fee', date: '2026-10-08', mode: 'one_time' });
   });
 });

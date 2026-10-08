@@ -14,7 +14,7 @@ import { formatLocalDate } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import type { Occurrence } from '@/types/domain';
 
-import type { RowAction } from './row-actions-sheet';
+import type { RowAction } from './row-actions-menu';
 
 /**
  * Perform a row action, then offer to take it back.
@@ -64,8 +64,9 @@ export function useRowActions(): (action: RowAction, occurrence: Occurrence) => 
           }
 
           case 'edit':
+          case 'duplicate':
           case 'split':
-            // Handled by the caller, which owns the sheets.
+            // Handled by the caller, which owns the sheets and their URL state.
             return;
         }
       } catch {

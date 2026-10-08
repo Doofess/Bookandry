@@ -18,14 +18,14 @@ import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { startOfMonth } from '@/lib/dates';
-import { ALL_PROFILES, type Occurrence } from '@/types/domain';
+import { ALL_PROFILES } from '@/types/domain';
 
 import { AddMenu } from './add-menu';
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
 import { FilterBar } from './filter-bar';
 import { ProfileSwitcher } from './profile-switcher';
-import { RowActionsSheet } from './row-actions-sheet';
+import { RowActionsMenu, type RowMenuTarget } from './row-actions-menu';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
 import { useRowActions } from './use-row-actions';
@@ -61,9 +61,10 @@ export function FeedScreen() {
    *
    * Unlike the edit sheet, this is not somewhere you navigated to: it is a
    * transient menu, and pushing a history entry for it would make the back
-   * button walk through every menu the user opened and dismissed.
+   * button walk through every menu the user opened and dismissed. It carries
+   * the row's ⋯ button, which the menu is anchored to.
    */
-  const [menuFor, setMenuFor] = useState<Occurrence | undefined>(undefined);
+  const [menuFor, setMenuFor] = useState<RowMenuTarget | undefined>(undefined);
   const runAction = useRowActions();
   /** The purchase being split into payments, kept once its menu has closed. */
   const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
@@ -76,7 +77,7 @@ export function FeedScreen() {
   const candidates = useCandidates(filters.profileId, window);
   const occurrences = useOccurrences(candidates, window, today, filters.profileId, settings.defaultCurrency);
   const lookups = useFeedLookups();
-  const splitMenu = useSplitOffer(menuFor, lookups?.paymentMethods);
+  const splitMenu = useSplitOffer(menuFor?.occurrence, lookups?.paymentMethods);
 
   /*
    * Files shared from the phone wait in the service worker's cache: open the
@@ -265,18 +266,17 @@ export function FeedScreen() {
             <VirtualFeed
               rows={rows}
               context={context}
-              // Both the row body and its always-present menu open the editor.
-              // The menu will grow skip/delete next; until it does, pointing it
-              // at the same place is honest, where a dead button is not.
+              // The row body opens the editor; its always-present ⋯ opens the
+              // row menu, anchored to that button.
               // A card's fee is worked out from the card, not a row anyone saved:
               // it is changed where the card is, so it opens the Cards screen.
               onOpen={(occurrence) => {
                 if (isCardFee(occurrence)) void navigate(ROUTES.cards);
                 else sheet.openEdit(occurrence);
               }}
-              onMenu={(occurrence) => {
+              onMenu={(occurrence, anchor) => {
                 if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-                else setMenuFor(occurrence);
+                else setMenuFor({ occurrence, anchor });
               }}
             />
           )}
@@ -325,11 +325,11 @@ export function FeedScreen() {
         </Suspense>
       )}
 
-      <RowActionsSheet
-        occurrence={menuFor}
+      <RowActionsMenu
+        target={menuFor}
         split={splitMenu?.kind}
-        onOpenChange={(open) => {
-          if (!open) setMenuFor(undefined);
+        onClose={() => {
+          setMenuFor(undefined);
         }}
         onAction={(action, occurrence) => {
           // Closed first, unconditionally: leaving it open over a toast covers
@@ -337,6 +337,10 @@ export function FeedScreen() {
           setMenuFor(undefined);
           if (action === 'edit') {
             sheet.openEdit(occurrence);
+            return;
+          }
+          if (action === 'duplicate') {
+            sheet.openDuplicate(occurrence);
             return;
           }
           if (action === 'split') {

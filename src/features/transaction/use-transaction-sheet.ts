@@ -10,6 +10,57 @@ import { isLocalDate, maxDate, minDate } from '@/lib/dates';
 import type { CardCatalogLink, Occurrence, Override, PaymentMethod, Transaction } from '@/types/domain';
 import type { Kind, LocalDate } from '@/types/money';
 
+/** The add form: `expense` or `income`. `1` (older links) and anything unknown mean an expense. */
+const ADD = 'add';
+const EDIT = 'edit';
+/** The ORIGINAL slot date - the Override key, not the moved date. */
+const AT = 'at';
+/** Duplicate: the transaction the add form is prefilled from; its slot is AT. */
+const FROM = 'from';
+/** "Smart import": `1`, or `shared` when files arrived from the phone's Share menu. */
+const IMPORT = 'import';
+/** Files shared to the app, waiting in the service worker's cache under this id. */
+const SHARED_ID = 'id';
+/** The found transaction being edited inside the import sheet, by its index. */
+const ROW = 'row';
+/** The found card or bank account being filled in inside the import sheet, by its id. */
+const CARD = 'card';
+
+export type SheetTarget =
+  | { readonly mode: 'closed' }
+  | {
+      readonly mode: 'add';
+      readonly kind: Kind;
+      /** Duplicate: the row the form is prefilled from. */
+      readonly from?: { readonly transactionId: string; readonly at: LocalDate };
+    }
+  | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate }
+  | {
+      readonly mode: 'import';
+      /** The share's id when files came from the Share menu. */
+      readonly sharedId?: string;
+      /** A found transaction open for editing, so Back returns to the list. */
+      readonly row?: number;
+      /** A found card or account open in its editor, likewise. */
+      readonly card?: string;
+    };
+
+export type TransactionSheetApi = {
+  readonly target: SheetTarget;
+  readonly openAdd: (kind?: Kind) => void;
+  readonly openEdit: (occurrence: Occurrence) => void;
+  /** The add form, prefilled from this row (see `duplicateFormValues`). */
+  readonly openDuplicate: (occurrence: Occurrence) => void;
+  readonly openImport: (sharedId?: string) => void;
+  /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
+  readonly openImportRow: (row: number | undefined) => void;
+  /** Open one found card or account in its editor inside the import sheet, or go back to the list. */
+  readonly openImportCard: (card: string | undefined) => void;
+  readonly close: () => void;
+  /** For `onOpenChange`, which a backdrop click or Escape also drives. */
+  readonly setOpen: (open: boolean) => void;
+};
+
 /**
  * Which transaction sheet is open, held in the URL.
  *
@@ -28,54 +79,21 @@ import type { Kind, LocalDate } from '@/types/money';
  * Deliberately different from the filters, which use `replace: true`: a filter
  * chip is not somewhere you navigated to, but an open sheet is.
  */
-/** The add form: `expense` or `income`. `1` (older links) and anything unknown mean an expense. */
-const ADD = 'add';
-const EDIT = 'edit';
-/** The ORIGINAL slot date - the Override key, not the moved date. */
-const AT = 'at';
-/** "Smart import": `1`, or `shared` when files arrived from the phone's Share menu. */
-const IMPORT = 'import';
-/** Files shared to the app, waiting in the service worker's cache under this id. */
-const SHARED_ID = 'id';
-/** The found transaction being edited inside the import sheet, by its index. */
-const ROW = 'row';
-/** The found card or bank account being filled in inside the import sheet, by its id. */
-const CARD = 'card';
-
-export type SheetTarget =
-  | { readonly mode: 'closed' }
-  | { readonly mode: 'add'; readonly kind: Kind }
-  | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate }
-  | {
-      readonly mode: 'import';
-      /** The share's id when files came from the Share menu. */
-      readonly sharedId?: string;
-      /** A found transaction open for editing, so Back returns to the list. */
-      readonly row?: number;
-      /** A found card or account open in its editor, likewise. */
-      readonly card?: string;
-    };
-
-export type TransactionSheetApi = {
-  readonly target: SheetTarget;
-  readonly openAdd: (kind?: Kind) => void;
-  readonly openEdit: (occurrence: Occurrence) => void;
-  readonly openImport: (sharedId?: string) => void;
-  /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
-  readonly openImportRow: (row: number | undefined) => void;
-  /** Open one found card or account in its editor inside the import sheet, or go back to the list. */
-  readonly openImportCard: (card: string | undefined) => void;
-  readonly close: () => void;
-  /** For `onOpenChange`, which a backdrop click or Escape also drives. */
-  readonly setOpen: (open: boolean) => void;
-};
-
 export function useTransactionSheet(): TransactionSheetApi {
   const [params, setParams] = useSearchParams();
 
   const target = useMemo<SheetTarget>(() => {
     const adding = params.get(ADD);
-    if (adding !== null) return { mode: 'add', kind: adding === 'income' ? 'income' : 'expense' };
+    if (adding !== null) {
+      const kind = adding === 'income' ? 'income' : 'expense';
+      const fromId = params.get(FROM);
+      const fromAt = params.get(AT);
+      // Both halves or neither, as for an edit: without its slot the source
+      // row cannot be found, and the form is a plain add.
+      return fromId !== null && fromId !== '' && fromAt !== null && isLocalDate(fromAt)
+        ? { mode: 'add', kind, from: { transactionId: fromId, at: fromAt } }
+        : { mode: 'add', kind };
+    }
     const importing = params.get(IMPORT);
     if (importing === '1' || importing === 'shared') {
       const sharedId = importing === 'shared' ? (params.get(SHARED_ID) ?? undefined) : undefined;
@@ -104,12 +122,19 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(ADD);
       updated.delete(EDIT);
       updated.delete(AT);
+      updated.delete(FROM);
       updated.delete(IMPORT);
       updated.delete(SHARED_ID);
       updated.delete(ROW);
       updated.delete(CARD);
 
-      if (next.mode === 'add') updated.set(ADD, next.kind);
+      if (next.mode === 'add') {
+        updated.set(ADD, next.kind);
+        if (next.from !== undefined) {
+          updated.set(FROM, next.from.transactionId);
+          updated.set(AT, next.from.at);
+        }
+      }
       if (next.mode === 'import') {
         updated.set(IMPORT, next.sharedId === undefined ? '1' : 'shared');
         if (next.sharedId !== undefined) updated.set(SHARED_ID, next.sharedId);
@@ -152,6 +177,13 @@ export function useTransactionSheet(): TransactionSheetApi {
           mode: 'edit',
           transactionId: occurrence.transaction.id,
           at: occurrence.originalDate,
+        });
+      },
+      openDuplicate: (occurrence: Occurrence) => {
+        write({
+          mode: 'add',
+          kind: occurrence.transaction.kind,
+          from: { transactionId: occurrence.transaction.id, at: occurrence.originalDate },
         });
       },
       openImport: (sharedId?: string) => {
