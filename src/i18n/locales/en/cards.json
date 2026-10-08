@@ -67,7 +67,6 @@
     "non_bank": "Non-bank card"
   },
   "edit": {
-    "open": "Edit card",
     "theCard": "The card",
     "issuer": "Card company (manual)",
     "network": "Network",
@@ -174,6 +173,15 @@
       "overdraftHint": "How far below zero the bank lets the account go. Leave empty if it has none."
     },
     "open": "Banks, branches and overdraft limits"
+  },
+  "cardMenu": {
+    "label": "Options for {{name}}",
+    "edit": "Edit card",
+    "rates": "Interest table",
+    "transactions": "Transactions on this card",
+    "import": "Import a statement",
+    "archive": "Archive",
+    "archived": "{{name}} archived"
   },
   "menu": {
     "label": "Cards and payment methods",

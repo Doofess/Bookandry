@@ -71,7 +71,7 @@ import {
   unfinishedItem,
 } from './found-methods';
 import { MethodPanel, MethodsGroup, UnfinishedGroup } from './found-methods-list';
-import { readSession, writeSession, type ImportSession } from './import-session';
+import { readSession, startSession, writeSession, type ImportSession } from './import-session';
 import {
   applyBatch,
   buildReview,
@@ -168,8 +168,8 @@ export function ImportSheet(props: ImportSheetProps) {
     props.profiles.length < 2 || props.profiles.some((p) => p.id === props.activeProfileId)
       ? defaultProfileId
       : '';
-  const [session, setSession] = useState<ImportSession>(
-    () => readSession() ?? EMPTY_SESSION(presetProfileId),
+  const [session, setSession] = useState<ImportSession>(() =>
+    startSession(readSession(), EMPTY_SESSION(presetProfileId), props.target.via),
   );
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);

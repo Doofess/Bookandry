@@ -25,6 +25,8 @@ const SHARED_ID = 'id';
 const ROW = 'row';
 /** The found card or bank account being filled in inside the import sheet, by its id. */
 const CARD = 'card';
+/** Smart import for one card or account: its payment method id. */
+const VIA = 'via';
 /** An edit opened from "A different amount…": `amount`, the field the form puts the caret in. */
 const FOCUS = 'focus';
 
@@ -51,6 +53,8 @@ export type SheetTarget =
       readonly row?: number;
       /** A found card or account open in its editor, likewise. */
       readonly card?: string;
+      /** The card or account the statement is for ("Import a statement" on the Cards screen). */
+      readonly via?: string;
     };
 
 export type TransactionSheetApi = {
@@ -107,11 +111,13 @@ export function useTransactionSheet(): TransactionSheetApi {
       const sharedId = importing === 'shared' ? (params.get(SHARED_ID) ?? undefined) : undefined;
       const row = Number(params.get(ROW) ?? '');
       const card = params.get(CARD) ?? '';
+      const via = params.get(VIA) ?? '';
       return {
         mode: 'import',
         ...(sharedId === undefined || sharedId === '' ? {} : { sharedId }),
         ...(params.get(ROW) !== null && Number.isInteger(row) && row >= 0 ? { row } : {}),
         ...(card === '' ? {} : { card }),
+        ...(via === '' ? {} : { via }),
       };
     }
     const transactionId = params.get(EDIT);
@@ -140,6 +146,7 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(SHARED_ID);
       updated.delete(ROW);
       updated.delete(CARD);
+      updated.delete(VIA);
       updated.delete(FOCUS);
 
       if (next.mode === 'add') {
@@ -154,6 +161,7 @@ export function useTransactionSheet(): TransactionSheetApi {
         if (next.sharedId !== undefined) updated.set(SHARED_ID, next.sharedId);
         if (next.row !== undefined) updated.set(ROW, String(next.row));
         if (next.card !== undefined) updated.set(CARD, next.card);
+        if (next.via !== undefined) updated.set(VIA, next.via);
       }
       if (next.mode === 'edit') {
         updated.set(EDIT, next.transactionId);

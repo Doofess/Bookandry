@@ -431,26 +431,37 @@ export function CardFields({
             {t('edit.fxFeeHint')}
           </p>
         </div>
-        <LinkedRates draft={draft} month={month} onChange={onChange}>
-          <RateField
-            label={t('edit.creditRate')}
-            hint={t('edit.creditRateHint')}
-            draft={draft.credit}
-            invalid={bad('credit')}
-            onChange={(credit) => {
-              onChange({ credit });
-            }}
-          />
-          <RateField
-            label={t('edit.lateRate')}
-            hint={t('edit.lateRateHint')}
-            draft={draft.late}
-            invalid={bad('late')}
-            onChange={(late) => {
-              onChange({ late });
-            }}
-          />
-        </LinkedRates>
+        {/*
+          Where "Interest table" on a card's menu opens the editor: there at
+          once, so the sheet can focus it, while a linked card's table loads
+          into it in place.
+        */}
+        <div
+          data-section="rates"
+          tabIndex={-1}
+          className="scroll-mt-4 space-y-3 rounded-xl focus-visible:outline-none"
+        >
+          <LinkedRates draft={draft} month={month} onChange={onChange}>
+            <RateField
+              label={t('edit.creditRate')}
+              hint={t('edit.creditRateHint')}
+              draft={draft.credit}
+              invalid={bad('credit')}
+              onChange={(credit) => {
+                onChange({ credit });
+              }}
+            />
+            <RateField
+              label={t('edit.lateRate')}
+              hint={t('edit.lateRateHint')}
+              draft={draft.late}
+              invalid={bad('late')}
+              onChange={(late) => {
+                onChange({ late });
+              }}
+            />
+          </LinkedRates>
+        </div>
       </fieldset>
     </div>
   );

@@ -1,0 +1,137 @@
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Route, Routes, useLocation } from 'react-router-dom';
+import { type Mock, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { SettingsProvider } from '@/app/settings-provider';
+import { db } from '@/db/db';
+import { createPaymentMethod } from '@/db/repos/payment-methods';
+import { DEFAULT_SETTINGS } from '@/db/repos/settings';
+import { instantFromMs } from '@/lib/dates';
+import { initTestI18n, renderWithProviders } from '@/test/render';
+
+const account = vi.hoisted((): { view: Record<string, unknown> } => ({ view: { status: 'signed_out' } }));
+const toasts = vi.hoisted(() => ({
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) as Mock & { error: Mock },
+}));
+
+vi.mock('@/app/account', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useAccount: () => account.view,
+}));
+vi.mock('sonner', async (importOriginal) => ({ ...(await importOriginal<object>()), ...toasts }));
+
+const { CardsScreen } = await import('./cards-screen');
+
+const SETTINGS = { ...DEFAULT_SETTINGS, updatedAt: instantFromMs(Date.parse('2026-09-15T10:00:00.000Z')) };
+const NOW = '2026-09-15T10:00:00.000Z' as Parameters<typeof createPaymentMethod>[3];
+
+function Feed() {
+  const location = useLocation();
+  return <output data-testid="feed">{location.search}</output>;
+}
+
+const render = () =>
+  renderWithProviders(
+    <SettingsProvider value={SETTINGS}>
+      <Routes>
+        <Route path="/cards" element={<CardsScreen />} />
+        <Route path="/" element={<Feed />} />
+      </Routes>
+    </SettingsProvider>,
+    { route: '/cards' },
+  );
+
+const options = () => screen.findByRole('button', { name: 'Options for Max Gold' });
+
+beforeAll(async () => {
+  await initTestI18n('en');
+});
+
+beforeEach(async () => {
+  vi.clearAllMocks();
+  account.view = { status: 'signed_out' };
+  await db.paymentMethods.filter((m) => m.type === 'credit_card').delete();
+  await createPaymentMethod(
+    db,
+    'card-1',
+    { label: 'Max Gold', type: 'credit_card', profileId: 'p1', card: { issuer: 'max', billingDay: 10 } },
+    NOW,
+  );
+});
+
+describe('a card on the Cards screen', () => {
+  it('has one control to reach its menu, the ⋯; the face is a larger target for pointers only', async () => {
+    const user = userEvent.setup();
+    render();
+    await options();
+
+    expect(screen.getAllByRole('button', { name: 'Options for Max Gold' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Edit card' })).not.toBeInTheDocument();
+
+    const face = screen.getByTestId('card-face').querySelector('button[aria-hidden="true"]');
+    expect(face).toHaveAttribute('tabindex', '-1');
+    if (!(face instanceof HTMLElement)) throw new Error('no face button');
+    await user.click(face);
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+  });
+
+  it('opens the editor from Edit card', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit card' }));
+
+    const editor = await screen.findByRole('dialog');
+    expect(within(editor).getByDisplayValue('Max Gold')).toBeInTheDocument();
+  });
+
+  it('opens the editor on the rates from Interest table, for a card linked to the catalog', async () => {
+    const user = userEvent.setup();
+    await db.paymentMethods.update('card-1', {
+      card: {
+        issuer: 'max',
+        billingDay: 10,
+        catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1 },
+      },
+    } as never);
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Interest table' }));
+
+    await screen.findByRole('dialog');
+    await expect.poll(() => document.activeElement?.getAttribute('data-section')).toBe('rates');
+  });
+
+  it('opens the feed on this card’s transactions', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Transactions on this card' }));
+
+    expect(await screen.findByTestId('feed')).toHaveTextContent('?pm=card-1');
+  });
+
+  it('opens Smart import on this card', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Import a statement' }));
+
+    expect(await screen.findByTestId('feed')).toHaveTextContent('?import=1&via=card-1');
+  });
+
+  it('archives the card, with an Undo that brings it back', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Archive' }));
+
+    await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(1);
+    expect(toasts.toast).toHaveBeenCalledWith('Max Gold archived', expect.anything());
+
+    const [, options_] = toasts.toast.mock.calls[0] as [string, { action: { onClick: () => void } }];
+    options_.action.onClick();
+    await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(0);
+  });
+});
