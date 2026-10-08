@@ -24,3 +24,7 @@ artifacts/
 
 # Browser-automation scratch (Playwright MCP)
 .playwright-mcp/
+
+# Claude Code plugin scratch (session notes, subagent workspaces)
+.remember/
+.superpowers/
