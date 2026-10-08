@@ -8,6 +8,7 @@ import type { PaymentMethod, Transaction } from '@/types/domain';
 import { chargeDate } from './cards';
 import {
   isSplitCount,
+  splitAvailability,
   splitRate,
   splitRecurrence,
   splitRuleFor,
@@ -48,11 +49,15 @@ describe('splitTiming', () => {
     });
   });
 
-  it('on a card without a billing day, keeps the purchase’s own date', () => {
-    expect(splitTiming(d('2026-09-20'), undefined, d('2026-10-08'))).toEqual({
-      planDate: '2026-09-20',
-      billed: false,
-    });
+  it('always bills the first payment after today', () => {
+    for (const day of [1, 2, 10, 15, 28, 31]) {
+      for (const bought of ['2026-01-31', '2026-08-20', '2026-09-30', '2026-10-07', '2026-10-08']) {
+        const today = d('2026-10-08');
+        const timing = splitTiming(d(bought), day, today);
+        expect(timing.firstCharge > today, `${bought} on day ${String(day)}`).toBe(true);
+        expect(chargeDate(timing.planDate, day)).toBe(timing.firstCharge);
+      }
+    }
   });
 });
 
@@ -72,15 +77,19 @@ describe('splitSchedule', () => {
     const payment = spitzerPayment(300_000, '12', 12);
     expect(plan).toMatchObject({ count: 12, paymentMinor: payment, interestMinor: 12 * payment - 300_000 });
     expect(plan?.effective).toBe('12.68');
-    // And so is a card that has no billing date to count to.
-    expect(splitSchedule({ ...base, firstCharge: undefined })).toEqual(plan);
+    // Priced on the purchase itself, which is what the plan keeps for its reset.
+    expect(plan?.principalMinor).toBe(300_000);
   });
 
   it('charges interest from the day of the split, not from the purchase', () => {
     // Two days to the first payment: less than a month's interest in it.
     const soon = splitSchedule({ ...base, firstCharge: d('2026-10-10') });
     const payment = spitzerPayment(requestDatePrincipal(300_000, '12', 2, 360), '12', 12);
-    expect(soon).toMatchObject({ paymentMinor: payment, interestMinor: 12 * payment - 300_000 });
+    expect(soon).toMatchObject({
+      paymentMinor: payment,
+      interestMinor: 12 * payment - 300_000,
+      principalMinor: requestDatePrincipal(300_000, '12', 2, 360),
+    });
     // Two months and two days: more.
     const later = splitSchedule({ ...base, firstCharge: d('2026-12-10') });
     expect(later?.paymentMinor).toBe(spitzerPayment(requestDatePrincipal(300_000, '12', 62, 360), '12', 12));
@@ -100,8 +109,14 @@ describe('splitSchedule', () => {
   });
 
   it('is nothing until it is a plan', () => {
-    expect(splitSchedule({ ...base, count: 1, firstCharge: undefined })).toBeUndefined();
-    expect(splitSchedule({ ...base, principalMinor: 0, firstCharge: undefined })).toBeUndefined();
+    expect(splitSchedule({ ...base, count: 1, firstCharge: d('2026-11-08') })).toBeUndefined();
+    expect(splitSchedule({ ...base, principalMinor: 0, firstCharge: d('2026-11-08') })).toBeUndefined();
+  });
+
+  it('never schedules a first payment billed today or before', () => {
+    expect(splitSchedule({ ...base, firstCharge: d('2026-10-08') })).toBeUndefined();
+    expect(splitSchedule({ ...base, firstCharge: d('2026-09-10') })).toBeUndefined();
+    expect(splitSchedule({ ...base, firstCharge: d('2026-10-09') })).toBeDefined();
   });
 });
 
@@ -157,6 +172,22 @@ describe('splitRuleFor', () => {
     };
     expect(splitRuleFor(purchase(), linked, none)).toBeUndefined();
   });
+
+  it('is ready only on a card with a billing day, which dates the first payment', async () => {
+    const resolved = resolveCard(await loadCatalog(), LINK);
+    expect(splitAvailability(purchase(), method({ billingDay: 10, catalog: LINK }), resolved)).toMatchObject({
+      kind: 'ready',
+      billingDay: 10,
+      rule: { kind: 'split_purchase' },
+    });
+    // Bank-issued Max cards have their billing day set by the bank: the catalog cannot fill it in.
+    expect(splitAvailability(purchase(), method({ catalog: LINK }), resolved)).toEqual({
+      kind: 'needs_billing_day',
+    });
+    expect(
+      splitAvailability(purchase({ kind: 'income' }), method({ catalog: LINK }), resolved),
+    ).toBeUndefined();
+  });
 });
 
 describe('splitRate', () => {
@@ -183,6 +214,20 @@ describe('splitRecurrence', () => {
       installments: 12,
       plan: 'credit',
       creditAnnualRate: '14.5',
+    });
+  });
+
+  it('keeps the principal the plan was priced on, for its reset', () => {
+    const plan = splitRecurrence({
+      planDate: d('2026-09-20'),
+      count: 24,
+      rate: '14.5',
+      resetAt: 19,
+      primeRate: '4.75',
+      principalMinor: 298_515,
+    });
+    expect(plan).toMatchObject({
+      reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 298_515 },
     });
   });
 

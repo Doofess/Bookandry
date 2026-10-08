@@ -12,7 +12,7 @@ import type { PaymentMethod, Recurrence, Transaction } from '@/types/domain';
 import type { LocalDate, Minor } from '@/types/money';
 
 import { cardDealRate } from './card-catalog-link';
-import { chargeDate } from './cards';
+import { billingDayOf, chargeDate } from './cards';
 import { dealSchedule, rateOfTerm, type DealSchedule } from './deal-rules';
 import { MAX_INSTALLMENTS, MIN_INSTALLMENTS } from './tx-form';
 
@@ -58,11 +58,33 @@ export function splitRate(
   return rate === undefined ? { rate: '', missing: true } : { rate, missing: false };
 }
 
+/**
+ * Whether the menu offers a split for this row: ready, with the card's rule
+ * and billing day; or held back until the card has a billing day, which is
+ * what dates the first payment (without one, the payments would be planned
+ * from the purchase's own date - for an older purchase, already in the past);
+ * or not at all (`splitRuleFor`).
+ */
+export type SplitAvailability =
+  | { readonly kind: 'ready'; readonly rule: SplitRule; readonly billingDay: number }
+  | { readonly kind: 'needs_billing_day' };
+
+export function splitAvailability(
+  tx: Transaction,
+  method: PaymentMethod | undefined,
+  resolved: ResolvedCard | undefined,
+): SplitAvailability | undefined {
+  const rule = splitRuleFor(tx, method, resolved);
+  if (rule === undefined) return undefined;
+  const billingDay = billingDayOf(method);
+  return billingDay === undefined ? { kind: 'needs_billing_day' } : { kind: 'ready', rule, billingDay };
+}
+
 export type SplitTiming = {
   /** The plan's first occurrence: in the month before the bill that charges it. */
   readonly planDate: LocalDate;
-  /** The bill that charges the first payment; undefined on a card without a billing day. */
-  readonly firstCharge?: LocalDate;
+  /** The bill that charges the first payment: always after today. */
+  readonly firstCharge: LocalDate;
   /** The purchase's own bill has already been charged. */
   readonly billed: boolean;
 };
@@ -71,10 +93,9 @@ export type SplitTiming = {
  * When a split purchase is paid. Not billed yet, its own bill carries the
  * first payment and the purchase stays where it is. Billed, the first payment
  * is the bill after the next one, and the plan moves to the month before it,
- * keeping the purchase's day. A card without a billing day keeps the date.
+ * keeping the purchase's day.
  */
-export function splitTiming(date: LocalDate, billingDay: number | undefined, today: LocalDate): SplitTiming {
-  if (billingDay === undefined) return { planDate: date, billed: false };
+export function splitTiming(date: LocalDate, billingDay: number, today: LocalDate): SplitTiming {
   const own = chargeDate(date, billingDay);
   const billed = compareLocal(own, today) <= 0;
   let firstCharge = own;
@@ -92,12 +113,19 @@ export function splitTiming(date: LocalDate, billingDay: number | undefined, tod
   };
 }
 
+/** A split's schedule: the plan's, and what the purchase will owe a regular month before its first payment. */
+export type SplitSchedule = DealSchedule & {
+  /** The principal the plan is priced on (`requestDatePrincipal`), kept so payment 19 re-prices from it. */
+  readonly principalMinor: Minor;
+};
+
 /**
  * The split's schedule, as `dealSchedule` gives a קרדיט's, with interest from
  * the day of the request: a Spitzer schedule on what the purchase will owe a
  * regular month before the first payment (`requestDatePrincipal`), its
  * interest counted against the purchase itself. The days are the rate's own -
- * 30/360 or actual/365. Undefined while it is not a plan.
+ * 30/360 or actual/365. Undefined while it is not a plan - and for a first
+ * payment that is not after today, which no split may have.
  */
 export function splitSchedule(input: {
   readonly principalMinor: Minor;
@@ -105,21 +133,19 @@ export function splitSchedule(input: {
   readonly rate: string;
   readonly count: number;
   readonly today: LocalDate;
-  readonly firstCharge: LocalDate | undefined;
+  readonly firstCharge: LocalDate;
   readonly dayCount: '30/360' | 'actual/365';
   readonly compounding: 12 | 4;
   /** Where the deal re-prices with prime (Max: 19). */
   readonly resetAt?: number | undefined;
   readonly primeRate: string;
-}): DealSchedule | undefined {
-  const { principalMinor: principal, rate, count, firstCharge } = input;
-  if (principal <= 0) return undefined;
+}): SplitSchedule | undefined {
+  const { principalMinor: principal, rate, count, firstCharge, today } = input;
+  if (principal <= 0 || compareLocal(firstCharge, today) <= 0) return undefined;
   const accrued =
-    firstCharge === undefined
-      ? principal
-      : input.dayCount === '30/360'
-        ? requestDatePrincipal(principal, rate, Math.max(0, days360(input.today, firstCharge)), 360)
-        : requestDatePrincipal(principal, rate, Math.max(0, daysBetween(input.today, firstCharge)), 365);
+    input.dayCount === '30/360'
+      ? requestDatePrincipal(principal, rate, days360(today, firstCharge), 360)
+      : requestDatePrincipal(principal, rate, daysBetween(today, firstCharge), 365);
   const plan = dealSchedule({
     principalMinor: accrued,
     rate,
@@ -131,13 +157,18 @@ export function splitSchedule(input: {
   });
   return plan === undefined
     ? undefined
-    : { ...plan, interestMinor: Math.max(0, plan.interestMinor + accrued - principal) };
+    : {
+        ...plan,
+        interestMinor: Math.max(0, plan.interestMinor + accrued - principal),
+        principalMinor: accrued,
+      };
 }
 
 /**
  * The recurrence a split purchase becomes: a קרדיט plan from `planDate`, at
  * the split's rate snapshotted, and - where the deal re-prices with prime and
- * the plan reaches that payment - prime today, to re-price it by.
+ * the plan reaches that payment - prime today and the principal it was priced
+ * on, to re-price it by.
  */
 export function splitRecurrence(input: {
   readonly planDate: LocalDate;
@@ -145,18 +176,29 @@ export function splitRecurrence(input: {
   readonly rate: string;
   readonly resetAt?: number | undefined;
   readonly primeRate: string;
+  /** `SplitSchedule.principalMinor`. */
+  readonly principalMinor?: Minor | undefined;
 }): Recurrence {
   const rate = normalizeAnnualRate(input.rate);
   const prime = normalizeAnnualRate(input.primeRate);
   const at = input.resetAt;
   const resets = at !== undefined && at <= input.count && rate !== undefined && prime !== undefined;
+  const principal = input.principalMinor;
   return {
     type: 'monthly',
     dayOfMonth: parseLocalDate(input.planDate).day,
     installments: input.count,
     plan: 'credit',
     ...(rate === undefined ? {} : { creditAnnualRate: rate }),
-    ...(resets ? { reset: { atPayment: at, primeAtPurchase: prime } } : {}),
+    ...(resets
+      ? {
+          reset: {
+            atPayment: at,
+            primeAtPurchase: prime,
+            ...(principal === undefined ? {} : { principalMinor: principal }),
+          },
+        }
+      : {}),
   };
 }
 

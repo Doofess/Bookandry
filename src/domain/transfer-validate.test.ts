@@ -275,7 +275,15 @@ describe('referential integrity', () => {
       frozen: true,
     });
     expect(frozen.ok).toBe(true);
+    // What the plan borrowed, kept for its reset; a reset from before it was kept still reads.
+    const priced = plan({ atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 });
+    expect(priced.ok && priced.doc.data.transactions[0]?.recurrence).toMatchObject({
+      reset: { principalMinor: 300_000 },
+    });
+    expect(kept.ok && kept.doc.data.transactions[0]?.recurrence).not.toHaveProperty('reset.principalMinor');
     for (const bad of [
+      { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 0 },
+      { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 1.5 },
       { atPayment: 0, primeAtPurchase: '4.75' },
       { atPayment: 19, primeAtPurchase: 'x' },
       {},

@@ -352,7 +352,8 @@
   "split": {
     "action": "Split into payments",
     "title": "Split this purchase",
-    "save": "Split it"
+    "save": "Split it",
+    "needsBillingDay": "To split this purchase into payments, set the card's billing day first."
   },
   "commitments": {
     "title": "Recurring commitments",

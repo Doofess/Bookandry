@@ -393,6 +393,8 @@ function toRecurrence(
     endDate: string;
     installmentCount: string;
     frequency: StandingOrderFrequency;
+    amount: string;
+    currency: string;
   } & RateInputs & { resetAt?: number | undefined },
   date: LocalDate,
 ): Recurrence {
@@ -466,13 +468,23 @@ function toRecurrence(
       const at = values.resetAt;
       const resets =
         at !== undefined && at <= count && priced.creditAnnualRate !== undefined && prime !== undefined;
+      // What it borrowed, as the schedule shown priced it: payment 19 is re-priced from it.
+      const principal = parseAmount(values.amount, values.currency);
       return {
         type: 'monthly',
         dayOfMonth: parseLocalDate(date).day,
         installments: count,
         plan: 'credit',
         ...priced,
-        ...(resets ? { reset: { atPayment: at, primeAtPurchase: prime } } : {}),
+        ...(resets
+          ? {
+              reset: {
+                atPayment: at,
+                primeAtPurchase: prime,
+                ...(principal === undefined || principal <= 0 ? {} : { principalMinor: principal }),
+              },
+            }
+          : {}),
       };
     }
 

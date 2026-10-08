@@ -7,8 +7,11 @@ import { loadCatalog } from '@/data/card-catalog';
 import { resolveCard } from '@/data/card-catalog/resolve';
 import { db } from '@/db/db';
 import { chargeDate } from '@/domain/cards';
+import { nextReset } from '@/domain/long-credit';
 import { expandOccurrences } from '@/domain/occurrences';
+import { splitSchedule } from '@/domain/split-purchase';
 import { d, makeTx, MONEY } from '@/domain/test-factories';
+import { requestDatePrincipal } from '@/lib/money';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { Occurrence, PaymentMethod, Transaction } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
@@ -64,7 +67,7 @@ async function offerFor(tx: Transaction): Promise<SplitOffer> {
   const resolved = resolveCard(await loadCatalog(), LINK);
   const rule = resolved?.deals.find((x) => x.kind === 'split_purchase');
   if (resolved === undefined || rule === undefined) throw new Error('Max splits purchases');
-  return { occurrence: occurrenceOf(tx), method: max, resolved, rule };
+  return { occurrence: occurrenceOf(tx), method: max, resolved, rule, billingDay: 10 };
 }
 
 async function open(tx: Transaction, today: LocalDate) {
@@ -175,7 +178,26 @@ describe('splitting a purchase', () => {
     await waitFor(() => {
       expect(onDone).toHaveBeenCalled();
     });
-    expect((await plan()).row.recurrence).toMatchObject({ reset: { atPayment: 19 } });
+    const { row } = await plan();
+    // Priced on what the purchase owes a month before its first payment: two days of interest.
+    const principalMinor = requestDatePrincipal(120_000, '12', 2, 360);
+    expect(row.recurrence).toMatchObject({ reset: { atPayment: 19, principalMinor } });
+    // Re-priced at the prime it was split at, payment 19 is the one the sheet showed.
+    const reset = row.recurrence.type === 'monthly' ? row.recurrence.reset : undefined;
+    const shown = splitSchedule({
+      principalMinor: 120_000,
+      rate: '12',
+      count: 24,
+      today: d('2026-10-08'),
+      firstCharge: d('2026-10-10'),
+      dayCount: '30/360',
+      compounding: 12,
+      resetAt: 19,
+      primeRate: reset?.primeAtPurchase ?? '',
+    });
+    expect(nextReset(row, reset?.primeAtPurchase ?? '', d('2026-10-08'))?.paymentMinor).toBe(
+      shown?.reset?.afterMinor,
+    );
   });
 
   it('says it in Hebrew', async () => {
@@ -198,7 +220,18 @@ describe('useSplitOffer', () => {
     const { result } = renderHook(() => useSplitOffer(occurrenceOf(purchase('2026-09-20')), methods));
     expect(result.current).toBeUndefined();
     await waitFor(() => {
-      expect(result.current?.rule.kind).toBe('split_purchase');
+      expect(result.current).toMatchObject({
+        kind: 'offer',
+        offer: { billingDay: 10, rule: { kind: 'split_purchase' } },
+      });
+    });
+  });
+
+  it('on a linked card without a billing day, says to set it rather than offering the split', async () => {
+    const noDay = new Map([['max', { ...max, card: { catalog: LINK } }]]);
+    const { result } = renderHook(() => useSplitOffer(occurrenceOf(purchase('2026-08-20')), noDay));
+    await waitFor(() => {
+      expect(result.current).toEqual({ kind: 'needs_billing_day' });
     });
   });
 

@@ -75,6 +75,7 @@ const recurrenceSchema = z.discriminatedUnion('type', [
       .object({
         atPayment: z.number().int().min(1).max(360),
         primeAtPurchase: annualRate,
+        principalMinor: z.number().int().positive().max(1e15).optional(),
         rate: annualRate.optional(),
         paymentMinor: z.number().int().nonnegative().max(1e15).optional(),
         frozen: z.literal(true).optional(),

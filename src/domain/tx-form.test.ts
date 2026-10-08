@@ -855,7 +855,8 @@ describe('קרדיט פלוס: long credit', () => {
     expect(parsed.recurrence).toMatchObject({
       plan: 'credit',
       installments: 24,
-      reset: { atPayment: 19, primeAtPurchase: '4.75' },
+      // And what it borrowed, so payment 19 is re-priced from the schedule shown.
+      reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 },
     });
   });
 

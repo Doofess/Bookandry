@@ -74,7 +74,7 @@ export function FeedScreen() {
   const candidates = useCandidates(filters.profileId, window);
   const occurrences = useOccurrences(candidates, window, today, filters.profileId, settings.defaultCurrency);
   const lookups = useFeedLookups();
-  const splitOffer = useSplitOffer(menuFor, lookups?.paymentMethods);
+  const splitMenu = useSplitOffer(menuFor, lookups?.paymentMethods);
 
   /*
    * Files shared from the phone wait in the service worker's cache: open the
@@ -317,7 +317,7 @@ export function FeedScreen() {
 
       <RowActionsSheet
         occurrence={menuFor}
-        canSplit={splitOffer !== undefined}
+        split={splitMenu?.kind}
         onOpenChange={(open) => {
           if (!open) setMenuFor(undefined);
         }}
@@ -330,7 +330,7 @@ export function FeedScreen() {
             return;
           }
           if (action === 'split') {
-            setSplitting(splitOffer);
+            if (splitMenu?.kind === 'offer') setSplitting(splitMenu.offer);
             return;
           }
           void runAction(action, occurrence);

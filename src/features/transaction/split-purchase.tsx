@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import { splitPurchase } from '@/db/split-purchase';
-import { billingDayOf, CARD_CURRENCY } from '@/domain/cards';
+import { CARD_CURRENCY } from '@/domain/cards';
 import { dealWarnings } from '@/domain/deal-rules';
 import { isSplitCount, splitRate, splitSchedule, splitTiming } from '@/domain/split-purchase';
 import { systemClock } from '@/lib/clock';
@@ -82,7 +82,7 @@ function SplitForm({
   const { t, i18n } = useTranslation();
   const prime = usePrime();
   const countId = useId();
-  const { occurrence, method, resolved, rule } = offer;
+  const { occurrence, method, resolved, rule, billingDay } = offer;
   const lang = i18n.language.startsWith('he') ? 'he' : 'en';
   const dealName = rule.label[lang];
 
@@ -94,7 +94,7 @@ function SplitForm({
   const payments = Number(count);
   const validCount = isSplitCount(payments);
   const annual = normalizeAnnualRate(rate);
-  const timing = splitTiming(occurrence.transaction.date, billingDayOf(method), today);
+  const timing = splitTiming(occurrence.transaction.date, billingDay, today);
   const resetAt = rule.rate?.reset?.atPayment;
 
   const shekels = money.currency === CARD_CURRENCY ? money.amountMinor : undefined;
@@ -132,8 +132,10 @@ function SplitForm({
         rate: annual,
         totalMinor: money.amountMinor + schedule.interestMinor,
         timing,
+        principalMinor: schedule.principalMinor,
         resetAt,
         primeRate: prime.primeRate,
+        today,
         now: systemClock.nowIso(),
         newId,
       });
@@ -176,16 +178,14 @@ function SplitForm({
 
       <DealNotes dealName={dealName} warnings={warnings} needRate={false} onOpenCard={onCancel} />
 
-      {timing.firstCharge === undefined ? null : (
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-          <CalendarClock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-          <span>
-            {t('tx.cardCharged', {
-              date: formatLocalDate(timing.firstCharge, i18n.language, { dateStyle: 'medium' }),
-            })}
-          </span>
-        </p>
-      )}
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <CalendarClock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+        <span>
+          {t('tx.cardCharged', {
+            date: formatLocalDate(timing.firstCharge, i18n.language, { dateStyle: 'medium' }),
+          })}
+        </span>
+      </p>
 
       {schedule === undefined ? null : <ScheduleLines schedule={schedule} currency={money.currency} />}
 
