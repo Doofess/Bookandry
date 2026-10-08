@@ -4,9 +4,15 @@ import { d, makeTx, MONEY } from '@/domain/test-factories';
 import { longCreditPayments, presentValueMinor, spitzerPayment } from '@/lib/money';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import type { Recurrence, Transaction } from '@/types/domain';
+import type { IsoInstant } from '@/types/money';
 
 import { LOCK_SYNC, withLock } from './lock';
 import { sweepLongCredit } from './long-credit-sweep';
+import { applyUndoablePlan } from './occurrence-actions';
+
+const EDITED = '2027-07-04T09:00:00.000Z' as IsoInstant;
+const SWEPT = '2027-07-04T09:00:02.000Z' as IsoInstant;
+const UNDONE = '2027-07-04T09:00:05.000Z' as IsoInstant;
 
 type Reset = NonNullable<Extract<Recurrence, { type: 'monthly' }>['reset']>;
 
@@ -56,23 +62,23 @@ describe('sweepLongCredit', () => {
     await handle.db.transactions.put(plan('tv', fresh));
     await handle.db.outbox.clear();
 
-    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'))).toBe(1);
+    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'), SWEPT)).toBe(1);
     expect(await resetOf('tv')).toEqual({ ...fresh, rate: '16', paymentMinor: after('16') });
     expect(await queued()).toEqual(['transactions:tv']);
 
     // Prime moves again before the date: re-priced again.
-    expect(await sweepLongCredit(handle.db, '5.5', d('2027-07-04'))).toBe(1);
+    expect(await sweepLongCredit(handle.db, '5.5', d('2027-07-04'), SWEPT)).toBe(1);
     expect(await resetOf('tv')).toEqual({ ...fresh, rate: '15', paymentMinor: after('15') });
   });
 
   it('on and after the date, freezes; a later prime change leaves it as it froze', async () => {
     await handle.db.transactions.put(plan('tv', fresh));
-    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-05'))).toBe(1);
+    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-05'), SWEPT)).toBe(1);
     const frozen = { ...fresh, rate: '16', paymentMinor: after('16'), frozen: true };
     expect(await resetOf('tv')).toEqual(frozen);
 
     await handle.db.outbox.clear();
-    expect(await sweepLongCredit(handle.db, '9', d('2027-09-01'))).toBe(0);
+    expect(await sweepLongCredit(handle.db, '9', d('2027-09-01'), SWEPT)).toBe(0);
     expect(await resetOf('tv')).toEqual(frozen);
     expect(await queued()).toEqual([]);
   });
@@ -82,18 +88,18 @@ describe('sweepLongCredit', () => {
     const row = plan('tv', elsewhere);
     await handle.db.transactions.put(row);
     await handle.db.outbox.clear();
-    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'))).toBe(0);
+    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'), SWEPT)).toBe(0);
     expect(await handle.db.transactions.get('tv')).toEqual(row);
     expect(await queued()).toEqual([]);
   });
 
   it('writes nothing the second time, and nothing at all for plans without a reset', async () => {
     await handle.db.transactions.bulkPut([plan('tv', fresh), plan('sofa', undefined)]);
-    await sweepLongCredit(handle.db, '6.5', d('2027-07-04'));
+    await sweepLongCredit(handle.db, '6.5', d('2027-07-04'), SWEPT);
     await handle.db.outbox.clear();
     const before = await handle.db.transactions.toArray();
 
-    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'))).toBe(0);
+    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'), SWEPT)).toBe(0);
     expect(await handle.db.transactions.toArray()).toEqual(before);
     expect(await queued()).toEqual([]);
     expect(await resetOf('sofa')).toBeUndefined();
@@ -104,7 +110,7 @@ describe('sweepLongCredit', () => {
 
     let release = (): void => undefined;
     const held = withLock(LOCK_SYNC, () => new Promise<void>((resolve) => (release = resolve)));
-    const sweep = sweepLongCredit(handle.db, '6.5', d('2027-07-04'));
+    const sweep = sweepLongCredit(handle.db, '6.5', d('2027-07-04'), SWEPT);
     // Let it find the plan and queue for the lock, then a pull lands an edit.
     await new Promise((resolve) => setTimeout(resolve, 20));
     const row = (await handle.db.transactions.get('tv'))!;
@@ -119,14 +125,32 @@ describe('sweepLongCredit', () => {
       note: 'Edited elsewhere',
       categoryId: 'cat.home',
       recurrence: { ...row.recurrence, reset: { ...fresh, rate: '16', paymentMinor: after('16') } },
+      updatedAt: SWEPT,
     });
+  });
+
+  it('stamps what it writes, so an Undo from before it refuses rather than put the old price back', async () => {
+    await handle.db.transactions.put(plan('tv', fresh));
+    const row = (await handle.db.transactions.get('tv'))!;
+    const undoable = await applyUndoablePlan(handle.db, {
+      transactions: [{ ...row, note: 'Sofa', updatedAt: EDITED }],
+      overrides: [],
+      deleteOverrideIds: [],
+      warnings: [],
+      effectiveScope: 'all',
+    });
+
+    expect(await sweepLongCredit(handle.db, '6.5', d('2027-07-04'), SWEPT)).toBe(1);
+    await expect(undoable.undo(UNDONE)).rejects.toThrow('changed_since');
+    expect(await resetOf('tv')).toEqual({ ...fresh, rate: '16', paymentMinor: after('16') });
+    expect((await handle.db.transactions.get('tv'))?.note).toBe('Sofa');
   });
 
   it('skips a plan that froze while it waited for the lock', async () => {
     await handle.db.transactions.put(plan('tv', fresh));
     let release = (): void => undefined;
     const held = withLock(LOCK_SYNC, () => new Promise<void>((resolve) => (release = resolve)));
-    const sweep = sweepLongCredit(handle.db, '9', d('2027-07-04'));
+    const sweep = sweepLongCredit(handle.db, '9', d('2027-07-04'), SWEPT);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const pulled = plan('tv', { ...fresh, rate: '16', paymentMinor: 123, frozen: true });
     await handle.db.transactions.put(pulled);
