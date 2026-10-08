@@ -7,6 +7,7 @@ import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
 import { ScreenPanel } from '@/app/screen-panel';
 import { pendingShares, sweepShared } from '@/app/shared-files';
+import { PanelSheet } from '@/components/brand-panel';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
@@ -32,8 +33,8 @@ import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
-import { PrimeStrip } from '../summary/prime-strip';
-import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
+import { PrimePill } from '../summary/prime-pill';
+import { BalanceFigure, ForecastLine } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
 import { SplitPurchaseSheet } from '../transaction/split-purchase';
@@ -158,7 +159,7 @@ export function FeedScreen() {
     // the last row of every month sits under a button. The shell already pads
     // for the tab bar; this is the FAB's share.
     <section
-      className="mx-auto max-w-2xl px-4 pt-4 pb-24 lg:pb-8"
+      className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8"
       /*
        * The day headers pin against this. A fixed bar cannot set it for them.
        *
@@ -208,74 +209,75 @@ export function FeedScreen() {
         />
       ) : null}
 
-      {/* The account menu's home on the feed until its own panel fills this. */}
-      <ScreenPanel />
-
       <div ref={measureHeader} data-testid="feed-header">
-        <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
-
-        {lookups === undefined ? null : (
-          <ProfileSwitcher
-            profiles={lookups.profiles}
-            active={filters.profileId}
-            onSelect={setProfile}
-            className="mt-3"
-          />
-        )}
-
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <BalanceCard
-            state={balance}
-            currency={settings.defaultCurrency}
-            onOpenBreakdown={() => {
-              setBreakdown('balance');
-            }}
-          />
-          <ExpectedCard
-            expense={expense}
-            currency={settings.defaultCurrency}
-            month={filters.month}
-            today={today}
-            onOpenBreakdown={() => {
-              setBreakdown('expense');
-            }}
-          />
-        </div>
-
-        <PrimeStrip />
+        <ScreenPanel>
+          {/* Wraps onto two lines on a 320px phone rather than overflowing. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <MonthCursor month={filters.month} today={today} onStep={stepMonth} tone="panel" />
+            {lookups === undefined ? null : (
+              <ProfileSwitcher
+                profiles={lookups.profiles}
+                active={filters.profileId}
+                onSelect={setProfile}
+                tone="panel"
+              />
+            )}
+            <PrimePill />
+          </div>
+          <div className="mt-5">
+            <BalanceFigure
+              state={balance}
+              currency={settings.defaultCurrency}
+              onOpenBreakdown={() => {
+                setBreakdown('balance');
+              }}
+            />
+          </div>
+          <div className="mt-2">
+            <ForecastLine
+              expense={expense}
+              currency={settings.defaultCurrency}
+              month={filters.month}
+              today={today}
+              onOpenBreakdown={() => {
+                setBreakdown('expense');
+              }}
+            />
+          </div>
+        </ScreenPanel>
       </div>
 
-      <div className="mt-4">
+      <PanelSheet className="px-4 pt-4">
         <FilterBar filters={filters} onChange={set} onClear={clear} />
-      </div>
 
-      <div className="mt-3">
-        {reason !== undefined ? (
-          <EmptyState
-            reason={reason}
-            month={filters.month}
-            onClearFilters={hasActiveFilters(filters) ? clear : undefined}
-          />
-        ) : context === undefined ? null : (
-          <VirtualFeed
-            rows={rows}
-            context={context}
-            // Both the row body and its always-present menu open the editor.
-            // The menu will grow skip/delete next; until it does, pointing it
-            // at the same place is honest, where a dead button is not.
-            // A card's fee is worked out from the card, not a row anyone saved:
-            // it is changed where the card is, so it opens the Cards screen.
-            onOpen={(occurrence) => {
-              if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-              else sheet.openEdit(occurrence);
-            }}
-            onMenu={(occurrence) => {
-              if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-              else setMenuFor(occurrence);
-            }}
-          />
-        )}
-      </div>
+        <div className="mt-3">
+          {reason !== undefined ? (
+            <EmptyState
+              reason={reason}
+              month={filters.month}
+              onClearFilters={hasActiveFilters(filters) ? clear : undefined}
+            />
+          ) : context === undefined ? null : (
+            <VirtualFeed
+              rows={rows}
+              context={context}
+              // Both the row body and its always-present menu open the editor.
+              // The menu will grow skip/delete next; until it does, pointing it
+              // at the same place is honest, where a dead button is not.
+              // A card's fee is worked out from the card, not a row anyone saved:
+              // it is changed where the card is, so it opens the Cards screen.
+              onOpen={(occurrence) => {
+                if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+                else sheet.openEdit(occurrence);
+              }}
+              onMenu={(occurrence) => {
+                if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+                else setMenuFor(occurrence);
+              }}
+            />
+          )}
+        </div>
+      </PanelSheet>
 
       {lookups === undefined ? null : (
         <TransactionSheet

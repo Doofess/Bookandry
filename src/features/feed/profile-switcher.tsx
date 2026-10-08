@@ -3,6 +3,7 @@ import { ChevronDown, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAccount } from '@/app/account';
+import { panelPill } from '@/components/brand-panel';
 import { PersonAvatar } from '@/components/person-avatar';
 import {
   DropdownMenu,
@@ -25,11 +26,14 @@ export function ProfileSwitcher({
   active,
   onSelect,
   className,
+  tone = 'card',
 }: {
   profiles: readonly Profile[];
   active: string;
   onSelect: (profileId: string) => void;
   className?: string;
+  /** 'panel': an outlined pill on the feed's sapphire panel. */
+  tone?: 'card' | 'panel';
 }) {
   const { t } = useTranslation();
   const view = useAccount();
@@ -47,19 +51,27 @@ export function ProfileSwitcher({
         <DropdownMenuTrigger
           aria-label={`${t('profile.switcher')}: ${current === undefined ? t('profile.all') : nameOf(current)}`}
           className={cn(
-            'flex h-9 items-center gap-2 rounded-full border border-border bg-card ps-1.5 pe-3 text-sm font-medium shadow-xs transition',
-            'hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            'flex items-center gap-2 rounded-full border text-sm font-medium transition focus-visible:ring-2 focus-visible:outline-none',
+            tone === 'panel'
+              ? cn(panelPill, 'ps-1.5 pe-3')
+              : 'h-9 border-border bg-card ps-1.5 pe-3 shadow-xs hover:bg-muted focus-visible:ring-ring',
           )}
         >
           {current === undefined ? (
-            <Stack people={ordered} />
+            <Stack people={ordered} tone={tone} />
           ) : (
             <PersonAvatar person={current} size="sm" className="size-6 text-[10px]" />
           )}
           <span className="max-w-40 truncate">
             {current === undefined ? t('profile.all') : nameOf(current)}
           </span>
-          <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
+          <ChevronDown
+            className={cn(
+              'size-4',
+              tone === 'panel' ? 'text-brand-deep-foreground/80' : 'text-muted-foreground',
+            )}
+            aria-hidden="true"
+          />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={6} className="w-56 p-1">
           <DropdownMenuRadioGroup
@@ -88,11 +100,16 @@ export function ProfileSwitcher({
 }
 
 /** Everyone, as overlapping pictures: up to three, the way a shared account looks. */
-function Stack({ people }: { readonly people: readonly Profile[] }) {
+function Stack({ people, tone }: { readonly people: readonly Profile[]; readonly tone: 'card' | 'panel' }) {
   return (
     <span className="flex -space-x-2 rtl:space-x-reverse">
       {people.slice(0, 3).map((p) => (
-        <PersonAvatar key={p.id} person={p} size="sm" className="size-6 text-[10px] ring-2 ring-card" />
+        <PersonAvatar
+          key={p.id}
+          person={p}
+          size="sm"
+          className={cn('size-6 text-[10px] ring-2', tone === 'panel' ? 'ring-brand-deep' : 'ring-card')}
+        />
       ))}
     </span>
   );

@@ -276,11 +276,14 @@ for (const lang of ['en', 'he'] as const) {
       // figure - the Bank of Israel at 3.25 - shown with its date.
       await completeFirstRun(page, lang, { demo: false });
 
-      // On the main screen.
-      const strip = page.getByTestId('prime-strip');
-      await expect(strip).toContainText(copy.primeTitle);
-      await expect(strip).toContainText('4.75%');
-      await expect(strip).toContainText('3.25%');
+      // On the main screen: prime is a pill on the panel; its pop-out says what it is built on.
+      const pill = page.getByTestId('prime-pill');
+      await expect(pill).toContainText('4.75%');
+      await pill.click();
+      const popout = page.getByTestId('prime-popout');
+      await expect(popout).toContainText(copy.primeTitle);
+      await expect(popout).toContainText('3.25%');
+      await page.keyboard.press('Escape');
 
       await openForm(page);
       await page.getByLabel(copy.amount, { exact: true }).fill('500000');

@@ -79,8 +79,12 @@ export function VirtualFeed({
   useLayoutEffect(() => {
     // The distance from the top of the document to the list. Re-read on resize
     // because the summary header above it changes height when it wraps.
+    // From the DOCUMENT, not `offsetTop`: that is relative to the nearest
+    // positioned ancestor, and the list sits inside the panel's sheet, which is
+    // `relative` so it can rise over the panel's foot.
     const measure = (): void => {
-      setScrollMargin(containerRef.current?.offsetTop ?? 0);
+      const list = containerRef.current;
+      setScrollMargin(list === null ? 0 : list.getBoundingClientRect().top + window.scrollY);
     };
     measure();
     window.addEventListener('resize', measure);

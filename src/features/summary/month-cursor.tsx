@@ -1,6 +1,8 @@
+import { cn } from 'cn';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { panelIconButton } from '@/components/brand-panel';
 import { Button } from '@/components/ui/button';
 import { isAtHorizon } from '@/domain/feed-filters';
 import { formatLocalDate } from '@/lib/dates';
@@ -15,6 +17,8 @@ import type { LocalDate } from '@/types/money';
  * reason month-end review (the actual retention loop of a finance app) was
  * impossible.
  *
+ * On the feed's panel (`tone="panel"`) it is one outlined pill, ‹ month ›.
+ *
  * The chevrons are DIRECTIONAL, so they carry `rtl:rotate-180` with shadcn's
  * `cn-rtl-flip` marker: "previous" is left in English and right in Hebrew. The
  * icon NAMES stay `ChevronLeft`/`ChevronRight` because the rotation is applied
@@ -25,21 +29,32 @@ export function MonthCursor({
   month,
   today,
   onStep,
+  tone = 'plain',
 }: {
   month: LocalDate;
   today: LocalDate;
   onStep: (delta: number) => void;
+  tone?: 'plain' | 'panel';
 }) {
   const { t, i18n } = useTranslation();
   const label = formatLocalDate(month, i18n.language, { month: 'long', year: 'numeric' });
   const atHorizon = isAtHorizon(month, today);
+  const onPanel = tone === 'panel';
+  const arrow = onPanel ? panelIconButton : undefined;
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        onPanel
+          ? 'inline-flex items-center rounded-full border border-white/35 text-brand-deep-foreground'
+          : 'flex items-center justify-between gap-2',
+      )}
+    >
       <Button
         type="button"
         variant="ghost"
         size="icon"
+        className={arrow}
         aria-label={t('month.previous')}
         onClick={() => {
           onStep(-1);
@@ -50,7 +65,10 @@ export function MonthCursor({
 
       {/* aria-live so stepping months announces the new one: the heading text
           changes in place, which a screen reader would otherwise not mention. */}
-      <h2 className="text-base font-semibold" aria-live="polite">
+      <h2
+        className={cn('font-semibold whitespace-nowrap', onPanel ? 'px-1 text-sm' : 'text-base')}
+        aria-live="polite"
+      >
         {label}
       </h2>
 
@@ -58,6 +76,7 @@ export function MonthCursor({
         type="button"
         variant="ghost"
         size="icon"
+        className={arrow}
         aria-label={t('month.next')}
         // Past the projection horizon there is nothing to show, so the control
         // is disabled with the reason rather than stepping into an empty month.
