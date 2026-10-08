@@ -1,10 +1,17 @@
-import { act, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from './dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
-import { useAnchoredPopup } from './popup-parts';
+import { useAnchoredPopup, useHeldWhileClosing } from './popup-parts';
 
 function scrollTo(y: number): void {
   act(() => {
@@ -128,6 +135,33 @@ describe('pop-outs', () => {
     await expect.poll(() => screen.queryByTestId('menu')).toBeNull();
   });
 
+  it('keep a menu open while it scrolls inside, when it is taller than the room it has', async () => {
+    render(
+      <DropdownMenu>
+        <DropdownMenuTrigger>menu</DropdownMenuTrigger>
+        <DropdownMenuContent arrow data-testid="menu">
+          <DropdownMenuItem>one</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'menu' }));
+    const menu = await screen.findByTestId('menu');
+    // The arrow sits outside the popup's box, so the popup itself cannot clip;
+    // the items scroll in a box of their own.
+    const list = menu.querySelector<HTMLElement>('[data-slot="popup-scroll"]');
+    expect(list).toHaveClass('overflow-y-auto');
+
+    act(() => {
+      if (list === null) return;
+      list.scrollTop = 40;
+      // Even with the page's offset reading as moved, a scroll that comes
+      // from inside the popup is not the page's.
+      Object.defineProperty(window, 'scrollY', { value: 200, configurable: true });
+      list.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    expect(screen.getByTestId('menu')).toBeInTheDocument();
+  });
+
   it('give menu items a 44px target on a phone', async () => {
     render(
       <DropdownMenu>
@@ -141,6 +175,98 @@ describe('pop-outs', () => {
 
     expect(await screen.findByRole('menuitem', { name: 'one' })).toHaveClass('min-h-11', 'sm:min-h-8');
   });
+
+  it('give radio items the same targets as the rest', async () => {
+    render(
+      <DropdownMenu>
+        <DropdownMenuTrigger>menu</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuRadioGroup value="a">
+            <DropdownMenuRadioItem value="a">a</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'menu' }));
+
+    expect(await screen.findByRole('menuitemradio', { name: 'a' })).toHaveClass('min-h-11', 'sm:min-h-8');
+  });
+});
+
+describe('a tap outside a pop-out that points at something', () => {
+  function setUp() {
+    const onRow = vi.fn();
+    render(
+      <>
+        <button type="button" onClick={onRow}>
+          row
+        </button>
+        <Popover>
+          <PopoverTrigger>open</PopoverTrigger>
+          <PopoverContent arrow data-testid="pop">
+            body
+          </PopoverContent>
+        </Popover>
+      </>,
+    );
+    return { onRow };
+  }
+
+  const backdrop = () => document.querySelector<HTMLElement>('[data-slot="popup-backdrop"]');
+
+  it('closes it, and does not also press what is underneath', async () => {
+    const { onRow } = setUp();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'open' }));
+    await screen.findByTestId('pop');
+    const under = backdrop();
+    expect(under).not.toBeNull();
+
+    // The press lands on the backdrop. By the time the finger lifts the
+    // backdrop may have faded out, and the click lands on the row beneath.
+    if (under !== null) fireEvent.pointerDown(under);
+    fireEvent.click(screen.getByRole('button', { name: 'row' }));
+
+    await expect.poll(() => screen.queryByTestId('pop')).toBeNull();
+    expect(onRow).not.toHaveBeenCalled();
+  });
+
+  it('swallows that one click only: the next tap is the user’s', async () => {
+    const { onRow } = setUp();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'open' }));
+    await screen.findByTestId('pop');
+    const under = backdrop();
+    if (under !== null) fireEvent.pointerDown(under);
+    fireEvent.click(document.body);
+    await expect.poll(() => screen.queryByTestId('pop')).toBeNull();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'row' }));
+    expect(onRow).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not stop the page scrolling under it', async () => {
+    setUp();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'open' }));
+    await screen.findByTestId('pop');
+    const under = backdrop();
+
+    expect(under?.className).not.toMatch(/touch-none|touch-pan|overflow-hidden/);
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 });
+    under?.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+  });
+
+  it('is not there for a plain pop-out, which closes as it always has', async () => {
+    render(
+      <Popover>
+        <PopoverTrigger>open</PopoverTrigger>
+        <PopoverContent data-testid="pop">body</PopoverContent>
+      </Popover>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'open' }));
+    await screen.findByTestId('pop');
+
+    expect(backdrop()).toBeNull();
+  });
 });
 
 describe('a pop-out anchored to a button it does not own', () => {
@@ -151,14 +277,20 @@ describe('a pop-out anchored to a button it does not own', () => {
     popup.dataset.slot = 'dropdown-menu-content';
     const item = document.createElement('button');
     popup.append(item);
-    document.body.append(anchor, elsewhere, popup);
+    // Another pop-out, which a later item might open and hand focus to.
+    const other = document.createElement('div');
+    other.dataset.slot = 'popover-content';
+    const otherInput = document.createElement('input');
+    other.append(otherInput);
+    document.body.append(anchor, elsewhere, popup, other);
     const hook = renderHook(
       ({ open }: { open: boolean }) => useAnchoredPopup(open ? { anchor } : undefined, () => undefined),
       { initialProps: { open: true } },
     );
+    hook.result.current.popupRef.current = popup;
     // Closed: the target is cleared before base-ui asks where focus goes.
     hook.rerender({ open: false });
-    return { anchor, elsewhere, item, finalFocus: () => hook.result.current.finalFocus() };
+    return { anchor, elsewhere, item, otherInput, finalFocus: () => hook.result.current.finalFocus() };
   }
 
   afterEach(() => {
@@ -174,6 +306,12 @@ describe('a pop-out anchored to a button it does not own', () => {
   it('leaves focus alone when something else has taken it, as the sheet an item opens does', () => {
     const { elsewhere, finalFocus } = setUp();
     elsewhere.focus();
+    expect(finalFocus()).toBe(false);
+  });
+
+  it('leaves focus in a different pop-out that took it', () => {
+    const { otherInput, finalFocus } = setUp();
+    otherInput.focus();
     expect(finalFocus()).toBe(false);
   });
 
@@ -196,5 +334,17 @@ describe('a pop-out anchored to a button it does not own', () => {
 
     expect(hook.result.current.shown).toBe(target);
     expect(hook.result.current.anchor).toBe(anchor);
+  });
+});
+
+describe('useHeldWhileClosing', () => {
+  it('follows the value while open, and keeps the last one while closing', () => {
+    const initialProps: { value: string | undefined; open: boolean } = { value: 'offer', open: true };
+    const hook = renderHook(({ value, open }) => useHeldWhileClosing(value, open), { initialProps });
+    hook.rerender({ value: 'needs_billing_day', open: true });
+    expect(hook.result.current).toBe('needs_billing_day');
+
+    hook.rerender({ value: undefined, open: false });
+    expect(hook.result.current).toBe('needs_billing_day');
   });
 });

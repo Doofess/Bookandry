@@ -10,6 +10,7 @@ import {
   CloseOnScroll,
   POPUP_SURFACE,
   PopupActionsContext,
+  PopupBackdrop,
   type PopupActions,
 } from './popup-parts';
 
@@ -36,6 +37,7 @@ function PopoverContent({
   anchor,
   arrow = false,
   closeOnScroll = arrow,
+  backdrop = arrow,
   children,
   ...props
 }: PopoverPrimitive.Popup.Props &
@@ -46,9 +48,12 @@ function PopoverContent({
     readonly arrow?: boolean;
     /** Close once the page scrolls; on for a pop-out with an arrow, which points at nothing after a scroll. */
     readonly closeOnScroll?: boolean;
+    /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
+    readonly backdrop?: boolean;
   }) {
   return (
     <PopoverPrimitive.Portal>
+      {backdrop ? <PopupBackdrop /> : null}
       <PopoverPrimitive.Positioner
         anchor={anchor}
         align={align}

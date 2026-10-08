@@ -411,6 +411,64 @@ test.describe('@collapse on the desktop rail', () => {
   });
 });
 
+test.describe('@popouts the row menu', () => {
+  /** Open the ⋯ menu of a row a little way down, so there is page around it. */
+  async function openRowMenu(page: Page) {
+    const more = page.getByRole('button', { name: /^Actions for / }).nth(2);
+    await more.click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    return menu;
+  }
+
+  test('a tap on another row closes the menu, and opens nothing', async ({ page }) => {
+    /*
+     * The menu is not modal, so the page scrolls under it. A tap outside must
+     * still do one thing only: close it. Without the backdrop the same tap
+     * also landed on the row beneath and opened its editor.
+     */
+    await completeFirstRun(page, 'en');
+    const menu = await openRowMenu(page);
+    const menuBox = await menu.boundingBox();
+
+    // The body of a row the menu does not cover.
+    let target: { x: number; y: number } | undefined;
+    for (const row of await page.getByRole('listitem').all()) {
+      const box = await row.boundingBox();
+      if (box === null || menuBox === null || box.y < 0) continue;
+      const centre = { x: box.x + box.width / 3, y: box.y + box.height / 2 };
+      const covered =
+        centre.y >= menuBox.y - 12 &&
+        centre.y <= menuBox.y + menuBox.height + 12 &&
+        centre.x >= menuBox.x &&
+        centre.x <= menuBox.x + menuBox.width;
+      if (!covered && centre.y < (page.viewportSize()?.height ?? 0) - 40) {
+        target = centre;
+        break;
+      }
+    }
+    expect(target, 'a row clear of the menu').toBeDefined();
+    if (target === undefined) return;
+
+    await page.mouse.click(target.x, target.y);
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(new URL(page.url()).search).toBe('');
+  });
+
+  test('a scroll closes it, and the page does scroll', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    const menu = await openRowMenu(page);
+    const box = await menu.boundingBox();
+    // Over the page beside the menu, not the menu itself.
+    await page.mouse.move(40, (box?.y ?? 200) + 10);
+    await page.mouse.wheel(0, 300);
+
+    await expect(menu).toHaveCount(0);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  });
+});
+
 test.describe('@keyboard walkthrough', () => {
   test('reaches the add button by keyboard alone, and shows focus at every stop', async ({ page }) => {
     /*

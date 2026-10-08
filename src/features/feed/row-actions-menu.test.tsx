@@ -239,12 +239,75 @@ describe('the menu itself', () => {
     expect(onAction).toHaveBeenCalledWith('duplicate', target);
   });
 
-  it('is anchored to the row with an arrow, and every item clears 44px on a phone', async () => {
+  it('draws an arrow, and every item clears 44px on a phone', async () => {
     render(occurrence({ type: 'one_time' }));
     const menu = await screen.findByRole('menu');
 
     expect(menu.querySelector('[data-slot="popup-arrow"]')).not.toBeNull();
     for (const item of screen.getAllByRole('menuitem')) expect(item).toHaveClass('min-h-11');
+  });
+
+  it('is placed by the row’s ⋯, wherever that is', async () => {
+    const button = anchorButton();
+    button.getBoundingClientRect = () => new DOMRect(200, 300, 44, 44);
+    renderWithProviders(
+      <RowActionsMenu
+        target={{ occurrence: occurrence({ type: 'one_time' }), anchor: button }}
+        onClose={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+    const menu = await screen.findByRole('menu');
+
+    // jsdom lays nothing out, so the menu has no size and no room below:
+    // it flips above the button, 10px clear of it (4, and 6 for the arrow).
+    await expect
+      .poll(() => menu.parentElement?.style.transform)
+      .toMatch(/^translate\((\d+(?:\.\d+)?)px, 290px\)$/);
+    const x = Number(/translate\(([\d.]+)px/.exec(menu.parentElement?.style.transform ?? '')?.[1]);
+    expect(x).toBeGreaterThanOrEqual(200);
+    expect(x).toBeLessThanOrEqual(244);
+  });
+
+  it('leaves the page free to scroll: it is not modal, so a scroll can close it', async () => {
+    render(occurrence({ type: 'one_time' }));
+    await screen.findByRole('menu');
+
+    // A modal menu locks the page with overflow: hidden on the body.
+    expect(document.body.style.overflowY).not.toBe('hidden');
+    expect(document.body.style.overflow).not.toBe('hidden');
+  });
+
+  it('keeps its Split item while it fades out, rather than shrinking mid-fade', async () => {
+    // Hold the exit animation open, as a browser does for its 100ms.
+    let finish = (): void => undefined;
+    const exit = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    Object.defineProperty(Element.prototype, 'getAnimations', {
+      configurable: true,
+      value: () => [{ finished: exit }],
+    });
+    try {
+      const target = { occurrence: occurrence({ type: 'one_time' }), anchor: anchorButton() };
+      const menu = (open: boolean) => (
+        <RowActionsMenu
+          target={open ? target : undefined}
+          // The feed clears both together: split is worked out from the open row.
+          split={open ? 'offer' : undefined}
+          onClose={vi.fn()}
+          onAction={vi.fn()}
+        />
+      );
+      const { rerender } = renderWithProviders(menu(true));
+      await screen.findByRole('menuitem', { name: /^Split into payments$/ });
+
+      rerender(menu(false));
+      expect(screen.getByRole('menuitem', { name: /^Split into payments$/ })).toBeInTheDocument();
+    } finally {
+      finish();
+      Reflect.deleteProperty(Element.prototype, 'getAnimations');
+    }
   });
 
   it('gives focus back to the row button on Escape', async () => {

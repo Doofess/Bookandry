@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { PopupItemContent, useAnchoredPopup } from '@/components/ui/popup-parts';
+import { PopupItemContent, useAnchoredPopup, useHeldWhileClosing } from '@/components/ui/popup-parts';
 import type { Occurrence } from '@/types/domain';
 
 export type RowAction = 'edit' | 'duplicate' | 'split' | 'skip' | 'restore' | 'delete';
@@ -58,7 +58,9 @@ export function RowActionsMenu({
   readonly onAction: (action: RowAction, occurrence: Occurrence) => void;
 }) {
   const { t } = useTranslation();
-  const { shown, anchor, finalFocus } = useAnchoredPopup(target, onClose);
+  const { shown, anchor, popupRef, finalFocus } = useAnchoredPopup(target, onClose);
+  // Worked out from the open row, so it clears with it: held, like the row, through the fade.
+  const shownSplit = useHeldWhileClosing(split, target !== undefined);
 
   const occurrence = shown?.occurrence;
   const isSeries = occurrence !== undefined && occurrence.transaction.recurrence.type !== 'one_time';
@@ -69,6 +71,8 @@ export function RowActionsMenu({
       // Not modal: the page still scrolls under it, and a scroll closes it
       // (it has an arrow), as it does the other pop-outs. A modal menu locks
       // the page instead, and stays pinned to a row the user wanted to move past.
+      // A tap outside still presses nothing underneath: the arrowed content's
+      // backdrop catches it (`PopupBackdrop`).
       modal={false}
       onOpenChange={(open) => {
         if (!open) onClose();
@@ -81,6 +85,7 @@ export function RowActionsMenu({
         align="end"
         className="w-64 p-1.5"
         data-testid="row-menu"
+        ref={popupRef}
         finalFocus={finalFocus}
       >
         {occurrence === undefined ? null : (
@@ -99,12 +104,12 @@ export function RowActionsMenu({
                 onAction('duplicate', occurrence);
               }}
             />
-            {split === undefined ? null : (
+            {shownSplit === undefined ? null : (
               <MenuRow
                 icon={Split}
                 label={t('split.action')}
-                hint={split === 'needs_billing_day' ? t('split.needsBillingDay') : undefined}
-                disabled={split === 'needs_billing_day'}
+                hint={shownSplit === 'needs_billing_day' ? t('split.needsBillingDay') : undefined}
+                disabled={shownSplit === 'needs_billing_day'}
                 onClick={() => {
                   onAction('split', occurrence);
                 }}

@@ -300,21 +300,46 @@ describe('adding', () => {
     nameKey: 'categories:builtin.salary',
   };
 
-  function add(target: Parameters<typeof TransactionSheet>[0]['target']) {
+  const yossi = { ...profile, id: 'p2', name: 'Yossi' } as Profile;
+  /** Yossi's own card: not Dana's to pay with. */
+  const yossiCard: PaymentMethod = { ...plainCard, id: 'pm.yossi', profileId: 'p2', label: 'Yossi Visa' };
+
+  function add(
+    target: Parameters<typeof TransactionSheet>[0]['target'],
+    { profiles = [profile], methods = [maxCard] }: { profiles?: Profile[]; methods?: PaymentMethod[] } = {},
+  ) {
+    const onSaved = vi.fn();
     renderWithProviders(
       <TransactionSheet
         target={target}
         onOpenChange={() => undefined}
-        profiles={[profile]}
+        profiles={profiles}
         categories={[groceries, salary]}
-        paymentMethods={[maxCard]}
+        paymentMethods={methods}
         activeProfileId="p1"
         baseCurrency="ILS"
         today={TODAY}
-        onSaved={() => undefined}
+        onSaved={onSaved}
       />,
     );
+    return { onSaved, user: userEvent.setup() };
   }
+
+  const yossisPurchase = () =>
+    makeTx({
+      id: 'bike',
+      profileId: 'p2',
+      date: '2026-09-10' as LocalDate,
+      recurrence: { type: 'one_time' },
+      paymentMethodId: 'pm.yossi',
+      note: 'Bike',
+      money: { ...MONEY, amountMinor: 90_000, baseAmountMinor: 90_000, currency: 'ILS', baseCurrency: 'ILS' },
+    });
+  const duplicateBike = {
+    mode: 'add',
+    kind: 'expense',
+    from: { transactionId: 'bike', at: '2026-09-10' as LocalDate },
+  } as const;
 
   it('starts on income, in an income category, when the Add menu chose income', () => {
     add({ mode: 'add', kind: 'income' });
@@ -345,7 +370,8 @@ describe('adding', () => {
     expect(await screen.findByDisplayValue('Sofa')).toBeInTheDocument();
     expect(screen.getByLabelText('Amount')).toHaveValue('450.00');
     expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Max/);
-    expect(screen.getByRole('radio', { name: 'Regular' })).toBeChecked();
+    // "Regular transaction", or "Regular" once the card's catalog deals have loaded.
+    expect(screen.getByRole('radio', { name: /^Regular/ })).toBeChecked();
   });
 
   it('falls back to a plain add form when the row it names is gone', async () => {
@@ -353,5 +379,32 @@ describe('adding', () => {
 
     expect(await screen.findByLabelText('Amount')).toHaveValue('');
     expect(screen.getByRole('radio', { name: 'Expense' })).toBeChecked();
+  });
+
+  it('duplicates a row for the person it was, on their own card, whoever is being looked at', async () => {
+    await db.transactions.put(yossisPurchase());
+    add(duplicateBike, { profiles: [profile, yossi], methods: [maxCard, yossiCard] });
+
+    expect(await screen.findByDisplayValue('Bike')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Yossi' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Yossi Visa/);
+  });
+
+  it('cannot save a card the person it starts on does not own, when the row’s person is gone', async () => {
+    await db.transactions.put(yossisPurchase());
+    // Yossi was removed from the household; his card is still in the list.
+    const { onSaved, user } = add(duplicateBike, { methods: [maxCard, yossiCard] });
+
+    expect(await screen.findByDisplayValue('Bike')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).not.toHaveAccessibleName(/Yossi Visa/);
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    const saved = (await db.transactions.toArray()).filter((tx) => tx.id !== 'bike');
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ profileId: 'p1', note: 'Bike' });
+    expect(saved[0]?.paymentMethodId).toBeUndefined();
   });
 });

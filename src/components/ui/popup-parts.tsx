@@ -39,12 +39,16 @@ function typingInPopup(): boolean {
  * Not while someone is typing in it: iOS scrolls the page to keep a focused
  * input above the keyboard, and closing then would take the search box away
  * the moment it was tapped.
+ *
+ * Only the PAGE's scroll counts. A menu taller than the room it has scrolls
+ * its own list, and that is someone reaching for an item, not moving on.
  */
 export function useCloseOnScroll(actions: React.RefObject<PopupActions | null> | null): void {
   React.useEffect(() => {
     if (actions === null) return;
     const startY = window.scrollY;
-    const onScroll = (): void => {
+    const onScroll = (event: Event): void => {
+      if (event.target instanceof Element) return;
       if (Math.abs(window.scrollY - startY) > 4 && !typingInPopup()) actions.current?.close();
     };
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -86,18 +90,34 @@ export function useCloseWhenDetached(anchor: Element | null | undefined, close: 
 }
 
 /**
+ * A value as it was while the pop-out was open, kept while it fades out.
+ *
+ * A pop-out stays on screen for its exit animation after it has closed, but
+ * what it shows is usually worked out from the thing that closing cleared.
+ * Read live, its items would drop out mid-fade and the box would shrink as it
+ * fades. Adjusted while rendering rather than in an effect, so there is no
+ * frame with the old value missing.
+ */
+export function useHeldWhileClosing<T>(value: T, open: boolean): T {
+  const [held, setHeld] = React.useState(value);
+  if (open && value !== held) setHeld(value);
+  return open ? value : held;
+}
+
+/**
  * A pop-out opened from a button it does not own: ONE instance at screen
  * level, pointed at whichever button opened it through base-ui's `anchor`.
  *
  * - `shown` is the open target, and while the pop-out fades out after closing,
  *   the one it was open for, so its content does not empty mid-animation.
  * - `anchor` is that target's button, for the Positioner.
+ * - `popupRef` goes on the popup, so `finalFocus` knows which one is its own.
  * - `finalFocus` gives focus back to the button it came from, if that button
  *   is still on the page. The target is already cleared by then, so it reads
- *   the last one. Not when something else has taken focus as it closed: an
- *   item that opens a sheet hands focus to the sheet, and base-ui returns
- *   focus only once the exit animation ends, by which time pulling it back to
- *   the row would leave a keyboard user outside the sheet they just opened.
+ *   the last one. Only while focus is still in THIS popup, or nowhere: an item
+ *   that opens a sheet, or another pop-out, hands focus to it, and base-ui
+ *   returns focus only once the exit animation ends, by which time pulling it
+ *   back to the row would leave a keyboard user outside what they just opened.
  * - It closes when that button leaves the page (`useCloseWhenDetached`).
  */
 export function useAnchoredPopup<T extends { readonly anchor: HTMLElement }>(
@@ -106,24 +126,77 @@ export function useAnchoredPopup<T extends { readonly anchor: HTMLElement }>(
 ): {
   readonly shown: T | undefined;
   readonly anchor: HTMLElement | undefined;
+  readonly popupRef: React.RefObject<HTMLDivElement | null>;
   readonly finalFocus: () => HTMLElement | false;
 } {
   useCloseWhenDetached(target?.anchor, onClose);
 
-  // The last target, adjusted while rendering rather than in an effect.
-  const [last, setLast] = React.useState<T | undefined>(target);
-  if (target !== undefined && target !== last) setLast(target);
-  const shown = target ?? last;
+  const shown = useHeldWhileClosing(target, target !== undefined);
+  const popupRef = React.useRef<HTMLDivElement | null>(null);
 
-  const lastAnchor = last?.anchor;
+  const lastAnchor = shown?.anchor;
   const finalFocus = React.useCallback((): HTMLElement | false => {
     if (lastAnchor?.isConnected !== true) return false;
     const active = document.activeElement;
-    const movedOn = active !== null && active !== document.body && active.closest(POPUP_CONTENT) === null;
-    return movedOn ? false : lastAnchor;
+    const stillHere =
+      active === null || active === document.body || popupRef.current?.contains(active) === true;
+    return stillHere ? lastAnchor : false;
   }, [lastAnchor]);
 
-  return { shown, anchor: shown?.anchor, finalFocus };
+  return { shown, anchor: lastAnchor, popupRef, finalFocus };
+}
+
+/**
+ * The click that ends a press on the backdrop is not the user's: swallow it.
+ *
+ * The press closes the pop-out on pointerdown, and the backdrop fades out with
+ * it, so the click that follows on lift can land on whatever was underneath:
+ * another row's body, which would open its editor, or a tab, which would
+ * navigate. Exactly one click is swallowed. A new press, or a press that
+ * became a scroll (pointercancel), ends the watch, so no later click is lost.
+ */
+function swallowNextClick(): void {
+  const swallow = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    stop();
+  };
+  const stop = (): void => {
+    window.removeEventListener('click', swallow, true);
+    window.removeEventListener('pointerdown', stop, true);
+    window.removeEventListener('pointercancel', stop, true);
+  };
+  window.addEventListener('click', swallow, true);
+  window.addEventListener('pointerdown', stop, true);
+  window.addEventListener('pointercancel', stop, true);
+}
+
+/**
+ * A transparent layer over the page, under a pop-out that points at
+ * something. A tap on it closes the pop-out and does nothing else.
+ *
+ * base-ui gives a modal pop-out a backdrop of its own, but a modal one locks
+ * the page's scroll, and these close ON scroll. So these are not modal, and
+ * without this a tap outside would close the pop-out and press what was
+ * under the finger too.
+ *
+ * It does not stop the page scrolling: no `touch-action: none`, no wheel
+ * handler. A drag or a wheel over it scrolls the page, and the scroll closes
+ * the pop-out.
+ */
+export function PopupBackdrop() {
+  const actions = React.use(PopupActionsContext);
+  return (
+    <div
+      data-slot="popup-backdrop"
+      aria-hidden="true"
+      className="fixed inset-0 z-50"
+      onPointerDown={() => {
+        swallowNextClick();
+        actions?.current?.close();
+      }}
+    />
+  );
 }
 
 /**
