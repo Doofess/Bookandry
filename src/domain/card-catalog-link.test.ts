@@ -64,6 +64,14 @@ function catalogWith(
         lateRate: over.late ?? rate({ kind: 'prime', margin: '13.80' }, 'max'),
         ...(over.billingDays ? { billingDays: over.billingDays } : {}),
       },
+      {
+        // A bank that publishes nothing: no FX fee, an unpublished credit and late rate.
+        id: '10',
+        name: { he: 'לאומי', en: 'Leumi' },
+        issuers: ['cal'],
+        lateRate: rate(null, 'max'),
+        dealOverrides: [{ issuer: 'cal', deal: { kind: 'credit', rate: rate(null, 'typical') } }],
+      },
     ],
   };
 }
@@ -86,7 +94,13 @@ describe('linkCard', () => {
       fxFeeRate: '2.7',
       lateRate: { basis: 'prime', margin: '13.80' },
       overrides: { credit: { basis: 'prime', margin: '9' } },
-      catalog: { issuer: 'cal', bank: '20', tier: 'gold', version: 2 },
+      catalog: {
+        issuer: 'cal',
+        bank: '20',
+        tier: 'gold',
+        version: 2,
+        filled: { fxFeeRate: '2.7', lateRate: { basis: 'prime', margin: '13.80' } },
+      },
     });
 
     // A release later: the bank's late rate changed, its credit rate did too.
@@ -100,7 +114,53 @@ describe('linkCard', () => {
       ...linked,
       lateRate: { basis: 'prime', margin: '14' }, // follows the catalog
       creditPrimeMargin: '9', // overridden: stays
-      catalog: { issuer: 'cal', bank: '20', tier: 'gold', version: 2, updatedOn: TODAY },
+      catalog: {
+        issuer: 'cal',
+        bank: '20',
+        tier: 'gold',
+        version: 2,
+        updatedOn: TODAY,
+        filled: { fxFeeRate: '2.7', lateRate: { basis: 'prime', margin: '14' } },
+      },
+    });
+  });
+
+  it('clears on a relink every figure the old entry filled that the new one does not give', () => {
+    const opts = { keepOverrides: false, month: '2026-10' };
+    const viaNone = linkCard({}, resolved(catalogWith(), { bank: 'none' }), { ...LINK, bank: 'none' }, opts);
+    expect(viaNone).toMatchObject({ fxFeeRate: '3', monthlyFeeMinor: 1790, feeSince: '2026-10' });
+    const atMizrahi = linkCard(viaNone, resolved(), LINK, opts);
+    // A bank card: the bank's FX fee; the card company's fee is gone, with its date.
+    expect(atMizrahi).toMatchObject({ fxFeeRate: '2.7', creditPrimeMargin: '9.5' });
+    expect(atMizrahi).not.toHaveProperty('monthlyFeeMinor');
+    expect(atMizrahi).not.toHaveProperty('feeSince');
+
+    // Mizrahi's figures never linger as Leumi's.
+    const LEUMI = { ...LINK, bank: '10' };
+    const atLeumi = linkCard(atMizrahi, resolved(catalogWith(), { bank: '10' }), LEUMI, opts);
+    for (const field of ['fxFeeRate', 'creditPrimeMargin', 'lateRate', 'monthlyFeeMinor'])
+      expect(atLeumi, field).not.toHaveProperty(field);
+    expect(atLeumi.catalog).toEqual({ issuer: 'cal', bank: '10', tier: 'gold', version: 2 });
+    expect(cardDealRate(atLeumi, resolved(catalogWith(), { bank: '10' }), 'credit')).toEqual({
+      term: null,
+      source: 'catalog',
+      quality: 'typical',
+    });
+  });
+
+  it('keeps on a relink a figure the person typed that the new entry does not give', () => {
+    const opts = { keepOverrides: false, month: '2026-10' };
+    const typed: CardDetails = {
+      creditPrimeMargin: '7',
+      fxFeeRate: '2.5',
+      monthlyFeeMinor: 1500,
+      feeSince: '2025-01',
+    };
+    const atLeumi = linkCard(typed, resolved(catalogWith(), { bank: '10' }), { ...LINK, bank: '10' }, opts);
+    expect(atLeumi).toMatchObject({ creditPrimeMargin: '7', fxFeeRate: '2.5', monthlyFeeMinor: 1500 });
+    expect(cardDealRate(atLeumi, resolved(catalogWith(), { bank: '10' }), 'credit')).toEqual({
+      term: { basis: 'prime', margin: '7' },
+      source: 'card',
     });
   });
 
@@ -177,20 +237,71 @@ describe('linkCard', () => {
 });
 
 describe('refreshLinkedCard', () => {
-  const behind = (): CardDetails => ({
-    billingDay: 10,
+  const FILLED = {
     fxFeeRate: '2.7',
     creditPrimeMargin: '9.5',
     lateRate: { basis: 'prime', margin: '13.80' },
-    catalog: { issuer: 'cal', bank: '20', tier: 'gold', version: 1 },
+  } as const;
+  // As linkCard left it, one release ago.
+  const behind = (): CardDetails => ({
+    billingDay: 10,
+    ...FILLED,
+    catalog: { issuer: 'cal', bank: '20', tier: 'gold', version: 1, filled: FILLED },
   });
 
   it('an old card with no catalog link is untouched by refresh', () => {
     expect(refreshLinkedCard({ billingDay: 10, creditPrimeMargin: '3' }, resolved(), TODAY)).toBeUndefined();
   });
 
-  it('returns nothing when the catalog changed nothing on the card', () => {
-    expect(refreshLinkedCard(behind(), resolved(), TODAY)).toBeUndefined();
+  it('only moves the version up when the catalog changed nothing on the card, keeping updatedOn', () => {
+    expect(refreshLinkedCard(behind(), resolved(), TODAY)).toEqual({
+      ...behind(),
+      catalog: { ...behind().catalog, version: 2 },
+    });
+    const earlier = { ...behind(), catalog: { ...behind().catalog!, updatedOn: '2026-01-05' as LocalDate } };
+    expect(refreshLinkedCard(earlier, resolved(), TODAY)?.catalog).toEqual({
+      ...earlier.catalog,
+      version: 2,
+    });
+  });
+
+  it('clears a figure the catalog withdrew, where the card still holds the catalog’s own', () => {
+    const next = catalogWith({ credit: rate(null, 'typical') });
+    const refreshed = refreshLinkedCard(behind(), resolved(next), TODAY)!;
+    expect(refreshed).not.toHaveProperty('creditPrimeMargin');
+    expect(refreshed.catalog).toEqual({
+      issuer: 'cal',
+      bank: '20',
+      tier: 'gold',
+      version: 2,
+      updatedOn: TODAY,
+      filled: { fxFeeRate: '2.7', lateRate: { basis: 'prime', margin: '13.80' } },
+    });
+  });
+
+  it('never touches a figure the person typed or changed after it was filled', () => {
+    const edited = { ...behind(), fxFeeRate: '1.5', creditPrimeMargin: '8' };
+    const next = catalogWith({ credit: rate(null, 'typical'), late: rate({ kind: 'prime', margin: '14' }) });
+    const refreshed = refreshLinkedCard(edited, resolved(next), TODAY)!;
+    expect(refreshed).toMatchObject({
+      fxFeeRate: '1.5',
+      creditPrimeMargin: '8',
+      lateRate: { basis: 'prime', margin: '14' }, // still the catalog's: it follows
+    });
+    expect(refreshed.catalog?.filled).toEqual({ lateRate: { basis: 'prime', margin: '14' } });
+
+    // Cleared by the person after it was filled: it stays cleared.
+    const { fxFeeRate: _gone, ...cleared } = behind();
+    expect(refreshLinkedCard(cleared, resolved(), TODAY)).not.toHaveProperty('fxFeeRate');
+  });
+
+  it('does not present a figure the catalog filled as the card’s own', () => {
+    const next = catalogWith({ credit: rate(null, 'typical') });
+    expect(cardDealRate(behind(), resolved(next), 'credit')).toEqual({
+      term: null,
+      source: 'catalog',
+      quality: 'typical',
+    });
   });
 
   it('returns nothing for a card already at this catalog version', () => {
@@ -199,8 +310,11 @@ describe('refreshLinkedCard', () => {
     expect(refreshLinkedCard(current, resolved(next), TODAY)).toBeUndefined();
   });
 
-  it('leaves a card whose link the catalog no longer knows exactly as it is', () => {
-    expect(refreshLinkedCard(behind(), undefined, TODAY)).toBeUndefined();
+  it('leaves every field of a card whose link the catalog no longer knows, moving only its version', () => {
+    expect(refreshLinkedCard(behind(), undefined, TODAY)).toEqual({
+      ...behind(),
+      catalog: { ...behind().catalog, version: 2 },
+    });
   });
 
   it('touches only fields not in the overrides', () => {
@@ -212,7 +326,12 @@ describe('refreshLinkedCard', () => {
     expect(refreshLinkedCard(card, resolved(next), TODAY)).toEqual({
       ...card,
       creditPrimeMargin: '10',
-      catalog: { ...card.catalog, version: 2, updatedOn: TODAY },
+      catalog: {
+        ...card.catalog,
+        version: 2,
+        updatedOn: TODAY,
+        filled: { fxFeeRate: '2.7', creditPrimeMargin: '10' },
+      },
     });
   });
 });

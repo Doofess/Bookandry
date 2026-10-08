@@ -57,6 +57,7 @@ function sound(): Catalog {
         issuers: ['cal'],
         fxFee: { cal: '3' },
         fxFeeTiers: [{ issuer: 'cal', tier: 'gold', fee: '2', source: { ...src } }],
+        foreignPostingTiers: [{ issuer: 'cal', tier: 'gold', posting: 'billing_date', source: { ...src } }],
         billingDays: [2, 10],
         foreignPosting: 'immediate',
         sources: {
@@ -312,6 +313,12 @@ describe('the data checks catch what they are for', () => {
     expect(broken((c) => (tier(c).issuer = 'max')).join()).toContain('FX fee for undistributed max');
   });
 
+  it('flags a bank posting rule for a card type the bank cannot apply it to', () => {
+    const rule = (c: Catalog) => c.banks[0]!.foreignPostingTiers![0]!;
+    expect(broken((c) => (rule(c).tier = 'nope')).join()).toContain('posting rule for unknown tier');
+    expect(broken((c) => (rule(c).issuer = 'max')).join()).toContain('posting rule for undistributed max');
+  });
+
   it('flags a bank figure with no source, and an unsound bank source', () => {
     const p = broken((c) => {
       c.banks[0]!.sources = {};
@@ -323,9 +330,10 @@ describe('the data checks catch what they are for', () => {
       const b = c.banks[0]!;
       b.sources = { issuers: bad, billingDays: bad, foreignPosting: bad, fxFee: { cal: bad } };
       b.fxFeeTiers![0]!.source = bad;
+      b.foreignPostingTiers![0]!.source = bad;
     });
-    expect(q.filter((x) => x.includes('not https'))).toHaveLength(5);
-    expect(q.filter((x) => x.includes('not a valid date'))).toHaveLength(5);
+    expect(q.filter((x) => x.includes('not https'))).toHaveLength(6);
+    expect(q.filter((x) => x.includes('not a valid date'))).toHaveLength(6);
   });
 
   it('flags a late rate given twice', () => {

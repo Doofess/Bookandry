@@ -20,6 +20,10 @@ export type CatalogRate = {
   fixedAtPurchase: boolean; // false: floats with prime
   reset?: { atPayment: number; rule: 'prime_delta' }; // Max long credit: payment 19
   source: CatalogSource;
+  // What the reader must know about this rate that the source does not say:
+  // an UNCONFIRMED applicability, a field assumed because the source is silent.
+  // Kept apart from `source.note`, which must hold only a published pair when it has one.
+  caveat?: string;
 };
 
 export type DealRule = {
@@ -104,8 +108,10 @@ export type CatalogBank = {
   fxFee?: Partial<Record<IssuerId, string>>;
   // The bank's own FX fee for one card type, where its tariff names one (Mizrahi: Max FIRST 2.00%).
   fxFeeTiers?: { issuer: IssuerId; tier: string; fee: string; source: CatalogSource }[];
-  // A bank-wide rule for when foreign purchases are charged, over the card company's.
+  // A bank-wide rule for when foreign purchases are charged, over the card company's,
   foreignPosting?: ForeignPosting;
+  // and the bank's own exception for one card type (Discount: Visa Platinum at the billing date).
+  foreignPostingTiers?: { issuer: IssuerId; tier: string; posting: ForeignPosting; source: CatalogSource }[];
   lateRate?: CatalogRate;
   extraRates?: Partial<Record<ExtraRateKind, CatalogRate>>;
   // The bank's own rates; a missing entry means the bank publishes none.

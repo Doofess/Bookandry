@@ -207,6 +207,21 @@ export type CardCatalogLink = {
   readonly version: number;
   /** When a catalog update last changed this card. */
   readonly updatedOn?: LocalDate;
+  /**
+   * The values the catalog last wrote onto the card. A field still holding
+   * its filled value is the catalog's: a relink or a later release replaces
+   * it, or clears it when the catalog no longer gives one. A field the person
+   * typed, or changed after it was filled, no longer matches, and is theirs.
+   */
+  readonly filled?: CatalogFilled;
+};
+
+/** The card fields the catalog fills, as it last filled them. */
+export type CatalogFilled = {
+  readonly fxFeeRate?: string;
+  readonly monthlyFeeMinor?: number;
+  readonly creditPrimeMargin?: string;
+  readonly lateRate?: RateTerm;
 };
 
 /** A card's rate: a `RateTerm`, or the Bank of Israel rate plus a margin (fair-credit late interest). */
@@ -485,10 +500,19 @@ export function redirectId(tbl: RedirectTable, from: string): string {
 }
 
 /** The kinds of purchase terms a card company offers; the card catalog's deal rules are keyed by these. */
-export type DealKind = 'regular' | 'installments' | 'credit' | 'long_credit' | 'deferred' | 'split_purchase';
+export const DEAL_KINDS = [
+  'regular',
+  'installments',
+  'credit',
+  'long_credit',
+  'deferred',
+  'split_purchase',
+] as const;
+export type DealKind = (typeof DEAL_KINDS)[number];
 
 /** Rates a card carries beyond its deals. */
-export type ExtraRateKind = 'late' | 'over_limit' | 'cash';
+export const EXTRA_RATE_KINDS = ['late', 'over_limit', 'cash'] as const;
+export type ExtraRateKind = (typeof EXTRA_RATE_KINDS)[number];
 
 export type Settings = {
   readonly id: 'singleton';

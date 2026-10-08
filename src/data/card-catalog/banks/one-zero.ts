@@ -11,8 +11,6 @@ export const oneZero: CatalogBank = {
   id: '18',
   name: { he: 'וואן זירו', en: 'One Zero' },
   issuers: ['isracard'],
-  // isracard.md §3 lists One Zero at 2%; One Zero's own page gives 0% on One plans and
-  // 2% on cash withdrawn abroad, which is not this fee. The bank's own page is used.
   fxFee: { isracard: '0' },
   foreignPosting: 'billing_date',
   sources: {
@@ -21,7 +19,7 @@ export const oneZero: CatalogBank = {
     fxFee: {
       isracard: at(
         CARD,
-        '"0% עמלת המרת מט״ח בכרטיס במסלולי One. למעט משיכת מט״ח במזומן" (2%), on foreign sites too; "ההטבה קבועה ולא מוגבלת בזמן".',
+        'Only on One plans: "0% עמלת המרת מט״ח בכרטיס במסלולי One. למעט משיכת מט״ח במזומן" (cash withdrawn abroad costs 2%), on foreign sites too; "ההטבה קבועה ולא מוגבלת בזמן". Isracard’s list of bank schedules (isracard.md §3) gives One Zero 2%; the conflict is UNCONFIRMED, and the bank’s own page is used.',
       ),
     },
   },

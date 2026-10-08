@@ -250,9 +250,6 @@ export const isracard: CatalogIssuer = {
     },
   ],
   extraRates: {
-    // Quality 'typical': AG25 §1 defines late interest differently (Hapoalim's maximum
-    // overdraft rate); which definition binds a card bill is UNCONFIRMED. The note must
-    // hold only the page's own pair, worked on a Bank of Israel rate of 4.50%.
     late: {
       basis: { kind: 'boi', margin: '16.40' },
       quality: 'typical',
@@ -261,6 +258,8 @@ export const isracard: CatalogIssuer = {
       accrues: 'billing_date',
       fixedAtPurchase: false,
       source: at(FAIR, 'published nominal: 20.90; published effective: 22.60'),
+      caveat:
+        'The pair is worked on a Bank of Israel rate of 4.50%. AG25 §1 defines late interest differently (Bank Hapoalim’s maximum overdraft rate); which definition binds a card bill is UNCONFIRMED.',
     },
     over_limit: overLimit(),
   },

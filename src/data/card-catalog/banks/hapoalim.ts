@@ -18,11 +18,14 @@ const SUMMARY =
 const TARIFF = 'https://www.bankhapoalim.co.il/sites/default/files/media/PDFS/Taarifon/146.PDF';
 const RATE_NOTICE = 'https://www.bankhapoalim.co.il/api/media/kbznep3e/ribit_bank_israel_01092026.pdf';
 
+const DINERS =
+  'Diners cards are taken to follow the Cal agreement: the agreements’ §1 names Diners among the brands, and Diners is Cal’s. No Diners-specific agreement was read (UNCONFIRMED).';
+
 const JUMBLED =
   'Short card tariff, 01/10/2026. Its text layer is jumbled: figures were paired label to number (UNCONFIRMED at line level).';
 
 /** הסדר קרדיט בתשלומים (§19.2): prime on the day the voucher is received + the bank's risk margin, per customer. */
-const installmentsRate = (url: string): CatalogRate => ({
+const installmentsRate = (url: string, caveat?: string): CatalogRate => ({
   basis: null,
   quality: 'typical',
   compounding: 12,
@@ -33,12 +36,14 @@ const installmentsRate = (url: string): CatalogRate => ({
     url,
     '§19.2.3: prime on the day the voucher is received + "תוספת הסיכון להסדר קרדיט בתשלומים", fixed per deal; whole months from the regular billing date, 30/360, equal payments. Personal: the request form leaves the nominal, מתואמת and margin blank.',
   ),
+  ...(caveat ? { caveat } : {}),
 });
 
 /** §19.2.2: 3–18 payments at ₪25 principal each (₪75 a deal); 19–36 at ₪50 (₪950 a deal). */
 const installments = (
   issuer: IssuerId,
   url: string,
+  caveat?: string,
 ): { issuer: IssuerId; deal: Partial<DealRule> & { kind: DealRule['kind'] } }[] => [
   {
     issuer,
@@ -47,7 +52,7 @@ const installments = (
       payments: { min: 3, max: 18 },
       minDealMinor: 7_500,
       minPaymentMinor: 2_500,
-      rate: installmentsRate(url),
+      rate: installmentsRate(url, caveat),
       source: at(url),
     },
   },
@@ -58,7 +63,7 @@ const installments = (
       payments: { min: 19, max: 36 },
       minDealMinor: 95_000,
       minPaymentMinor: 5_000,
-      rate: installmentsRate(url), // fixed for the deal: no re-pricing, on Max cards too
+      rate: installmentsRate(url, caveat), // fixed for the deal: no re-pricing, on Max cards too
       source: at(url),
     },
   },
@@ -71,7 +76,7 @@ export const hapoalim: CatalogBank = {
   fxFee: { isracard: '2.90', max: '2.90', cal: '2.90', amex: '2.5', diners: '3' },
   foreignPosting: 'immediate',
   // ריבית פיגורים (agreements §1): the highest maximum rate on a shekel current account
-  // with no approved line. Day count is not stated; the account rates are daily (§H.7).
+  // with no approved line.
   lateRate: {
     basis: { kind: 'prime', margin: '11.60' },
     quality: 'max',
@@ -80,13 +85,14 @@ export const hapoalim: CatalogBank = {
     accrues: 'billing_date',
     fixedAtPurchase: false,
     source: at(RATE_NOTICE, pair('16.35', '17.38')),
+    caveat: 'Day count not stated (UNCONFIRMED): the account rates are daily, so actual/365 is recorded.',
   },
-  // The Diners (Cal) cards' agreement was not read, so Diners keeps Cal's own rules.
   dealOverrides: [
     ...installments('isracard', AGR_ISRACARD_AMEX),
     ...installments('amex', AGR_ISRACARD_AMEX),
     ...installments('cal', AGR_CAL),
     ...installments('max', AGR_MAX),
+    ...installments('diners', AGR_CAL, DINERS),
   ],
   sources: {
     issuers: at(

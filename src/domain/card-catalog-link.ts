@@ -5,6 +5,7 @@ import type {
   CardCatalogLink,
   CardDetails,
   CardRateTerm,
+  CatalogFilled,
   DealKind,
   ExtraRateKind,
   RateTerm,
@@ -16,8 +17,13 @@ import type { LocalDate } from '@/types/money';
  *
  * The card's own fields (billingDay, fxFeeRate, monthlyFeeMinor,
  * creditPrimeMargin, lateRate) stay the stored truth for what the card uses.
- * Linking fills them from the catalog; a later catalog release refreshes the
- * ones the person never changed. `overrides` names the rates they did change.
+ * Linking fills them from the catalog, and `catalog.filled` records what was
+ * written. A field that still holds its filled value is the catalog's: a
+ * relink or a later release replaces it, or clears it when the catalog no
+ * longer gives a figure, so one bank's rate never lingers as another's. A
+ * field the person typed, changed or cleared after it was filled no longer
+ * matches, and is theirs: a refresh never touches it. `overrides` names the
+ * rates (credit, late) the person set over the catalog's.
  *
  * This module never imports catalog data: the caller resolves the card
  * (`resolveCard` over `loadCatalog()`) and passes the result in.
@@ -42,43 +48,98 @@ function catalogRate(resolved: ResolvedCard, kind: DealKind | ExtraRateKind): Ca
   return resolved.deals.find((d) => d.kind === kind)?.rate;
 }
 
-const sameTerm = (a: RateTerm | undefined, b: RateTerm | undefined): boolean =>
-  JSON.stringify(a) === JSON.stringify(b);
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+type FilledField = keyof CatalogFilled;
+const FILLED_FIELDS: readonly FilledField[] = [
+  'fxFeeRate',
+  'monthlyFeeMinor',
+  'creditPrimeMargin',
+  'lateRate',
+];
+/** The rate kind whose override keeps the catalog off a field. */
+const OVERRIDE_KIND: Partial<Record<FilledField, DealKind | ExtraRateKind>> = {
+  creditPrimeMargin: 'credit',
+  lateRate: 'late',
+};
+
+/** What the catalog gives for each field it fills; undefined where it gives nothing. */
+function catalogValues(resolved: ResolvedCard): CatalogFilled {
+  const credit = catalogRate(resolved, 'credit');
+  const late = resolved.extra.late?.rate;
+  const lateTerm = late ? termOf(late) : null;
+  return {
+    ...(resolved.fxFee !== undefined ? { fxFeeRate: resolved.fxFee } : {}),
+    ...(resolved.monthlyFeeMinor !== undefined ? { monthlyFeeMinor: resolved.monthlyFeeMinor } : {}),
+    ...(credit?.basis?.kind === 'prime' ? { creditPrimeMargin: credit.basis.margin } : {}),
+    // lateRate holds prime or fixed terms only; a Bank of Israel-based rate is
+    // read from the catalog (cardDealRate) and never written onto the card.
+    ...(lateTerm && lateTerm.basis !== 'boi' ? { lateRate: lateTerm satisfies RateTerm } : {}),
+  };
+}
+
+/** Whether the card's value in `field` is the catalog's: it still holds what was filled. */
+function catalogOwns(card: CardDetails, field: FilledField): boolean {
+  const was = card.catalog?.filled?.[field];
+  return was !== undefined && same(card[field], was);
+}
+
+/** Whether `field` is the person's: typed, or changed or cleared after it was filled. */
+function personOwns(card: CardDetails, field: FilledField): boolean {
+  if (catalogOwns(card, field)) return false;
+  return card[field] !== undefined || card.catalog?.filled?.[field] !== undefined;
+}
 
 /**
- * The catalog's values written onto a card, skipping every field whose kind
- * is in `overrides`. `month` (YYYY-MM) dates a card fee filled in for the first
- * time, so filling it never bills months already past.
+ * The catalog's values written onto a card.
+ *
+ * `relink`: the person chose this entry, so the catalog's figure replaces
+ * theirs (rates they override excepted); a figure the catalog no longer gives
+ * is cleared only where the card still holds the catalog's own. The card fee
+ * is the exception: a fee of the person's own always stays.
+ * Refresh: only fields the catalog owns, or that are empty and were never
+ * filled, follow it.
+ *
+ * `month` (YYYY-MM) dates a card fee filled for the first time, so filling it
+ * never bills months already past.
  */
-function fill(card: CardDetails, resolved: ResolvedCard, month: string): CardDetails {
+function fill(
+  card: CardDetails,
+  resolved: ResolvedCard,
+  month: string,
+  relink: boolean,
+): { next: CardDetails; filled: CatalogFilled } {
   const next: Mutable<CardDetails> = { ...card };
-  const overridden = (kind: DealKind | ExtraRateKind) => card.overrides?.[kind] !== undefined;
+  const filled: Mutable<CatalogFilled> = {};
+  const cleared = new Set<string>();
+  const values = catalogValues(resolved);
 
   // The billing day: kept while it is on the menu; set only when the menu leaves
-  // one choice. With several, the person's day stays and none is guessed.
+  // one choice. With several, the person's day stays and none is guessed. It is
+  // the card's real date once set, so it is never cleared.
   const days = resolved.billingDays;
   const onMenu = card.billingDay !== undefined && days.includes(card.billingDay);
   if (!onMenu && days.length === 1) next.billingDay = days[0];
 
-  if (resolved.fxFee !== undefined) next.fxFeeRate = resolved.fxFee;
+  for (const field of FILLED_FIELDS) {
+    const kind = OVERRIDE_KIND[field];
+    if (kind !== undefined && card.overrides?.[kind] !== undefined) continue;
+    const theirs = personOwns(card, field);
+    if (theirs && !(relink && field !== 'monthlyFeeMinor' && values[field] !== undefined)) continue;
 
-  if (card.monthlyFeeMinor === undefined && resolved.monthlyFeeMinor !== undefined) {
-    next.monthlyFeeMinor = resolved.monthlyFeeMinor;
-    next.feeSince = month;
+    const value = values[field];
+    if (value === undefined) {
+      cleared.add(field);
+      if (field === 'monthlyFeeMinor') cleared.add('feeSince');
+      continue;
+    }
+    if (field === 'monthlyFeeMinor' && card.monthlyFeeMinor === undefined) next.feeSince = month;
+    (next as Record<FilledField, unknown>)[field] = value;
+    (filled as Record<FilledField, unknown>)[field] = value;
   }
-
-  const credit = catalogRate(resolved, 'credit');
-  if (!overridden('credit') && credit?.basis?.kind === 'prime') next.creditPrimeMargin = credit.basis.margin;
-
-  // lateRate holds prime or fixed terms only; a Bank of Israel-based rate is
-  // read from the catalog (cardDealRate) and never written onto the card.
-  const late = resolved.extra.late?.rate;
-  const lateTerm = late ? termOf(late) : null;
-  if (!overridden('late') && lateTerm && lateTerm.basis !== 'boi') next.lateRate = lateTerm;
-
-  return next;
+  const kept = Object.fromEntries(Object.entries(next).filter(([key]) => !cleared.has(key)));
+  return { next: kept, filled };
 }
 
 /**
@@ -88,19 +149,24 @@ function fill(card: CardDetails, resolved: ResolvedCard, month: string): CardDet
 export function linkCard(
   card: CardDetails,
   resolved: ResolvedCard,
-  link: Omit<CardCatalogLink, 'version' | 'updatedOn'>,
+  link: Omit<CardCatalogLink, 'version' | 'updatedOn' | 'filled'>,
   opts: { readonly keepOverrides: boolean; /** YYYY-MM: this month. */ readonly month: string },
 ): CardDetails {
-  const { overrides, catalog: _old, ...rest } = card;
+  const { overrides, ...rest } = card;
   const base: CardDetails = opts.keepOverrides && overrides !== undefined ? { ...rest, overrides } : rest;
-  return { ...fill(base, resolved, opts.month), catalog: { ...link, version: CATALOG_VERSION } };
+  const { next, filled } = fill(base, resolved, opts.month, true);
+  return {
+    ...next,
+    catalog: { ...link, version: CATALOG_VERSION, ...(Object.keys(filled).length > 0 ? { filled } : {}) },
+  };
 }
 
 /**
- * A linked card after a catalog release: the same fill, for a card whose
- * `catalog.version` is behind. Undefined when there is nothing to write: no
- * link, already current, a link the catalog no longer knows (`resolved`
- * undefined: the card keeps every field it has), or no value changed.
+ * A linked card after a catalog release, for a card whose `catalog.version`
+ * is behind. Its version always moves up, so the catalog is not fetched again
+ * for it; `updatedOn` moves only when a value on the card changed. A link the
+ * catalog no longer knows (`resolved` undefined) keeps every field it has.
+ * Undefined when there is nothing to write: no link, or already current.
  */
 export function refreshLinkedCard(
   card: CardDetails,
@@ -108,16 +174,23 @@ export function refreshLinkedCard(
   today: LocalDate,
 ): CardDetails | undefined {
   const link = card.catalog;
-  if (!link || link.version >= CATALOG_VERSION || !resolved) return undefined;
-  const next = fill(card, resolved, today.slice(0, 7));
-  const changed =
-    next.billingDay !== card.billingDay ||
-    next.fxFeeRate !== card.fxFeeRate ||
-    next.monthlyFeeMinor !== card.monthlyFeeMinor ||
-    next.creditPrimeMargin !== card.creditPrimeMargin ||
-    !sameTerm(next.lateRate, card.lateRate);
-  if (!changed) return undefined;
-  return { ...next, catalog: { ...link, version: CATALOG_VERSION, updatedOn: today } };
+  if (!link || link.version >= CATALOG_VERSION) return undefined;
+  if (!resolved) return { ...card, catalog: { ...link, version: CATALOG_VERSION } };
+
+  const { next, filled } = fill(card, resolved, today.slice(0, 7), false);
+  const changed = (['billingDay', 'feeSince', ...FILLED_FIELDS] as const).some(
+    (f) => !same(next[f], card[f]),
+  );
+  const { filled: _old, ...linkRest } = link;
+  return {
+    ...next,
+    catalog: {
+      ...linkRest,
+      version: CATALOG_VERSION,
+      ...(changed ? { updatedOn: today } : {}),
+      ...(Object.keys(filled).length > 0 ? { filled } : {}),
+    },
+  };
 }
 
 export type CardDealRate = {
@@ -131,8 +204,9 @@ export type CardDealRate = {
  * from: the person's override, then the catalog's published rate, then (for
  * credit and late) the card's own fields. A catalog rate with no published
  * figure gives way to the card's own; with neither, it is returned empty, so
- * the screen can ask for it "from your statement". Undefined when nothing
- * anywhere has the rate.
+ * the screen can ask for it "from your statement". A card field that still
+ * holds what the catalog filled is never presented as the card's own.
+ * Undefined when nothing anywhere has the rate.
  */
 export function cardDealRate(
   card: CardDetails,
@@ -146,9 +220,13 @@ export function cardDealRate(
   const published = rate ? termOf(rate) : null;
   if (rate && published) return { term: published, source: 'catalog', quality: rate.quality };
 
-  if (kind === 'credit' && card.creditPrimeMargin !== undefined)
+  // Under a link that still resolves, a filled value is the catalog's, not the
+  // card's own. A retired link has nothing better: its filled values stand.
+  const own = (field: FilledField) => resolved === undefined || !catalogOwns(card, field);
+  if (kind === 'credit' && card.creditPrimeMargin !== undefined && own('creditPrimeMargin'))
     return { term: { basis: 'prime', margin: card.creditPrimeMargin }, source: 'card' };
-  if (kind === 'late' && card.lateRate !== undefined) return { term: card.lateRate, source: 'card' };
+  if (kind === 'late' && card.lateRate !== undefined && own('lateRate'))
+    return { term: card.lateRate, source: 'card' };
 
   if (rate) return { term: null, source: 'catalog', quality: rate.quality };
   return undefined;

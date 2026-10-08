@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { DEAL_KINDS, EXTRA_RATE_KINDS, type DealKind, type ExtraRateKind } from '@/types/domain';
+
 import type { ExportEnvelope } from './transfer-schema';
 import { validateEnvelope } from './transfer-validate';
 
@@ -295,6 +297,7 @@ describe('referential integrity', () => {
         club: 'skymax',
         version: 1,
         updatedOn: '2026-10-08',
+        filled: { fxFeeRate: '3', creditPrimeMargin: '10.75', lateRate: { basis: 'prime', margin: '13.80' } },
       },
       overrides: {
         credit: { basis: 'prime', margin: '9' },
@@ -313,9 +316,38 @@ describe('referential integrity', () => {
       { overrides: { surcharge: { basis: 'prime', margin: '1' } } },
       { overrides: { late: { basis: 'boi', margin: '+1' } } },
       { overrides: { credit: { basis: 'fixed', rate: '-1' } } },
+      { catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1, filled: { fxFeeRate: '1e1' } } },
     ]) {
       expect(withCard(bad).ok, JSON.stringify(bad)).toBe(false);
     }
+  });
+
+  it('accepts an override for exactly the deal and extra-rate kinds, the same list the types use', () => {
+    const doc = envelope() as ExportEnvelope;
+    const [first] = doc.data.paymentMethods;
+    const withOverride = (kind: string) =>
+      validateEnvelope({
+        ...doc,
+        data: {
+          ...doc.data,
+          paymentMethods: [{ ...first, card: { overrides: { [kind]: { basis: 'prime', margin: '1' } } } }],
+        },
+      }).ok;
+    // A record keyed by the union: the compiler fails this if a kind is added to one and not the other.
+    const every: Record<DealKind | ExtraRateKind, true> = {
+      regular: true,
+      installments: true,
+      credit: true,
+      long_credit: true,
+      deferred: true,
+      split_purchase: true,
+      late: true,
+      over_limit: true,
+      cash: true,
+    };
+    expect(Object.keys(every).sort()).toEqual([...DEAL_KINDS, ...EXTRA_RATE_KINDS].sort());
+    for (const kind of Object.keys(every)) expect(withOverride(kind), kind).toBe(true);
+    expect(withOverride('surcharge')).toBe(false);
   });
 
   it('rejects an impossible calendar date', () => {

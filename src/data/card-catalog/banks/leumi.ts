@@ -1,10 +1,10 @@
 // Bank Leumi (בנק לאומי לישראל, Masav 10).
 // Transcribed from docs/research/issuers/banks-leumi-hapoalim-mizrahi.md, Part L.
 // Leumi publishes no card-credit rates (§L.5): the bank lends, and the rates are
-// personal, so it has no `rates`. Its 3–36-payment קרדיט track and the
-// voucher-arrival accrual (§L.4–L.5) are not set over the card companies' deals
-// here: whether 19–36 deals and re-pricing apply at Leumi is UNCONFIRMED (gap 8).
-import type { CatalogBank } from '../types';
+// personal, so it has no `rates`. Its "אשראי קרדיט" track (319-56 §29.2–29.6,
+// primary) is set over every card company's קרדיט and long credit: 3–36
+// payments, fixed for life, Spitzer at 30/360, from the voucher's arrival.
+import type { CatalogBank, CatalogRate, DealRule, IssuerId } from '../types';
 import { at } from './shared';
 
 const TERMS = 'https://www.leumi.co.il/leumi-hebrew/s3fs-public/newsite/hozim%20ahidim/319-56_ACC.pdf';
@@ -14,6 +14,33 @@ const ACCOUNT_TERMS =
 
 const FX_A =
   'Tariff ch. 6(א), 01/10/2026: 3% on Leumi cards (Max-, Cal- and Isracard-operated); FIRST 2%, UNITED 1.5%.';
+
+/** "אשראי קרדיט" (§29.2(2)): prime on the deal date ± a margin, fixed for the life of the credit. */
+const creditRate = (): CatalogRate => ({
+  basis: null,
+  quality: 'typical',
+  compounding: 12,
+  dayCount: '30/360',
+  accrues: 'purchase',
+  fixedAtPurchase: true,
+  source: at(
+    TERMS,
+    '§29.2(2): "ריבית בשיעור קבוע שיקבע במועד ביצוע העסקה, על בסיס ריבית הפריים ... בתוספת מרווח חיובי או שלילי, למשך תקופת האשראי"; 30/360 Spitzer. The credit is given when the voucher reaches the card company, with bridging interest to the next billing date (§29.2(4), §29.6). The rate is personal: on the statement.',
+  ),
+  caveat:
+    '"From the voucher’s arrival" is recorded as the capture (`purchase`), as for Max’s own cards. Leumi states no minimum deal or payment; the card company’s minimums still show.',
+});
+
+/** 3 to 36 payments "or another number the bank sets" (§29.3), one track: split at 18 into the catalog's two deals. */
+const creditTrack = (
+  issuer: IssuerId,
+): { issuer: IssuerId; deal: Partial<DealRule> & { kind: DealRule['kind'] } }[] => [
+  { issuer, deal: { kind: 'credit', payments: { min: 3, max: 18 }, rate: creditRate(), source: at(TERMS) } },
+  {
+    issuer,
+    deal: { kind: 'long_credit', payments: { min: 19, max: 36 }, rate: creditRate(), source: at(TERMS) },
+  },
+];
 
 export const leumi: CatalogBank = {
   id: '10',
@@ -31,6 +58,7 @@ export const leumi: CatalogBank = {
     },
   ],
   foreignPosting: 'immediate',
+  dealOverrides: (['max', 'cal', 'isracard', 'diners'] as const).flatMap(creditTrack),
   lateRate: {
     basis: null,
     quality: 'max',

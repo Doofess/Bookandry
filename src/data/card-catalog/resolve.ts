@@ -120,6 +120,14 @@ export function resolveCard(
    * card company's tier and club figures do not apply: the FX fee is the bank's
    * own for this card type, else the bank's for this card company, else
    * unknown; the card fee is unknown (the catalog holds no bank card fees).
+   *
+   * Counter-evidence, weighed: banks-others §10.1 reads Discount's and
+   * Mercantile's tariffs ("העמלות נקבעות על ידה, למעט דמי כרטיס") as the card
+   * company setting the FX fee, and Yahav's FlyAll page gives a club rate (1% in
+   * year 1) on a bank card. Even where the card company sets it, the figure for a
+   * bank card is the one in that bank's schedule, which differs from the non-bank
+   * one (Isracard 2.7% at Mizrahi against 2.9%). So "unknown" is kept over
+   * showing a non-bank figure that may be wrong; no figure is invented.
    */
   const fxFee = bank
     ? (bank.fxFeeTiers?.find((f) => f.issuer === issuer.id && f.tier === link.tier)?.fee ??
@@ -128,9 +136,14 @@ export function resolveCard(
   const monthlyFeeMinor = bank
     ? undefined
     : (club?.monthlyMinor ?? issuer.cardFees?.find((f) => f.tier === link.tier)?.monthlyMinor);
-  // A bank-wide rule ("על אף" the card's own date: Hapoalim §8.4) comes first.
+  // The bank's rule for this card type, then its bank-wide rule ("על אף" the
+  // card's own date: Hapoalim §8.4), then the card company's.
   const foreignPosting =
-    bank?.foreignPosting ?? club?.foreignPosting ?? tier?.foreignPosting ?? issuer.foreignPosting;
+    bank?.foreignPostingTiers?.find((f) => f.issuer === issuer.id && f.tier === link.tier)?.posting ??
+    bank?.foreignPosting ??
+    club?.foreignPosting ??
+    tier?.foreignPosting ??
+    issuer.foreignPosting;
 
   return {
     issuer,
