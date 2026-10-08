@@ -192,7 +192,7 @@
     "groupInstallments": "תשלומים",
     "groupYearly": "פעם בשנה",
     "groupOneTime": "חד-פעמי",
-    "cardPending": "נקנה בכרטיס, טרם חויב",
+    "cardPending": "עדיין לא ביתרה: נקנה בכרטיס, טרם חויב",
     "full": "פירוט מלא",
     "more_one": "ועוד {{count}}",
     "more_two": "ועוד {{count}}",

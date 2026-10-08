@@ -10,7 +10,7 @@ const group = (kind: ExpenseGroup['kind'], totalMinor: number): ExpenseGroup => 
 });
 
 describe('balanceBreakdown', () => {
-  it('lists income, expenses (no opening line), then the pending card line, with the total', () => {
+  it('lists income and expenses (no opening line), the total, and apart from them what cards owe', () => {
     const view = balanceBreakdown({
       openingMinor: 100_000,
       incomeMinor: 50_000,
@@ -21,17 +21,20 @@ describe('balanceBreakdown', () => {
     expect(view.lines).toEqual([
       { key: 'income', minor: 50_000 },
       { key: 'expense', minor: -30_000 },
-      { key: 'cardPending', minor: -4_500 },
     ]);
-    // Pending card spending is not in the balance yet.
+    // Pending card spending is not in the balance yet: said apart, as an amount, not a minus.
     expect(view.totalMinor).toBe(120_000);
+    expect(view.pendingOnCardsMinor).toBe(4_500);
   });
 
-  it('leaves the pending line out when nothing is pending', () => {
-    expect(balanceBreakdown({ openingMinor: 0, incomeMinor: 0, expenseMinor: 0 }).lines).toHaveLength(2);
+  it('has nothing pending on cards when nothing is', () => {
     expect(
-      balanceBreakdown({ openingMinor: 0, incomeMinor: 0, expenseMinor: 0, cardPendingMinor: 0 }).lines,
-    ).toHaveLength(2);
+      balanceBreakdown({ openingMinor: 0, incomeMinor: 0, expenseMinor: 0 }).pendingOnCardsMinor,
+    ).toBeUndefined();
+    expect(
+      balanceBreakdown({ openingMinor: 0, incomeMinor: 0, expenseMinor: 0, cardPendingMinor: 0 })
+        .pendingOnCardsMinor,
+    ).toBeUndefined();
   });
 });
 

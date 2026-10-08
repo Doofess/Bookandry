@@ -9,10 +9,19 @@ import type { BalanceParts, ExpenseGroup } from './calculators';
  */
 
 export type BalanceLine = {
-  readonly key: 'income' | 'expense' | 'cardPending';
+  readonly key: 'income' | 'expense';
   readonly minor: Minor;
 };
-export type BalanceBreakdown = { readonly lines: readonly BalanceLine[]; readonly totalMinor: Minor };
+export type BalanceBreakdown = {
+  readonly lines: readonly BalanceLine[];
+  readonly totalMinor: Minor;
+  /**
+   * Bought by card and not charged yet, as a positive amount; undefined when
+   * nothing is. NOT part of the total: shown under it, so the balance is not
+   * read as having missed it, nor as having taken it.
+   */
+  readonly pendingOnCardsMinor?: Minor;
+};
 
 /**
  * The starting balance is part of the total but is not listed (user ruling):
@@ -23,11 +32,12 @@ export function balanceBreakdown(parts: BalanceParts): BalanceBreakdown {
     { key: 'income', minor: parts.incomeMinor },
     { key: 'expense', minor: -parts.expenseMinor },
   ];
-  // Bought, and not yet taken: said, so the balance is not read as having missed it.
-  if (parts.cardPendingMinor !== undefined && parts.cardPendingMinor !== 0) {
-    lines.push({ key: 'cardPending', minor: -parts.cardPendingMinor });
-  }
-  return { lines, totalMinor: parts.openingMinor + parts.incomeMinor - parts.expenseMinor };
+  const pending = parts.cardPendingMinor;
+  return {
+    lines,
+    totalMinor: parts.openingMinor + parts.incomeMinor - parts.expenseMinor,
+    ...(pending === undefined || pending === 0 ? {} : { pendingOnCardsMinor: pending }),
+  };
 }
 
 export type ForecastBreakdown = {

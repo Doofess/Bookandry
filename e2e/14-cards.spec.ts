@@ -35,7 +35,7 @@ const COPY = {
     paidWith: 'Paid with',
     charged: /Charged to the bank with this card's bill on/,
     balance: 'Balance',
-    pending: 'Bought by card, not yet charged',
+    pending: 'Not in the balance yet: bought by card, not yet charged',
     nextBill: /Next charge/,
     // The browser's locale makes dollars the base here: not the card's
     // currency, so its 2.5% foreign-currency fee is on top.
@@ -62,7 +62,7 @@ const COPY = {
     paidWith: 'אמצעי תשלום',
     charged: /יחויב בבנק עם חיוב הכרטיס ב־/,
     balance: 'יתרה',
-    pending: 'נקנה בכרטיס, טרם חויב',
+    pending: 'עדיין לא ביתרה: נקנה בכרטיס, טרם חויב',
     nextBill: /החיוב הבא/,
     charge: '250.00',
     demoCards: ['מקס', 'כאל', 'ישראכרט'],

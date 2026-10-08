@@ -231,11 +231,10 @@ export type BalanceParts = {
 };
 
 /**
- * The three numbers that add up to the balance.
+ * The three numbers that add up to the balance: `opening + income - expense`.
  *
- * `opening + income - expense` is the whole formula, and showing it is what
- * answers "that is not how much money I have": the running total includes an
- * opening balance the user typed once, months ago, and has forgotten.
+ * The breakdown lists income and expenses with the total; the opening amount
+ * is in the total but not listed on its own (user ruling).
  */
 export function balanceParts(profiles: readonly Profile[], occurrences: readonly Occurrence[]): BalanceParts {
   return {
