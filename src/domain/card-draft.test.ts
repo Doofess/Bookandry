@@ -225,3 +225,27 @@ describe('a card’s last four digits', () => {
     expect(cardDraftOf(method({ card: { lastDigits: '0427' } })).lastDigits).toBe('0427');
   });
 });
+
+describe('a card linked to the catalog', () => {
+  const catalog = {
+    issuer: 'max',
+    bank: '20',
+    tier: 'basic',
+    version: 1,
+    filled: { fxFeeRate: '2.5' },
+  };
+  const overrides = { credit: { basis: 'prime' as const, margin: '1' } };
+
+  it('goes through the editor with its link, what was filled and its overrides', () => {
+    const stored = { fxFeeRate: '2.5', catalog, overrides };
+    const result = cardFromDraft(cardDraftOf(method({ card: stored })), stored);
+    expect(result).toMatchObject({ ok: true, card: stored });
+  });
+
+  it('is unlinked by a draft without the link', () => {
+    const stored = { catalog, overrides };
+    const result = cardFromDraft({ ...cardDraftOf(method({ card: stored })), catalog: undefined }, stored);
+    expect(result).toMatchObject({ ok: true, card: { overrides } });
+    expect(result.ok && result.card?.catalog).toBeUndefined();
+  });
+});
