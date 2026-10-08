@@ -195,7 +195,8 @@ export function DeleteData({ onBackup }: { readonly onBackup: () => Promise<void
             onClick={() => {
               setOpen(true);
             }}
-            className="w-full text-destructive"
+            // Red on the outline fill is 3.96:1 in dark mode; on the card it is AA (the same fix as Unlink).
+            className="w-full text-destructive dark:bg-transparent"
           >
             {linked ? t('settings.delete.openLinked') : t('settings.delete.open')}
           </Button>

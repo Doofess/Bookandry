@@ -334,7 +334,7 @@ test.describe('@hermetic', () => {
 });
 
 test.describe('@fab the Add pill', () => {
-  // The FAB lives on the feed, which only exists once a profile does.
+  // The Add pill lives on the feed, which only exists once a profile does.
   test.beforeEach(async ({ page }) => {
     await completeFirstRun(page, 'en', { demo: false });
   });
@@ -352,7 +352,7 @@ test.describe('@fab the Add pill', () => {
 
   test('is centred on mobile, inline-end from lg, and mirrors only where it can', async ({ page }) => {
     /*
-     * The FAB has TWO positions by design (§5.1, §8.2): bottom-centre above the
+     * The Add pill has TWO positions by design (§5.1, §8.2): bottom-centre above the
      * tab bar on mobile, bottom-inline-end from `lg` where there is no tab bar.
      *
      * Asserting "inline-end, and mirrors" at every width was simply wrong, and
@@ -384,7 +384,7 @@ test.describe('@fab the Add pill', () => {
   test('opens the transaction sheet', async ({ page }) => {
     /*
      * Was asserting `FAB pressed: 1` - a Phase 0 throwaway counter that the
-     * real FAB replaced three phases ago. A test pinned to scaffolding that no
+     * real Add pill replaced three phases ago. A test pinned to scaffolding that no
      * longer exists proves nothing about the button it is named after.
      */
     await expect(page.getByRole('button', { name: /^(Add|הוספה)$/ })).toBeVisible();

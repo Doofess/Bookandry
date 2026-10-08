@@ -12,7 +12,7 @@ import {
   PopupActionsContext,
   PopupBackdrop,
   type PopupActions,
-  useCollisionPadding,
+  anchoredPositioner,
 } from './popup-parts';
 
 function Popover({ actionsRef, ...props }: PopoverPrimitive.Root.Props) {
@@ -107,19 +107,6 @@ function PopoverDescription({ className, ...props }: PopoverPrimitive.Descriptio
   );
 }
 
-/**
- * The positioner, mounted only while the pop-out is open. Anchored to
- * something on the page, it keeps clear of the phone's tab bar too.
- */
-function AnchoredPositioner({ anchor, ...props }: PopoverPrimitive.Positioner.Props) {
-  const padding = useCollisionPadding(anchor !== undefined);
-  return (
-    <PopoverPrimitive.Positioner
-      anchor={anchor}
-      {...(anchor === undefined ? {} : { collisionPadding: padding })}
-      {...props}
-    />
-  );
-}
+const AnchoredPositioner = anchoredPositioner(PopoverPrimitive.Positioner);
 
 export { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger };

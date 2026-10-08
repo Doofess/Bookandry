@@ -11,7 +11,7 @@ import {
   PopupActionsContext,
   PopupBackdrop,
   type PopupActions,
-  useCollisionPadding,
+  anchoredPositioner,
 } from './popup-parts';
 
 function DropdownMenu({ actionsRef, ...props }: MenuPrimitive.Root.Props) {
@@ -287,20 +287,7 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'spa
   );
 }
 
-/**
- * The positioner, mounted only while the pop-out is open. Anchored to
- * something on the page, it keeps clear of the phone's tab bar too.
- */
-function AnchoredPositioner({ anchor, ...props }: MenuPrimitive.Positioner.Props) {
-  const padding = useCollisionPadding(anchor !== undefined);
-  return (
-    <MenuPrimitive.Positioner
-      anchor={anchor}
-      {...(anchor === undefined ? {} : { collisionPadding: padding })}
-      {...props}
-    />
-  );
-}
+const AnchoredPositioner = anchoredPositioner(MenuPrimitive.Positioner);
 
 export {
   DropdownMenu,

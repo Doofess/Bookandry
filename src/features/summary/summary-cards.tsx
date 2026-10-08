@@ -179,5 +179,5 @@ export function ForecastLine({
 }
 
 /** The classes of a figure on the panel that opens what it is made of. */
-export const PANEL_FIGURE =
+const PANEL_FIGURE =
   '-mx-2 block min-h-11 rounded-xl px-2 py-1 text-start transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none';

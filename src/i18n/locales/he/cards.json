@@ -143,6 +143,7 @@
     "cardsFrom": "חיובי כרטיסים שיורדים מהחשבון",
     "chargeOn": "ב־{{date}}",
     "noCharge": "אין חיוב קרוב",
+    "archivedCard": "בארכיון",
     "edit": {
       "open": "עריכת החשבון",
       "theAccount": "החשבון",
@@ -167,7 +168,7 @@
       "holding": "סוג החשבון",
       "owner": "בעל החשבון",
       "holders": "בעלי החשבון",
-      "holdersHint": "כל מי מהאנשים כאן שרשום בחשבון.",
+      "holdersHint": "סמנו את כל האנשים כאן ששמם רשום בחשבון.",
       "holdersInvalid": "צריך לבחור למי שייך החשבון.",
       "otherHolders": "בעלים נוספים",
       "otherHoldersPlaceholder": "למשל שותף לעסק",
