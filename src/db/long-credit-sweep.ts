@@ -1,6 +1,6 @@
 import { nextReset } from '@/domain/long-credit';
 import type { Transaction } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import type { IsoInstant, LocalDate } from '@/types/money';
 
 import type { BookandryDB } from './db';
 import { LOCK_SYNC, withLock } from './lock';
@@ -26,7 +26,12 @@ const following = (tx: Transaction): boolean =>
  *   land before the read but never between the read and the write;
  * - only `recurrence.reset` changes, and the rest of the row is the fresh one;
  * - a row frozen already - here or anywhere - is never touched again;
- * - a row whose values have not changed is not written at all.
+ * - a row whose values have not changed is not written at all;
+ * - a row it writes is stamped `now`, like every other background writer
+ *   (reconvert, rebase), so an Undo offered before the sweep sees the row has
+ *   changed since and refuses rather than put the old price back. Sync is
+ *   decided by the server's `rev`, not this stamp, and the stamp is written in
+ *   the same transaction as the reset, under the same lock.
  *
  * Run once the first sync of a start has pulled (or at start, on a device
  * with no account), and whenever prime changes. Resolves to the rows written.
@@ -39,6 +44,7 @@ export async function sweepLongCredit(
   db: BookandryDB,
   primePercent: string,
   today: LocalDate,
+  now: IsoInstant,
   opts: { readonly freeze?: boolean } = {},
 ): Promise<number> {
   const ids = await db.transactions.filter(following).primaryKeys();
@@ -53,7 +59,7 @@ export async function sweepLongCredit(
         if (row?.recurrence.type !== 'monthly') continue;
         const reset = nextReset(row, primePercent, today, opts);
         if (reset === undefined) continue;
-        await db.transactions.update(id, { recurrence: { ...row.recurrence, reset } });
+        await db.transactions.update(id, { recurrence: { ...row.recurrence, reset }, updatedAt: now });
         written += 1;
       }
       return written;
