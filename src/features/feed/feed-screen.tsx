@@ -319,9 +319,10 @@ export function FeedScreen() {
           activeProfileId={filters.profileId}
           baseCurrency={settings.defaultCurrency}
           today={today}
-          onSaved={(date, undone) => {
-            // An amount changed from "not counted yet" is offered back, like
-            // the pop-out's other two choices. Every other save is as before.
+          onSaved={(date, undone, onlyAmount) => {
+            // A save from "not counted yet" is offered back, like the pop-out's
+            // other two choices: "Amount changed" when that is all it was, a
+            // plain "Saved" otherwise. Every other save is as before.
             const fromChip = sheet.target.mode === 'edit' && sheet.target.focus === 'amount';
             sheet.close();
             // Jump to the month the row landed in, so a bill dated next month
@@ -329,7 +330,8 @@ export function FeedScreen() {
             // MOVED an occurrence follows it. liveQuery brings the data; this
             // is only about which window is on screen.
             setMonth(startOfMonth(date));
-            if (fromChip && undone !== undefined) offerUndo(t('projected.amountSaved'), undone, t);
+            if (fromChip && undone !== undefined)
+              offerUndo(t(onlyAmount === true ? 'projected.amountSaved' : 'projected.saved'), undone, t);
           }}
         />
       )}
@@ -421,7 +423,18 @@ export function FeedScreen() {
           // Closed first, so the toast's Undo is not under it.
           setProjectedFor(undefined);
           void undoable(
-            () => moveOccurrence(db, { occurrence, to, today, now: systemClock.nowIso(), newId }),
+            async () => {
+              const undoable = await moveOccurrence(db, {
+                occurrence,
+                to,
+                today,
+                now: systemClock.nowIso(),
+                newId,
+              });
+              // Follow the row to its new month, as a save from the sheet does.
+              setMonth(startOfMonth(to));
+              return undoable;
+            },
             t('projected.moved', { date: formatLocalDate(to, i18n.language, { dateStyle: 'medium' }) }),
           );
         }}

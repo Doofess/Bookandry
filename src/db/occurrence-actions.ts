@@ -9,6 +9,7 @@ import type { Occurrence, Override, Transaction } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
 import type { BookandryDB } from './db';
+import { materialize } from './materialize';
 import { restoreDeleted, softDelete } from './repos/transactions';
 import { applySeriesEdit } from './series-edit';
 
@@ -315,10 +316,24 @@ export async function moveOccurrence(
   });
   if (!planned.ok) throw new Error(planned.error.kind);
   /*
-   * Scope `one` writes the override alone. The series goes through with it,
-   * unchanged, so `applySeriesEdit` materialises it against the new override:
-   * a payment moved past the series' end widens `seriesEnd`, and the feed
-   * still finds it in its new month.
+   * Scope `one` writes the override alone. The series goes through with it
+   * only when the override changes what the series row stores: a payment
+   * moved past the series' end widens `seriesEnd` (or one moved back
+   * narrows it), and `applySeriesEdit` materialises the series against the new
+   * override, so the feed still finds it in its new month.
+   *
+   * Otherwise the series is left alone, row and sync state both. Sync is
+   * whole-row last-write-wins: re-putting an unchanged series would push this
+   * device's copy over an edit to it that another device made and this one has
+   * not pulled yet. Undo restores only what the plan wrote, so it leaves the
+   * series alone too.
    */
-  return applyUndoablePlan(db, { ...planned.plan, transactions: [transaction] });
+  const { plan } = planned;
+  const written = new Set(plan.overrides.map((o) => o.id));
+  const after = [...overrides.filter((o) => !written.has(o.id)), ...plan.overrides];
+  const rematerialized = materialize(transaction, after);
+  const changes =
+    rematerialized.seriesStart !== transaction.seriesStart ||
+    rematerialized.seriesEnd !== transaction.seriesEnd;
+  return applyUndoablePlan(db, changes ? { ...plan, transactions: [transaction] } : plan);
 }

@@ -141,7 +141,7 @@ export function TransactionSheet({
   readonly activeProfileId: string;
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate, undoable?: UndoableAction) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const titleId = useId();
@@ -283,7 +283,7 @@ function EditBody({
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate, undoable?: UndoableAction) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
@@ -349,7 +349,7 @@ function TransactionForm({
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate, undoable?: UndoableAction) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
   readonly onCancel: () => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
@@ -724,9 +724,11 @@ function TransactionForm({
 
       const { plan } = planned;
       const run = async (): Promise<void> => {
-        // The same write, with what it overwrote kept, so the caller can offer Undo.
+        // The same write, with what it overwrote kept, so the caller can offer
+        // Undo, and whether the amount was all that changed, so it can say so.
         const undoable = await applyUndoablePlan(db, plan);
-        onSaved(patch.date ?? editing.occurrence.date, undoable);
+        const onlyAmount = Object.keys(patch).every((key) => key === 'money');
+        onSaved(patch.date ?? editing.occurrence.date, undoable, onlyAmount);
       };
 
       const dropped = plan.warnings.find((w) => w.kind === 'overrides_dropped')?.count ?? 0;

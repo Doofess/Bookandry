@@ -408,3 +408,70 @@ describe('adding', () => {
     expect(saved[0]?.paymentMethodId).toBeUndefined();
   });
 });
+
+describe('what an edit hands back', () => {
+  const lunch = () =>
+    makeTx({
+      id: 'lunch',
+      date: '2026-10-20' as LocalDate,
+      recurrence: { type: 'one_time' },
+      categoryId: 'cat.groceries',
+      money: MONEY,
+      note: 'Lunch',
+    });
+
+  function edit() {
+    const onSaved = vi.fn();
+    renderWithProviders(
+      <TransactionSheet
+        target={{ mode: 'edit', transactionId: 'lunch', at: '2026-10-20' as LocalDate }}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries]}
+        paymentMethods={[]}
+        activeProfileId="p1"
+        baseCurrency="USD"
+        today={TODAY}
+        onSaved={onSaved}
+      />,
+    );
+    return { onSaved, user: userEvent.setup() };
+  }
+
+  it('its undo, and that only the amount changed, when only the amount did', async () => {
+    await db.transactions.put(lunch());
+    const { onSaved, user } = edit();
+    const amount = await screen.findByLabelText('Amount');
+
+    await user.clear(amount);
+    await user.type(amount, '60');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(
+        '2026-10-20',
+        expect.objectContaining({ undo: expect.any(Function) }),
+        true,
+      );
+    });
+  });
+
+  it('that more than the amount changed, when the name did too', async () => {
+    await db.transactions.put(lunch());
+    const { onSaved, user } = edit();
+    const amount = await screen.findByLabelText('Amount');
+
+    await user.clear(amount);
+    await user.type(amount, '60');
+    const name = screen.getByLabelText('What was it?');
+    await user.clear(name);
+    await user.type(name, 'Dinner');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(
+        '2026-10-20',
+        expect.objectContaining({ undo: expect.any(Function) }),
+        false,
+      );
+    });
+  });
+});

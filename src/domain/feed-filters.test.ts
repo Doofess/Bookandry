@@ -11,12 +11,13 @@ import {
   matchesKind,
   monthGrid,
   monthParam,
+  movableRange,
   parseFeedFilters,
   PARAM,
   type FeedFilters,
   yearBounds,
 } from './feed-filters';
-import { d } from './test-factories';
+import { d, makeTx } from './test-factories';
 
 const DEFAULTS = { profileId: 'all', today: d('2026-09-15') };
 const parse = (search: string): FeedFilters => parseFeedFilters(new URLSearchParams(search), DEFAULTS);
@@ -160,6 +161,17 @@ describe('month cursor bounds', () => {
   it('reports the forward edge', () => {
     expect(isAtHorizon(d('2027-09-01'), DEFAULTS.today)).toBe(true);
     expect(isAtHorizon(d('2027-08-01'), DEFAULTS.today)).toBe(false);
+  });
+
+  it('lets a projected row move up to the horizon month’s last day, and a series not before it starts', () => {
+    // The "not counted yet" calendar disables `{ after: last }` and `{ before: first }`.
+    const series = {
+      transaction: makeTx({ date: d('2026-10-10'), recurrence: { type: 'monthly', dayOfMonth: 10 } }),
+    };
+    const once = { transaction: makeTx({ date: d('2026-10-10'), recurrence: { type: 'one_time' } }) };
+
+    expect(movableRange(series, DEFAULTS.today)).toEqual({ first: '2026-10-10', last: '2027-09-30' });
+    expect(movableRange(once, DEFAULTS.today)).toEqual({ first: undefined, last: '2027-09-30' });
   });
 });
 

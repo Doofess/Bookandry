@@ -54,7 +54,9 @@
     "date": "תאריך אחר…",
     "notStarted": "הסדרה מתחילה ב־{{date}}",
     "moved": "הועבר ל־{{date}}",
-    "amountSaved": "הסכום שונה"
+    "amountSaved": "הסכום שונה",
+    "saved": "נשמר",
+    "back": "חזרה"
   },
   "theme": {
     "label": "ערכת נושא",
