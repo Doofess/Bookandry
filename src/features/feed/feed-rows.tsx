@@ -190,7 +190,10 @@ export const TransactionRow = memo(function TransactionRow({
       role="listitem"
       aria-posinset={position}
       aria-setsize={setSize}
-      className={cn('flex items-center gap-3 rounded-xl px-3 py-2.5', occurrence.isSkipped && 'opacity-50')}
+      className={cn(
+        'flex items-center gap-3 rounded-xl px-2 py-2.5 sm:px-3',
+        occurrence.isSkipped && 'opacity-50',
+      )}
       data-projected={occurrence.isProjected ? 'true' : undefined}
       data-key={occurrence.key}
     >
@@ -198,42 +201,54 @@ export const TransactionRow = memo(function TransactionRow({
         type="button"
         onClick={() => onOpen?.(occurrence)}
         aria-label={label}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:gap-3"
       >
         <CategoryChip icon={category?.icon ?? 'Circle'} />
 
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1" data-testid="row-text">
           <span className="block truncate text-sm font-medium">{occurrence.note ?? categoryName}</span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {occurrence.note === undefined ? null : <span className="truncate">{categoryName}</span>}
+            {occurrence.note === undefined ? null : <span className="min-w-0 truncate">{categoryName}</span>}
             {type === undefined ? null : (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px]">
-                <type.icon className="size-3" aria-hidden="true" />
-                {type.label}
+              <span
+                title={type.label}
+                className="inline-flex min-w-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+              >
+                <type.icon className="size-3 shrink-0" aria-hidden="true" />
+                {/* Below sm the icon stands for it: the label is in the row's name and the title. */}
+                <span className="truncate max-sm:sr-only">{type.label}</span>
               </span>
             )}
 
             {occurrence.isProjected ? (
               // Muted grey is not an explanation for an 18,000 salary sitting in
               // the feed and not in the balance.
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px]">
+              <span
+                title={t('summary.notCountedYet')}
+                className="min-w-0 truncate rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+                data-testid="row-not-counted"
+              >
                 {t('summary.notCountedYet')}
               </span>
             ) : null}
             {occurrence.isSkipped ? (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px]">{t('feed.skipped')}</span>
+              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap">
+                {t('feed.skipped')}
+              </span>
             ) : null}
           </span>
         </span>
 
-        {context.showProfile && profile !== undefined ? <PersonAvatar person={profile} size="sm" /> : null}
+        {context.showProfile && profile !== undefined ? (
+          <PersonAvatar person={profile} size="sm" className="max-sm:size-6!" />
+        ) : null}
 
         {/*
           The card under the amount, as a bank's app shows it - not among the
           chips, where a plan's "payment 5 of 12" and "not counted yet" already
           fill a phone's width.
         */}
-        <span className="flex shrink-0 flex-col items-end">
+        <span className="flex shrink-0 flex-col items-end" data-testid="row-amount">
           <Money
             minor={signed}
             currency={context.currency}
