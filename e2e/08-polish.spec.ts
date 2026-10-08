@@ -504,17 +504,28 @@ test.describe('@popouts not counted yet', () => {
     await expect(page.getByRole('dialog', { name: 'Not counted yet' })).toBeVisible();
   });
 
-  test('"Charged today" moves it out of next month, and Undo brings it back', async ({ page }) => {
+  test('"Charged today" moves it to today, and the feed follows it there; Undo sends it back', async ({
+    page,
+  }) => {
     const { chip, key } = await nextMonthChip(page);
     const row = page.locator(`[data-key="${key}"]`);
+    const thisMonth = new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
 
     await chip.click();
     await page.getByRole('button', { name: /Charged today/ }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(row).toHaveCount(0);
-
-    await page.getByRole('button', { name: 'Undo' }).click();
+    // The feed jumped to this month, where the row now is, counted.
+    await expect(page.getByRole('heading', { level: 2, name: thisMonth })).toBeVisible();
     await expect(row).toHaveCount(1);
+    await expect(row).not.toHaveAttribute('data-projected', 'true');
+
+    // Back in next month: not here any more.
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(row).toHaveCount(0);
   });
 
   test('"A different amount…" opens the form with the caret in the amount, and offers Undo', async ({

@@ -178,6 +178,43 @@ describe('ProjectedPopout', () => {
     expect(today).toHaveTextContent(/The series starts on Oct 10, 2026/);
   });
 
+  it('stops the calendar at the feed’s horizon, the last month › reaches', async () => {
+    // Today is 2026-09-15: › stops at September 2027. A day past it is in no month the feed can show.
+    const user = userEvent.setup();
+    renderPopout(projected({ type: 'monthly', dayOfMonth: 10 }, '2026-09-10', '2027-09-10'));
+
+    await user.click(await screen.findByRole('button', { name: /A different date/ }));
+    expect(await screen.findByRole('button', { name: /September 30th, 2027/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /next month/i })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('closes without a move when the row’s own day is picked again', async () => {
+    const user = userEvent.setup();
+    const target = projected({ type: 'monthly', dayOfMonth: 10 });
+    const { onMove, onClose } = renderPopout(target);
+
+    await user.click(await screen.findByRole('button', { name: /A different date/ }));
+    await user.click(await screen.findByRole('button', { name: /October 10th/ }));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('goes back from the calendar to the three choices', async () => {
+    const user = userEvent.setup();
+    renderPopout(projected({ type: 'monthly', dayOfMonth: 10 }));
+
+    await user.click(await screen.findByRole('button', { name: /A different date/ }));
+    const back = await screen.findByRole('button', { name: 'Back' });
+    expect(back).toHaveClass('min-h-11');
+    // The chevron points back along the reading direction, so it flips in Hebrew.
+    expect(back.querySelector('svg')).toHaveClass('rtl:rotate-180');
+
+    await user.click(back);
+    expect(await screen.findByRole('button', { name: /Charged today/ })).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /A different date/ })).toHaveFocus();
+  });
+
   it('keeps a series from moving to before it starts in the calendar too', async () => {
     const user = userEvent.setup();
     renderPopout(projected({ type: 'monthly', dayOfMonth: 10 }, '2026-10-10', '2026-10-10'));

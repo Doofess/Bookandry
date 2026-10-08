@@ -655,6 +655,37 @@ describe('moving a projected occurrence', () => {
     expect(await snapshot(handle.db)).toEqual(before);
   });
 
+  it('a move inside the series writes only its override: the series row is not rewritten, nor on undo', async () => {
+    /*
+     * Sync is whole-row last-write-wins. Re-putting the series for a move that
+     * does not change it would push this device's copy over an edit another
+     * device made to the series and this one has not pulled yet.
+     */
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const next = occurrence(tx, '2026-10-10');
+    const stored = await handle.db.transactions.get('rent');
+    const synced = await handle.db.syncState.get(['transactions', 'rent']);
+    await handle.db.outbox.clear();
+    const queued = async () => (await handle.db.outbox.toArray()).map((r) => `${r.tbl}:${r.id}`);
+
+    const undoable = await moveOccurrence(handle.db, {
+      occurrence: next,
+      to: TODAY,
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await queued()).not.toContain('transactions:rent');
+    expect(await handle.db.transactions.get('rent')).toEqual(stored);
+
+    await undoable.undo(LATER);
+    expect(await queued()).not.toContain('transactions:rent');
+    expect(await handle.db.transactions.get('rent')).toEqual(stored);
+    expect(await handle.db.syncState.get(['transactions', 'rent'])).toEqual(synced);
+    expect(await handle.db.overrides.count()).toBe(0);
+  });
+
   it('moved past the series end, the feed still finds it in its new month, until undone', async () => {
     const ending = materialize({
       ...rent(),

@@ -1,20 +1,20 @@
-import { CalendarDays, Clock, PencilLine } from 'lucide-react';
-import { type ComponentProps, useEffect, useRef, useState } from 'react';
+import { CalendarDays, ChevronLeft, Clock, PencilLine } from 'lucide-react';
+import { type ComponentProps, type Ref, useEffect, useRef, useState } from 'react';
 import { he, enUS } from 'react-day-picker/locale';
 import { useTranslation } from 'react-i18next';
 
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTitle } from '@/components/ui/popover';
 import { PopupItemContent, useAnchoredPopup } from '@/components/ui/popup-parts';
-import { compareLocal, formatLocalDate, fromPickerDate, toPickerDate } from '@/lib/dates';
+import { movableRange } from '@/domain/feed-filters';
+import { compareLocal, formatLocalDate, fromPickerDate, startOfMonth, toPickerDate } from '@/lib/dates';
 import type { Occurrence } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 export type ProjectedTarget = { readonly occurrence: Occurrence; readonly anchor: HTMLElement };
 
-/** The calendar's year menu, as the date field's: back to a standing order from years ago, forward far enough. */
+/** The calendar's year menu, as the date field's: back to a standing order from years ago. */
 const FIRST_MONTH = new Date(1990, 0);
-const LAST_MONTH = new Date(2100, 11);
 
 /**
  * "Not counted yet", answered from the chip: it was charged today, it is a
@@ -68,6 +68,7 @@ export function ProjectedPopout({
             today={today}
             onMove={onMove}
             onAmount={onAmount}
+            onClose={onClose}
           />
         )}
       </PopoverContent>
@@ -80,17 +81,17 @@ function Choices({
   today,
   onMove,
   onAmount,
+  onClose,
 }: {
   readonly occurrence: Occurrence;
   readonly today: LocalDate;
   readonly onMove: (occurrence: Occurrence, to: LocalDate) => void;
   readonly onAmount: (occurrence: Occurrence) => void;
+  readonly onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [picking, setPicking] = useState(false);
-  const tx = occurrence.transaction;
-  // A series occurrence cannot move to before the series starts (see moveOccurrence).
-  const earliest = tx.recurrence.type === 'one_time' ? undefined : tx.date;
+  const { first: earliest, last } = movableRange(occurrence, today);
   const notStarted = earliest !== undefined && compareLocal(today, earliest) < 0;
   const rtl = i18n.dir() === 'rtl';
 
@@ -100,8 +101,14 @@ function Choices({
    * a scroll to bring the day into view would close it (it closes on scroll).
    */
   const calendar = useRef<HTMLDivElement>(null);
+  // Back from the calendar, focus returns to the choice that opened it.
+  const dateChoice = useRef<HTMLButtonElement>(null);
+  const cameBack = useRef(false);
   useEffect(() => {
-    if (!picking) return;
+    if (!picking) {
+      if (cameBack.current) dateChoice.current?.focus({ preventScroll: true });
+      return;
+    }
     const days = calendar.current;
     (
       days?.querySelector<HTMLElement>('[data-selected] button') ??
@@ -111,18 +118,38 @@ function Choices({
 
   if (picking) {
     return (
-      <div ref={calendar}>
+      <div ref={calendar} className="flex flex-col">
+        {/* Escape still closes the whole pop-out; this goes back one step. */}
+        <button
+          type="button"
+          onClick={() => {
+            cameBack.current = true;
+            setPicking(false);
+          }}
+          className="flex min-h-11 items-center gap-1 self-start rounded-lg px-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          {/* Directional: it points back, so it flips. */}
+          <ChevronLeft className="cn-rtl-flip size-4 rtl:rotate-180" strokeWidth={1.75} aria-hidden="true" />
+          {t('projected.back')}
+        </button>
         <Calendar
           mode="single"
+          // The row's own day picked again is "no change", not a deselection.
+          required
           captionLayout="dropdown"
           startMonth={earliest === undefined ? FIRST_MONTH : toPickerDate(earliest)}
-          endMonth={LAST_MONTH}
+          endMonth={toPickerDate(startOfMonth(last))}
           // Local-midday Dates in, local dates out, as the date field does.
           selected={toPickerDate(occurrence.date)}
           defaultMonth={toPickerDate(occurrence.date)}
-          disabled={earliest === undefined ? undefined : { before: toPickerDate(earliest) }}
-          onSelect={(next) => {
-            if (next !== undefined) onMove(occurrence, fromPickerDate(next));
+          disabled={[
+            { after: toPickerDate(last) },
+            ...(earliest === undefined ? [] : [{ before: toPickerDate(earliest) }]),
+          ]}
+          onSelect={(next: Date) => {
+            const to = fromPickerDate(next);
+            if (to === occurrence.date) onClose();
+            else onMove(occurrence, to);
           }}
           locale={rtl ? he : enUS}
           dir={rtl ? 'rtl' : 'ltr'}
@@ -157,6 +184,7 @@ function Choices({
         }}
       />
       <Choice
+        ref={dateChoice}
         icon={CalendarDays}
         label={t('projected.date')}
         onClick={() => {
@@ -169,15 +197,18 @@ function Choices({
 
 /** One choice: the row menu's item, as a button, since this pop-out is a dialog. */
 function Choice({
+  ref,
   disabled = false,
   onClick,
   ...content
 }: ComponentProps<typeof PopupItemContent> & {
+  readonly ref?: Ref<HTMLButtonElement>;
   readonly disabled?: boolean;
   readonly onClick: () => void;
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       disabled={disabled}
       onClick={onClick}

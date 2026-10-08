@@ -54,7 +54,9 @@
     "date": "A different date…",
     "notStarted": "The series starts on {{date}}",
     "moved": "Moved to {{date}}",
-    "amountSaved": "Amount changed"
+    "amountSaved": "Amount changed",
+    "saved": "Saved",
+    "back": "Back"
   },
   "theme": {
     "label": "Theme",
