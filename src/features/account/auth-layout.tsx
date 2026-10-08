@@ -1,13 +1,14 @@
+import { cn } from 'cn';
 import { Globe, Moon, Sun } from 'lucide-react';
 import { type ReactNode, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { chooseLanguage, chooseTheme } from '@/app/preferences';
+import { panelPill } from '@/components/brand-panel';
+import { Engraving } from '@/components/engraving';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import type { Language } from '@/i18n/boot';
-
-import { Engraving } from './engraving';
 
 /**
  * The front door's frame: the brand, then the task.
@@ -88,7 +89,7 @@ function LanguageSwitch() {
       type="button"
       variant="ghost"
       lang={other}
-      className="h-9 gap-2 rounded-full border-white/35 px-3.5 text-sm text-brand-deep-foreground hover:bg-white/10 hover:text-brand-deep-foreground focus-visible:ring-white/50"
+      className={panelPill}
       onClick={() => {
         chooseLanguage(other);
       }}
@@ -124,7 +125,7 @@ function ThemeSwitch() {
       type="button"
       variant="ghost"
       aria-label={t(dark ? 'account.welcome.toLight' : 'account.welcome.toDark')}
-      className="size-9 rounded-full border-white/35 p-0 text-brand-deep-foreground hover:bg-white/10 hover:text-brand-deep-foreground focus-visible:ring-white/50"
+      className={cn(panelPill, 'w-11 px-0 sm:w-9')}
       onClick={() => {
         chooseTheme(dark ? 'light' : 'dark');
       }}
