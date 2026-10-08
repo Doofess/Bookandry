@@ -45,6 +45,22 @@ function Probe() {
       >
         duplicate
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          sheet.openEdit(fakeOccurrence, { focus: 'amount' });
+        }}
+      >
+        amount
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          sheet.openEdit(fakeOccurrence);
+        }}
+      >
+        edit
+      </button>
     </>
   );
 }
@@ -115,5 +131,33 @@ describe('useTransactionSheet add', () => {
   ])('reads %s as a plain add', (route) => {
     renderWithProviders(<Probe />, { route });
     expect(target()).toEqual({ mode: 'add', kind: 'expense' });
+  });
+});
+
+describe('useTransactionSheet edit', () => {
+  beforeAll(async () => {
+    await initTestI18n('en');
+  });
+
+  it('asks the edit form to focus the amount', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Probe />);
+
+    await user.click(screen.getByRole('button', { name: 'amount' }));
+    expect(screen.getByTestId('search')).toHaveTextContent('focus=amount');
+    expect(target()).toMatchObject({ mode: 'edit', transactionId: 'salary', focus: 'amount' });
+  });
+
+  it('opens a plain edit without it, and drops it from a link that is not an edit', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Probe />, { route: '/?edit=salary&at=2026-09-10&focus=amount' });
+    expect(target()).toMatchObject({ focus: 'amount' });
+
+    await user.click(screen.getByRole('button', { name: 'edit' }));
+    expect(screen.getByTestId('search')).not.toHaveTextContent('focus');
+    expect(target()).toEqual({ mode: 'edit', transactionId: 'salary', at: '2026-09-10' });
+
+    await user.click(screen.getByRole('button', { name: 'income' }));
+    expect(screen.getByTestId('search')).not.toHaveTextContent('focus');
   });
 });

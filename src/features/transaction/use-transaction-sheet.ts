@@ -25,6 +25,8 @@ const SHARED_ID = 'id';
 const ROW = 'row';
 /** The found card or bank account being filled in inside the import sheet, by its id. */
 const CARD = 'card';
+/** An edit opened from "A different amount…": `amount`, the field the form puts the caret in. */
+const FOCUS = 'focus';
 
 export type SheetTarget =
   | { readonly mode: 'closed' }
@@ -34,7 +36,13 @@ export type SheetTarget =
       /** Duplicate: the row the form is prefilled from. */
       readonly from?: { readonly transactionId: string; readonly at: LocalDate };
     }
-  | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate }
+  | {
+      readonly mode: 'edit';
+      readonly transactionId: string;
+      readonly at: LocalDate;
+      /** Opened from "not counted yet" to change the amount: the form focuses it. */
+      readonly focus?: 'amount';
+    }
   | {
       readonly mode: 'import';
       /** The share's id when files came from the Share menu. */
@@ -48,7 +56,7 @@ export type SheetTarget =
 export type TransactionSheetApi = {
   readonly target: SheetTarget;
   readonly openAdd: (kind?: Kind) => void;
-  readonly openEdit: (occurrence: Occurrence) => void;
+  readonly openEdit: (occurrence: Occurrence, options?: { readonly focus?: 'amount' }) => void;
   /** The add form, prefilled from this row (see `duplicateFormValues`). */
   readonly openDuplicate: (occurrence: Occurrence) => void;
   readonly openImport: (sharedId?: string) => void;
@@ -111,7 +119,12 @@ export function useTransactionSheet(): TransactionSheetApi {
     // Both halves or neither: an edit target without its slot cannot be
     // resolved to an occurrence, and guessing one would open the wrong row.
     if (transactionId !== null && at !== null && isLocalDate(at)) {
-      return { mode: 'edit', transactionId, at };
+      return {
+        mode: 'edit',
+        transactionId,
+        at,
+        ...(params.get(FOCUS) === 'amount' ? { focus: 'amount' as const } : {}),
+      };
     }
     return { mode: 'closed' };
   }, [params]);
@@ -127,6 +140,7 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(SHARED_ID);
       updated.delete(ROW);
       updated.delete(CARD);
+      updated.delete(FOCUS);
 
       if (next.mode === 'add') {
         updated.set(ADD, next.kind);
@@ -144,6 +158,7 @@ export function useTransactionSheet(): TransactionSheetApi {
       if (next.mode === 'edit') {
         updated.set(EDIT, next.transactionId);
         updated.set(AT, next.at);
+        if (next.focus !== undefined) updated.set(FOCUS, next.focus);
       }
 
       /*
@@ -170,13 +185,14 @@ export function useTransactionSheet(): TransactionSheetApi {
       openAdd: (kind: Kind = 'expense') => {
         write({ mode: 'add', kind });
       },
-      openEdit: (occurrence: Occurrence) => {
+      openEdit: (occurrence: Occurrence, options: { readonly focus?: 'amount' } = {}) => {
         // Keyed on the ORIGINAL slot, not the visible date: that is what the
         // Override row is keyed on, so a moved occurrence still finds itself.
         write({
           mode: 'edit',
           transactionId: occurrence.transaction.id,
           at: occurrence.originalDate,
+          ...options,
         });
       },
       openDuplicate: (occurrence: Occurrence) => {

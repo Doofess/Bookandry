@@ -46,6 +46,16 @@
     "scopeAll": "כל התשלומים",
     "changed": "הקטגוריה שונתה ל{{name}}"
   },
+  "projected": {
+    "chip": "טרם נכלל. לשינוי",
+    "today": "נגבה היום",
+    "todayHint": "לכלול ביתרה כבר עכשיו",
+    "amount": "סכום אחר…",
+    "date": "תאריך אחר…",
+    "notStarted": "הסדרה מתחילה ב־{{date}}",
+    "moved": "הועבר ל־{{date}}",
+    "amountSaved": "הסכום שונה"
+  },
   "theme": {
     "label": "ערכת נושא",
     "light": "בהיר",

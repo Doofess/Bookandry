@@ -87,6 +87,9 @@ export function CategoryPopout({
   );
 }
 
+/** The grid's categories before "More": `frequentCategories`' own count. */
+const GRID_SIZE = 7;
+
 type Step =
   | { readonly kind: 'grid' }
   | { readonly kind: 'all' }
@@ -179,6 +182,20 @@ function Chooser({
 
   return (
     <div role="group" aria-label={t('categoryPop.title')} className="grid grid-cols-4 gap-1.5">
+      {/*
+        Seven places of the cells' own size while the frequent ones load: with
+        "More" alone, the arrowed pop-out grew when they came, and could flip.
+      */}
+      {frequent === undefined
+        ? Array.from({ length: GRID_SIZE }, (_, i) => (
+            <span
+              key={i}
+              data-slot="category-placeholder"
+              aria-hidden="true"
+              className="min-h-16 rounded-xl bg-muted/60 motion-safe:animate-pulse"
+            />
+          ))
+        : null}
       {(frequent ?? []).map((category) => {
         const current = category.id === occurrence.categoryId;
         return (

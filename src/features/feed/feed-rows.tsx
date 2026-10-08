@@ -144,6 +144,7 @@ export const TransactionRow = memo(function TransactionRow({
   onOpen,
   onMenu,
   onCategory,
+  onProjected,
 }: {
   occurrence: Occurrence;
   context: RowContext;
@@ -160,6 +161,8 @@ export const TransactionRow = memo(function TransactionRow({
   onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
   /** The chip was tapped: change the category from the row. */
   onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  /** "Not counted yet" was tapped: count it now, or change its amount or day. */
+  onProjected?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories']);
 
@@ -189,14 +192,20 @@ export const TransactionRow = memo(function TransactionRow({
     .filter(Boolean)
     .join(', ');
 
+  // "Not counted yet" is a question the person can answer, except on a card's
+  // fee (changed where the card is) and on a skipped row (nothing to count).
+  const projectedChip =
+    occurrence.isProjected && onProjected !== undefined && !occurrence.isSkipped && !isCardFee(occurrence);
+
   return (
     <div
       role="listitem"
       aria-posinset={position}
       aria-setsize={setSize}
       className={cn(
+        // `relative`: the row's own button is stretched over all of it (see below).
         // The chip's 44px target carries its own 4px inset, so the start padding gives it back.
-        'flex items-center gap-1 rounded-xl py-2.5 ps-0 pe-1 sm:gap-3 sm:ps-2 sm:pe-3',
+        'relative flex items-center gap-1 rounded-xl py-2.5 ps-0 pe-1 sm:gap-3 sm:ps-2 sm:pe-3',
         occurrence.isSkipped && 'opacity-50',
       )}
       data-projected={occurrence.isProjected ? 'true' : undefined}
@@ -205,6 +214,9 @@ export const TransactionRow = memo(function TransactionRow({
       {/*
         Its own button, beside the row's: a button inside a button is not one.
         The ring is inset: the row clips what is outside it, and the chip sits at its edge.
+        The inert chip is not raised: the row's stretched button lies over it, so a
+        tap on it opens the row, as it did when the row was one button.
+        The raised ones are `relative z-10`, above that button.
       */}
       {onCategory === undefined || occurrence.isSkipped || isCardFee(occurrence) ? (
         <span className="flex size-11 shrink-0 items-center justify-center" aria-hidden="true">
@@ -217,25 +229,48 @@ export const TransactionRow = memo(function TransactionRow({
           onClick={(event) => {
             onCategory(occurrence, event.currentTarget);
           }}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+          className="relative z-10 flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
         >
           <CategoryChip icon={category?.icon ?? 'Circle'} />
         </button>
       )}
 
+      {/*
+        The row's own button, stretched over the whole row: a tap anywhere
+        opens the row, while the chip, "not counted yet" and ⋯ sit above it as
+        buttons of their own (a button inside a button is not one). It is the
+        row's real size, not a small title grown by a pseudo-element, so a
+        target-size check measures what a finger can hit.
+      */}
       <button
         type="button"
         onClick={() => onOpen?.(occurrence)}
         aria-label={label}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:gap-3"
-      >
+        className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+      />
+
+      {/*
+        What the row says. Everything here was inside the old button, named by
+        its label and hidden by it; it is hidden explicitly now, so a screen
+        reader hears the row as before: its label, then its buttons. Nothing
+        here catches a pointer but "not counted yet": the avatar is
+        positioned, and would otherwise sit over the row's button.
+      */}
+      <span className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
         <span className="min-w-0 flex-1" data-testid="row-text">
-          <span className="block truncate text-sm font-medium">{occurrence.note ?? categoryName}</span>
+          <span className="block truncate text-sm font-medium" aria-hidden="true">
+            {occurrence.note ?? categoryName}
+          </span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {occurrence.note === undefined ? null : <span className="min-w-0 truncate">{categoryName}</span>}
+            {occurrence.note === undefined ? null : (
+              <span className="min-w-0 truncate" aria-hidden="true">
+                {categoryName}
+              </span>
+            )}
             {type === undefined ? null : (
               <span
                 title={type.label}
+                aria-hidden="true"
                 // A phone has room for one chip, and "not counted yet" matters more.
                 className={cn(
                   'inline-flex min-w-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap',
@@ -248,19 +283,42 @@ export const TransactionRow = memo(function TransactionRow({
               </span>
             )}
 
-            {occurrence.isProjected ? (
-              // Muted grey is not an explanation for an 18,000 salary sitting in
-              // the feed and not in the balance.
+            {/*
+              Muted grey is not an explanation for an 18,000 salary sitting in
+              the feed and not in the balance. Where it can be answered, it is
+              a button around the small chip: 24px tall itself, in the room the
+              chip's line already has (-my-1), and 44px tall to a finger
+              through its ::before (taller only, so its width stays the chip's).
+            */}
+            {!occurrence.isProjected ? null : projectedChip ? (
+              <button
+                type="button"
+                aria-label={t('projected.chip')}
+                onClick={(event) => {
+                  onProjected(occurrence, event.currentTarget);
+                }}
+                className="pointer-events-auto relative z-10 -my-1 shrink-0 rounded-full py-1 text-[11px] whitespace-nowrap before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[''] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                data-testid="row-not-counted"
+              >
+                <span className="block rounded-full bg-accent px-1 py-0.5 text-accent-foreground sm:px-1.5">
+                  {t('summary.notCountedYet')}
+                </span>
+              </button>
+            ) : (
               <span
                 title={t('summary.notCountedYet')}
+                aria-hidden="true"
                 className="shrink-0 rounded-full bg-muted px-1 py-0.5 text-[11px] whitespace-nowrap sm:px-1.5"
                 data-testid="row-not-counted"
               >
                 {t('summary.notCountedYet')}
               </span>
-            ) : null}
+            )}
             {occurrence.isSkipped ? (
-              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap">
+              <span
+                className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+                aria-hidden="true"
+              >
                 {t('feed.skipped')}
               </span>
             ) : null}
@@ -276,7 +334,7 @@ export const TransactionRow = memo(function TransactionRow({
           chips, where a plan's "payment 5 of 12" and "not counted yet" already
           fill a phone's width.
         */}
-        <span className="flex shrink-0 flex-col items-end" data-testid="row-amount">
+        <span className="flex shrink-0 flex-col items-end" data-testid="row-amount" aria-hidden="true">
           <Money
             minor={signed}
             currency={context.currency}
@@ -287,7 +345,8 @@ export const TransactionRow = memo(function TransactionRow({
             <span
               className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground max-sm:max-w-14"
               data-testid="row-card"
-              // Cut short below sm: the card's full name is a hover away.
+              // Cut short below sm. The row's own button lies over it, so this
+              // title no longer shows on hover; only tools that read it see it.
               title={card.name}
             >
               <CreditCard className="size-3 shrink-0" aria-hidden="true" />
@@ -295,7 +354,7 @@ export const TransactionRow = memo(function TransactionRow({
             </span>
           )}
         </span>
-      </button>
+      </span>
 
       {/*
         Always present, never hover-revealed, and 44x44.
@@ -307,7 +366,7 @@ export const TransactionRow = memo(function TransactionRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="size-11 shrink-0 max-sm:-mx-1"
+        className="relative z-10 size-11 shrink-0 max-sm:-mx-1"
         data-testid="row-more"
         aria-label={t('a11y.rowActions', { name: label })}
         onClick={(event) => onMenu?.(occurrence, event.currentTarget)}

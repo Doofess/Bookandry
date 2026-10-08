@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from 'cn';
 import { History, Sparkles } from 'lucide-react';
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -28,8 +28,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
+import { applyUndoablePlan, type UndoableAction } from '@/db/occurrence-actions';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
-import { applySeriesEdit } from '@/db/series-edit';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
@@ -141,7 +141,7 @@ export function TransactionSheet({
   readonly activeProfileId: string;
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction) => void;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const titleId = useId();
@@ -236,6 +236,7 @@ export function TransactionSheet({
           <EditBody
             key={`${target.transactionId}#${target.at}`}
             state={editing}
+            focus={target.focus}
             profiles={profiles}
             categories={categories}
             paymentMethods={paymentMethods}
@@ -265,6 +266,7 @@ function FormSkeleton() {
 
 function EditBody({
   state,
+  focus,
   profiles,
   categories,
   paymentMethods,
@@ -274,12 +276,14 @@ function EditBody({
   onCancel,
 }: {
   readonly state: EditTargetState;
+  /** Opened from "A different amount…": the field to put the caret in. */
+  readonly focus?: 'amount' | undefined;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction) => void;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
@@ -311,6 +315,7 @@ function EditBody({
     <TransactionForm
       initial={occurrenceToFormValues(state.target.occurrence, state.target.transaction)}
       editing={state.target}
+      focusAmount={focus === 'amount'}
       profiles={profiles}
       categories={categories}
       paymentMethods={paymentMethods}
@@ -325,6 +330,7 @@ function EditBody({
 function TransactionForm({
   initial,
   editing,
+  focusAmount = false,
   profiles,
   categories,
   paymentMethods,
@@ -336,12 +342,14 @@ function TransactionForm({
   readonly initial: TxFormValues;
   /** Absent when adding. */
   readonly editing?: EditTarget;
+  /** Put the caret in the amount once the form is up. */
+  readonly focusAmount?: boolean;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction) => void;
   readonly onCancel: () => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
@@ -379,6 +387,18 @@ function TransactionForm({
   const noteId = useId();
   const partialId = useId();
   const profileLabelId = useId();
+
+  // Opened from "A different amount…": the amount is what the person came to change.
+  useEffect(() => {
+    if (!focusAmount) return;
+    // After the sheet's own initial focus, which would otherwise win.
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(amountId)?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [focusAmount, amountId]);
 
   const form = useForm<TxFormValues, unknown, TxFormParsed>({
     defaultValues: initial,
@@ -704,8 +724,9 @@ function TransactionForm({
 
       const { plan } = planned;
       const run = async (): Promise<void> => {
-        await applySeriesEdit(db, plan);
-        onSaved(patch.date ?? editing.occurrence.date);
+        // The same write, with what it overwrote kept, so the caller can offer Undo.
+        const undoable = await applyUndoablePlan(db, plan);
+        onSaved(patch.date ?? editing.occurrence.date, undoable);
       };
 
       const dropped = plan.warnings.find((w) => w.kind === 'overrides_dropped')?.count ?? 0;

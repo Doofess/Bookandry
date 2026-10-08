@@ -470,6 +470,84 @@ test.describe('@popouts the row menu', () => {
   });
 });
 
+test.describe('@popouts not counted yet', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** Next month, where every row is not counted yet; a chip a little way down, and its row. */
+  async function nextMonthChip(page: Page) {
+    await completeFirstRun(page, 'en');
+    await page.getByRole('button', { name: 'Next month' }).click();
+    const chip = page.getByRole('button', { name: 'Not counted yet. Change it' }).nth(1);
+    await expect(chip).toBeVisible();
+    const row = chip.locator('xpath=ancestor::*[@role="listitem"]');
+    const key = await row.getAttribute('data-key');
+    if (key === null) throw new Error('a row without its key');
+    return { chip, key };
+  }
+
+  test('its chip is a 44px-tall target, and opens a dialog named for it', async ({ page }) => {
+    const { chip } = await nextMonthChip(page);
+    // The chip is drawn small; its ::before is the hit area, 44px tall whatever the row clips.
+    const reach = await chip.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const hits = (y: number) => document.elementFromPoint(x, y)?.closest('button') === el;
+      let top = box.top + box.height / 2;
+      while (hits(top - 1)) top -= 1;
+      let bottom = box.top + box.height / 2;
+      while (hits(bottom + 1)) bottom += 1;
+      return bottom - top + 1;
+    });
+    expect(reach).toBeGreaterThanOrEqual(44);
+
+    await chip.click();
+    await expect(page.getByRole('dialog', { name: 'Not counted yet' })).toBeVisible();
+  });
+
+  test('"Charged today" moves it out of next month, and Undo brings it back', async ({ page }) => {
+    const { chip, key } = await nextMonthChip(page);
+    const row = page.locator(`[data-key="${key}"]`);
+
+    await chip.click();
+    await page.getByRole('button', { name: /Charged today/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(row).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(row).toHaveCount(1);
+  });
+
+  test('"A different amount…" opens the form with the caret in the amount, and offers Undo', async ({
+    page,
+  }) => {
+    const { chip, key } = await nextMonthChip(page);
+    const amount = page.locator(`[data-key="${key}"] [data-value]`).first();
+    const before = await amount.getAttribute('data-value');
+
+    await chip.click();
+    await page.getByRole('button', { name: /A different amount/ }).click();
+    const field = page.getByRole('dialog').getByLabel('Amount', { exact: true });
+    await expect(field).toBeFocused();
+    await field.fill('1234.56');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(amount).not.toHaveAttribute('data-value', before ?? '');
+    await expect(page.getByText('Amount changed')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(amount).toHaveAttribute('data-value', before ?? '');
+  });
+
+  test('"A different date…" opens the calendar inside the pop-out', async ({ page }) => {
+    const { chip } = await nextMonthChip(page);
+
+    await chip.click();
+    await page.getByRole('button', { name: /A different date/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Not counted yet' });
+    await expect(dialog.getByRole('grid')).toBeVisible();
+  });
+});
+
 test.describe('@keyboard walkthrough', () => {
   test('reaches the add button by keyboard alone, and shows focus at every stop', async ({ page }) => {
     /*

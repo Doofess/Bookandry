@@ -83,7 +83,7 @@ export function useRowActions(): (action: RowAction, occurrence: Occurrence) => 
 }
 
 /** The toast after an undoable write, with its Undo. */
-function offerUndo(message: string, undoable: UndoableAction, t: TFunction): void {
+export function offerUndo(message: string, undoable: UndoableAction, t: TFunction): void {
   toast(message, {
     action: {
       label: t('action.undo'),
