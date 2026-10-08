@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { CategoryIcon } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import type { BalanceParts, ExpenseGroup } from '@/domain/calculators';
+import type { BalanceBreakdown, ForecastBreakdown } from '@/domain/breakdown';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { formatLocalDate } from '@/lib/dates';
 import type { Category, Occurrence } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
+
+import { GROUP_LABELS } from './breakdown-labels';
 
 /**
  * What makes up a headline figure.
@@ -20,24 +22,17 @@ import type { Currency, LocalDate } from '@/types/money';
 export function BalanceBreakdownSheet({
   open,
   onOpenChange,
-  parts,
+  breakdown,
   since,
   currency,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  parts: BalanceParts;
+  breakdown: BalanceBreakdown;
   since: LocalDate;
   currency: Currency;
 }) {
   const { t, i18n } = useTranslation();
-
-  const rows = [
-    { key: 'opening', label: t('breakdown.opening'), minor: parts.openingMinor },
-    { key: 'income', label: t('breakdown.income'), minor: parts.incomeMinor },
-    { key: 'expense', label: t('breakdown.expense'), minor: -parts.expenseMinor },
-  ];
-  const total = parts.openingMinor + parts.incomeMinor - parts.expenseMinor;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -51,49 +46,75 @@ export function BalanceBreakdownSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <dl className="px-4 pb-4">
-          {rows.map((row) => (
-            <div key={row.key} className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-muted-foreground">{row.label}</dt>
-              <dd className="text-sm font-medium">
-                {/* The opening balance is the usual answer to "that is not how
-                    much money I have": typed once, months ago, and forgotten. */}
-                <Money minor={row.minor} currency={currency} signMode="always" />
-              </dd>
-            </div>
-          ))}
-          <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-border pt-3">
-            <dt className="text-sm font-medium">{t('breakdown.total')}</dt>
-            <dd className="text-base font-semibold">
-              <Money minor={total} currency={currency} />
-            </dd>
-          </div>
-          {/* Bought, and not yet taken: said, so the balance is not read as having missed it. */}
-          {parts.cardPendingMinor === undefined || parts.cardPendingMinor === 0 ? null : (
-            <div className="mt-3 flex items-baseline justify-between gap-4 rounded-lg bg-muted px-3 py-2">
-              <dt className="text-xs text-muted-foreground">{t('breakdown.cardPending')}</dt>
-              <dd className="text-sm font-medium">
-                <Money minor={-parts.cardPendingMinor} currency={currency} signMode="always" />
-              </dd>
-            </div>
-          )}
-        </dl>
+        <div className="px-4 pb-4">
+          <BalanceLines breakdown={breakdown} currency={currency} />
+        </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+const BALANCE_LABELS = {
+  income: 'breakdown.income',
+  expense: 'breakdown.expense',
+  cardPending: 'breakdown.cardPending',
+} as const;
+
+/** The balance's parts and its total: the same list in the pop-out and the sheet. */
+export function BalanceLines({
+  breakdown,
+  currency,
+}: {
+  readonly breakdown: BalanceBreakdown;
+  readonly currency: Currency;
+}) {
+  const { t } = useTranslation();
+  return (
+    <dl>
+      {breakdown.lines.map((line) => (
+        <div
+          key={line.key}
+          className={
+            line.key === 'cardPending'
+              ? 'my-1 flex items-baseline justify-between gap-4 rounded-lg bg-muted px-3 py-2'
+              : 'flex items-baseline justify-between gap-4 py-1.5'
+          }
+        >
+          <dt
+            className={
+              line.key === 'cardPending' ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'
+            }
+          >
+            {t(BALANCE_LABELS[line.key])}
+          </dt>
+          <dd className="shrink-0 text-sm font-medium whitespace-nowrap">
+            {/* The opening balance is the usual answer to "that is not how much
+                money I have": typed once, months ago, and forgotten. */}
+            <Money minor={line.minor} currency={currency} signMode="always" />
+          </dd>
+        </div>
+      ))}
+      <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-border pt-2">
+        <dt className="text-sm font-medium">{t('breakdown.total')}</dt>
+        <dd className="text-base font-semibold">
+          <Money minor={breakdown.totalMinor} currency={currency} />
+        </dd>
+      </div>
+    </dl>
   );
 }
 
 export function ExpenseBreakdownSheet({
   open,
   onOpenChange,
-  groups,
+  breakdown,
   month,
   currency,
   categories,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  groups: readonly ExpenseGroup[];
+  breakdown: ForecastBreakdown;
   month: LocalDate;
   currency: Currency;
   categories: ReadonlyMap<string, Category>;
@@ -110,10 +131,10 @@ export function ExpenseBreakdownSheet({
         </SheetHeader>
 
         <div className="px-4 pb-4">
-          {groups.length === 0 ? (
+          {breakdown.groups.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{t('breakdown.empty')}</p>
           ) : (
-            groups.map((group) => (
+            breakdown.groups.map((group) => (
               <section key={group.kind} className="py-2">
                 <h3 className="flex items-baseline justify-between gap-4 py-1">
                   <span className="text-sm font-medium">{t(GROUP_LABELS[group.kind])}</span>
@@ -141,15 +162,6 @@ export function ExpenseBreakdownSheet({
     </Sheet>
   );
 }
-
-/** Ordered most to least predictable, which is also least to most surprising. */
-const GROUP_LABELS = {
-  recurring: 'breakdown.groupRecurring',
-  loans: 'breakdown.groupLoans',
-  installments: 'breakdown.groupInstallments',
-  yearly: 'breakdown.groupYearly',
-  one_time: 'breakdown.groupOneTime',
-} as const;
 
 function BreakdownRow({
   occurrence,

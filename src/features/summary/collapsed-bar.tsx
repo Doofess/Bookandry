@@ -3,10 +3,18 @@ import { ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Money } from '@/components/money';
+import type { BalanceBreakdown } from '@/domain/breakdown';
 import type { Currency } from '@/types/money';
 
+import { BalancePopover } from './breakdown-popouts';
 import type { BalanceState } from './use-balance';
 import { COLLAPSED_HEIGHT } from './use-collapsing-header';
+
+const ROW = cn(
+  'mx-auto flex h-full w-full max-w-2xl items-center justify-between gap-3 text-start',
+  'ps-[max(1rem,env(safe-area-inset-left,0px))] pe-[max(1rem,env(safe-area-inset-right,0px))]',
+  'focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none disabled:cursor-default',
+);
 
 /**
  * The summary, collapsed to one line: a slim sapphire bar, the balance in the serif.
@@ -24,13 +32,56 @@ import { COLLAPSED_HEIGHT } from './use-collapsing-header';
 export function CollapsedSummaryBar({
   state,
   currency,
-  onOpenBreakdown,
+  breakdown,
+  onFullBreakdown,
 }: {
   readonly state: BalanceState;
   readonly currency: Currency;
-  readonly onOpenBreakdown?: () => void;
+  readonly breakdown?: BalanceBreakdown;
+  readonly onFullBreakdown?: () => void;
 }) {
   const { t } = useTranslation();
+  const opens = state.status === 'ready' && breakdown !== undefined && onFullBreakdown !== undefined;
+
+  const row = (
+    <>
+      <span className="text-xs text-brand-deep-foreground/80">{t('summary.balance')}</span>
+
+      <span className="flex min-w-0 items-center gap-1">
+        {/*
+          THREE states, not two.
+
+          `blocked` - a profile's opening balance in a currency we have no
+          rate for - was falling through to the loading branch, so scrolling
+          turned an explained problem into a spinner that never resolves, on a
+          disabled button with no way to ask why. It says the same thing the
+          full card says.
+        */}
+        {state.status === 'ready' ? (
+          // Not animated here: a count-up that replays every time the header
+          // collapses is motion with nothing to say.
+          <Money
+            minor={state.minor}
+            currency={currency}
+            className="truncate font-display text-lg font-bold"
+          />
+        ) : state.status === 'blocked' ? (
+          <span className="truncate text-sm text-brand-deep-foreground">
+            {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
+          </span>
+        ) : (
+          <span className="text-sm text-brand-deep-foreground/80">{t('a11y.loading')}</span>
+        )}
+        {opens ? (
+          /* Directional: it points into the sheet, so it flips in Hebrew. */
+          <ChevronRight
+            className="cn-rtl-flip size-4 shrink-0 text-brand-deep-foreground/80 rtl:rotate-180"
+            aria-hidden="true"
+          />
+        ) : null}
+      </span>
+    </>
+  );
 
   return (
     <div
@@ -67,52 +118,22 @@ export function CollapsedSummaryBar({
         'lg:ps-56 xl:pe-56',
       )}
     >
-      <button
-        type="button"
-        onClick={onOpenBreakdown}
-        disabled={state.status !== 'ready' || onOpenBreakdown === undefined}
-        className={cn(
-          'mx-auto flex h-full w-full max-w-2xl items-center justify-between gap-3 text-start',
-          'ps-[max(1rem,env(safe-area-inset-left,0px))] pe-[max(1rem,env(safe-area-inset-right,0px))]',
-          'focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none disabled:cursor-default',
-        )}
-      >
-        <span className="text-xs text-brand-deep-foreground/80">{t('summary.balance')}</span>
-
-        <span className="flex min-w-0 items-center gap-1">
-          {/*
-            THREE states, not two.
-
-            `blocked` - a profile's opening balance in a currency we have no
-            rate for - was falling through to the loading branch, so scrolling
-            turned an explained problem into a spinner that never resolves, on a
-            disabled button with no way to ask why. It says the same thing the
-            full card says.
-          */}
-          {state.status === 'ready' ? (
-            // Not animated here: a count-up that replays every time the header
-            // collapses is motion with nothing to say.
-            <Money
-              minor={state.minor}
-              currency={currency}
-              className="truncate font-display text-lg font-bold"
-            />
-          ) : state.status === 'blocked' ? (
-            <span className="truncate text-sm text-brand-deep-foreground">
-              {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
-            </span>
-          ) : (
-            <span className="text-sm text-brand-deep-foreground/80">{t('a11y.loading')}</span>
-          )}
-          {onOpenBreakdown === undefined || state.status !== 'ready' ? null : (
-            /* Directional: it points into the sheet, so it flips in Hebrew. */
-            <ChevronRight
-              className="cn-rtl-flip size-4 shrink-0 text-brand-deep-foreground/80 rtl:rotate-180"
-              aria-hidden="true"
-            />
-          )}
-        </span>
-      </button>
+      {opens ? (
+        <BalancePopover
+          breakdown={breakdown}
+          since={state.since}
+          currency={currency}
+          onFullBreakdown={onFullBreakdown}
+          triggerClassName={ROW}
+          triggerLabel={t('summary.breakdownOf', { title: t('summary.balance') })}
+        >
+          {row}
+        </BalancePopover>
+      ) : (
+        <button type="button" disabled className={ROW}>
+          {row}
+        </button>
+      )}
     </div>
   );
 }
