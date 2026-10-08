@@ -57,6 +57,9 @@ implied, because a reader cannot otherwise tell a check that was done from one
 that was only described — and they need redoing whenever the shell, the focus
 order or the copy changes.
 
+The sapphire redesign's screenshot matrix (`e2e/screens.spec.ts`, now with
+Cards) was reviewed by eye on **2026-10-09**.
+
 ### The three bespoke gates
 
 Lint cannot express these, so they are scripts.
@@ -387,9 +390,40 @@ and stat cards are prose and stay in page direction.
 for expense. Red against green is 1.6–1.8:1 dot to dot, which fails WCAG 1.4.1
 outright.
 
-**The FAB is first in the DOM.** It is `position: fixed`, so markup order does
-not move it on screen — but it decides tab order, and rendered last it sat after
-every transaction row. The keyboard walkthrough found it; nothing looked wrong.
+**The Add pill is first in the DOM.** It is `position: fixed`, so markup order
+does not move it on screen — but it decides tab order, and rendered last it sat
+after every transaction row. The keyboard walkthrough found it; nothing looked
+wrong. It says "Add" rather than showing a bare plus, and its menu presets the
+form to an expense or income (`?add=expense|income`; `add=1` from older links
+still means an expense).
+
+**The brand is sapphire; green means money coming in.** `--brand-deep`
+(#0F3A8A, #0B2C6B in dark mode) is the engraved panel at the top of every
+screen, carried in from the front door; `--income` stays green and `--expense`
+red, and nothing else in the app is either. Every token pair is checked by
+`src/lib/contrast.test.ts`, and the colours that live outside the token file
+(the status bar's `theme-color`, the favicon, the PWA icon background) by
+`src/lib/brand-colours.test.ts`.
+
+**The panel's figures are in the serif, and still tabular.** Frank Ruhl Libre's
+Latin subset ships `tnum`, so the counting-up balance never jitters. Amount
+columns stay in the sans stack, whose order is load-bearing (below).
+
+**A pop-out in the feed is one instance at screen level, anchored to its row.**
+The feed is virtualised: a menu per row would unmount mid-gesture when its row
+left the rendered range. One instance points at the row's control through
+base-ui's `anchor` and closes on scroll or when that control leaves the page.
+The category change and "Charged today" go through the edit form's own
+series-edit path, and their Undo restores every row they touched.
+
+**The balance breakdown does not list the opening balance.** The total is still
+the real balance; the starting-balance line was noise in the pop-out.
+
+**Archiving a card hides it; it never changes money owed.** Fees stop only after
+the archive month, and a card still owed on stays in commitments.
+
+**Duplicate keeps the source row's person.** It keeps the card only if that
+person can use it.
 
 **Amounts render in a `dir="ltr"` island with `data-value` carrying the
 integer.** CLDR's Hebrew currency pattern injects two right-to-left marks and

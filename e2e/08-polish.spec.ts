@@ -50,6 +50,32 @@ for (const size of WIDTHS) {
       }
     });
 
+    test('the panel wraps its pills and steps the balance down, in Hebrew too', async ({ page }) => {
+      await completeFirstRun(page, 'he');
+      await page.goto('/');
+      await expect(page.getByTestId('feed-header')).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+
+      // Nothing sideways, with the longest copy the panel carries.
+      const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
+      expect(overflow).toBeLessThanOrEqual(1);
+
+      // Every pill on the panel sits inside the viewport: they wrap rather than overflow.
+      const outside = await page.evaluate(
+        () =>
+          [...document.querySelectorAll('[data-slot="brand-panel"] button')]
+            .map((el) => el.getBoundingClientRect())
+            .filter((box) => box.width > 0 && (box.left < 0 || box.right > window.innerWidth + 0.5)).length,
+      );
+      expect(outside).toBe(0);
+
+      // 2.75rem (44px) on a phone, a step down (2.25rem, 36px) below 360px.
+      const size = await page
+        .getByTestId('balance-amount')
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(size).toBe(page.viewportSize()!.width < 360 ? 36 : 44);
+    });
+
     test('keeps every tap target at 44px', async ({ page }) => {
       // WCAG 2.2 target size. Narrow is where buttons get squeezed.
       await completeFirstRun(page, 'en');
@@ -749,5 +775,159 @@ test.describe('@motion the count-up', () => {
     // No intermediate frames: the first value read is already the final one.
     expect(first).toBe(second);
     await context.close();
+  });
+});
+
+test.describe('@popouts every item clears 44px on a phone', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  /** Items of whatever pop-out is open now that are shorter than 44px. */
+  async function shortItems(page: Page): Promise<string[]> {
+    return page.evaluate(() => {
+      const bad: string[] = [];
+      const items = document.querySelectorAll(
+        '[data-slot="dropdown-menu-content"] [role="menuitem"], [data-slot="popover-content"] button',
+      );
+      for (const el of items) {
+        // Layout size, not the drawn box: a pop-out scales in, and 95% of 44px is 42.
+        const height = (el as HTMLElement).offsetHeight;
+        if (height === 0) continue;
+        /*
+         * A calendar's day cells are the shared Calendar's 28px (the date field
+         * has the same): a 7-column grid at 44px does not fit a 320px phone.
+         * They keep WCAG 2.2's 24px floor; everything else clears 44.
+         */
+        const floor = el.closest('[role="gridcell"], [role="row"]') === null ? 44 : 24;
+        if (height < floor) bad.push(`${el.textContent.trim().slice(0, 30)} ${String(height)}px`);
+      }
+      return bad;
+    });
+  }
+
+  const ANY_POPOUT = '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]';
+
+  async function check(page: Page, open: () => Promise<void>, what: string): Promise<void> {
+    await open();
+    await expect(page.locator(ANY_POPOUT).first()).toBeVisible();
+    expect(await shortItems(page), what).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
+  }
+
+  test('on the feed and on Cards', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.goto('/');
+    await expect(page.getByTestId('feed-header')).toBeVisible();
+
+    await check(page, () => page.getByTestId('add-button').click(), 'add menu');
+    await check(page, () => page.getByTestId('prime-pill').click(), 'prime');
+    await check(
+      page,
+      () => page.getByRole('heading', { level: 2 }).getByRole('button').first().click(),
+      'month',
+    );
+    await check(
+      page,
+      () => page.getByRole('button', { name: /Show what makes up Balance/ }).click(),
+      'balance',
+    );
+    await check(
+      page,
+      () => page.getByRole('button', { name: /Show what makes up Expected/ }).click(),
+      'forecast',
+    );
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Actions for/ })
+          .first()
+          .click(),
+      'row ⋯',
+    );
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Category: / })
+          .first()
+          .click(),
+      'category',
+    );
+
+    // The scope step, on a row that belongs to a series: pick another category.
+    const chips = page.getByRole('button', { name: /^Category: / });
+    let sawScope = false;
+    for (let i = 0; i < Math.min(await chips.count(), 8) && !sawScope; i++) {
+      await chips.nth(i).click();
+      const grid = page.locator('[data-slot="popover-content"] [role="group"] button');
+      await expect(grid.first()).toBeVisible();
+      await grid.nth(1).click();
+      if (await page.getByText(/^Change it to .* for…$/).isVisible()) {
+        sawScope = true;
+        expect(await shortItems(page), 'category scope').toEqual([]);
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
+    }
+    expect(sawScope, 'a row with a scope step').toBe(true);
+
+    // Next month is all forecast, so its rows are "not counted yet".
+    await page.getByRole('button', { name: 'Next month' }).click();
+    await check(
+      page,
+      () => page.getByRole('button', { name: 'Not counted yet. Change it' }).first().click(),
+      'not counted yet',
+    );
+    // Its calendar, and the way back.
+    await page.getByRole('button', { name: 'Not counted yet. Change it' }).first().click();
+    await page.getByRole('button', { name: /A different date/ }).click();
+    await expect(page.getByRole('dialog').getByRole('grid')).toBeVisible();
+    expect(await shortItems(page), 'not counted calendar and back').toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
+
+    await page.goto('/cards');
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Options for/ })
+          .first()
+          .click(),
+      'card ⋯',
+    );
+
+    // The archived variant: archive a card, then open its menu under "Archived cards".
+    await page
+      .getByRole('button', { name: /^Options for/ })
+      .first()
+      .click();
+    await page.getByRole('menuitem', { name: /^Archive/ }).click();
+    await page.getByRole('button', { name: /^Archived cards/ }).click();
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Options for/ })
+          .last()
+          .click(),
+      'archived card ⋯',
+    );
+  });
+
+  test('a scroll closes an open pop-out', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.goto('/');
+    // A popover, not a menu: base-ui menus are modal and lock page scroll while
+    // open, so only a popover can be scrolled away from.
+    await page
+      .getByRole('button', { name: /^Category: / })
+      .first()
+      .click();
+    await expect(page.locator('[data-slot="popover-content"]')).toBeVisible();
+
+    await page.mouse.wheel(0, 600);
+    await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
   });
 });
