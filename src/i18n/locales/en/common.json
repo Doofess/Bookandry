@@ -349,6 +349,11 @@
     "schedule": "{{n}} payments of {{payment}} · interest {{interest}} · {{eff}}% effective",
     "resetSchedule": "Payments 1–{{last}}: {{first}}. From payment {{at}}: about {{after}} at today's prime. It moves with any change in prime."
   },
+  "split": {
+    "action": "Split into payments",
+    "title": "Split this purchase",
+    "save": "Split it"
+  },
   "commitments": {
     "title": "Recurring commitments",
     "body": "Everything that repeats, and what it comes to each month.",

@@ -46,6 +46,7 @@
     "planLeft": "{{left}} of {{count}} payments left, the last on {{date}}",
     "none": "Nothing left to charge."
   },
+  "followsPrime": "Follows prime from payment {{at}}",
   "issuer": {
     "isracard": "Isracard",
     "cal": "Cal",

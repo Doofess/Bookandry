@@ -211,6 +211,9 @@ export class AccountController {
   private refreshLinked = false;
   /** This account's person in the household is in place for this session. */
   private memberReady = false;
+  /** This start's data is settled (onDataReady), and who is waiting for it. */
+  private dataReady = false;
+  private readonly onReady: (() => void)[] = [];
 
   constructor(
     private readonly db: BookandryDB,
@@ -234,6 +237,29 @@ export class AccountController {
   private set(view: AccountView): void {
     this.view = view;
     for (const listener of this.listeners) listener();
+    if (view.status === 'signed_out') this.markDataReady();
+  }
+
+  /**
+   * Run fn once this start's data is settled: at once on a device that holds
+   * no account's data (accounts unavailable, or signed out), and after the
+   * first sync of a signed-in account has pulled - not before, so whatever
+   * another device wrote meanwhile is here first. A locked device's data stays
+   * hidden, and is never settled.
+   */
+  onDataReady(fn: () => void): void {
+    if (this.dataReady) {
+      fn();
+      return;
+    }
+    this.onReady.push(fn);
+    if (this.view.status === 'unavailable' || this.view.status === 'signed_out') this.markDataReady();
+  }
+
+  private markDataReady(): void {
+    if (this.dataReady) return;
+    this.dataReady = true;
+    for (const fn of this.onReady.splice(0)) fn();
   }
 
   private patch(change: Partial<Omit<SignedIn, 'status'>>): void {
@@ -471,7 +497,10 @@ export class AccountController {
       },
       onState: (sync) => {
         this.patch({ sync });
-        if (sync.kind === 'idle' || sync.kind === 'rebasing') void this.afterSync();
+        if (sync.kind === 'idle' || sync.kind === 'rebasing') {
+          this.markDataReady();
+          void this.afterSync();
+        }
         if (sync.kind !== 'syncing') {
           for (const resolve of this.settled) resolve(sync);
           this.settled.clear();

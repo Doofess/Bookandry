@@ -25,6 +25,7 @@ import {
   type CardBill,
   type CardCommitments,
 } from '@/domain/cards';
+import { followsPrimeFrom } from '@/domain/long-credit';
 import { methodOwnedBy } from '@/domain/tx-options';
 import { ProfileSwitcher } from '@/features/feed/profile-switcher';
 import { ordinalDay } from '@/i18n/ordinal';
@@ -36,6 +37,7 @@ import {
   type Occurrence,
   type PaymentMethod,
   type Profile,
+  type Recurrence,
 } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
@@ -363,7 +365,7 @@ function HouseholdCommitments({
 }
 
 /** One card's סך הכל התחייבויות בכרטיס, and the plans behind it. */
-function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitments }) {
+export function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitments }) {
   const { t, i18n } = useTranslation('cards');
   const [open, setOpen] = useState(false);
   const date = (value: LocalDate) =>
@@ -411,6 +413,7 @@ function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitm
                         date: date(plan.last.date),
                       })}
                     </span>
+                    <FollowsPrime recurrence={plan.transaction.recurrence} />
                   </span>
                   <Money minor={plan.remainingMinor} currency={CARD_CURRENCY} className="shrink-0" />
                 </li>
@@ -420,6 +423,15 @@ function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitm
         </>
       )}
     </div>
+  );
+}
+
+/** A long קרדיט that will re-price with prime: from which payment. */
+function FollowsPrime({ recurrence }: { readonly recurrence: Recurrence }) {
+  const { t } = useTranslation('cards');
+  const at = followsPrimeFrom(recurrence);
+  return at === undefined ? null : (
+    <span className="block text-xs text-muted-foreground">{t('followsPrime', { at })}</span>
   );
 }
 

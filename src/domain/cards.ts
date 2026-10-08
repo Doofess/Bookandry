@@ -1,4 +1,11 @@
-import { addMonthsClamped, compareLocal, endOfMonth, parseLocalDate, startOfMonth } from '@/lib/dates';
+import {
+  addMonthsClamped,
+  compareLocal,
+  endOfMonth,
+  monthsBetween,
+  parseLocalDate,
+  startOfMonth,
+} from '@/lib/dates';
 import {
   addRates,
   normalizeAnnualRate,
@@ -10,6 +17,7 @@ import {
   SHARED_OWNER,
   type InstallmentPlan,
   type Occurrence,
+  type Recurrence,
   type PaymentMethod,
   type RateTerm,
   type Transaction,
@@ -17,6 +25,8 @@ import {
 import type { Currency, LocalDate, Minor } from '@/types/money';
 
 import { isInstallmentPlan } from './tx-edit';
+
+type MonthlyRecurrence = Extract<Recurrence, { type: 'monthly' }>;
 
 /**
  * Credit cards as an Israeli card company runs them.
@@ -244,13 +254,8 @@ export function cardCommitments(
     const recurrence = next?.transaction.recurrence;
     /* v8 ignore next -- a series is only listed with a payment, and isInstallmentPlan let only monthly plans in */
     if (next === undefined || last === undefined || recurrence?.type !== 'monthly') continue;
-    const amounts = payments.map((o) => o.money.baseAmountMinor);
-    const remainingMinor = amounts.reduce((sum, amount) => sum + amount, 0);
-    const rate = recurrence.creditAnnualRate;
-    const principal =
-      rate === undefined || normalizeAnnualRate(rate) === undefined
-        ? remainingMinor
-        : presentValueMinor(amounts, rate);
+    const remainingMinor = payments.reduce((sum, o) => sum + o.money.baseAmountMinor, 0);
+    const principal = principalOf(payments, recurrence);
     plans.push({
       seriesId,
       plan: recurrence.plan ?? 'installments',
@@ -264,6 +269,39 @@ export function cardCommitments(
     });
   }
   return commitmentsOf(purchasesMinor, plans);
+}
+
+/**
+ * The principal still owed on a plan's remaining payments (sorted by date):
+ * their present value at the plan's rate. A long קרדיט re-priced with prime
+ * owes, at its reset, the present value of the payments from there on at the
+ * reset's rate, and that balance is owed with the last payment before it.
+ * Without a rate it is interest-free, and the payments are all principal.
+ */
+function principalOf(payments: readonly Occurrence[], recurrence: MonthlyRecurrence): Minor {
+  const amounts = payments.map((o) => o.money.baseAmountMinor);
+  const rate = recurrence.creditAnnualRate;
+  if (rate === undefined || normalizeAnnualRate(rate) === undefined) {
+    return amounts.reduce((sum, amount) => sum + amount, 0);
+  }
+  const reset = recurrence.reset;
+  if (
+    reset?.paymentMinor === undefined ||
+    reset.rate === undefined ||
+    normalizeAnnualRate(reset.rate) === undefined
+  ) {
+    return presentValueMinor(amounts, rate);
+  }
+  const before: Minor[] = [];
+  const after: Minor[] = [];
+  for (const o of payments) {
+    const number = monthsBetween(o.transaction.date, o.originalDate) + 1;
+    (number < reset.atPayment ? before : after).push(o.money.baseAmountMinor);
+  }
+  const owedAtReset = presentValueMinor(after, reset.rate);
+  const last = before.pop();
+  if (last === undefined) return owedAtReset;
+  return presentValueMinor([...before, last + owedAtReset], rate);
 }
 
 /** The household's commitments: every card's, added up, with all their plans. */

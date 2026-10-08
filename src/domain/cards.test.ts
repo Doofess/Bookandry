@@ -32,7 +32,7 @@ import {
   splitBySettlement,
 } from './cards';
 import { expandOccurrences } from './occurrences';
-import { d, makeTx } from './test-factories';
+import { d, makeTx, MONEY } from './test-factories';
 
 const NOW = '2026-01-01T00:00:00.000Z' as IsoInstant;
 const TODAY = d('2026-10-04');
@@ -490,5 +490,56 @@ describe('a 30+ purchase', () => {
     const [o] = occurrences(purchase('old', '2026-10-05'));
     expect(o!.transaction).not.toHaveProperty('deferral');
     expect(settleDate(o!, methods(visa))).toBe('2026-11-10');
+  });
+});
+
+describe('a long credit that follows prime, on the card', () => {
+  const money = {
+    ...MONEY,
+    currency: 'ILS',
+    baseCurrency: 'ILS',
+    amountMinor: 10_000,
+    baseAmountMinor: 10_000,
+  };
+  const plan = (reset: NonNullable<Extract<Transaction['recurrence'], { type: 'monthly' }>['reset']>) =>
+    purchase('tv', '2026-01-05', {
+      money,
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 5,
+        installments: 24,
+        plan: 'credit',
+        creditAnnualRate: '12',
+        reset,
+      },
+    });
+  const all = (tx: Transaction) =>
+    expandOccurrences(tx, [], d('2026-01-01'), d('2029-12-31'), { today: TODAY });
+
+  it('commits the re-priced payments, and takes each part’s interest at its own rate', () => {
+    const tx = plan({ atPayment: 19, primeAtPurchase: '6', rate: '13', paymentMinor: 10_100 });
+    const [found] = cardCommitments(all(tx), card(), TODAY).plans;
+    // Payments 9 to 24 are still to be billed: ten at the plan's, six re-priced.
+    expect(found).toMatchObject({ remaining: 16, remainingMinor: 10 * 10_000 + 6 * 10_100 });
+    // Payments 19 on are what is owed at the reset, at the reset's rate; that
+    // balance is owed with payment 18, at the plan's.
+    const owed = presentValueMinor(Array<number>(6).fill(10_100), '13');
+    const principal = presentValueMinor([...Array<number>(9).fill(10_000), 10_000 + owed], '12');
+    expect(found?.interestMinor).toBe(10 * 10_000 + 6 * 10_100 - principal);
+    // The bill each payment lands on carries it too.
+    expect(cardBills(all(tx), card()).find((b) => b.chargeDate === '2027-08-10')?.totalMinor).toBe(10_100);
+  });
+
+  it('once only re-priced payments are left, discounts them at the reset’s rate alone', () => {
+    const tx = plan({ atPayment: 2, primeAtPurchase: '6', rate: '13', paymentMinor: 10_100, frozen: true });
+    const [found] = cardCommitments(all(tx), card(), TODAY).plans;
+    expect(found?.interestMinor).toBe(16 * 10_100 - presentValueMinor(Array<number>(16).fill(10_100), '13'));
+  });
+
+  it('reads a plan whose reset is not priced yet as an ordinary קרדיט', () => {
+    const tx = plan({ atPayment: 19, primeAtPurchase: '6' });
+    const [found] = cardCommitments(all(tx), card(), TODAY).plans;
+    expect(found?.remainingMinor).toBe(16 * 10_000);
+    expect(found?.interestMinor).toBe(16 * 10_000 - presentValueMinor(Array<number>(16).fill(10_000), '12'));
   });
 });
