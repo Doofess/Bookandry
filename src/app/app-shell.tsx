@@ -34,6 +34,8 @@ function PrimaryNav() {
   return (
     <nav
       aria-label={t('nav.primary')}
+      // Anchored pop-outs keep clear of it on a phone (`useCollisionPadding`).
+      data-slot="tab-bar"
       className={cn(
         // Mobile: fixed bottom bar, white, respecting the home-indicator inset.
         'fixed inset-x-0 bottom-0 isolate z-40 flex border-t bg-background/95 backdrop-blur',

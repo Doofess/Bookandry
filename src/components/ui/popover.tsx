@@ -12,6 +12,7 @@ import {
   PopupActionsContext,
   PopupBackdrop,
   type PopupActions,
+  useCollisionPadding,
 } from './popup-parts';
 
 function Popover({ actionsRef, ...props }: PopoverPrimitive.Root.Props) {
@@ -51,11 +52,14 @@ function PopoverContent({
     /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
     readonly backdrop?: boolean;
   }) {
+  const padding = useCollisionPadding();
   return (
     <PopoverPrimitive.Portal>
       {backdrop ? <PopupBackdrop /> : null}
       <PopoverPrimitive.Positioner
         anchor={anchor}
+        // Anchored to something on the page: clear of the phone's tab bar too.
+        {...(anchor === undefined ? {} : { collisionPadding: padding })}
         align={align}
         alignOffset={alignOffset}
         side={side}

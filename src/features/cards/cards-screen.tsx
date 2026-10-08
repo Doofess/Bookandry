@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ChevronDown, CreditCard, MoreHorizontal, Plus, TriangleAlert } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -90,6 +90,10 @@ export function CardsScreen() {
     () => (data?.cards ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
     [data, whose],
   );
+  const archived = useMemo(
+    () => (data?.archived ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
+    [data, whose],
+  );
   // Each linked card's catalog entry: its rates and names, as every other screen reads them.
   const resolvedCards = useResolvedCards(cards);
   // Each card's commitments, worked out once: its panel and the household's total both read them.
@@ -161,6 +165,15 @@ export function CardsScreen() {
 
         <OtherMethods />
 
+        {archived.length === 0 ? null : (
+          <ArchivedCards
+            cards={archived}
+            onMenu={(card, anchor) => {
+              setMenuFor({ card, anchor });
+            }}
+          />
+        )}
+
         <MethodEditor
           target={editing}
           profiles={data === undefined ? [] : [...data.profiles.values()]}
@@ -175,6 +188,7 @@ export function CardsScreen() {
 
         <CardMenu
           target={menuFor}
+          variant={menuFor?.card.isArchived === 1 ? 'archived' : 'active'}
           aiAvailable={account.status !== 'unavailable'}
           onClose={() => {
             setMenuFor(undefined);
@@ -204,18 +218,22 @@ export function CardsScreen() {
                 });
                 return;
               case 'archive':
+              case 'restore': {
+                // One write path both ways, each with the other as its Undo.
+                const archived = action === 'archive';
                 void undoable(
                   async () => {
-                    await setPaymentMethodArchived(db, card.id, true, systemClock.nowIso());
+                    await setPaymentMethodArchived(db, card.id, archived, systemClock.nowIso());
                     return {
                       undo: async (at) => {
-                        await setPaymentMethodArchived(db, card.id, false, at);
+                        await setPaymentMethodArchived(db, card.id, !archived, at);
                       },
                     };
                   },
-                  t('cardMenu.archived', { name: card.label }),
+                  t(archived ? 'cardMenu.archived' : 'cardMenu.restored', { name: card.label }),
                 );
                 return;
+              }
             }
           }}
         />
@@ -410,6 +428,71 @@ function CardPanel({
         <BillList bills={[...upcoming.slice(0, 2).reverse(), ...past]} today={today} />
       )}
     </article>
+  );
+}
+
+/**
+ * The cards put away, folded at the foot of the screen, so one archived from
+ * its menu is never lost once the toast's Undo has gone. Each is a line, not a
+ * face, with its own ⋯ for Restore and Edit.
+ */
+function ArchivedCards({
+  cards,
+  onMenu,
+}: {
+  readonly cards: readonly PaymentMethod[];
+  readonly onMenu: (card: PaymentMethod, anchor: HTMLElement) => void;
+}) {
+  const { t } = useTranslation('cards');
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const title = t('cardMenu.archivedCards', { count: cards.length });
+  return (
+    <section className="rounded-xl border border-border" data-testid="archived-cards">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => {
+          setOpen(!open);
+        }}
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-start text-sm text-muted-foreground hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span>{title}</span>
+        <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} aria-hidden="true" />
+      </button>
+      {open ? (
+        <ul id={listId} aria-label={title} className="divide-y divide-border border-t border-border">
+          {cards.map((card) => (
+            <li key={card.id} className="flex items-center gap-3 py-1 ps-3 pe-1 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{card.label}</span>
+                <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                  {card.card?.lastDigits === undefined ? null : (
+                    <span dir="ltr" className="font-mono tabular-nums">
+                      •••• {card.card.lastDigits}
+                    </span>
+                  )}
+                  {card.card?.issuer === undefined ? null : <span>{t(`issuer.${card.card.issuer}`)}</span>}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11 shrink-0"
+                aria-label={t('cardMenu.label', { name: card.label })}
+                onClick={(event) => {
+                  onMenu(card, event.currentTarget);
+                }}
+              >
+                <MoreHorizontal className="size-4" aria-hidden="true" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

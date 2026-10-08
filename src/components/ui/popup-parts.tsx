@@ -146,6 +146,40 @@ export function useAnchoredPopup<T extends { readonly anchor: HTMLElement }>(
   return { shown, anchor: lastAnchor, popupRef, finalFocus };
 }
 
+/** base-ui's own default: the space kept from the edge of the screen. */
+const EDGE = 5;
+
+/**
+ * How much of the bottom of the screen the phone's tab bar covers: its height
+ * and the home-indicator inset under it. Nothing on a wide screen, where the
+ * bar is the side rail, or where there is no bar at all.
+ */
+function tabBarInset(): number {
+  const bar = document.querySelector('[data-slot="tab-bar"]');
+  if (bar === null) return 0;
+  const rect = bar.getBoundingClientRect();
+  const atFoot = rect.bottom >= window.innerHeight - 1 && rect.top > window.innerHeight / 2;
+  return atFoot ? Math.ceil(window.innerHeight - rect.top) : 0;
+}
+
+function onResize(change: () => void): () => void {
+  window.addEventListener('resize', change);
+  return () => {
+    window.removeEventListener('resize', change);
+  };
+}
+
+/**
+ * The room an anchored pop-out keeps from the screen's edges, the tab bar
+ * counted as edge. Anchored to something low on a phone, a menu would
+ * otherwise open down behind the bar's labels; with the bar counted, it flips
+ * above what opened it, or shifts up clear of the bar.
+ */
+export function useCollisionPadding(): { top: number; right: number; bottom: number; left: number } {
+  const inset = React.useSyncExternalStore(onResize, tabBarInset, () => 0);
+  return React.useMemo(() => ({ top: EDGE, right: EDGE, bottom: EDGE + inset, left: EDGE }), [inset]);
+}
+
 /**
  * The click that ends a press on the backdrop is not the user's: swallow it.
  *

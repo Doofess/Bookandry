@@ -183,7 +183,12 @@
     "transactions": "העסקאות בכרטיס",
     "import": "ייבוא דף פירוט",
     "archive": "העברה לארכיון",
-    "archived": "{{name}} הועבר לארכיון"
+    "archived": "{{name}} הועבר לארכיון",
+    "restore": "שחזור",
+    "restored": "{{name}} שוחזר",
+    "archivedCards_one": "כרטיסים בארכיון ({{count}})",
+    "archivedCards_two": "כרטיסים בארכיון ({{count}})",
+    "archivedCards_other": "כרטיסים בארכיון ({{count}})"
   },
   "menu": {
     "label": "כרטיסים ואמצעי תשלום",

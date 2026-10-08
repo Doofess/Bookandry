@@ -160,6 +160,34 @@ for (const lang of ['en', 'he'] as const) {
   });
 }
 
+test.describe('@cards archive', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'en', 'The menu is read in English; its Hebrew copy is unit-tested.');
+  });
+
+  test('archives a card from its menu, keeps it under Archived cards, and restores it', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.getByRole('link', { name: 'Cards' }).click();
+    const card = page.getByRole('article').filter({ hasText: 'Yossi card' });
+    await expect(card).toBeVisible();
+
+    await card.getByRole('button', { name: 'Options for Yossi card' }).click();
+    await page.getByRole('menuitem', { name: 'Archive' }).click();
+    await expect(page.locator('[data-sonner-toast]').first()).toContainText('Yossi card archived');
+    await expect(card).toHaveCount(0);
+
+    const archived = page.getByRole('button', { name: 'Archived cards (1)' });
+    await archived.click();
+    const list = page.getByRole('list', { name: 'Archived cards (1)' });
+    await list.getByRole('button', { name: 'Options for Yossi card' }).click();
+    await page.getByRole('menuitem', { name: 'Restore' }).click();
+
+    await expect(card).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Archived cards/ })).toHaveCount(0);
+  });
+});
+
 test.describe('@cards the monthly fee', () => {
   // A shekel base: the fee is in shekels, so the Hebrew project is the one.
   // eslint-disable-next-line no-empty-pattern
