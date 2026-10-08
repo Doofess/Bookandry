@@ -215,13 +215,25 @@ test.describe('@collapse the summary header', () => {
     expect(measured?.barHeight).toBe(48);
   });
 
-  test('pins the day of the rows under it, from the first rows on', async ({ page }) => {
+  test('pins the day of the rows under it, from the first rows on and at every day boundary', async ({
+    page,
+  }) => {
     /*
+     * Two bugs, one test.
+     *
      * The pinned header was taken from the first RENDERED item, which counts
      * the overscan: for the first eight or so rows of scrolling it kept the
-     * first day pinned over later days' rows. And directly under the pinned
-     * header there must be a row at all - a list whose scroll margin is
-     * measured from the wrong parent draws rows where the reader is not.
+     * first day pinned over later days' rows.
+     *
+     * Then it was taken from the row at the top of the VIEWPORT, which is
+     * behind the 48px collapsed bar: for 48px at every day boundary the
+     * previous day's date and total sat on the next day's row. Hence the
+     * second walk, which puts each day's header 24px up behind the bar - the
+     * middle of that band.
+     *
+     * And directly under the pinned header there must be a row at all - a list
+     * whose scroll margin is measured from the wrong parent draws rows where
+     * the reader is not.
      */
     await completeFirstRun(page, 'en');
 
@@ -231,38 +243,81 @@ test.describe('@collapse the summary header', () => {
     });
     expect(start).toBeGreaterThan(0);
 
-    for (let y = start; y <= start + 900; y += 60) {
+    // The virtualizer's reference line sits at the pinned slot, not at the
+    // list: the rows themselves must not move for it. The first day starts
+    // exactly where the list does.
+    const first = await page.evaluate(() => {
+      const list = document.querySelector('[role="list"]');
+      const item = document.querySelector('[data-index="0"]');
+      return list === null || item === null
+        ? undefined
+        : item.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    });
+    expect(first).toBe(0);
+
+    const probe = async (y: number) => {
       await scrollTo(page, y);
-      const probe = await page.evaluate(() => {
-        const pinned = [...document.querySelectorAll<HTMLElement>('[data-index]')].find(
-          (el) => el.style.position === 'sticky',
-        );
-        if (pinned === undefined) return { pinned: undefined, under: undefined, days: [] as number[] };
+      return page.evaluate(() => {
+        const items = [...document.querySelectorAll<HTMLElement>('[data-index]')];
+        // A day header is the item whose content is neither a row nor the horizon line.
+        const isHeader = (el: HTMLElement): boolean =>
+          el.querySelector('[role="listitem"]') === null && el.querySelector('p') === null;
+        const headers = items.filter(isHeader);
+        const pinned = items.find((el) => el.style.position === 'sticky');
+        const headerTops = headers
+          .filter((el) => el !== pinned)
+          .map((el) => Math.round(el.getBoundingClientRect().top + window.scrollY));
+        if (pinned === undefined)
+          return { pinned: undefined, under: undefined, expected: undefined, headerTops };
 
         const box = pinned.getBoundingClientRect();
-        const hit = document.elementFromPoint(window.innerWidth / 2, box.bottom + 4);
+        // Right at its foot, not a few pixels below: a header 3px into the
+        // slot is still mostly behind the pinned one, and 4px down its own
+        // first row would already show.
+        const hit = document.elementFromPoint(window.innerWidth / 2, box.bottom + 0.5);
         const under = hit?.closest<HTMLElement>('[data-index]') ?? null;
-        const underIndex = under === null ? undefined : Number(under.dataset.index);
+        if (under === null)
+          return { pinned: Number(pinned.dataset.index), under: undefined, expected: undefined, headerTops };
 
-        // The day that row belongs to: the nearest header at or before it.
-        // A header is the item whose content is not a list item.
-        const headers = [...document.querySelectorAll<HTMLElement>('[data-index]')]
-          .filter((el) => el.querySelector('[role="listitem"]') === null && el.querySelector('p') === null)
+        // Under a row: that row's own day. Under a day header still sliding
+        // up: the day before it, whose last row is what the pinned header covers.
+        const underIndex = Number(under.dataset.index);
+        const before = headers
           .map((el) => Number(el.dataset.index))
-          .filter((i) => underIndex !== undefined && i <= underIndex);
+          .filter((i) => (isHeader(under) ? i < underIndex : i <= underIndex));
 
         return {
           pinned: Number(pinned.dataset.index),
           under: underIndex,
-          // The row's own day, or - right at a day boundary, where the next
-          // header is sliding up under the pinned one - the day before it.
-          days: headers.sort((a, b) => a - b).slice(-2),
+          expected: before.length === 0 ? undefined : Math.max(...before),
+          headerTops,
         };
       });
+    };
 
-      if (probe.pinned === undefined) continue;
-      expect(probe.under, `a row under the pinned header at ${String(y)}`).not.toBeUndefined();
-      expect(probe.days, `the pinned day at ${String(y)}`).toContain(probe.pinned);
+    // Collapse the bar first: in the frames it first mounts, the pinned slot's
+    // offset is still on its way, and that is not what this measures.
+    await scrollTo(page, start);
+    await expect(page.getByTestId('collapsed-summary')).toBeVisible();
+
+    const tops = new Set<number>();
+    for (let y = start; y <= start + 900; y += 60) {
+      const at = await probe(y);
+      for (const top of at.headerTops) tops.add(top);
+      if (at.pinned === undefined) continue;
+      expect(at.under, `a row under the pinned header at ${String(y)}`).not.toBeUndefined();
+      expect(at.pinned, `the pinned day at ${String(y)}`).toBe(at.expected);
+    }
+
+    const boundaries = [...tops]
+      .filter((top) => top > start + 100 && top <= start + 900)
+      .sort((a, b) => a - b);
+    expect(boundaries.length).toBeGreaterThan(3);
+    for (const top of boundaries) {
+      const at = await probe(top - 24);
+      expect(at.pinned, `a day pinned with its header at ${String(top)} behind the bar`).not.toBeUndefined();
+      expect(at.under, `a row under the pinned header at ${String(top)}`).not.toBeUndefined();
+      expect(at.pinned, `the pinned day with its header at ${String(top)} behind the bar`).toBe(at.expected);
     }
   });
 });
