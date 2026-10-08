@@ -191,7 +191,7 @@ export const TransactionRow = memo(function TransactionRow({
       aria-posinset={position}
       aria-setsize={setSize}
       className={cn(
-        'flex items-center gap-3 rounded-xl px-2 py-2.5 sm:px-3',
+        'flex items-center gap-1 rounded-xl px-1 py-2.5 sm:gap-3 sm:px-3',
         occurrence.isSkipped && 'opacity-50',
       )}
       data-projected={occurrence.isProjected ? 'true' : undefined}
@@ -201,7 +201,7 @@ export const TransactionRow = memo(function TransactionRow({
         type="button"
         onClick={() => onOpen?.(occurrence)}
         aria-label={label}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:gap-3"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:gap-3"
       >
         <CategoryChip icon={category?.icon ?? 'Circle'} />
 
@@ -212,7 +212,11 @@ export const TransactionRow = memo(function TransactionRow({
             {type === undefined ? null : (
               <span
                 title={type.label}
-                className="inline-flex min-w-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+                // A phone has room for one chip, and "not counted yet" matters more.
+                className={cn(
+                  'inline-flex min-w-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap',
+                  occurrence.isProjected && 'max-sm:hidden',
+                )}
               >
                 <type.icon className="size-3 shrink-0" aria-hidden="true" />
                 {/* Below sm the icon stands for it: the label is in the row's name and the title. */}
@@ -225,7 +229,7 @@ export const TransactionRow = memo(function TransactionRow({
               // the feed and not in the balance.
               <span
                 title={t('summary.notCountedYet')}
-                className="min-w-0 truncate rounded-full bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+                className="shrink-0 rounded-full bg-muted px-1 py-0.5 text-[11px] whitespace-nowrap sm:px-1.5"
                 data-testid="row-not-counted"
               >
                 {t('summary.notCountedYet')}
@@ -257,7 +261,7 @@ export const TransactionRow = memo(function TransactionRow({
           />
           {card === undefined ? null : (
             <span
-              className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground"
+              className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground max-sm:max-w-14"
               data-testid="row-card"
             >
               <CreditCard className="size-3 shrink-0" aria-hidden="true" />
@@ -277,7 +281,7 @@ export const TransactionRow = memo(function TransactionRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="size-11 shrink-0"
+        className="size-11 shrink-0 max-sm:-mx-1"
         aria-label={t('a11y.rowActions', { name: label })}
         onClick={() => onMenu?.(occurrence)}
       >

@@ -138,6 +138,11 @@ for (const size of WIDTHS) {
             if (column !== null && column.scrollWidth > column.clientWidth + 1)
               bad.push('text content spills out of its column');
 
+            // Never cut short: "Not c..." reads as nothing.
+            const flagEl = row.querySelector<HTMLElement>('[data-testid="row-not-counted"]');
+            if (flagEl !== null && flagEl.scrollWidth > flagEl.clientWidth)
+              bad.push('not counted is truncated');
+
             // The flag lives INSIDE the text column: it must not spill out of it.
             const flag = row.querySelector('[data-testid="row-not-counted"]')?.getBoundingClientRect();
             const text = row.querySelector('[data-testid="row-text"]')?.getBoundingClientRect();
