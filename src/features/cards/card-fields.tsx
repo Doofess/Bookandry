@@ -1,12 +1,15 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useToday } from '@/app/app-context';
 import { Segmented } from '@/components/segmented';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { loadCatalog } from '@/data/card-catalog';
+import { resolveCard, type ResolvedCard } from '@/data/card-catalog/resolve';
 import { accountTail, bankByCode, bankName } from '@/domain/banks';
 import {
+  cardFromDraft,
   hasOverrides,
   linkedDraft,
   type CardDraft,
@@ -15,9 +18,10 @@ import {
 } from '@/domain/card-draft';
 import { COMMON_BILLING_DAYS } from '@/domain/cards';
 import { ordinalDay } from '@/i18n/ordinal';
-import type { CardIssuer, CardKind, CardNetwork, PaymentMethod } from '@/types/domain';
+import type { CardCatalogLink, CardIssuer, CardKind, CardNetwork, PaymentMethod } from '@/types/domain';
 
 import { IssuerChooser } from './issuer-chooser';
+import { RateTable } from './rate-table';
 
 const ISSUERS: readonly CardIssuer[] = ['isracard', 'cal', 'max', 'amex', 'diners', 'other'];
 const NETWORKS: readonly CardNetwork[] = ['visa', 'mastercard', 'amex', 'diners', 'isracard'];
@@ -426,24 +430,26 @@ export function CardFields({
             {t('edit.fxFeeHint')}
           </p>
         </div>
-        <RateField
-          label={t('edit.creditRate')}
-          hint={t('edit.creditRateHint')}
-          draft={draft.credit}
-          invalid={bad('credit')}
-          onChange={(credit) => {
-            onChange({ credit });
-          }}
-        />
-        <RateField
-          label={t('edit.lateRate')}
-          hint={t('edit.lateRateHint')}
-          draft={draft.late}
-          invalid={bad('late')}
-          onChange={(late) => {
-            onChange({ late });
-          }}
-        />
+        <LinkedRates draft={draft} month={month} onChange={onChange}>
+          <RateField
+            label={t('edit.creditRate')}
+            hint={t('edit.creditRateHint')}
+            draft={draft.credit}
+            invalid={bad('credit')}
+            onChange={(credit) => {
+              onChange({ credit });
+            }}
+          />
+          <RateField
+            label={t('edit.lateRate')}
+            hint={t('edit.lateRateHint')}
+            draft={draft.late}
+            invalid={bad('late')}
+            onChange={(late) => {
+              onChange({ late });
+            }}
+          />
+        </LinkedRates>
       </fieldset>
     </div>
   );
@@ -574,5 +580,61 @@ function RateField({
         {invalid ? t('edit.rateInvalid') : hint}
       </p>
     </div>
+  );
+}
+
+/**
+ * The rate table for a card linked to the catalog; the credit and late rate
+ * inputs (the children) for a card that is not, or while the list loads or
+ * cannot be had.
+ */
+function LinkedRates({
+  draft,
+  month,
+  onChange,
+  children,
+}: {
+  readonly draft: CardDraft;
+  readonly month: string;
+  readonly onChange: (patch: Partial<CardDraft>) => void;
+  readonly children: ReactNode;
+}) {
+  const link: CardCatalogLink | undefined = draft.catalog;
+  // Kept with the link it was resolved for, so a stale answer is never shown for another card.
+  const [found, setFound] = useState<{ key: string; resolved: ResolvedCard | undefined } | undefined>(
+    undefined,
+  );
+  const key = link === undefined ? '' : `${link.issuer}|${link.bank}|${link.tier}|${link.club ?? ''}`;
+  useEffect(() => {
+    let live = true;
+    if (link === undefined) return undefined;
+    loadCatalog().then(
+      (catalog) => {
+        if (live) setFound({ key, resolved: resolveCard(catalog, link) });
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+    // The link's parts, not its identity: the draft hands over a new object on every edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const resolved = found?.key === key ? found.resolved : undefined;
+  if (link === undefined || resolved === undefined) return <>{children}</>;
+  // A rate typed into a half-finished field is not read yet; the table shows the catalog's.
+  const read = cardFromDraft(draft, { month });
+  const card = read.ok && read.card !== undefined ? read.card : { catalog: link, overrides: draft.overrides };
+  return (
+    <RateTable
+      card={{ ...card, catalog: link }}
+      resolved={resolved}
+      onOverride={(kind, term) => {
+        const { [kind]: _was, ...rest } = draft.overrides ?? {};
+        const next = term === null ? rest : { ...rest, [kind]: term };
+        onChange({ overrides: Object.keys(next).length === 0 ? undefined : next });
+      }}
+    />
   );
 }
