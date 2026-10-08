@@ -86,7 +86,7 @@ describe('the card editor rates', () => {
     );
     const credit = within(await screen.findByTestId('rate-credit'));
     expect(screen.queryByText('Credit (קרדיט) interest')).toBeNull();
-    await user.click(credit.getByRole('button', { name: 'Change' }));
+    await user.click(credit.getByRole('button', { name: 'Change Credit' }));
     const input = credit.getByRole('textbox');
     await user.clear(input);
     await user.type(input, '3');
@@ -94,7 +94,7 @@ describe('the card editor rates', () => {
     expect(draft.overrides).toEqual({ credit: { basis: 'prime', margin: '3' } });
     const saved = cardFromDraft(draft, { month: '2026-09' });
     expect(saved.ok && saved.card?.overrides).toEqual({ credit: { basis: 'prime', margin: '3' } });
-    await user.click(credit.getByRole('button', { name: "Back to the catalog's rate" }));
+    await user.click(credit.getByRole('button', { name: /^Back to the catalog's rate for Credit$/ }));
     expect((JSON.parse(screen.getByTestId('draft').textContent) as CardDraft).overrides).toBeUndefined();
   });
 });
