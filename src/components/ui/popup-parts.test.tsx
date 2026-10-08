@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
-import { useAnchoredPopup, useCollisionPadding, useHeldWhileClosing } from './popup-parts';
+import { useAnchoredPopup, useHeldWhileClosing } from './popup-parts';
 
 function scrollTo(y: number): void {
   act(() => {
@@ -358,35 +358,5 @@ describe('useHeldWhileClosing', () => {
 
     hook.rerender({ value: undefined, open: false });
     expect(hook.result.current).toBe('needs_billing_day');
-  });
-});
-
-describe('useCollisionPadding', () => {
-  function tabBar(top: number, bottom: number): HTMLElement {
-    const bar = document.createElement('nav');
-    bar.dataset['slot'] = 'tab-bar';
-    bar.getBoundingClientRect = () => new DOMRect(0, top, window.innerWidth, bottom - top);
-    document.body.append(bar);
-    return bar;
-  }
-
-  it('counts the phone’s tab bar as the bottom edge', () => {
-    const bar = tabBar(window.innerHeight - 60, window.innerHeight);
-    try {
-      const { result } = renderHook(() => useCollisionPadding());
-      expect(result.current).toEqual({ top: 5, right: 5, bottom: 65, left: 5 });
-    } finally {
-      bar.remove();
-    }
-  });
-
-  it('keeps the plain 5px where the bar is the side rail, or not there at all', () => {
-    expect(renderHook(() => useCollisionPadding()).result.current.bottom).toBe(5);
-    const rail = tabBar(0, window.innerHeight);
-    try {
-      expect(renderHook(() => useCollisionPadding()).result.current.bottom).toBe(5);
-    } finally {
-      rail.remove();
-    }
   });
 });

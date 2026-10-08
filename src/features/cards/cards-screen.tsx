@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ChevronDown, CreditCard, MoreHorizontal, Plus, TriangleAlert } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -94,12 +94,35 @@ export function CardsScreen() {
     () => (data?.archived ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
     [data, whose],
   );
+  // What the household's total counts: the cards on the screen, and any archived one still owed on.
+  const counted = useMemo(
+    () => [
+      ...cards,
+      ...(data?.owing ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
+    ],
+    [cards, data, whose],
+  );
+  /*
+   * A card restored from "Archived cards": its line, and with the last one the
+   * whole list, leaves the page with the ⋯ that had focus. Focus goes to the
+   * card's own ⋯ once the card is back on the screen.
+   */
+  const restoring = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const id = restoring.current;
+    if (id === undefined || !cards.some((card) => card.id === id)) return;
+    restoring.current = undefined;
+    const more = [...document.querySelectorAll<HTMLElement>('[data-card-menu]')].find(
+      (button) => button.dataset['cardMenu'] === id,
+    );
+    more?.focus();
+  }, [cards]);
   // Each linked card's catalog entry: its rates and names, as every other screen reads them.
   const resolvedCards = useResolvedCards(cards);
   // Each card's commitments, worked out once: its panel and the household's total both read them.
   const commitments = useMemo(
-    () => new Map(cards.map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)])),
-    [cards, data, today],
+    () => new Map(counted.map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)])),
+    [counted, data, today],
   );
 
   return (
@@ -133,34 +156,37 @@ export function CardsScreen() {
           />
         )}
 
-        {data === undefined ? null : cards.length === 0 ? (
+        {data === undefined || cards.length > 0 ? null : (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center">
             <CreditCard className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
             <h2 className="mt-3 font-medium">{t('emptyTitle')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{t('emptyBody')}</p>
           </div>
-        ) : (
-          <>
-            <HouseholdCommitments cards={cards} commitments={commitments} />
-            <ul className="grid gap-6 md:grid-cols-2">
-              {cards.map((card) => (
-                <li key={card.id}>
-                  <CardPanel
-                    card={card}
-                    resolved={resolvedCards.get(card.id)}
-                    owner={data.profiles.get(card.profileId)}
-                    occurrences={data.occurrences}
-                    commitments={commitments.get(card.id)}
-                    today={today}
-                    baseCurrency={baseCurrency}
-                    onMenu={(anchor) => {
-                      setMenuFor({ card, anchor });
-                    }}
-                  />
-                </li>
-              ))}
-            </ul>
-          </>
+        )}
+
+        {data === undefined || counted.length === 0 ? null : (
+          <HouseholdCommitments cards={counted} commitments={commitments} />
+        )}
+
+        {data === undefined || cards.length === 0 ? null : (
+          <ul className="grid gap-6 md:grid-cols-2">
+            {cards.map((card) => (
+              <li key={card.id}>
+                <CardPanel
+                  card={card}
+                  resolved={resolvedCards.get(card.id)}
+                  owner={data.profiles.get(card.profileId)}
+                  occurrences={data.occurrences}
+                  commitments={commitments.get(card.id)}
+                  today={today}
+                  baseCurrency={baseCurrency}
+                  onMenu={(anchor, returnFocus) => {
+                    setMenuFor({ card, anchor, returnFocus });
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
         )}
 
         <OtherMethods />
@@ -221,6 +247,7 @@ export function CardsScreen() {
               case 'restore': {
                 // One write path both ways, each with the other as its Undo.
                 const archived = action === 'archive';
+                if (!archived) restoring.current = card.id;
                 void undoable(
                   async () => {
                     await setPaymentMethodArchived(db, card.id, archived, systemClock.nowIso());
@@ -260,10 +287,15 @@ function CardPanel({
   readonly commitments: CardCommitments | undefined;
   readonly today: LocalDate;
   readonly baseCurrency: Currency;
-  /** Open the card's menu, anchored to what was pressed: its ⋯, or its face. */
-  readonly onMenu: (anchor: HTMLElement) => void;
+  /**
+   * Open the card's menu, anchored to what was pressed: its ⋯, or its face.
+   * From the face, focus goes back to the ⋯ (`returnFocus`), the one the
+   * keyboard and screen readers know.
+   */
+  readonly onMenu: (anchor: HTMLElement, returnFocus?: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation('cards');
+  const more = useRef<HTMLButtonElement>(null);
   const details = card.card;
   const tier = tierName(details, resolved, i18n.language);
   const day = billingDayOf(card);
@@ -312,7 +344,7 @@ function CardPanel({
           tabIndex={-1}
           aria-hidden="true"
           onClick={(event) => {
-            onMenu(event.currentTarget);
+            onMenu(event.currentTarget, more.current ?? undefined);
           }}
           className="absolute inset-0 rounded-2xl focus-visible:outline-none"
         />
@@ -325,7 +357,9 @@ function CardPanel({
               <NetworkLogo network={details.network} className="shrink-0" />
             )}
             <button
+              ref={more}
               type="button"
+              data-card-menu={card.id}
               aria-label={t('cardMenu.label', { name: card.label })}
               onClick={(event) => {
                 onMenu(event.currentTarget);

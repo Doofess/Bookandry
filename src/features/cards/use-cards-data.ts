@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db } from '@/db/db';
 import { findCandidates, findOverrides } from '@/db/repos/transactions';
-import { cardFeeOccurrences } from '@/domain/cards';
+import { cardCommitments, cardFeeOccurrences } from '@/domain/cards';
 import { expandOccurrences } from '@/domain/occurrences';
 import { isInstallmentPlan } from '@/domain/tx-edit';
 import { MAX_LOAN_PAYMENTS } from '@/domain/tx-form';
@@ -25,6 +25,13 @@ export type CardsData = {
   readonly cards: readonly PaymentMethod[];
   /** The credit cards put away, for "Archived cards" to bring back. */
   readonly archived: readonly PaymentMethod[];
+  /**
+   * The archived cards still owed on: a purchase waiting for its bill, or a
+   * plan's payments still to come (cardCommitments). Archiving puts a card
+   * out of sight; what it will still take from the bank stays in the
+   * household's total until it is paid.
+   */
+  readonly owing: readonly PaymentMethod[];
   /** The household's bank accounts, unarchived. */
   readonly accounts: readonly PaymentMethod[];
   readonly profiles: ReadonlyMap<string, Profile>;
@@ -46,9 +53,10 @@ export function useCardsData(today: LocalDate, baseCurrency: Currency): CardsDat
       .filter((m) => m.type === 'bank_account' && m.isArchived === 0)
       .sort((a, b) => a.label.localeCompare(b.label));
     const profiles = new Map((await db.profiles.toArray()).map((p) => [p.id, p]));
-    if (cards.length === 0) return { cards, archived, accounts, profiles, occurrences: [] };
+    const all = [...cards, ...archived];
+    if (all.length === 0) return { cards, archived, owing: [], accounts, profiles, occurrences: [] };
 
-    const ids = new Set(cards.map((c) => c.id));
+    const ids = new Set(all.map((c) => c.id));
     const from = startOfMonth(addMonthsClamped(today, -HISTORY_MONTHS, 1));
     const to = endOfMonth(addMonthsClamped(today, AHEAD_MONTHS, 1));
     const planTo = endOfMonth(addMonthsClamped(today, PLAN_AHEAD_MONTHS, 1));
@@ -71,8 +79,9 @@ export function useCardsData(today: LocalDate, baseCurrency: Currency): CardsDat
       )
       .filter((o) => o.paymentMethodId !== undefined && ids.has(o.paymentMethodId));
     // Each card's monthly fee, on its bills like a purchase.
+    // An archived card's too: its fee stops after the month it was archived, not before.
     const fees = cardFeeOccurrences({
-      cards,
+      cards: all,
       occurrences: purchases,
       from,
       to,
@@ -82,6 +91,8 @@ export function useCardsData(today: LocalDate, baseCurrency: Currency): CardsDat
       allProfiles: ALL_PROFILES,
     });
 
-    return { cards, archived, accounts, profiles, occurrences: [...purchases, ...fees] };
+    const occurrences = [...purchases, ...fees];
+    const owing = archived.filter((card) => cardCommitments(occurrences, card, today).totalMinor > 0);
+    return { cards, archived, owing, accounts, profiles, occurrences };
   }, [today, baseCurrency]);
 }

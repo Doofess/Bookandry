@@ -55,15 +55,12 @@ function DropdownMenuContent({
     /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
     readonly backdrop?: boolean;
   }) {
-  const padding = useCollisionPadding();
   return (
     <MenuPrimitive.Portal>
       {backdrop ? <PopupBackdrop /> : null}
-      <MenuPrimitive.Positioner
+      <AnchoredPositioner
         className="isolate z-50 outline-none"
         anchor={anchor}
-        // Anchored to something on the page: clear of the phone's tab bar too.
-        {...(anchor === undefined ? {} : { collisionPadding: padding })}
         align={align}
         alignOffset={alignOffset}
         side={side}
@@ -98,7 +95,7 @@ function DropdownMenuContent({
             children
           )}
         </MenuPrimitive.Popup>
-      </MenuPrimitive.Positioner>
+      </AnchoredPositioner>
     </MenuPrimitive.Portal>
   );
 }
@@ -285,6 +282,21 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'spa
         'ms-auto text-xs tracking-widest text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground',
         className,
       )}
+      {...props}
+    />
+  );
+}
+
+/**
+ * The positioner, mounted only while the pop-out is open. Anchored to
+ * something on the page, it keeps clear of the phone's tab bar too.
+ */
+function AnchoredPositioner({ anchor, ...props }: MenuPrimitive.Positioner.Props) {
+  const padding = useCollisionPadding(anchor !== undefined);
+  return (
+    <MenuPrimitive.Positioner
+      anchor={anchor}
+      {...(anchor === undefined ? {} : { collisionPadding: padding })}
       {...props}
     />
   );

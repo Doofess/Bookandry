@@ -112,15 +112,21 @@ export function useHeldWhileClosing<T>(value: T, open: boolean): T {
  *   the one it was open for, so its content does not empty mid-animation.
  * - `anchor` is that target's button, for the Positioner.
  * - `popupRef` goes on the popup, so `finalFocus` knows which one is its own.
- * - `finalFocus` gives focus back to the button it came from, if that button
- *   is still on the page. The target is already cleared by then, so it reads
+ * - `finalFocus` gives focus back to the button it came from (or the target's
+ *   `returnFocus`, when that is not the anchor), if it is still on the page. The target is already cleared by then, so it reads
  *   the last one. Only while focus is still in THIS popup, or nowhere: an item
  *   that opens a sheet, or another pop-out, hands focus to it, and base-ui
  *   returns focus only once the exit animation ends, by which time pulling it
  *   back to the row would leave a keyboard user outside what they just opened.
  * - It closes when that button leaves the page (`useCloseWhenDetached`).
  */
-export function useAnchoredPopup<T extends { readonly anchor: HTMLElement }>(
+export function useAnchoredPopup<
+  T extends {
+    readonly anchor: HTMLElement;
+    /** Where focus goes back to, when not the anchor: a larger target hidden from the keyboard, say. */
+    readonly returnFocus?: HTMLElement | undefined;
+  },
+>(
   target: T | undefined,
   onClose: () => void,
 ): {
@@ -135,13 +141,14 @@ export function useAnchoredPopup<T extends { readonly anchor: HTMLElement }>(
   const popupRef = React.useRef<HTMLDivElement | null>(null);
 
   const lastAnchor = shown?.anchor;
+  const focusBack = shown?.returnFocus ?? lastAnchor;
   const finalFocus = React.useCallback((): HTMLElement | false => {
-    if (lastAnchor?.isConnected !== true) return false;
+    if (focusBack?.isConnected !== true) return false;
     const active = document.activeElement;
     const stillHere =
       active === null || active === document.body || popupRef.current?.contains(active) === true;
-    return stillHere ? lastAnchor : false;
-  }, [lastAnchor]);
+    return stillHere ? focusBack : false;
+  }, [focusBack]);
 
   return { shown, anchor: lastAnchor, popupRef, finalFocus };
 }
@@ -162,21 +169,54 @@ function tabBarInset(): number {
   return atFoot ? Math.ceil(window.innerHeight - rect.top) : 0;
 }
 
-function onResize(change: () => void): () => void {
-  window.addEventListener('resize', change);
+/**
+ * The bar's inset as last measured: measured when an anchored pop-out opens,
+ * and again when the window or the bar changes size while one is open. Read
+ * from here, never from the layout, while rendering.
+ */
+let measuredInset = 0;
+
+function watchTabBar(change: () => void): () => void {
+  const measure = (): void => {
+    const next = tabBarInset();
+    if (next === measuredInset) return;
+    measuredInset = next;
+    change();
+  };
+  measure();
+  window.addEventListener('resize', measure);
+  const bar = document.querySelector('[data-slot="tab-bar"]');
+  const observer =
+    bar === null || typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+  if (bar !== null) observer?.observe(bar);
   return () => {
-    window.removeEventListener('resize', change);
+    window.removeEventListener('resize', measure);
+    observer?.disconnect();
   };
 }
+
+const watchNothing = (): (() => void) => () => undefined;
+const lastInset = (): number => measuredInset;
+const noInset = (): number => 0;
+
+export type CollisionPadding = { top: number; right: number; bottom: number; left: number };
 
 /**
  * The room an anchored pop-out keeps from the screen's edges, the tab bar
  * counted as edge. Anchored to something low on a phone, a menu would
  * otherwise open down behind the bar's labels; with the bar counted, it flips
  * above what opened it, or shifts up clear of the bar.
+ *
+ * Called from the positioner, which is mounted only while the pop-out is
+ * open, and only `enabled` for an anchored one: a closed pop-out, or one its
+ * own trigger places, never measures anything.
  */
-export function useCollisionPadding(): { top: number; right: number; bottom: number; left: number } {
-  const inset = React.useSyncExternalStore(onResize, tabBarInset, () => 0);
+export function useCollisionPadding(enabled: boolean): CollisionPadding {
+  const inset = React.useSyncExternalStore(
+    enabled ? watchTabBar : watchNothing,
+    enabled ? lastInset : noInset,
+    noInset,
+  );
   return React.useMemo(() => ({ top: EDGE, right: EDGE, bottom: EDGE + inset, left: EDGE }), [inset]);
 }
 
