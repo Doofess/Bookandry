@@ -60,7 +60,11 @@ test('links a Max card through Mizrahi, shows its real rates, and prices a Credi
   await page.getByRole('option', { name: /Max Mizrahi/ }).click();
   await page.getByRole('radio', { name: 'Credit Plus', exact: true }).click();
   await page.getByLabel('Number of payments', { exact: true }).fill('24');
-  await expect(page.getByTestId('deal-schedule')).toContainText('From payment 19');
+  const schedule = page.getByTestId('deal-schedule');
+  await expect(schedule).toContainText('From payment 19');
+  // ₪3,000 at prime 4.75 + 10.75 = 15.50% over 24: ₪146.17 a payment, 16.65% מתואמת.
+  await expect(schedule).toContainText('146.17');
+  await expect(schedule).toContainText('16.65%');
 
   const sheet = page.locator('[data-slot="sheet-content"]');
   await page.getByRole('button', { name: 'Save', exact: true }).click();

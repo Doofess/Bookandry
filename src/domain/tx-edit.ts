@@ -45,6 +45,12 @@ export function scopeAllowsMove(scope: EditScope): boolean {
  * summing to its total - the one invariant תשלומים has. Rather than offer an
  * editor that breaks it, the mode is shown read-only and the README says to
  * delete and re-add. An honest limitation beats a half-working control.
+ *
+ * Editing a plan's payments (their amount, on one payment or all of them)
+ * leaves its recurrence alone, `reset.principalMinor` included: the reset at
+ * payment 19 still re-prices what was borrowed at the purchase, never what the
+ * edited payments would be worth. Its scopes are this one or the whole plan;
+ * `planSeriesEdit` never splits a plan.
  */
 export function isInstallmentPlan(recurrence: Recurrence): boolean {
   return recurrence.type === 'monthly' && recurrence.installments !== undefined;

@@ -9,8 +9,8 @@ import { loadCatalog } from '@/data/card-catalog';
 import { resolveCard, type ResolvedCard } from '@/data/card-catalog/resolve';
 import { accountTail, bankByCode, bankName } from '@/domain/banks';
 import {
+  cardFieldsForOverride,
   cardFromDraft,
-  EMPTY_CARD_DRAFT,
   hasOverrides,
   linkedDraft,
   type CardDraft,
@@ -634,18 +634,10 @@ function LinkedRates({
       onOverride={(kind, term) => {
         const { [kind]: _was, ...rest } = draft.overrides ?? {};
         const next = term === null ? rest : { ...rest, [kind]: term };
-        // Where the catalog gives no figure, a hand-typed one would reappear under a cleared override.
-        const catalogRate =
-          kind === 'late' ? resolved.extra.late?.rate : resolved.deals.find((d) => d.kind === kind)?.rate;
-        const emptied =
-          term !== null || (catalogRate?.basis ?? null) !== null
-            ? {}
-            : kind === 'credit'
-              ? { credit: EMPTY_CARD_DRAFT.credit }
-              : kind === 'late'
-                ? { late: EMPTY_CARD_DRAFT.late }
-                : {};
-        onChange({ overrides: Object.keys(next).length === 0 ? undefined : next, ...emptied });
+        onChange({
+          overrides: Object.keys(next).length === 0 ? undefined : next,
+          ...cardFieldsForOverride(kind, term, link),
+        });
       }}
     />
   );

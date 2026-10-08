@@ -135,7 +135,9 @@ function SplitForm({
         principalMinor: schedule.principalMinor,
         resetAt,
         primeRate: prime.primeRate,
-        today,
+        // Today as it is now, not as the sheet opened: a save just after the
+        // device wakes must not take a bill already charged for one to come.
+        today: systemClock.today(),
         now: systemClock.nowIso(),
         newId,
       });

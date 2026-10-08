@@ -21,16 +21,23 @@ import type { LocalDate } from '@/types/money';
  *
  * Shown only for a series. A one-time transaction has exactly one occurrence,
  * and a three-option control over one option is noise.
+ *
+ * A plan (תשלומים, קרדיט) is never split: its payments count from its own
+ * date, so "this and future" would restart the count and move its prime reset.
+ * It offers this one or the whole plan, as `planSeriesEdit` allows.
  */
 export function ScopeChooser({
   value,
   onChange,
   at,
+  plan = false,
 }: {
   readonly value: EditScope;
   readonly onChange: (scope: EditScope) => void;
   /** The occurrence being edited, for the hint under each option. */
   readonly at: LocalDate;
+  /** An installment or credit plan: no "this and future". */
+  readonly plan?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const labelId = useId();
@@ -53,7 +60,7 @@ export function ScopeChooser({
         size="sm"
         options={[
           { value: 'one', label: t('tx.scopeOne') },
-          { value: 'future', label: t('tx.scopeFuture') },
+          ...(plan ? [] : [{ value: 'future' as const, label: t('tx.scopeFuture') }]),
           { value: 'all', label: t('tx.scopeAll') },
         ]}
       />

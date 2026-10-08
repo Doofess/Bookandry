@@ -22,11 +22,21 @@ async function readStored(): Promise<StoredPrime | undefined> {
 
 /** Whether this start's data is settled enough to re-price plans by (see allowLongCreditSweep). */
 let sweepAllowed = false;
+/** The last sweep ran on a stale prime, so froze nothing: the next fetch sweeps again to freeze. */
+let freezeHeld = false;
 
-/** Re-price every long קרדיט that follows prime, at prime as it stands here. */
+/**
+ * Re-price every long קרדיט that follows prime, at prime as it stands here.
+ * A payment due is frozen only on a prime that is current (`primeIsStale`):
+ * frozen is for good, and a device opened after weeks away holds a prime that
+ * may have moved since. Until its fetch answers, plans are re-priced and wait.
+ */
 async function sweepAtPrime(): Promise<void> {
   try {
-    await sweepLongCredit(db, primeView(await readStored()).primeRate, systemClock.today());
+    const stored = await readStored();
+    const fresh = !primeIsStale(stored, systemClock.nowMs(), systemClock.today());
+    await sweepLongCredit(db, primeView(stored).primeRate, systemClock.today(), { freeze: fresh });
+    freezeHeld = !fresh;
   } catch {
     // Kept as it was; the next start, or the next change in prime, tries again.
   }
@@ -45,8 +55,9 @@ export async function refreshPrime(): Promise<void> {
     if (!primeIsStale(stored, systemClock.nowMs(), systemClock.today())) return;
     const answer = await fetchBoiRate(AbortSignal.timeout(10_000));
     await db.meta.put({ key: PRIME_KEY, value: { ...answer, checkedAt: systemClock.nowIso() } });
-    // Prime moved: long קרדיט plans that follow it are re-priced.
-    if (sweepAllowed && primeFrom(answer.boiRate) !== primeView(stored).primeRate) await sweepAtPrime();
+    // Prime moved, or a payment due waited for a current prime: long קרדיט plans are swept again.
+    const moved = primeFrom(answer.boiRate) !== primeView(stored).primeRate;
+    if (sweepAllowed && (moved || freezeHeld)) await sweepAtPrime();
   } catch {
     // Kept as it was.
   }

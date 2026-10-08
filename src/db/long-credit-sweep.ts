@@ -30,11 +30,16 @@ const following = (tx: Transaction): boolean =>
  *
  * Run once the first sync of a start has pulled (or at start, on a device
  * with no account), and whenever prime changes. Resolves to the rows written.
+ *
+ * `freeze: false` re-prices but freezes nothing: the caller's prime is out of
+ * date (a device back after weeks away, before its fetch has answered), and a
+ * frozen payment is for good. The sweep after the fetch freezes it.
  */
 export async function sweepLongCredit(
   db: BookandryDB,
   primePercent: string,
   today: LocalDate,
+  opts: { readonly freeze?: boolean } = {},
 ): Promise<number> {
   const ids = await db.transactions.filter(following).primaryKeys();
   if (ids.length === 0) return 0;
@@ -46,7 +51,7 @@ export async function sweepLongCredit(
         const row = await db.transactions.get(id);
         // Frozen, deleted or changed meanwhile: `nextReset` has nothing for it.
         if (row?.recurrence.type !== 'monthly') continue;
-        const reset = nextReset(row, primePercent, today);
+        const reset = nextReset(row, primePercent, today, opts);
         if (reset === undefined) continue;
         await db.transactions.update(id, { recurrence: { ...row.recurrence, reset } });
         written += 1;

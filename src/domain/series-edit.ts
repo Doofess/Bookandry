@@ -200,6 +200,18 @@ export function planSeriesEdit(input: SeriesEditInput): SeriesEditResult {
     warnings.push({ kind: 'scope_promoted', from: 'future', to: 'all' });
   }
 
+  if (scope === 'future' && tx.recurrence.type === 'monthly' && tx.recurrence.installments !== undefined) {
+    /*
+     * A plan (תשלומים, קרדיט) counts its payments from its own date. Split, the
+     * continuation would start the count again: a 36-payment plan split at
+     * payment 5 would run to 40, and its prime reset at payment 19 would land on
+     * the original's 23rd. A plan's terms are one agreement, so an edit to "this
+     * and the rest" of it is an edit to the whole plan.
+     */
+    scope = 'all';
+    warnings.push({ kind: 'scope_promoted', from: 'future', to: 'all' });
+  }
+
   if (scope === 'all') {
     const updated = applyToTransaction(tx, patch, now);
 

@@ -154,3 +154,56 @@ describe('long credit that follows prime', () => {
     expect(await db.outbox.count()).toBe(0);
   });
 });
+
+describe('freezing a payment due, after a long time away', () => {
+  it('re-prices on the stale prime but freezes only once the fetch has answered', async () => {
+    // A fresh start of the module: nothing allowed yet, nothing held.
+    vi.resetModules();
+    const fresh = await import('./prime');
+    const { db: here } = await import('@/db/db');
+    await here.open();
+    await here.meta.clear();
+    await here.transactions.clear();
+    // Bought at prime 4.75; payment 19 fell due on 5 July 2026, while this device was away.
+    await here.transactions.put(
+      makeTx({
+        id: 'away',
+        date: d('2025-01-05'),
+        money: {
+          ...MONEY,
+          currency: 'ILS',
+          baseCurrency: 'ILS',
+          amountMinor: 14_620,
+          baseAmountMinor: 14_620,
+        },
+        recurrence: {
+          type: 'monthly',
+          dayOfMonth: 5,
+          installments: 24,
+          plan: 'credit',
+          creditAnnualRate: '15.5',
+          reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 },
+        },
+      }),
+    );
+    // The prime this device last fetched, weeks ago: 5.25.
+    await here.meta.put({
+      key: 'primeRate',
+      value: { boiRate: '3.75', checkedAt: '2026-09-01T08:00:00.000Z' },
+    });
+    const resetOf = async () => {
+      const row = await here.transactions.get('away');
+      return row?.recurrence.type === 'monthly' ? row.recurrence.reset : undefined;
+    };
+
+    await fresh.allowLongCreditSweep();
+    const held = await resetOf();
+    expect(held).toMatchObject({ rate: '16' });
+    expect(held?.frozen).toBeUndefined();
+
+    // The fetch answers: prime is 4.75 today, and the payment freezes on it.
+    relay.fetchBoiRate.mockResolvedValue({ boiRate: '3.25' });
+    await fresh.refreshPrime();
+    expect(await resetOf()).toMatchObject({ rate: '15.5', frozen: true });
+  });
+});
