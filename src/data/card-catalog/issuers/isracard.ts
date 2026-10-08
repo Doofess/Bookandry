@@ -32,6 +32,37 @@ const fixedCredit = (note?: string): CatalogRate => ({
   source: at(AG25, note),
 });
 
+/**
+ * A request after the fact to turn past charges into הסדר קרדיט בתשלומים (AG25
+ * §19.2.1.2.2). The agreement binds Premium Express (Amex) too, so Amex shares it.
+ */
+export const retroCredit = (): CatalogRate => ({
+  basis: null,
+  quality: 'typical',
+  compounding: 12,
+  dayCount: '30/360',
+  accrues: 'request',
+  fixedAtPurchase: true,
+  source: at(
+    AG25,
+    'A request after the fact (§19.2.1.2.2): interest from the day the account is credited, within 2 business days; from the regular billing date if the deal is not yet charged. Uses from the last 5 months (Isracard iSchool). The 30/360 day count and monthly compounding are assumed from the קרדיט בתשלומים track it becomes; payment range and minimums are not stated.',
+  ),
+});
+
+/** Over the limit: "בריבית בשיעור המירבי" from the excess until it is charged (AG25 §18.17); no figure. */
+export const overLimit = (): CatalogRate => ({
+  basis: null,
+  quality: 'max',
+  compounding: 12,
+  dayCount: 'actual/365',
+  accrues: 'purchase',
+  fixedAtPurchase: false,
+  source: at(
+    AG25,
+    'The excess is due at once (§18.12) and bears "ריבית בשיעור המירבי" from when it arises until it is charged (§18.17). The rate is not defined further (UNCONFIRMED); compounding and day count are not stated.',
+  ),
+});
+
 export const isracard: CatalogIssuer = {
   id: 'isracard',
   name: { he: 'ישראכרט', en: 'Isracard' },
@@ -214,31 +245,23 @@ export const isracard: CatalogIssuer = {
       kind: 'split_purchase',
       label: { he: 'העברה לקרדיט', en: 'Move to credit' },
       abroad: true,
-      rate: {
-        basis: null,
-        quality: 'typical',
-        compounding: 12,
-        dayCount: '30/360',
-        accrues: 'purchase',
-        fixedAtPurchase: true,
-        source: at(
-          AG25,
-          'A request after the fact (§19.2.1.2.2): interest from the day the account is credited, within 2 business days; from the regular billing date if the deal is not yet charged. Uses from the last 5 months (iSchool). Payment range and minimums not stated.',
-        ),
-      },
+      rate: retroCredit(),
       source: at(ISCH),
     },
   ],
   extraRates: {
+    // Quality 'typical': AG25 §1 defines late interest differently (Hapoalim's maximum
+    // overdraft rate); which definition binds a card bill is UNCONFIRMED. The note must
+    // hold only the page's own pair, worked on a Bank of Israel rate of 4.50%.
     late: {
       basis: { kind: 'boi', margin: '16.40' },
-      quality: 'exact',
+      quality: 'typical',
       compounding: 4,
       dayCount: 'actual/365',
       accrues: 'billing_date',
       fixedAtPurchase: false,
-      // The page's own pair, worked on a Bank of Israel rate of 4.50%.
       source: at(FAIR, 'published nominal: 20.90; published effective: 22.60'),
     },
+    over_limit: overLimit(),
   },
 };

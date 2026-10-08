@@ -207,6 +207,73 @@ describe('the data checks catch what they are for', () => {
       ).toHaveLength(2);
   });
 
+  it('flags a tier, club or card company FX fee that is not a decimal', () => {
+    const p = broken((c) => {
+      const i = c.issuers[0]!;
+      i.fxFee = '3%';
+      i.tiers[0]!.fxFee = '2,5';
+      i.clubs[0]!.fxFee = '';
+    });
+    expect(p.filter((x) => x.includes('FX fee is not a decimal'))).toHaveLength(3);
+  });
+
+  it('flags waivers out of spend order, or a reduced fee not below the fee', () => {
+    const fee = (c: Catalog) => c.issuers[0]!.cardFees![0]!;
+    expect(
+      broken((c) => {
+        fee(c).waivers = [
+          { spendMinor: 750_000, feeMinor: 0 },
+          { spendMinor: 500_000, feeMinor: 990 },
+        ];
+      }).join(),
+    ).toContain('waivers not in ascending spend');
+    expect(
+      broken((c) => {
+        fee(c).waivers = [{ spendMinor: 500_000, feeMinor: 1500 }];
+      }).join(),
+    ).toContain('waiver fee not below the fee');
+    expect(
+      broken((c) => {
+        fee(c).waivers = [
+          { spendMinor: 500_000, feeMinor: 990 },
+          { spendMinor: 750_000, feeMinor: 0 },
+        ];
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags a higher minimum payment outside the payment range, or not higher', () => {
+    const deal = (c: Catalog) => c.issuers[0]!.deals[0]!;
+    const set = (c: Catalog, from: number, minimum: number) => {
+      Object.assign(deal(c), {
+        payments: { min: 3, max: 36 },
+        minPaymentMinor: 2_500,
+        minPaymentFrom: { payments: from, minPaymentMinor: minimum },
+      });
+    };
+    expect(
+      broken((c) => {
+        set(c, 40, 5_000);
+      }).join(),
+    ).toContain('minPaymentFrom outside the payment range');
+    expect(
+      broken((c) => {
+        set(c, 19, 2_500);
+      }).join(),
+    ).toContain('minPaymentFrom not above the minimum payment');
+    expect(
+      broken((c) => {
+        set(c, 19, 5_000);
+        delete deal(c).payments;
+      }).join(),
+    ).toContain('minPaymentFrom outside the payment range');
+    expect(
+      broken((c) => {
+        set(c, 19, 5_000);
+      }),
+    ).toEqual([]);
+  });
+
   it('flags a late rate given twice', () => {
     const p = broken((c) => {
       c.banks[0]!.lateRate = fixedRate('9');
@@ -381,6 +448,31 @@ describe('the card companies, as the research gives them', () => {
       minPaymentFrom: { payments: 19, minPaymentMinor: 5_000 },
       abroad: false,
     });
+  });
+
+  it('accrues an after-the-fact split from the day it is asked for', async () => {
+    for (const id of ['isracard', 'amex', 'max']) {
+      const split = (await issuer(id)).deals.find((d) => d.kind === 'split_purchase');
+      expect(split?.rate?.accrues, id).toBe('request');
+    }
+    expect((await issuer('amex')).deals.find((d) => d.kind === 'split_purchase')).toMatchObject({
+      label: { he: 'העברה לקרדיט' },
+      rate: { basis: null, quality: 'typical' },
+    });
+  });
+
+  it('marks the qualities the research leaves open', async () => {
+    const isr = await issuer('isracard');
+    expect(isr.extraRates?.late?.quality).toBe('typical');
+    expect(isr.extraRates?.over_limit).toMatchObject({ basis: null, quality: 'max' });
+    expect((await issuer('max')).deals.find((d) => d.kind === 'deferred')?.rate?.quality).toBe('typical');
+  });
+
+  it('cites Cal’s fee schedule for legacy FlyCard, and records Diners FlyCard Premium’s ₪4 off', async () => {
+    expect((await issuer('cal')).clubs.find((c) => c.id === 'flycard')?.source?.url).toBe(
+      'https://www.cal-online.co.il/media/ma5oflaj/amlot.pdf',
+    );
+    expect((await issuer('diners')).clubs.find((c) => c.id === 'flycard_premium')?.monthlyMinor).toBe(3490);
   });
 
   it('gives every issuer-level figure a source', async () => {

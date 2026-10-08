@@ -3,6 +3,7 @@ import { addRates, annualEffectiveRate } from '@/lib/money';
 
 import type { Catalog, CatalogRate } from './types';
 
+const DECIMAL_RE = /^\d+(?:\.\d+)?$/;
 const NOTE_RE = /^published nominal: (\d+(?:\.\d+)?); published effective: (\d+(?:\.\d+)?)$/;
 
 /** A percent in whole hundredths ("12.68" is 1268), by digits, never by float. */
@@ -81,6 +82,34 @@ export function catalogProblems(catalog: Catalog): string[] {
       else if (!to.issued) p.push(`${i.id}: club ${c.id} moved to ${c.movedTo}, which is not issued`);
     }
     if (i.lateRate && i.extraRates?.late) p.push(`${i.id}: late rate given twice`);
+
+    // FX fees are plain decimals; waivers climb by spend, each one cheaper than the fee.
+    const fx: [string, string | undefined][] = [
+      [i.id, i.fxFee],
+      ...i.tiers.map((t): [string, string | undefined] => [`${i.id}.tier.${t.id}`, t.fxFee]),
+      ...i.clubs.map((c): [string, string | undefined] => [`${i.id}.club.${c.id}`, c.fxFee]),
+    ];
+    for (const [where, fee] of fx)
+      if (fee !== undefined && !DECIMAL_RE.test(fee)) p.push(`${where}: FX fee is not a decimal (${fee})`);
+    for (const f of i.cardFees ?? []) {
+      const where = `${i.id}.fee.${f.tier}`;
+      const spends = f.waivers.map((w) => w.spendMinor);
+      if (spends.some((s, n) => n > 0 && s <= (spends[n - 1] ?? s)))
+        p.push(`${where}: waivers not in ascending spend`);
+      for (const w of f.waivers)
+        if ('feeMinor' in w && w.feeMinor >= f.monthlyMinor) p.push(`${where}: waiver fee not below the fee`);
+    }
+
+    // A higher minimum payment starts inside the payment range and is higher.
+    for (const d of i.deals) {
+      const from = d.minPaymentFrom;
+      if (!from) continue;
+      const where = `${i.id}.deal.${d.kind}`;
+      if (!d.payments || from.payments <= d.payments.min || from.payments > d.payments.max)
+        p.push(`${where}: minPaymentFrom outside the payment range`);
+      if (from.minPaymentMinor <= (d.minPaymentMinor ?? 0))
+        p.push(`${where}: minPaymentFrom not above the minimum payment`);
+    }
   }
 
   // Banks: references that must resolve and be reachable.

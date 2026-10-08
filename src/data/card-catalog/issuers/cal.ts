@@ -17,6 +17,7 @@ export const DINERS_CLASSIC = 'https://www.diners.co.il/clubs/clasic/';
 export const DISCOUNT_CREDIT =
   'https://www.discountbank.co.il/private/credit-cards/types-of-credit-cards/credit-plans/credit/';
 export const DISCOUNT_CARDS = 'https://www.discountbank.co.il/private/credit-cards/types-of-credit-cards/';
+const CAL_NOTICES = 'https://www.cal-online.co.il/about/legal-reports/changes/';
 const ALL_CARDS = 'https://www.cal-online.co.il/card/all-cards/';
 const SHUFERSAL = 'https://www.cal-online.co.il/cards/shufersal/';
 export const FLYALL = 'https://www.cal-online.co.il/cards/flyall';
@@ -55,7 +56,15 @@ export const cal: CatalogIssuer = {
     { id: 'platinum', name: { he: 'פלטינום', en: 'Platinum' }, issued: true },
     { id: 'calchoice', name: { he: 'CalChoice', en: 'CalChoice' }, issued: true },
     { id: 'lite', name: { he: 'Cal Lite', en: 'Cal Lite' }, issued: true },
-    { id: 'prepaid', name: { he: 'נטען', en: 'Prepaid' }, issued: true },
+    {
+      id: 'prepaid',
+      name: { he: 'נטען', en: 'Prepaid' },
+      issued: true,
+      source: at(
+        CAL_NOTICES,
+        'Cal’s notices set a 2.8% FX fee on prepaid "ויזה נטען" cards from 1.4.2018; the 06.2026 schedule gives 3.0% for all cards. Which applies to prepaid cards today is UNCONFIRMED, so no tier FX fee is recorded.',
+      ),
+    },
     { id: 'paybox_young', name: { he: 'PayBox Young', en: 'PayBox Young' }, issued: true },
   ],
   clubs: [
@@ -73,8 +82,8 @@ export const cal: CatalogIssuer = {
       movedTo: 'flyall',
       monthlyMinor: 1990,
       source: at(
-        DISCOUNT_CARDS,
-        'El Al FlyCard moved to Isracard (June 2026); existing holders may switch to FlyAll and keep their card. Legacy aviation-club fee still in Cal’s 06.2026 schedule.',
+        CAL_FEES,
+        'The legacy aviation-club (bronze) fee in Cal’s 06.2026 schedule. El Al FlyCard moved to Isracard (June 2026); Discount tells holders they may switch to FlyAll and keep their card.',
       ),
     },
     {

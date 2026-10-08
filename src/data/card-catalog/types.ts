@@ -15,7 +15,8 @@ export type CatalogRate = {
   quality: 'exact' | 'max' | 'typical' | 'derived'; // 'derived': margin worked out from a table on an old prime
   compounding: 12 | 4; // m, for the מתואמת figure
   dayCount: '30/360' | 'actual/365';
-  accrues: 'purchase' | 'merchant_paid' | 'billing_date';
+  // 'request': from the day a past purchase is moved to credit (an after-the-fact split).
+  accrues: 'purchase' | 'merchant_paid' | 'billing_date' | 'request';
   fixedAtPurchase: boolean; // false: floats with prime
   reset?: { atPayment: number; rule: 'prime_delta' }; // Max long credit: payment 19
   source: CatalogSource;
