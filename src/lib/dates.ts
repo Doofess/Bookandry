@@ -111,7 +111,7 @@ export function daysBetween(from: LocalDate, to: LocalDate): number {
   const a = parseLocalDate(from);
   const b = parseLocalDate(to);
   const ms = Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day);
-  return Math.round(ms / 86_400_000);
+  return Math.round(ms / 86_400_000); // money-allow: whole days between dates
 }
 
 /** Clamp a day-of-month to a month that may be shorter. */

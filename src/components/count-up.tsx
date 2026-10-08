@@ -30,7 +30,7 @@ function matchMediaSafe(): MediaQueryList | undefined {
 }
 
 /** Ease-out cubic: quick at the start, settling gently - the money "lands". */
-const ease = (t: number): number => 1 - (1 - t) ** 3;
+const ease = (t: number): number => 1 - (1 - t) ** 3; // money-allow: an easing curve, not money
 
 /**
  * Count from the previous value to the next one.
@@ -70,7 +70,7 @@ export function useCountUp(target: number, durationMs = 650): number {
     const started = performance.now();
     const step = (now: number): void => {
       const progress = Math.min(1, (now - started) / durationMs);
-      const next = Math.round(from + (target - from) * ease(progress));
+      const next = Math.round(from + (target - from) * ease(progress)); // money-allow: an animation frame; it lands on the exact target
       fromRef.current = next;
       setValue(next);
       if (progress < 1) frameRef.current = requestAnimationFrame(step);

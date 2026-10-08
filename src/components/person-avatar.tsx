@@ -52,7 +52,7 @@ export function PersonAvatar({
         'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-white select-none',
         className,
       )}
-      style={{ width: px, height: px, backgroundColor: person.color, fontSize: Math.round(px * 0.4) }}
+      style={{ width: px, height: px, backgroundColor: person.color, fontSize: Math.round(px * 0.4) }} // money-allow: a font size in pixels
       role={label === undefined ? undefined : 'img'}
       aria-label={label}
       aria-hidden={label === undefined ? true : undefined}

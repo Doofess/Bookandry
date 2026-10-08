@@ -20,7 +20,7 @@ export function AccountAvatar({ size, className }: { readonly size: number; read
       {src === undefined ? null : <AvatarImage src={src} alt="" referrerPolicy="no-referrer" />}
       <AvatarFallback
         className="bg-primary font-semibold text-primary-foreground"
-        style={{ fontSize: Math.round(size * 0.4) }}
+        style={{ fontSize: Math.round(size * 0.4) }} // money-allow: a font size in pixels
       >
         {initials === '' ? <UserRound className="size-[55%]" aria-hidden="true" /> : initials}
       </AvatarFallback>

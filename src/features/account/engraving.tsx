@@ -36,7 +36,7 @@ const WIDTH = 800;
 const HEIGHT = 1000;
 
 /** Drawing coordinates to a tenth: plenty for a line, a third of the path data. */
-const fixed = (n: number): string => String(Math.round(n * 10) / 10);
+const fixed = (n: number): string => String(Math.round(n * 10) / 10); // money-allow: drawing coordinates
 
 function ringPath({ cx, cy, radius, ripple, waves }: Ring, phase: number): string {
   // Enough points that every ripple stays a curve, not a zigzag.
