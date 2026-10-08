@@ -448,10 +448,34 @@ describe('the monthly card fee', () => {
     expect(fees({ profileId: 'p2' })).toEqual([]);
     expect(fees({ cards: [{ ...feeCard(), profileId: SHARED_OWNER }], profileId: 'p1' })).toEqual([]);
     expect(fees({ cards: [{ ...feeCard(), profileId: SHARED_OWNER }] })).toHaveLength(3);
-    expect(fees({ cards: [{ ...feeCard(), isArchived: 1 }] })).toEqual([]);
+    // Archived before its fee started: nothing was or will be owed.
+    expect(
+      fees({
+        cards: [{ ...feeCard(), isArchived: 1, archivedAt: '2026-07-15T09:00:00.000Z' as IsoInstant }],
+      }),
+    ).toEqual([]);
     expect(fees({ cards: [card({ billingDay: 10 })] })).toEqual([]);
     // Only whole month-ends inside the window.
     expect(fees({ from: d('2026-08-31'), to: d('2026-09-15') }).map((o) => o.date)).toEqual(['2026-08-31']);
+  });
+
+  it('keeps an archived card’s fees up to and including the month it was archived, and none after', () => {
+    const archived = {
+      ...feeCard(),
+      isArchived: 1 as const,
+      archivedAt: '2026-10-05T09:00:00.000Z' as IsoInstant,
+    };
+    expect(fees({ cards: [archived] }).map((o) => [o.date, o.money.baseAmountMinor])).toEqual([
+      ['2026-08-31', 1_490],
+      ['2026-10-31', 1_490],
+    ]);
+    // Archived with no date on record (an older file): fees stop after today's month.
+    const undated = { ...feeCard(), isArchived: 1 as const };
+    expect(fees({ cards: [undated] }).map((o) => o.date)).toEqual(
+      fees()
+        .map((o) => o.date)
+        .filter((date) => date <= endOfMonth(TODAY)),
+    );
   });
 });
 

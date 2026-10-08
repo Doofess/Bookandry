@@ -7,6 +7,7 @@ import { SettingsProvider } from '@/app/settings-provider';
 import { db } from '@/db/db';
 import { createPaymentMethod } from '@/db/repos/payment-methods';
 import { DEFAULT_SETTINGS } from '@/db/repos/settings';
+import { d, makeTx, MONEY } from '@/domain/test-factories';
 import { instantFromMs } from '@/lib/dates';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
@@ -79,6 +80,11 @@ describe('a card on the Cards screen', () => {
     if (!(face instanceof HTMLElement)) throw new Error('no face button');
     await user.click(face);
     expect(await screen.findByRole('menu')).toBeInTheDocument();
+
+    // Escape: back to the card's ⋯, not the face's hidden button.
+    await user.keyboard('{Escape}');
+    await expect.poll(() => screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Options for Max Gold' })).toHaveFocus();
   });
 
   it('opens the editor from Edit card', async () => {
@@ -164,5 +170,50 @@ describe('a card on the Cards screen', () => {
     expect(await screen.findByTestId('card-face')).toBeInTheDocument();
     await expect.poll(() => screen.queryByRole('button', { name: /^Archived cards/ })).toBeNull();
     expect(toasts.toast).toHaveBeenLastCalledWith('Max Gold restored', expect.anything());
+    // Not dropped on the page: on the restored card's ⋯.
+    await expect.poll(() => document.activeElement?.getAttribute('aria-label')).toBe('Options for Max Gold');
+    expect(document.activeElement?.closest('[data-testid="card-face"]')).not.toBeNull();
+  });
+});
+
+describe('an archived card in the household commitments', () => {
+  const archive = async () => {
+    const user = userEvent.setup();
+    render();
+    await user.click(await options());
+    await user.click(await screen.findByRole('menuitem', { name: 'Archive' }));
+    await expect.poll(() => screen.queryByTestId('card-face')).toBeNull();
+  };
+
+  it('still counts while payments are left to run off it', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'tv',
+        profileId: 'p1',
+        date: d('2026-08-05'),
+        money: {
+          ...MONEY,
+          currency: 'ILS',
+          baseCurrency: 'ILS',
+          amountMinor: 10_000,
+          baseAmountMinor: 10_000,
+        },
+        paymentMethodId: 'card-1',
+        recurrence: { type: 'monthly', dayOfMonth: 5, installments: 12, plan: 'installments' },
+      }),
+    );
+    try {
+      await archive();
+      const household = await screen.findByTestId('household-commitments');
+      expect(within(household).getByText('Instalments')).toBeInTheDocument();
+    } finally {
+      await db.transactions.delete('tv');
+    }
+  });
+
+  it('drops out once nothing is left to pay on it', async () => {
+    await archive();
+    await screen.findByRole('button', { name: 'Archived cards (1)' });
+    expect(screen.queryByTestId('household-commitments')).not.toBeInTheDocument();
   });
 });

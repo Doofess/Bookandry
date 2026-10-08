@@ -52,14 +52,11 @@ function PopoverContent({
     /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
     readonly backdrop?: boolean;
   }) {
-  const padding = useCollisionPadding();
   return (
     <PopoverPrimitive.Portal>
       {backdrop ? <PopupBackdrop /> : null}
-      <PopoverPrimitive.Positioner
+      <AnchoredPositioner
         anchor={anchor}
-        // Anchored to something on the page: clear of the phone's tab bar too.
-        {...(anchor === undefined ? {} : { collisionPadding: padding })}
         align={align}
         alignOffset={alignOffset}
         side={side}
@@ -83,7 +80,7 @@ function PopoverContent({
           ) : null}
           {children}
         </PopoverPrimitive.Popup>
-      </PopoverPrimitive.Positioner>
+      </AnchoredPositioner>
     </PopoverPrimitive.Portal>
   );
 }
@@ -105,6 +102,21 @@ function PopoverDescription({ className, ...props }: PopoverPrimitive.Descriptio
     <PopoverPrimitive.Description
       data-slot="popover-description"
       className={cn('text-muted-foreground', className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * The positioner, mounted only while the pop-out is open. Anchored to
+ * something on the page, it keeps clear of the phone's tab bar too.
+ */
+function AnchoredPositioner({ anchor, ...props }: PopoverPrimitive.Positioner.Props) {
+  const padding = useCollisionPadding(anchor !== undefined);
+  return (
+    <PopoverPrimitive.Positioner
+      anchor={anchor}
+      {...(anchor === undefined ? {} : { collisionPadding: padding })}
       {...props}
     />
   );

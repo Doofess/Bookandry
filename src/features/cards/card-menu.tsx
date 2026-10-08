@@ -13,7 +13,12 @@ import type { PaymentMethod } from '@/types/domain';
 
 export type CardMenuAction = 'edit' | 'rates' | 'transactions' | 'import' | 'archive' | 'restore';
 
-export type CardMenuTarget = { readonly card: PaymentMethod; readonly anchor: HTMLElement };
+export type CardMenuTarget = {
+  readonly card: PaymentMethod;
+  readonly anchor: HTMLElement;
+  /** Opened from the card's face, which the keyboard never reaches: focus goes back to its ⋯. */
+  readonly returnFocus?: HTMLElement | undefined;
+};
 
 /**
  * Everything to do with one card, from its face or its ⋯: ONE menu for the
