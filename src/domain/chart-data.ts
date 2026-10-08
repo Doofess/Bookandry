@@ -395,7 +395,7 @@ function buildBalance(
 function paddedXDomain(from: LocalDate, to: LocalDate): readonly [number, number] {
   const start = toUtcInstant(from);
   const end = toUtcInstant(to);
-  const pad = Math.max(Math.round((end - start) / 40), DAY_MS);
+  const pad = Math.max(Math.round((end - start) / 40), DAY_MS); // money-allow: axis padding in milliseconds
 
   return [start - pad, end + pad];
 }
@@ -438,7 +438,7 @@ function symlogDomain(values: readonly number[]): readonly [number, number] {
 function niceAbove(value: number): number {
   if (value <= 0) return 0;
   const floored = Math.max(value, 100);
-  const power = Math.pow(10, Math.floor(Math.log10(floored)));
+  const power = Math.pow(10, Math.floor(Math.log10(floored))); // money-allow: a round axis tick, not a stored amount
 
   for (const step of [1, 2, 5]) {
     if (step * power > floored) return step * power;
@@ -493,7 +493,7 @@ function balanceAxis(
   const values = [openingMinor, ...points.map((p) => p.balanceMinor)];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const pad = Math.max(Math.round((max - min) / 10), 100);
+  const pad = Math.max(Math.round((max - min) / 10), 100); // money-allow: axis padding, not a stored amount
   const step = niceStep((max - min + pad + pad) / 4);
 
   const low = Math.floor((min - pad) / step) * step;
@@ -511,7 +511,7 @@ function balanceAxis(
 
 /** The smallest 1, 2 or 5 x 10^k at or above `rough`. */
 function niceStep(rough: number): number {
-  const power = Math.pow(10, Math.floor(Math.log10(Math.max(rough, 1))));
+  const power = Math.pow(10, Math.floor(Math.log10(Math.max(rough, 1)))); // money-allow: a round axis step, not a stored amount
 
   for (const step of [1, 2, 5]) {
     if (step * power >= rough) return step * power;

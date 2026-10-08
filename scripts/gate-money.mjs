@@ -5,6 +5,11 @@
  * `src/lib/money.ts` is the ONLY module allowed to convert between display
  * strings and minor units, and the only place rounding may happen.
  *
+ * Math.pow, ** and Math.round are banned too: compounding a rate and rounding
+ * the result back to agorot is exactly where a float slips into a ledger. A
+ * line that rounds something that is not money (a CSS width, a pixel) says so
+ * with a `money-allow` comment naming what it rounds.
+ *
  * `src/components/ui/**` is excluded: generated presentational primitives carry
  * no money logic by construction, and their arbitrary CSS values (e.g.
  * `calc(var(--stack-shrink)*100%)`) are not arithmetic. This is a narrow,
@@ -22,6 +27,14 @@ const BANNED = [
   },
   { re: /(?<![\w.])\/\s*100(?![\d.%])/, msg: 'Dividing by 100 outside money.ts - use toDisplay().' },
   { re: /(?<![\w.])\*\s*100(?![\d.%])/, msg: 'Multiplying by 100 outside money.ts - use toMinor().' },
+  // Interest is where floats creep in: a rate raised to a power, then rounded
+  // back to agorot. Exact rational maths for it lives in money.ts.
+  { re: /\bMath\.pow\s*\(/, msg: 'Math.pow is float arithmetic - compound interest belongs in @/lib/money.' },
+  { re: /[\w)\]]\s*\*\*\s*[\w(]/, msg: '** is float arithmetic - compound interest belongs in @/lib/money.' },
+  {
+    re: /\bMath\.round\s*\(/,
+    msg: 'Math.round outside money.ts - round money via @/lib/money; a non-money use carries money-allow.',
+  },
 ];
 
 const BACKSLASH = String.fromCharCode(92);

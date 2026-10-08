@@ -152,7 +152,7 @@ function demoRate(currency: Currency): RateString {
  * 5 would flatten the small end of the scatter chart into a single row.
  */
 function roundToWholeMajor(minor: Minor, currency: Currency): Minor {
-  const unit = 10 ** exponentOf(currency);
+  const unit = 10 ** exponentOf(currency); // money-allow: an integer power of ten, exact
   if (unit === 1 || minor < unit * 10) return minor;
   const remainder = minor % unit;
   return remainder * 2 >= unit ? minor - remainder + unit : minor - remainder;

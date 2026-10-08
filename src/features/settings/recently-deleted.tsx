@@ -37,7 +37,7 @@ export function RecentlyDeleted() {
     }));
   }, []);
 
-  const hours = Math.round(RECOVERY_WINDOW_MS / 3_600_000);
+  const hours = Math.round(RECOVERY_WINDOW_MS / 3_600_000); // money-allow: hours in the recovery window
 
   return (
     <Card>
