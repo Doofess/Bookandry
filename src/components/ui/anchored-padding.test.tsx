@@ -8,13 +8,19 @@ import type * as PopoverModule from '@base-ui/react/popover';
 import type { CollisionPadding } from './popup-parts';
 
 /** What each positioner was given as its collision padding, newest last. */
-const seen = vi.hoisted(() => ({ menu: [] as unknown[], popover: [] as unknown[] }));
+const seen = vi.hoisted(() => ({
+  menu: [] as unknown[],
+  popover: [] as unknown[],
+  /** The same, by the anchor each menu points at. */
+  byAnchor: new Map<unknown, unknown>(),
+}));
 
 vi.mock('@base-ui/react/menu', async (original) => {
   const mod = await original<typeof MenuModule>();
   const Real = mod.Menu.Positioner;
   const Positioner = (props: Parameters<typeof Real>[0]) => {
     seen.menu.push(props.collisionPadding);
+    seen.byAnchor.set(props.anchor, props.collisionPadding);
     return createElement(Real, props);
   };
   return { ...mod, Menu: { ...mod.Menu, Positioner } };
@@ -59,6 +65,7 @@ afterEach(() => {
   for (const node of nodes.splice(0)) node.remove();
   seen.menu.length = 0;
   seen.popover.length = 0;
+  seen.byAnchor.clear();
   vi.restoreAllMocks();
 });
 
@@ -148,6 +155,31 @@ describe('an anchored pop-out and the phone’s tab bar', () => {
 
     await vi.waitFor(() => {
       expect(last(seen.popover)?.bottom).toBe(65);
+    });
+  });
+
+  it('tells every anchored pop-out open at once when the bar changes, not just one', async () => {
+    const bar = tabBar(window.innerHeight - 60);
+    const first = anchorButton();
+    const second = anchorButton();
+    render(
+      <>
+        {anchoredMenu(first)}
+        {anchoredMenu(second)}
+      </>,
+    );
+    const bottom = (anchor: HTMLElement) =>
+      (seen.byAnchor.get(anchor) as CollisionPadding | undefined)?.bottom;
+    await vi.waitFor(() => {
+      expect([bottom(first), bottom(second)]).toEqual([65, 65]);
+    });
+
+    bar.getBoundingClientRect = () => new DOMRect(0, window.innerHeight - 90, window.innerWidth, 90);
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    await vi.waitFor(() => {
+      expect([bottom(first), bottom(second)]).toEqual([95, 95]);
     });
   });
 });

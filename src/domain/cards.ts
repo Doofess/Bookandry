@@ -469,7 +469,7 @@ export function cardFeeOccurrences(input: {
     if (card.profileId === SHARED_OWNER && input.profileId !== input.allProfiles) continue;
     const fee = card.card?.monthlyFeeMinor;
     if (card.type !== 'credit_card' || fee === undefined || fee <= 0) continue;
-    const lastMonth = lastFeeMonth(card, input.today);
+    const lastMonth = lastFeeMonth(card);
 
     for (
       let month = startOfMonth(input.from);
@@ -492,11 +492,25 @@ export function cardFeeOccurrences(input: {
  * it was archived in. Archiving puts a card out of sight; it never changes
  * what was owed, so the months before it, and that month itself, keep their
  * fee. An archived card with no date on record (an older file) is taken as
- * archived this month. Undefined for a card still in use.
+ * archived when it last changed: the archive wrote `updatedAt` too, so that is
+ * never earlier than the archive, and unlike today it does not move on.
+ * Undefined for a card still in use.
  */
-function lastFeeMonth(card: PaymentMethod, today: LocalDate): LocalDate | undefined {
+function lastFeeMonth(card: PaymentMethod): LocalDate | undefined {
   if (card.isArchived !== 1) return undefined;
-  return startOfMonth(card.archivedAt === undefined ? today : todayLocal(new Date(card.archivedAt)));
+  return startOfMonth(todayLocal(new Date(card.archivedAt ?? card.updatedAt)));
+}
+
+/**
+ * Whether the app charges this card a monthly fee for the month `date` is in:
+ * a credit card with a fee, still in use, or archived no earlier than that
+ * month. Without a date, only a card still in use.
+ */
+export function chargesFeeIn(card: PaymentMethod, date: LocalDate | undefined): boolean {
+  if (card.type !== 'credit_card' || (card.card?.monthlyFeeMinor ?? 0) <= 0) return false;
+  const lastMonth = lastFeeMonth(card);
+  if (lastMonth === undefined) return true;
+  return date !== undefined && compareLocal(startOfMonth(date), lastMonth) <= 0;
 }
 
 function feeOccurrence(card: PaymentMethod, date: LocalDate, feeMinor: number, today: LocalDate): Occurrence {

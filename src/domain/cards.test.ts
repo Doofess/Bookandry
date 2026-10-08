@@ -469,13 +469,17 @@ describe('the monthly card fee', () => {
       ['2026-08-31', 1_490],
       ['2026-10-31', 1_490],
     ]);
-    // Archived with no date on record (an older file): fees stop after today's month.
-    const undated = { ...feeCard(), isArchived: 1 as const };
-    expect(fees({ cards: [undated] }).map((o) => o.date)).toEqual(
-      fees()
-        .map((o) => o.date)
-        .filter((date) => date <= endOfMonth(TODAY)),
-    );
+    // Archived with no date on record (an older file): fees stop after the month it last changed,
+    // which the archive wrote - and stay stopped however far today moves on.
+    const undated = {
+      ...feeCard(),
+      isArchived: 1 as const,
+      updatedAt: '2026-08-20T09:00:00.000Z' as IsoInstant,
+    };
+    expect(fees({ cards: [undated] }).map((o) => o.date)).toEqual(['2026-08-31']);
+    expect(
+      fees({ cards: [undated], today: d('2027-03-15'), to: d('2027-03-31') }).map((o) => o.date),
+    ).toEqual(['2026-08-31']);
   });
 });
 
