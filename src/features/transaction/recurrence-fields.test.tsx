@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { loadCatalog } from '@/data/card-catalog';
 import { resolveCard, type ResolvedCard } from '@/data/card-catalog/resolve';
@@ -203,5 +203,28 @@ describe('the schedule', () => {
   it('asks a 30+ purchase for its rate', () => {
     render(values({ mode: 'deferred', annualRate: '' }), {});
     expect(screen.getByLabelText('Annual interest')).toBeInTheDocument();
+  });
+});
+
+describe('the type picker', () => {
+  it('is a full 44px target for every choice', () => {
+    render(values(), {});
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toHaveClass('min-h-11');
+  });
+});
+
+describe('in Hebrew', () => {
+  afterAll(async () => {
+    await initTestI18n('en');
+  });
+
+  it('names the deals as Max does, and says the rules in Hebrew', async () => {
+    await initTestI18n('he');
+    render(values({ mode: 'long_credit', amount: '900', installmentCount: '19', annualRate: '15.5' }), {});
+    expect(choices().slice(0, 5)).toEqual(['רגילה', 'תשלומים', 'קרדיט', 'קרדיט פלוס', '30 פלוס']);
+    expect(screen.getByText(/^קרדיט פלוס בכרטיס הזה דורש לפחות .*950/)).toBeInTheDocument();
+    expect(screen.getByTestId('deal-schedule')).toHaveTextContent(
+      /^19 תשלומים של .* · ריבית .* · 16.65% מתואמת/,
+    );
   });
 });

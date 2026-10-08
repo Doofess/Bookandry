@@ -118,8 +118,16 @@ export function previousSlot(
 
 /** Apply a patch's transaction-level fields. Per-occurrence fields are ignored. */
 function applyToTransaction(tx: Transaction, patch: TransactionPatch, now: IsoInstant): Transaction {
+  /*
+   * A 30+ deferral belongs to a one-off purchase. A row whose type changes to
+   * a plan or a repeat is not one any more, and a deferral left on it would
+   * bill every one of its payments a month late (`settleDate`).
+   */
+  const { deferral, ...rest } = tx;
+  const recurrence = patch.recurrence ?? tx.recurrence;
+  const base = deferral === undefined || recurrence.type !== 'one_time' ? rest : tx;
   return {
-    ...tx,
+    ...base,
     ...(patch.money === undefined ? {} : { money: patch.money }),
     ...(patch.categoryId === undefined ? {} : { categoryId: patch.categoryId }),
     ...(patch.paymentMethodId === undefined ? {} : { paymentMethodId: patch.paymentMethodId ?? undefined }),

@@ -770,7 +770,8 @@ function TransactionForm({
     const mode = form.getValues('mode');
     const at = mode === 'long_credit' ? dealRuleFor(resolved, mode)?.rate?.reset?.atPayment : undefined;
     setValue('resetAt', at);
-    if (at !== undefined && form.getValues('primeRate') === '') setValue('primeRate', prime.primeRate);
+    // Prime as it stands now - the one the schedule was shown at - not as the form first opened with.
+    if (at !== undefined) setValue('primeRate', prime.primeRate);
   };
 
   return (
@@ -967,7 +968,11 @@ function TransactionForm({
             />
             <CardChargeNote
               method={paymentMethods.find((m) => m.id === values.paymentMethodId)}
-              deferred={values.mode === 'deferred'}
+              // A saved 30+ row reopens as a one-off; it is still on the bill after next.
+              deferred={
+                values.mode === 'deferred' ||
+                (values.mode === 'one_time' && editing?.transaction.deferral !== undefined)
+              }
               date={values.date}
               currency={values.currency}
               amountMinor={amountMinor}

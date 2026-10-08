@@ -335,3 +335,46 @@ describe('a rule change across the whole series', () => {
     expect(result.warnings).toEqual([]);
   });
 });
+
+describe('a 30+ purchase', () => {
+  const later = makeTx({
+    id: 'later',
+    date: d('2026-09-08'),
+    recurrence: { type: 'one_time' },
+    deferral: { rate: '15.5' },
+  });
+
+  it('stops being 30+ when its type leaves one-time, so no payment is billed a month late', () => {
+    for (const recurrence of [
+      { type: 'monthly', dayOfMonth: 8, installments: 3, plan: 'installments' },
+      { type: 'monthly', dayOfMonth: 8, installments: 24, plan: 'credit', creditAnnualRate: '15.5' },
+      { type: 'monthly', dayOfMonth: 8 },
+    ] as const) {
+      const [written] = plan({
+        transaction: later,
+        scope: 'all',
+        at: d('2026-09-08'),
+        patch: { recurrence },
+      }).transactions;
+      expect(written?.recurrence).toEqual(recurrence);
+      expect(written).not.toHaveProperty('deferral');
+    }
+  });
+
+  it('stays 30+ through an edit that keeps it one-time', () => {
+    const [written] = plan({
+      transaction: later,
+      scope: 'all',
+      at: d('2026-09-08'),
+      patch: { note: 'tv', recurrence: { type: 'one_time' } },
+    }).transactions;
+    expect(written?.deferral).toEqual({ rate: '15.5' });
+    const [noteOnly] = plan({
+      transaction: later,
+      scope: 'all',
+      at: d('2026-09-08'),
+      patch: { note: 'tv' },
+    }).transactions;
+    expect(noteOnly?.deferral).toEqual({ rate: '15.5' });
+  });
+});
