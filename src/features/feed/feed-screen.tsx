@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
+import { ScreenPanel } from '@/app/screen-panel';
 import { pendingShares, sweepShared } from '@/app/shared-files';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
@@ -206,6 +207,9 @@ export function FeedScreen() {
           }}
         />
       ) : null}
+
+      {/* The account menu's home on the feed until its own panel fills this. */}
+      <ScreenPanel />
 
       <div ref={measureHeader} data-testid="feed-header">
         <MonthCursor month={filters.month} today={today} onStep={stepMonth} />

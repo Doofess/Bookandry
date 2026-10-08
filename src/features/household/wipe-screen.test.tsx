@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { type Mock, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SettingsProvider } from '@/app/settings-provider';
+import { DEFAULT_SETTINGS } from '@/db/repos/settings';
+import { instantFromMs } from '@/lib/dates';
 import { ServerError } from '@/services/supabase/transport';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
@@ -17,7 +20,8 @@ const account = vi.hoisted(
 );
 const toasts = vi.hoisted(() => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 
-vi.mock('@/app/account', () => ({
+vi.mock('@/app/account', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   useAccount: () => account.view,
   accountController: () => account.controller,
 }));
@@ -35,12 +39,17 @@ const PREVIEW = {
   members: 3,
 };
 
+// The screen's panel carries the account menu, which reads the settings.
+const SETTINGS = { ...DEFAULT_SETTINGS, updatedAt: instantFromMs(Date.parse('2026-10-07T10:00:00.000Z')) };
+
 const render = (search = `?t=${TOKEN}`) =>
   renderWithProviders(
-    <Routes>
-      <Route path="/wipe" element={<WipeScreen />} />
-      <Route path="/" element={<p>feed page</p>} />
-    </Routes>,
+    <SettingsProvider value={SETTINGS}>
+      <Routes>
+        <Route path="/wipe" element={<WipeScreen />} />
+        <Route path="/" element={<p>feed page</p>} />
+      </Routes>
+    </SettingsProvider>,
     { route: `/wipe${search}` },
   );
 

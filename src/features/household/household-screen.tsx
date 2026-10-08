@@ -8,6 +8,8 @@ import { toast } from 'sonner';
 import { accountController, useAccount } from '@/app/account';
 import { useBaseCurrency } from '@/app/app-context';
 import { SETTINGS_ROUTES } from '@/app/routes';
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import {
@@ -143,231 +145,233 @@ export function HouseholdScreen() {
   };
 
   return (
-    <section className="mx-auto max-w-2xl space-y-6 px-4 py-6 pb-24 lg:pb-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('household.title')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('household.body')}</p>
-      </header>
+    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <ScreenTitle>{t('household.title')}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-6 px-4 pt-6">
+        <p className="text-sm text-muted-foreground">{t('household.body')}</p>
 
-      <ul
-        className="divide-y divide-border rounded-xl border border-border bg-card"
-        aria-label={t('household.people')}
-      >
-        {members.map((person) => (
-          <li key={person.id} className="flex items-center gap-3 p-3">
-            <PersonAvatar person={person} size="md" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">
-                {person.name}
-                {person.id === me ? (
-                  <span className="ms-1.5 text-xs font-normal text-muted-foreground">
-                    {t('household.you')}
-                  </span>
-                ) : null}
+        <ul
+          className="divide-y divide-border rounded-xl border border-border bg-card"
+          aria-label={t('household.people')}
+        >
+          {members.map((person) => (
+            <li key={person.id} className="flex items-center gap-3 p-3">
+              <PersonAvatar person={person} size="md" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">
+                  {person.name}
+                  {person.id === me ? (
+                    <span className="ms-1.5 text-xs font-normal text-muted-foreground">
+                      {t('household.you')}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {t('household.opening')}{' '}
+                  <Money
+                    minor={person.openingBalanceMinor}
+                    currency={person.openingBalanceCurrency}
+                    announce={false}
+                  />
+                  {' · '}
+                  {formatLocalDate(person.openingBalanceDate, i18n.language, { dateStyle: 'medium' })}
+                </span>
               </span>
-              <span className="block text-xs text-muted-foreground">
-                {t('household.opening')}{' '}
-                <Money
-                  minor={person.openingBalanceMinor}
-                  currency={person.openingBalanceCurrency}
-                  announce={false}
-                />
-                {' · '}
-                {formatLocalDate(person.openingBalanceDate, i18n.language, { dateStyle: 'medium' })}
-              </span>
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-11"
-              aria-label={t('household.edit', { name: person.name })}
-              onClick={() => {
-                setError(undefined);
-                setEditing(person);
-              }}
-            >
-              <Pencil className="size-4" aria-hidden="true" />
-            </Button>
-            {iOwn && person.id !== me && linkedCount > 2 ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-11 text-destructive"
-                aria-label={t('household.remove', { name: person.name })}
+                className="size-11"
+                aria-label={t('household.edit', { name: person.name })}
                 onClick={() => {
-                  setConfirm({ kind: 'remove', member: person });
+                  setError(undefined);
+                  setEditing(person);
                 }}
               >
-                <UserMinus className="size-4" aria-hidden="true" />
+                <Pencil className="size-4" aria-hidden="true" />
               </Button>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-
-      {signedIn ? (
-        <Invite full={linkedCount >= MAX_MEMBERS} currency={baseCurrency} />
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="font-semibold">{t('household.signInTitle')}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t('household.signInBody')}</p>
-          <Link to={SETTINGS_ROUTES.account} className={buttonVariants({ className: 'mt-3' })}>
-            {t('household.signIn')}
-          </Link>
-        </div>
-      )}
-
-      {(household?.invites.length ?? 0) > 0 ? (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold">{t('household.pending')}</h2>
-          <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-            {household?.invites.map((invite) => (
-              <li key={invite.id} className="flex items-center gap-3 p-3">
-                <Mail className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  <span dir="ltr" className="block truncate text-sm rtl:text-end">
-                    {invite.email}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {t('household.expires', {
-                      date: new Date(invite.expiresAt).toLocaleDateString(i18n.language, {
-                        dateStyle: 'medium',
-                      }),
-                    })}
-                  </span>
-                </span>
+              {iOwn && person.id !== me && linkedCount > 2 ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-11"
-                  aria-label={t('household.revoke', { email: invite.email })}
+                  className="size-11 text-destructive"
+                  aria-label={t('household.remove', { name: person.name })}
                   onClick={() => {
-                    void accountController()
-                      .revokeInvite(invite.id)
-                      .then(
-                        () => toast(t('household.revoked')),
-                        () => toast.error(t('household.err')),
-                      );
+                    setConfirm({ kind: 'remove', member: person });
                   }}
                 >
-                  <X className="size-4" aria-hidden="true" />
+                  <UserMinus className="size-4" aria-hidden="true" />
                 </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+              ) : null}
+            </li>
+          ))}
+        </ul>
 
-      {before.length > 0 ? (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold">{t('household.beforeTitle')}</h2>
-          <p className="text-sm text-muted-foreground">{t('household.beforeBody')}</p>
-          <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-            {before.map((person) => (
-              <li key={person.id} className="flex items-center gap-3 p-3">
-                <PersonAvatar person={person} size="md" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{person.name}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {t('household.entries', { count: data?.counts.get(person.id) ?? 0 })}
+        {signedIn ? (
+          <Invite full={linkedCount >= MAX_MEMBERS} currency={baseCurrency} />
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h2 className="font-semibold">{t('household.signInTitle')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('household.signInBody')}</p>
+            <Link to={SETTINGS_ROUTES.account} className={buttonVariants({ className: 'mt-3' })}>
+              {t('household.signIn')}
+            </Link>
+          </div>
+        )}
+
+        {(household?.invites.length ?? 0) > 0 ? (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold">{t('household.pending')}</h2>
+            <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+              {household?.invites.map((invite) => (
+                <li key={invite.id} className="flex items-center gap-3 p-3">
+                  <Mail className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span dir="ltr" className="block truncate text-sm rtl:text-end">
+                      {invite.email}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('household.expires', {
+                        date: new Date(invite.expiresAt).toLocaleDateString(i18n.language, {
+                          dateStyle: 'medium',
+                        }),
+                      })}
+                    </span>
                   </span>
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setGiving(person);
-                  }}
-                >
-                  {t('household.giveTo')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11"
+                    aria-label={t('household.revoke', { email: invite.email })}
+                    onClick={() => {
+                      void accountController()
+                        .revokeInvite(invite.id)
+                        .then(
+                          () => toast(t('household.revoked')),
+                          () => toast.error(t('household.err')),
+                        );
+                    }}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
-      {linkedCount >= 2 ? (
-        <section className="space-y-2 rounded-xl border border-border bg-card p-4">
-          <h2 className="font-semibold">{t('household.unlinkTitle')}</h2>
-          <p className="text-sm text-muted-foreground">{t('household.unlinkBody')}</p>
-          <Button
-            type="button"
-            variant="outline"
-            className="text-destructive"
-            onClick={() => {
-              setConfirm({ kind: 'leave' });
-            }}
-          >
-            {t('household.unlink')}
-          </Button>
-        </section>
-      ) : null}
+        {before.length > 0 ? (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold">{t('household.beforeTitle')}</h2>
+            <p className="text-sm text-muted-foreground">{t('household.beforeBody')}</p>
+            <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+              {before.map((person) => (
+                <li key={person.id} className="flex items-center gap-3 p-3">
+                  <PersonAvatar person={person} size="md" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{person.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('household.entries', { count: data?.counts.get(person.id) ?? 0 })}
+                    </span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setGiving(person);
+                    }}
+                  >
+                    {t('household.giveTo')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
-      <ProfileEditor
-        open={editing !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-        {...(editing === undefined ? {} : { profile: editing })}
-        existing={profiles}
-        baseCurrency={baseCurrency}
-        onSave={(values) => {
-          void save(values);
-        }}
-        {...(error === undefined ? {} : { error })}
-        saving={busy}
-      />
-
-      <GiveDialog
-        person={giving}
-        to={members}
-        busy={busy}
-        onOpenChange={(open) => {
-          if (!open) setGiving(undefined);
-        }}
-        onGive={(to) => {
-          if (giving !== undefined) void give(giving, to);
-        }}
-      />
-
-      <AlertDialog
-        open={confirm !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setConfirm(undefined);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirm?.kind === 'remove'
-                ? t('household.removeTitle', { name: confirm.member.name })
-                : t('household.leaveTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm?.kind === 'remove'
-                ? t('household.removeBody', { name: confirm.member.name })
-                : t('household.unlinkBody')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>{t('household.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={busy}
+        {linkedCount >= 2 ? (
+          <section className="space-y-2 rounded-xl border border-border bg-card p-4">
+            <h2 className="font-semibold">{t('household.unlinkTitle')}</h2>
+            <p className="text-sm text-muted-foreground">{t('household.unlinkBody')}</p>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-destructive"
               onClick={() => {
-                void unlink();
+                setConfirm({ kind: 'leave' });
               }}
             >
-              {confirm?.kind === 'remove' ? t('household.removeConfirm') : t('household.unlink')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              {t('household.unlink')}
+            </Button>
+          </section>
+        ) : null}
+
+        <ProfileEditor
+          open={editing !== undefined}
+          onOpenChange={(open) => {
+            if (!open) setEditing(undefined);
+          }}
+          {...(editing === undefined ? {} : { profile: editing })}
+          existing={profiles}
+          baseCurrency={baseCurrency}
+          onSave={(values) => {
+            void save(values);
+          }}
+          {...(error === undefined ? {} : { error })}
+          saving={busy}
+        />
+
+        <GiveDialog
+          person={giving}
+          to={members}
+          busy={busy}
+          onOpenChange={(open) => {
+            if (!open) setGiving(undefined);
+          }}
+          onGive={(to) => {
+            if (giving !== undefined) void give(giving, to);
+          }}
+        />
+
+        <AlertDialog
+          open={confirm !== undefined}
+          onOpenChange={(open) => {
+            if (!open) setConfirm(undefined);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirm?.kind === 'remove'
+                  ? t('household.removeTitle', { name: confirm.member.name })
+                  : t('household.leaveTitle')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirm?.kind === 'remove'
+                  ? t('household.removeBody', { name: confirm.member.name })
+                  : t('household.unlinkBody')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>{t('household.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={busy}
+                onClick={() => {
+                  void unlink();
+                }}
+              >
+                {confirm?.kind === 'remove' ? t('household.removeConfirm') : t('household.unlink')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PanelSheet>
     </section>
   );
 }

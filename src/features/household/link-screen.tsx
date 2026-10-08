@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { accountController, useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { ScreenPanel } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ReconvertDialog } from '@/features/settings/reconvert-dialog';
 import type { InvitePreview } from '@/services/supabase/household';
@@ -199,30 +201,35 @@ export function LinkScreen() {
     token === '';
 
   return (
-    <section className="mx-auto max-w-lg space-y-4 px-4 py-10">
-      <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
-        <Users className="size-6" aria-hidden="true" />
-      </span>
-      <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
-      {body}
-      {done ? (
-        <Button type="button" variant="outline" onClick={leave}>
-          {t('link.home')}
-        </Button>
-      ) : null}
-      {state.kind === 'ready' ? (
-        <ReconvertDialog
-          open={converting}
-          onOpenChange={setConverting}
-          currentCurrency={settings.defaultCurrency}
-          today={today}
-          fixedTarget={state.preview.currency}
-          onDone={(currency) => {
-            setConverting(false);
-            void join(currency);
-          }}
-        />
-      ) : null}
-    </section>
+    <div className="mx-auto max-w-lg pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel />
+      <PanelSheet>
+        <section className="space-y-4 px-4 pt-8 pb-10">
+          <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
+            <Users className="size-6" aria-hidden="true" />
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
+          {body}
+          {done ? (
+            <Button type="button" variant="outline" onClick={leave}>
+              {t('link.home')}
+            </Button>
+          ) : null}
+          {state.kind === 'ready' ? (
+            <ReconvertDialog
+              open={converting}
+              onOpenChange={setConverting}
+              currentCurrency={settings.defaultCurrency}
+              today={today}
+              fixedTarget={state.preview.currency}
+              onDone={(currency) => {
+                setConverting(false);
+                void join(currency);
+              }}
+            />
+          ) : null}
+        </section>
+      </PanelSheet>
+    </div>
   );
 }

@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
@@ -42,66 +44,68 @@ export function BankAccountsScreen() {
   );
 
   return (
-    <section className="mx-auto max-w-4xl space-y-5 px-4 py-6 pb-24 lg:pb-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('accounts.title')}</h1>
+    <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <ScreenTitle>{t('accounts.title')}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-5 px-4 pt-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('accounts.body')}</p>
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing('new');
-          }}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          {t('accounts.add')}
-        </Button>
-      </header>
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing('new');
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            {t('accounts.add')}
+          </Button>
+        </header>
 
-      <UnfinishedNotice kind="account" />
+        <UnfinishedNotice kind="account" />
 
-      {data === undefined ? null : (
-        <ProfileSwitcher
-          profiles={[...data.profiles.values()]}
-          active={whose}
-          onSelect={(profileId) => {
-            void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+        {data === undefined ? null : (
+          <ProfileSwitcher
+            profiles={[...data.profiles.values()]}
+            active={whose}
+            onSelect={(profileId) => {
+              void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+            }}
+          />
+        )}
+
+        {data === undefined ? null : accounts.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+            <Landmark className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+            <p className="mt-3 text-sm text-muted-foreground">{t('accounts.empty')}</p>
+          </div>
+        ) : (
+          <ul className="grid gap-4 md:grid-cols-2">
+            {accounts.map((account) => (
+              <li key={account.id}>
+                <AccountPanel
+                  account={account}
+                  cards={data.cards.filter((card) => card.card?.accountId === account.id)}
+                  occurrences={data.occurrences}
+                  profiles={data.profiles}
+                  onEdit={() => {
+                    setEditing(account);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <MethodEditor
+          target={editing}
+          profiles={data === undefined ? [] : [...data.profiles.values()]}
+          onOpenChange={(open) => {
+            if (!open) setEditing(undefined);
           }}
+          newType="bank_account"
         />
-      )}
-
-      {data === undefined ? null : accounts.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-          <Landmark className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
-          <p className="mt-3 text-sm text-muted-foreground">{t('accounts.empty')}</p>
-        </div>
-      ) : (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {accounts.map((account) => (
-            <li key={account.id}>
-              <AccountPanel
-                account={account}
-                cards={data.cards.filter((card) => card.card?.accountId === account.id)}
-                occurrences={data.occurrences}
-                profiles={data.profiles}
-                onEdit={() => {
-                  setEditing(account);
-                }}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <MethodEditor
-        target={editing}
-        profiles={data === undefined ? [] : [...data.profiles.values()]}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-        newType="bank_account"
-      />
+      </PanelSheet>
     </section>
   );
 }

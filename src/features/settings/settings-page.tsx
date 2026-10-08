@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { ROUTES } from '@/app/routes';
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 
 /** One settings subject, with the way back to the list of them. */
 export function SettingsPage({
@@ -17,20 +19,22 @@ export function SettingsPage({
 }) {
   const { t } = useTranslation();
   return (
-    <section className="mx-auto max-w-2xl space-y-4 px-4 py-6 pb-24 lg:pb-8">
-      <Link
-        to={ROUTES.settings}
-        className="-ms-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        {/* Directional: it points back, so it flips. */}
-        <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden="true" />
-        {t('settings.title')}
-      </Link>
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <Link
+          to={ROUTES.settings}
+          className="-ms-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-md px-1 text-sm text-brand-deep-foreground/80 hover:text-brand-deep-foreground focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none sm:min-h-0 sm:py-0.5"
+        >
+          {/* Directional: it points back, so it flips. */}
+          <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden="true" />
+          {t('settings.title')}
+        </Link>
+        <ScreenTitle>{title}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-4 px-4 pt-6">
         {description === undefined ? null : <p className="text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {children}
+        {children}
+      </PanelSheet>
     </section>
   );
 }
