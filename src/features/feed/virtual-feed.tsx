@@ -10,6 +10,8 @@ import type { LocalDate } from '@/types/money';
 
 import { DayHeader, TransactionRow, type RowContext } from './feed-rows';
 import { useDocumentTop } from './use-document-top';
+import { useSafeAreaTop } from './use-safe-area-top';
+import { COLLAPSED_HEIGHT } from '../summary/use-collapsing-header';
 
 /**
  * AUTHORITATIVE heights, not estimates.
@@ -78,7 +80,24 @@ export function VirtualFeed({
   // The distance from the top of the document to the list, kept current as the
   // panel above it settles and wraps. Measured again once the list replaces the
   // font skeleton.
-  const scrollMargin = useDocumentTop(containerRef, fontsReady);
+  const listTop = useDocumentTop(containerRef, fontsReady);
+  /*
+   * The virtualizer's reference line is the PINNED SLOT, not the viewport's
+   * top edge: under the collapsed bar, 48px plus the status bar's inset down.
+   *
+   * Its "row at the scroll offset" - which decides the pinned day, and whose
+   * change is what makes it re-render - is then the row the pinned header
+   * covers. Measured from the viewport's edge instead, it is a row hidden
+   * behind the bar, and for 48px at every day boundary the previous day's
+   * date and total sat on the next day's row.
+   *
+   * The rows do not move: each is placed at `item.start - scrollMargin`, its
+   * offset within the list, whatever the margin. Only the range's edges shift
+   * 48px down, into the band behind the bar, which the overscan covers. Applied
+   * whether or not the bar shows, because nothing is pinned until it does.
+   */
+  const safeAreaTop = useSafeAreaTop();
+  const scrollMargin = listTop - COLLAPSED_HEIGHT - safeAreaTop;
 
   const headers = useMemo(() => headerIndices(rows), [rows]);
 
@@ -147,9 +166,8 @@ export function VirtualFeed({
    * From the row AT the top of the screen, not `items[0]`: the range opens
    * with eight rows of overscan above the screen, so the first item drawn
    * kept the first day pinned over later days' rows for a screenful of scroll.
-   * The scroll offset itself, not shifted for the collapsed bar: the
-   * virtualizer re-renders when the row at the offset changes, so this never
-   * lags a row behind.
+   * The scroll offset itself: `scrollMargin` already moved it to the pinned
+   * slot, and the virtualizer re-renders exactly when the row there changes.
    */
   const stickyIndex = activeHeaderIndex(headers, indexAtOffset(items, virtualizer.scrollOffset ?? 0) ?? 0);
 
