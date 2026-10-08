@@ -37,9 +37,13 @@ describe('the settings sections', () => {
 
   it('in Hebrew, calls it קישור חשבונות', async () => {
     await initTestI18n('he');
-    const linking = sections('signed_in').account.find((s) => s.key === 'linking');
-    expect(linking?.label).toBe('קישור חשבונות');
-    expect(linking?.hint).toBe('שיתוף הכספים עם מי שגרים איתך');
-    await initTestI18n('en');
+    try {
+      const linking = sections('signed_in').account.find((s) => s.key === 'linking');
+      expect(linking?.label).toBe('קישור חשבונות');
+      expect(linking?.hint).toBe('שיתוף הכספים עם מי שגרים איתך');
+    } finally {
+      // Back to English whatever happened above, so a failure here cannot fail the next test too.
+      await initTestI18n('en');
+    }
   });
 });

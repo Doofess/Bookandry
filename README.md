@@ -400,7 +400,7 @@ still means an expense).
 **The brand is sapphire; green means money coming in.** `--brand-deep`
 (#0F3A8A, #0B2C6B in dark mode) is the engraved panel at the top of every
 screen, carried in from the front door; `--income` stays green and `--expense`
-red, and nothing else in the app is either. Every token pair is checked by
+red, and no other brand colour is either. Every token pair is checked by
 `src/lib/contrast.test.ts`, and the colours that live outside the token file
 (the status bar's `theme-color`, the favicon, the PWA icon background) by
 `src/lib/brand-colours.test.ts`.
@@ -420,10 +420,11 @@ series-edit path, and their Undo restores every row they touched.
 the real balance; the starting-balance line was noise in the pop-out.
 
 **Archiving a card hides it; it never changes money owed.** Fees stop only after
-the archive month, and a card still owed on stays in commitments.
+the archive month, and a card still owed on stays in the household's total on Cards.
 
 **Duplicate keeps the source row's person.** It keeps the card only if that
-person can use it.
+person can use it, and the person only while they are still in the household
+(linked accounts).
 
 **Account linking is a page in Settings, not a tab.** It is set up once, so
 it sits with the account (Settings › Account linking, `/settings/linking`,

@@ -2,6 +2,7 @@ import { cn } from 'cn';
 import { Landmark, type LucideIcon } from 'lucide-react';
 
 import { brandLogo, type BrandKey } from '@/data/brands';
+import { bankByCode } from '@/domain/banks';
 
 /** The tile both marks share, so a row of brands and neutral options lines up. */
 const TILE = 'inline-flex h-7 max-w-full shrink-0 items-center justify-center rounded-md px-1.5';
@@ -59,11 +60,16 @@ export function NeutralMark({
   );
 }
 
-/** A bank by its code: its logo where there is one, and otherwise a neutral landmark. */
+/**
+ * A bank by its code: its logo where there is one, and otherwise a neutral
+ * landmark. The code is normalised through the bank list first, so a code
+ * written differently ("012") still finds its bank.
+ */
 export function BankMark({ code, className }: { readonly code: string; readonly className?: string }) {
-  return brandLogo(`bank-${code}`) === undefined ? (
+  const brand: BrandKey = `bank-${bankByCode(code)?.code ?? code}`;
+  return brandLogo(brand) === undefined ? (
     <NeutralMark icon={Landmark} className={className} />
   ) : (
-    <BrandMark brand={`bank-${code}`} className={className} />
+    <BrandMark brand={brand} className={className} />
   );
 }

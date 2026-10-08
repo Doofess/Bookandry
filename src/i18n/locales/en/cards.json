@@ -141,6 +141,7 @@
     "cardsFrom": "Card bills paid from this account",
     "chargeOn": "on {{date}}",
     "noCharge": "Nothing coming up",
+    "archivedCard": "Archived",
     "edit": {
       "open": "Edit account",
       "theAccount": "The account",
@@ -165,7 +166,7 @@
       "holding": "Type of account",
       "owner": "Account holder",
       "holders": "Account holders",
-      "holdersHint": "Everyone here who is on the account.",
+      "holdersHint": "Tick everyone here whose name is on the account.",
       "holdersInvalid": "Choose who the account belongs to.",
       "otherHolders": "Other holders",
       "otherHoldersPlaceholder": "e.g. a business partner",

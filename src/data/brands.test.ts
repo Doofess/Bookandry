@@ -94,6 +94,8 @@ describe.each(FILES)('%s', (file) => {
     expect(svg).not.toMatch(/\son[a-z]+\s*=/i);
     expect(svg).not.toMatch(/@import/i);
     expect(svg).not.toMatch(/<!ENTITY/i);
+    // A url() may point inside the file (a gradient, a mask), never outside it.
+    expect(svg).not.toMatch(/url\(\s*(?!["']?#)/i);
     const hrefs = [...svg.matchAll(/\s(?:xlink:)?href\s*=\s*(["'])(.*?)\1/gis)].map((m) => m[2] ?? '');
     for (const href of hrefs) expect(href).toMatch(/^(#|data:image\/)/);
   });

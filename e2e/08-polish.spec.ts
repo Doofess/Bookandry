@@ -675,7 +675,7 @@ test.describe('@keyboard walkthrough', () => {
     await completeFirstRun(page, 'en');
 
     const seen: string[] = [];
-    let reachedFab = false;
+    let reachedAddPill = false;
 
     for (let i = 0; i < 12; i += 1) {
       await page.keyboard.press('Tab');
@@ -698,7 +698,7 @@ test.describe('@keyboard walkthrough', () => {
       expect(focused.hasFocusRing, `no visible focus on "${focused.label}"`).toBe(true);
 
       if (focused.testid === 'add-button') {
-        reachedFab = true;
+        reachedAddPill = true;
         break;
       }
     }
@@ -706,13 +706,13 @@ test.describe('@keyboard walkthrough', () => {
     /*
      * Within twelve stops, not merely 'eventually'.
      *
-     * The FAB is fixed, so its DOM position is invisible on screen and decided
+     * The Add pill is fixed, so its DOM position is invisible on screen and decided
      * the tab order alone. Rendered last it sat after every transaction row -
      * two stops each - so the primary action was past a hundred presses away on
      * a real month of data. 'Reachable' was already true then; it is the wrong
      * bar.
      */
-    expect(reachedFab, `FAB not reached within 12 tabs; order was ${seen.join(' -> ')}`).toBe(true);
+    expect(reachedAddPill, `Add pill not reached within 12 tabs; order was ${seen.join(' -> ')}`).toBe(true);
   });
 
   test('opens and closes the add sheet without a pointer', async ({ page }) => {
@@ -860,17 +860,19 @@ test.describe('@motion the count-up', () => {
 test.describe('@popouts every item clears 44px on a phone', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
-  /** Items of whatever pop-out is open now that are shorter than 44px. */
-  async function shortItems(page: Page): Promise<string[]> {
+  /** Items of whatever pop-out is open now that are shorter than 44px, and how many were measured. */
+  async function shortItems(page: Page): Promise<{ bad: string[]; checked: number }> {
     return page.evaluate(() => {
       const bad: string[] = [];
+      let checked = 0;
       const items = document.querySelectorAll(
-        '[data-slot="dropdown-menu-content"] [role="menuitem"], [data-slot="popover-content"] button',
+        '[data-slot="dropdown-menu-content"] :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]), [data-slot="popover-content"] button',
       );
       for (const el of items) {
         // Layout size, not the drawn box: a pop-out scales in, and 95% of 44px is 42.
         const height = (el as HTMLElement).offsetHeight;
         if (height === 0) continue;
+        checked += 1;
         /*
          * A calendar's day cells are the shared Calendar's 28px (the date field
          * has the same): a 7-column grid at 44px does not fit a 320px phone.
@@ -879,16 +881,26 @@ test.describe('@popouts every item clears 44px on a phone', () => {
         const floor = el.closest('[role="gridcell"], [role="row"]') === null ? 44 : 24;
         if (height < floor) bad.push(`${el.textContent.trim().slice(0, 30)} ${String(height)}px`);
       }
-      return bad;
+      return { bad, checked };
     });
   }
 
   const ANY_POPOUT = '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]';
 
-  async function check(page: Page, open: () => Promise<void>, what: string): Promise<void> {
+  /** `items: 'none'` for a pop-out that is information only; every other one must put items in front of us. */
+  async function check(
+    page: Page,
+    open: () => Promise<void>,
+    what: string,
+    items: 'some' | 'none' = 'some',
+  ): Promise<void> {
     await open();
     await expect(page.locator(ANY_POPOUT).first()).toBeVisible();
-    expect(await shortItems(page), what).toEqual([]);
+    const { bad, checked } = await shortItems(page);
+    // A pop-out with nothing measured would pass for free, so the empty case is declared, never assumed.
+    if (items === 'some') expect(checked, `${what}: no items measured`).toBeGreaterThan(0);
+    else expect(checked, `${what}: has items now; measure them`).toBe(0);
+    expect(bad, what).toEqual([]);
     await page.keyboard.press('Escape');
     await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
   }
@@ -899,7 +911,8 @@ test.describe('@popouts every item clears 44px on a phone', () => {
     await expect(page.getByTestId('feed-header')).toBeVisible();
 
     await check(page, () => page.getByTestId('add-button').click(), 'add menu');
-    await check(page, () => page.getByTestId('prime-pill').click(), 'prime');
+    // The prime pop-out is a title, the rate and a date: nothing to tap.
+    await check(page, () => page.getByTestId('prime-pill').click(), 'prime', 'none');
     await check(
       page,
       () => page.getByRole('heading', { level: 2 }).getByRole('button').first().click(),
@@ -944,7 +957,9 @@ test.describe('@popouts every item clears 44px on a phone', () => {
       await grid.nth(1).click();
       if (await page.getByText(/^Change it to .* for…$/).isVisible()) {
         sawScope = true;
-        expect(await shortItems(page), 'category scope').toEqual([]);
+        const scope = await shortItems(page);
+        expect(scope.checked, 'category scope: no items measured').toBeGreaterThan(0);
+        expect(scope.bad, 'category scope').toEqual([]);
       }
       await page.keyboard.press('Escape');
       await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
@@ -962,7 +977,8 @@ test.describe('@popouts every item clears 44px on a phone', () => {
     await page.getByRole('button', { name: 'Not counted yet. Change it' }).first().click();
     await page.getByRole('button', { name: /A different date/ }).click();
     await expect(page.getByRole('dialog').getByRole('grid')).toBeVisible();
-    expect(await shortItems(page), 'not counted calendar and back').toEqual([]);
+    // The calendar is a dialog, not a pop-out, so no item count is asserted here: only that nothing left open is short.
+    expect((await shortItems(page)).bad, 'not counted calendar and back').toEqual([]);
     await page.keyboard.press('Escape');
     await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
 

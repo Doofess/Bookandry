@@ -111,6 +111,10 @@ test('@a11y BLOCKING the feed pop-outs, open', async ({ page }) => {
   await page.evaluate(() => document.fonts.ready);
 
   const scanOpen = async (): Promise<void> => {
+    // Scan the pop-out once it is on screen, not the empty portal it mounts into.
+    await expect(
+      page.locator('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]').first(),
+    ).toBeVisible();
     const results = await new AxeBuilder({ page })
       .withTags(TAGS)
       .include('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]')
