@@ -19,6 +19,8 @@ const TYPES = 'https://www.bankmassad.co.il/private/creditcard/types/';
 const TABLE =
   'https://www.bankmassad.co.il/media/xqzdqegt/%D7%AA%D7%A2%D7%A8%D7%99%D7%A4%D7%99-%D7%90%D7%A9%D7%A8%D7%90%D7%99.pdf';
 const ISRACARD_MASSAD = 'https://digital.isracard.co.il/globalassets/isracard/pdf/masad25.pdf';
+// American Express's one schedule for the FIBI group names "בנק מסד" (isracard.md §3).
+const AMEX_FIBI_GROUP = 'https://he.americanexpress.co.il/globalassets/pdf/taarifonbenleumijan26.pdf';
 
 const OLD_PRIME = 'table on prime 5.00%';
 const CREDIT = {
@@ -56,7 +58,7 @@ export const massad: CatalogBank = {
   id: '46',
   name: { he: 'בנק מסד', en: 'Bank Massad' },
   issuers: ['isracard', 'amex', 'max'],
-  fxFee: { isracard: '2.7' },
+  fxFee: { isracard: '2.7', amex: '2.5' },
   rates,
   sources: {
     issuers: at(
@@ -67,6 +69,10 @@ export const massad: CatalogBank = {
       isracard: at(
         ISRACARD_MASSAD,
         'Isracard’s schedule for Massad cards: 2.7% from 1.7.2022 (isracard.md §3).',
+      ),
+      amex: at(
+        AMEX_FIBI_GROUP,
+        'American Express’s schedule for the FIBI group, Massad among its banks: 2.5% from 1.7.2026 (isracard.md §3).',
       ),
     },
   },

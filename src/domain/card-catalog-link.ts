@@ -123,10 +123,24 @@ function fill(
   if (!onMenu && days.length === 1) next.billingDay = days[0];
 
   for (const field of FILLED_FIELDS) {
+    // A field left alone keeps its record of what the catalog last filled: that
+    // record is how a value the person cleared or changed stays theirs through
+    // every later release, and how an overridden field's catalog value is still
+    // known for the catalog's once the override goes.
+    const keepRecord = () => {
+      const was = card.catalog?.filled?.[field];
+      if (was !== undefined) (filled as Record<FilledField, unknown>)[field] = was;
+    };
     const kind = OVERRIDE_KIND[field];
-    if (kind !== undefined && card.overrides?.[kind] !== undefined) continue;
+    if (kind !== undefined && card.overrides?.[kind] !== undefined) {
+      keepRecord();
+      continue;
+    }
     const theirs = personOwns(card, field);
-    if (theirs && !(relink && field !== 'monthlyFeeMinor' && values[field] !== undefined)) continue;
+    if (theirs && !(relink && field !== 'monthlyFeeMinor' && values[field] !== undefined)) {
+      keepRecord();
+      continue;
+    }
 
     const value = values[field];
     if (value === undefined) {
