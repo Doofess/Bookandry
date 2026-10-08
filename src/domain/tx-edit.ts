@@ -45,6 +45,12 @@ export function scopeAllowsMove(scope: EditScope): boolean {
  * summing to its total - the one invariant תשלומים has. Rather than offer an
  * editor that breaks it, the mode is shown read-only and the README says to
  * delete and re-add. An honest limitation beats a half-working control.
+ *
+ * Editing a plan's payments (their amount, on one payment or all of them)
+ * leaves its recurrence alone, `reset.principalMinor` included: the reset at
+ * payment 19 still re-prices what was borrowed at the purchase, never what the
+ * edited payments would be worth. Its scopes are this one or the whole plan;
+ * `planSeriesEdit` never splits a plan.
  */
 export function isInstallmentPlan(recurrence: Recurrence): boolean {
   return recurrence.type === 'monthly' && recurrence.installments !== undefined;
@@ -183,10 +189,32 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
     !isInstallmentPlan(transaction.recurrence) &&
     !sameRecurrence(parsed.recurrence, transaction.recurrence)
   ) {
-    patch.recurrence = parsed.recurrence;
+    patch.recurrence = keepingUnknownKeys(parsed.recurrence, transaction.recurrence);
   }
 
   return patch;
+}
+
+/** The recurrence keys the transaction form builds; any other key on a stored plan is not this version's. */
+const FORM_RECURRENCE_KEYS: ReadonlySet<string> = new Set([
+  'type',
+  'dayOfMonth',
+  'endDate',
+  'installments',
+  'plan',
+  'creditAnnualRate',
+  'rateBasis',
+  'primeMargin',
+]);
+
+/** The form's recurrence, plus the keys of the stored one it doesn't know, when the plan kind is unchanged. */
+function keepingUnknownKeys(next: Recurrence, previous: Recurrence): Recurrence {
+  if (next.type !== 'monthly' || previous.type !== 'monthly' || next.plan !== previous.plan) return next;
+  // A newer version may store keys this one doesn't know; an edit here must not erase them.
+  const unknown = Object.fromEntries(
+    Object.entries(previous).filter(([key]) => !FORM_RECURRENCE_KEYS.has(key)),
+  );
+  return { ...unknown, ...next };
 }
 
 /** True when a patch would write nothing, so the sheet can just close. */

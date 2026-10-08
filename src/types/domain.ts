@@ -187,7 +187,45 @@ export type CardDetails = {
   readonly creditPrimeMargin?: string;
   /** ריבית פיגורים: charged on a bill not paid in time. */
   readonly lateRate?: RateTerm;
+  /**
+   * The card's place in the built-in card catalog: card company, bank (Masav
+   * code, or 'none' for a card not through a bank), tier and club, and the
+   * catalog version it was last filled from. Linked cards follow the catalog
+   * in every field the person has not changed (`overrides`).
+   */
+  readonly catalog?: CardCatalogLink;
+  /** Only the rates the person changed from the catalog's. */
+  readonly overrides?: Partial<Record<DealKind | ExtraRateKind, CardRateTerm>>;
 };
+
+export type CardCatalogLink = {
+  readonly issuer: string;
+  /** Masav code, or 'none': not through a bank. */
+  readonly bank: string;
+  readonly tier: string;
+  readonly club?: string;
+  readonly version: number;
+  /** When a catalog update last changed this card. */
+  readonly updatedOn?: LocalDate;
+  /**
+   * The values the catalog last wrote onto the card. A field still holding
+   * its filled value is the catalog's: a relink or a later release replaces
+   * it, or clears it when the catalog no longer gives one. A field the person
+   * typed, or changed after it was filled, no longer matches, and is theirs.
+   */
+  readonly filled?: CatalogFilled;
+};
+
+/** The card fields the catalog fills, as it last filled them. */
+export type CatalogFilled = {
+  readonly fxFeeRate?: string;
+  readonly monthlyFeeMinor?: number;
+  readonly creditPrimeMargin?: string;
+  readonly lateRate?: RateTerm;
+};
+
+/** A card's rate: a `RateTerm`, or the Bank of Israel rate plus a margin (fair-credit late interest). */
+export type CardRateTerm = RateTerm | { readonly basis: 'boi'; readonly margin: string };
 
 /**
  * Whose an account is: one person's, a joint account (a couple's, a family's),
@@ -319,6 +357,27 @@ export type Recurrence =
       readonly rateBasis?: 'prime';
       /** What the loan adds to prime, as a signed decimal string ("1.5", "-0.4"). */
       readonly primeMargin?: string;
+      /**
+       * A long קרדיט (קרדיט פלוס) whose rate follows prime from one payment
+       * on: from `atPayment` the rate is the plan's rate plus however far
+       * prime has moved since `primeAtPurchase` (Max: payment 19). Absent on
+       * every plan that is fixed for its whole life, and on rows written before
+       * it existed - an older app reads the plan as an ordinary fixed קרדיט.
+       *
+       * `rate`, `paymentMinor` and `frozen` are for once the reset payment's
+       * date has passed: its rate and payment are then saved and never move.
+       * `principalMinor` is what the plan borrowed, in its own currency, as the
+       * schedule shown at saving priced it; absent on rows saved before it was
+       * kept, which re-price from what their payments are worth.
+       */
+      readonly reset?: {
+        readonly atPayment: number;
+        readonly primeAtPurchase: string;
+        readonly principalMinor?: number;
+        readonly rate?: string;
+        readonly paymentMinor?: number;
+        readonly frozen?: true;
+      };
     }
   | {
       readonly type: 'yearly';
@@ -339,6 +398,13 @@ export type Transaction = {
   /** First occurrence of the series. */
   readonly date: LocalDate;
   readonly note?: string;
+  /**
+   * A 30+ purchase (אשראי 30 פלוס): charged on the card's billing date after
+   * next, a month late, with that month's interest already in its amount.
+   * `rate` is the annual nominal rate it was priced at, snapshotted. Absent on
+   * every ordinary purchase, and on every row written before it existed.
+   */
+  readonly deferral?: { readonly rate: string };
 
   // --- denormalised by materialize(); never written by hand ---
   /** === date */
@@ -460,6 +526,21 @@ export type Redirect = {
 export function redirectId(tbl: RedirectTable, from: string): string {
   return `${tbl}:${from}`;
 }
+
+/** The kinds of purchase terms a card company offers; the card catalog's deal rules are keyed by these. */
+export const DEAL_KINDS = [
+  'regular',
+  'installments',
+  'credit',
+  'long_credit',
+  'deferred',
+  'split_purchase',
+] as const;
+export type DealKind = (typeof DEAL_KINDS)[number];
+
+/** Rates a card carries beyond its deals. */
+export const EXTRA_RATE_KINDS = ['late', 'over_limit', 'cash'] as const;
+export type ExtraRateKind = (typeof EXTRA_RATE_KINDS)[number];
 
 export type Settings = {
   readonly id: 'singleton';

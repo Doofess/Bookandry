@@ -35,7 +35,9 @@ import { PrimeStrip } from '../summary/prime-strip';
 import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
+import { SplitPurchaseSheet } from '../transaction/split-purchase';
 import { TransactionSheet } from '../transaction/transaction-sheet';
+import { useSplitOffer, type SplitOffer } from '../transaction/use-split-offer';
 import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 
 /** "Smart import": its own chunk, fetched the first time it is opened. */
@@ -61,6 +63,8 @@ export function FeedScreen() {
    */
   const [menuFor, setMenuFor] = useState<Occurrence | undefined>(undefined);
   const runAction = useRowActions();
+  /** The purchase being split into payments, kept once its menu has closed. */
+  const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
   const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
@@ -70,6 +74,7 @@ export function FeedScreen() {
   const candidates = useCandidates(filters.profileId, window);
   const occurrences = useOccurrences(candidates, window, today, filters.profileId, settings.defaultCurrency);
   const lookups = useFeedLookups();
+  const splitMenu = useSplitOffer(menuFor, lookups?.paymentMethods);
 
   /*
    * Files shared from the phone wait in the service worker's cache: open the
@@ -312,6 +317,7 @@ export function FeedScreen() {
 
       <RowActionsSheet
         occurrence={menuFor}
+        split={splitMenu?.kind}
         onOpenChange={(open) => {
           if (!open) setMenuFor(undefined);
         }}
@@ -323,7 +329,23 @@ export function FeedScreen() {
             sheet.openEdit(occurrence);
             return;
           }
+          if (action === 'split') {
+            if (splitMenu?.kind === 'offer') setSplitting(splitMenu.offer);
+            return;
+          }
           void runAction(action, occurrence);
+        }}
+      />
+
+      <SplitPurchaseSheet
+        offer={splitting}
+        today={today}
+        onOpenChange={(open) => {
+          if (!open) setSplitting(undefined);
+        }}
+        onDone={(date) => {
+          setSplitting(undefined);
+          setMonth(startOfMonth(date));
         }}
       />
 

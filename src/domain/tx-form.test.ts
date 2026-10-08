@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { creditSchedule } from '@/lib/money';
+
 import { splitInstallments } from './calculators';
 import { expandOccurrences } from './occurrences';
 import { d, makeTx } from './test-factories';
@@ -7,6 +9,7 @@ import {
   chargesInterest,
   defaultFormValues,
   effectiveRate,
+  isInstallmentMode,
   isPrimeLinked,
   defaultRecurringDay,
   firstOccurrenceDate,
@@ -811,5 +814,102 @@ describe('the first month of a monthly rule that starts between billing days', (
     expect(partialFirstOf({ ...form, mode: 'installments' })).toBeUndefined();
     expect(partialFirstOf({ ...form, mode: 'one_time' })).toBeUndefined();
     expect(partialFirstOf({ ...form, amount: '' })).toBeUndefined();
+  });
+});
+
+describe('קרדיט פלוס: long credit', () => {
+  const long = (over: Partial<TxFormValues> = {}) =>
+    values({
+      mode: 'long_credit',
+      amount: '3000',
+      installmentCount: '24',
+      annualRate: '15.5',
+      primeRate: '4.75',
+      ...over,
+    });
+
+  it('charges interest, as a plan of up to 36 payments', () => {
+    expect(chargesInterest('long_credit')).toBe(true);
+    expect(isInstallmentMode('long_credit')).toBe(true);
+    expect(maxPaymentsFor('long_credit')).toBe(36);
+    expect(issuesFor(long({ installmentCount: '36' }), 'installmentCount')).toEqual([]);
+    expect(issuesFor(long({ installmentCount: '37' }), 'installmentCount')).toEqual([
+      'installments_out_of_range',
+    ]);
+  });
+
+  it('is stored as a קרדיט plan, so an older app reads it as one', () => {
+    const parsed = parse(long());
+    expect(parsed.recurrence).toEqual({
+      type: 'monthly',
+      dayOfMonth: 15,
+      installments: 24,
+      plan: 'credit',
+      creditAnnualRate: '15.5',
+    });
+    expect(parsed.installmentTotalMinor).toBe(creditSchedule(300_000, '15.5', 24).totalMinor);
+  });
+
+  it('records prime at purchase where the card’s rate resets with it', () => {
+    const parsed = parse(long({ resetAt: 19 }));
+    expect(parsed.recurrence).toMatchObject({
+      plan: 'credit',
+      installments: 24,
+      // And what it borrowed, so payment 19 is re-priced from the schedule shown.
+      reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 },
+    });
+  });
+
+  it('records no reset that cannot happen: no rate, no prime, or a plan that ends first', () => {
+    expect(parse(long({ resetAt: 19, annualRate: '' })).recurrence).not.toHaveProperty('reset');
+    expect(parse(long({ resetAt: 19, primeRate: '' })).recurrence).not.toHaveProperty('reset');
+    expect(parse(long({ resetAt: 19, installmentCount: '18' })).recurrence).not.toHaveProperty('reset');
+    // Not for an ordinary קרדיט, whatever a stale field says.
+    expect(parse(long({ resetAt: 19, mode: 'credit' })).recurrence).not.toHaveProperty('reset');
+  });
+
+  it('starts at 19 payments, and keeps a count already in range', () => {
+    expect(recurrenceDefaults('long_credit', values({ installmentCount: '' })).installmentCount).toBe('19');
+    expect(recurrenceDefaults('long_credit', values({ installmentCount: '12' })).installmentCount).toBe('19');
+    expect(recurrenceDefaults('long_credit', values({ installmentCount: '24' })).installmentCount).toBe('24');
+    expect(recurrenceDefaults('long_credit', values({ installmentCount: '48' })).installmentCount).toBe('36');
+    expect(recurrenceDefaults('long_credit', long())).not.toHaveProperty('annualRate');
+  });
+});
+
+describe('30+: a deferred purchase', () => {
+  const deferred = (over: Partial<TxFormValues> = {}) =>
+    values({ mode: 'deferred', amount: '1000', annualRate: '15.5', ...over });
+
+  it('is one charge, a month later, with a month of interest rounded once', () => {
+    expect(chargesInterest('deferred')).toBe(true);
+    expect(isInstallmentMode('deferred')).toBe(false);
+    const parsed = parse(deferred());
+    expect(parsed.recurrence).toEqual({ type: 'one_time' });
+    // ₪1,000 × (1 + 15.5% / 12) = ₪1,012.9166…
+    expect(parsed.amountMinor).toBe(101_292);
+    expect(parsed.deferral).toEqual({ rate: '15.5' });
+    expect(parsed.installmentTotalMinor).toBeUndefined();
+  });
+
+  it('snapshots a zero rate when none is entered', () => {
+    const parsed = parse(deferred({ annualRate: '' }));
+    expect(parsed.amountMinor).toBe(100_000);
+    expect(parsed.deferral).toEqual({ rate: '0' });
+  });
+
+  it('refuses a rate that is not one', () => {
+    expect(issuesFor(deferred({ annualRate: '1.2.3' }), 'annualRate')).toEqual(['rate_out_of_range']);
+  });
+
+  it('carries no deferral on anything else', () => {
+    expect(parse(values()).deferral).toBeUndefined();
+  });
+
+  it('keeps the rate entering it, and asks for no count or end', () => {
+    const next = recurrenceDefaults('deferred', values({ installmentCount: '12', endDate: '2027-01-01' }));
+    expect(next).toMatchObject({ mode: 'deferred', installmentCount: '', endDate: '', frequency: '' });
+    expect(next).not.toHaveProperty('annualRate');
+    expect(recurrenceDefaults('one_time', deferred()).annualRate).toBe('');
   });
 });

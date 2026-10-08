@@ -2,7 +2,7 @@ import { CalendarClock } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { Percent } from '@/components/percent';
-import { billingDayOf, chargeDate, fxFeeFor } from '@/domain/cards';
+import { billingDayOf, chargeDate, deferredChargeDate, fxFeeFor } from '@/domain/cards';
 import { formatLocalDate, isLocalDate } from '@/lib/dates';
 import type { PaymentMethod } from '@/types/domain';
 import type { Currency, Minor } from '@/types/money';
@@ -15,11 +15,14 @@ import type { Currency, Minor } from '@/types/money';
  */
 export function CardChargeNote({
   method,
+  deferred = false,
   date,
   currency,
   amountMinor,
 }: {
   readonly method: PaymentMethod | undefined;
+  /** A 30+ purchase: on the bill after next. */
+  readonly deferred?: boolean;
   readonly date: string;
   readonly currency: Currency;
   readonly amountMinor: Minor | undefined;
@@ -36,7 +39,11 @@ export function CardChargeNote({
         {day === undefined || !isLocalDate(date)
           ? null
           : t('tx.cardCharged', {
-              date: formatLocalDate(chargeDate(date, day), i18n.language, { dateStyle: 'medium' }),
+              date: formatLocalDate(
+                deferred ? deferredChargeDate(date, day) : chargeDate(date, day),
+                i18n.language,
+                { dateStyle: 'medium' },
+              ),
             })}
         {fee === undefined || amountMinor === undefined ? null : (
           <>

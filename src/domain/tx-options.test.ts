@@ -117,6 +117,9 @@ describe('what each kind of transaction can be paid with', () => {
 
   it('a credit plan takes only credit cards', () => {
     expect(offered('credit')).toEqual(['visa']);
+    // קרדיט פלוס and 30+ are a card's own deals too.
+    expect(offered('long_credit')).toEqual(['visa']);
+    expect(offered('deferred')).toEqual(['visa']);
   });
 
   it('a cheque pays once or in instalments, never as a standing order', () => {

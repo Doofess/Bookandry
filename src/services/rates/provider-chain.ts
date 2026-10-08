@@ -134,5 +134,5 @@ export function backoffDelayMs(consecutiveFailures: number, random = Math.random
   // so noUncheckedIndexedAccess is satisfied without an assertion.
   const base = BACKOFF_STEPS_MS[index] ?? BACKOFF_STEPS_MS[0];
   const jitter = 1 + (random() - 0.5) * 0.4; // +/-20%
-  return Math.round(base * jitter);
+  return Math.round(base * jitter); // money-allow: a retry delay in milliseconds
 }

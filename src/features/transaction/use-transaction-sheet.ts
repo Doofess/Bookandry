@@ -1,11 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { loadCatalog } from '@/data/card-catalog';
+import { resolveCard, type ResolvedCard } from '@/data/card-catalog/resolve';
 import { db } from '@/db/db';
 import { expandOccurrences } from '@/domain/occurrences';
 import { isLocalDate, maxDate, minDate } from '@/lib/dates';
-import type { Occurrence, Override, Transaction } from '@/types/domain';
+import type { CardCatalogLink, Occurrence, Override, PaymentMethod, Transaction } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 /**
@@ -244,4 +246,82 @@ export function useEditTarget(target: SheetTarget, today: LocalDate): EditTarget
   ]);
 
   return state ?? { status: 'loading' };
+}
+
+/** A credit card's catalog link, or undefined: only a credit card is linked. */
+function linkOf(method: PaymentMethod): CardCatalogLink | undefined {
+  return method.type === 'credit_card' ? method.card?.catalog : undefined;
+}
+
+const linkKey = (link: CardCatalogLink) => `${link.issuer}|${link.bank}|${link.tier}|${link.club ?? ''}`;
+
+const NO_CARDS: ReadonlyMap<string, ResolvedCard> = new Map();
+
+/**
+ * The catalog entry of every card linked to it, by payment method id, so the
+ * purchase form can offer the chosen card's own deals the moment it is chosen.
+ *
+ * The catalog arrives through `loadCatalog()` and nowhere else, so none of it
+ * is in the main chunk. Until it has loaded - or if it cannot be had - the map
+ * is empty and the form is what it always was: a card it does not know is a
+ * card not linked, and nothing waits on it.
+ */
+export function useResolvedCards(methods: readonly PaymentMethod[]): ReadonlyMap<string, ResolvedCard> {
+  return useResolvedCardsState(methods).cards;
+}
+
+/**
+ * `useResolvedCards`, and whether the catalog has answered for these cards:
+ * false while it is still loading, true once it has loaded, or failed to. A
+ * linked card is "not resolved yet" only while `settled` is false.
+ */
+export function useResolvedCardsState(methods: readonly PaymentMethod[]): {
+  readonly cards: ReadonlyMap<string, ResolvedCard>;
+  readonly settled: boolean;
+} {
+  const linked = methods.flatMap((m) => {
+    const link = linkOf(m);
+    return link === undefined ? [] : [{ id: m.id, link }];
+  });
+  // The links' parts, not the methods' identity: every live-query tick hands over new objects.
+  const key = linked.map(({ id, link }) => `${id}=${linkKey(link)}`).join(',');
+  const [found, setFound] = useState<{ key: string; cards: ReadonlyMap<string, ResolvedCard> } | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (key === '') return undefined;
+    let live = true;
+    loadCatalog().then(
+      (catalog) => {
+        if (!live) return;
+        const cards = new Map<string, ResolvedCard>();
+        for (const { id, link } of linked) {
+          const resolved = resolveCard(catalog, link);
+          if (resolved !== undefined) cards.set(id, resolved);
+        }
+        setFound({ key, cards });
+      },
+      () => {
+        // Cannot be had: the form is what it always was, for a card not linked.
+        if (live) setFound({ key, cards: NO_CARDS });
+      },
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  if (key === '') return { cards: NO_CARDS, settled: true };
+  return found?.key === key ? { cards: found.cards, settled: true } : { cards: NO_CARDS, settled: false };
+}
+
+/** One card's catalog entry, for a card just saved; undefined when it is not linked or cannot be had. */
+export async function resolveMethodCard(method: PaymentMethod): Promise<ResolvedCard | undefined> {
+  const link = linkOf(method);
+  if (link === undefined) return undefined;
+  try {
+    return resolveCard(await loadCatalog(), link);
+  } catch {
+    return undefined;
+  }
 }

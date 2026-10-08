@@ -17,3 +17,4 @@ src/data/bank-branches.json
 
 # Subagent-driven development scratch (git-ignored)
 .superpowers
+.playwright-mcp

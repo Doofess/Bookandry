@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { DEAL_KINDS, EXTRA_RATE_KINDS, type DealKind, type ExtraRateKind } from '@/types/domain';
+
 import type { ExportEnvelope } from './transfer-schema';
 import { validateEnvelope } from './transfer-validate';
 
@@ -246,6 +248,65 @@ describe('referential integrity', () => {
     }
   });
 
+  it('keeps a long credit’s prime reset and a 30+ purchase’s rate, and reads rows from before them', () => {
+    const plan = (reset: unknown) =>
+      validateEnvelope(
+        withTx({
+          recurrence: {
+            type: 'monthly',
+            dayOfMonth: 12,
+            installments: 24,
+            plan: 'credit',
+            creditAnnualRate: '15.5',
+            ...(reset === undefined ? {} : { reset }),
+          },
+          seriesEnd: '2028-02-12',
+        }),
+      );
+    const kept = plan({ atPayment: 19, primeAtPurchase: '4.75' });
+    expect(kept.ok && kept.doc.data.transactions[0]?.recurrence).toMatchObject({
+      reset: { atPayment: 19, primeAtPurchase: '4.75' },
+    });
+    const frozen = plan({
+      atPayment: 19,
+      primeAtPurchase: '4.75',
+      rate: '16',
+      paymentMinor: 13_000,
+      frozen: true,
+    });
+    expect(frozen.ok).toBe(true);
+    // What the plan borrowed, kept for its reset; a reset from before it was kept still reads.
+    const priced = plan({ atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 });
+    expect(priced.ok && priced.doc.data.transactions[0]?.recurrence).toMatchObject({
+      reset: { principalMinor: 300_000 },
+    });
+    expect(kept.ok && kept.doc.data.transactions[0]?.recurrence).not.toHaveProperty('reset.principalMinor');
+    for (const bad of [
+      { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 0 },
+      { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 1.5 },
+      { atPayment: 0, primeAtPurchase: '4.75' },
+      { atPayment: 19, primeAtPurchase: 'x' },
+      {},
+    ]) {
+      expect(plan(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+    // Written before this release: no reset, read exactly as before.
+    const old = plan(undefined);
+    expect(old.ok && old.doc.data.transactions[0]?.recurrence).toEqual({
+      type: 'monthly',
+      dayOfMonth: 12,
+      installments: 24,
+      plan: 'credit',
+      creditAnnualRate: '15.5',
+    });
+
+    const deferred = validateEnvelope(withTx({ deferral: { rate: '15.5' } }));
+    expect(deferred.ok && deferred.doc.data.transactions[0]?.deferral).toEqual({ rate: '15.5' });
+    expect(validateEnvelope(withTx({ deferral: { rate: '1e1' } })).ok).toBe(false);
+    const before = validateEnvelope(withTx({}));
+    expect(before.ok && before.doc.data.transactions[0]).not.toHaveProperty('deferral');
+  });
+
   it('accepts what a card company shows about a card, and refuses what does not read', () => {
     const doc = envelope() as ExportEnvelope;
     const [first] = doc.data.paymentMethods;
@@ -279,6 +340,73 @@ describe('referential integrity', () => {
     ]) {
       expect(withCard(bad).ok, JSON.stringify(bad)).toBe(false);
     }
+  });
+
+  it('keeps a card’s catalog link and the rates the person changed, and refuses ones that do not read', () => {
+    const doc = envelope() as ExportEnvelope;
+    const [first] = doc.data.paymentMethods;
+    const withCard = (card: unknown) =>
+      validateEnvelope({ ...doc, data: { ...doc.data, paymentMethods: [{ ...first, card }] } });
+    const card = {
+      billingDay: 10,
+      catalog: {
+        issuer: 'max',
+        bank: '20',
+        tier: 'international',
+        club: 'skymax',
+        version: 1,
+        updatedOn: '2026-10-08',
+        filled: { fxFeeRate: '3', creditPrimeMargin: '10.75', lateRate: { basis: 'prime', margin: '13.80' } },
+      },
+      overrides: {
+        credit: { basis: 'prime', margin: '9' },
+        long_credit: { basis: 'fixed', rate: '14.5' },
+        late: { basis: 'boi', margin: '16.40' },
+      },
+    };
+    const result = withCard(card);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.doc.data.paymentMethods[0]?.card).toEqual(card);
+    for (const bad of [
+      { catalog: { issuer: 'max', bank: '20', tier: 'international', version: 0 } },
+      { catalog: { issuer: 'max', bank: '20', tier: 'international', version: 1.5 } },
+      { catalog: { issuer: 'max', bank: '20', version: 1 } },
+      { catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1, updatedOn: '2026-02-30' } },
+      { overrides: { late: { basis: 'boi', margin: '+1' } } },
+      { overrides: { credit: { basis: 'fixed', rate: '-1' } } },
+      { catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1, filled: { fxFeeRate: '1e1' } } },
+    ]) {
+      expect(withCard(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('accepts an override for exactly the deal and extra-rate kinds, the same list the types use', () => {
+    const doc = envelope() as ExportEnvelope;
+    const [first] = doc.data.paymentMethods;
+    const withOverride = (kind: string) =>
+      validateEnvelope({
+        ...doc,
+        data: {
+          ...doc.data,
+          paymentMethods: [{ ...first, card: { overrides: { [kind]: { basis: 'prime', margin: '1' } } } }],
+        },
+      }).ok;
+    // A record keyed by the union: the compiler fails this if a kind is added to one and not the other.
+    const every: Record<DealKind | ExtraRateKind, true> = {
+      regular: true,
+      installments: true,
+      credit: true,
+      long_credit: true,
+      deferred: true,
+      split_purchase: true,
+      late: true,
+      over_limit: true,
+      cash: true,
+    };
+    expect(Object.keys(every).sort()).toEqual([...DEAL_KINDS, ...EXTRA_RATE_KINDS].sort());
+    for (const kind of Object.keys(every)) expect(withOverride(kind), kind).toBe(true);
+    // A kind a later release adds is kept as it came, so this one never refuses the card.
+    expect(withOverride('surcharge')).toBe(true);
   });
 
   it('rejects an impossible calendar date', () => {

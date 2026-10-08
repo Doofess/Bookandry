@@ -8,8 +8,10 @@ import { usePrime } from '@/app/prime';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
+import type { ResolvedCard } from '@/data/card-catalog/resolve';
 import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
+import { cardDealRate } from '@/domain/card-catalog-link';
 import {
   billingDayOf,
   CARD_CURRENCY,
@@ -25,8 +27,11 @@ import {
   type CardBill,
   type CardCommitments,
 } from '@/domain/cards';
+import { rateOfTerm } from '@/domain/deal-rules';
+import { followsPrimeFrom } from '@/domain/long-credit';
 import { methodOwnedBy } from '@/domain/tx-options';
 import { ProfileSwitcher } from '@/features/feed/profile-switcher';
+import { useResolvedCards } from '@/features/transaction/use-transaction-sheet';
 import { ordinalDay } from '@/i18n/ordinal';
 import { systemClock } from '@/lib/clock';
 import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
@@ -36,10 +41,12 @@ import {
   type Occurrence,
   type PaymentMethod,
   type Profile,
+  type Recurrence,
 } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 import { cardGradient } from './card-colors';
+import { tierName } from './catalog-names';
 import { MethodEditor, OtherMethods } from './method-editor';
 import { NetworkLogo } from './network-logo';
 import { UnfinishedNotice } from './unfinished-notice';
@@ -67,6 +74,8 @@ export function CardsScreen() {
     () => (data?.cards ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
     [data, whose],
   );
+  // Each linked card's catalog entry: its rates and names, as every other screen reads them.
+  const resolvedCards = useResolvedCards(cards);
   // Each card's commitments, worked out once: its panel and the household's total both read them.
   const commitments = useMemo(
     () => new Map(cards.map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)])),
@@ -117,6 +126,7 @@ export function CardsScreen() {
               <li key={card.id}>
                 <CardPanel
                   card={card}
+                  resolved={resolvedCards.get(card.id)}
                   owner={data.profiles.get(card.profileId)}
                   occurrences={data.occurrences}
                   commitments={commitments.get(card.id)}
@@ -148,6 +158,7 @@ export function CardsScreen() {
 
 function CardPanel({
   card,
+  resolved,
   owner,
   occurrences,
   commitments,
@@ -156,6 +167,8 @@ function CardPanel({
   onEdit,
 }: {
   readonly card: PaymentMethod;
+  /** Its catalog entry, once loaded; undefined for a card not linked. */
+  readonly resolved: ResolvedCard | undefined;
   readonly owner: Profile | undefined;
   readonly occurrences: readonly Occurrence[];
   readonly commitments: CardCommitments | undefined;
@@ -165,6 +178,7 @@ function CardPanel({
 }) {
   const { t, i18n } = useTranslation('cards');
   const details = card.card;
+  const tier = tierName(details, resolved, i18n.language);
   const day = billingDayOf(card);
   const bills = cardBills(occurrences, card);
   const upcoming = bills.filter((bill) => compareLocal(bill.chargeDate, today) >= 0).reverse();
@@ -221,11 +235,7 @@ function CardPanel({
             {card.label}
           </h2>
           <p className="text-sm opacity-85">
-            {[
-              details?.tier,
-              details?.club,
-              details?.kind === undefined ? undefined : t(`kind.${details.kind}`),
-            ]
+            {[tier, details?.club, details?.kind === undefined ? undefined : t(`kind.${details.kind}`)]
               .filter(Boolean)
               .join(' · ')}
           </p>
@@ -293,7 +303,7 @@ function CardPanel({
 
       {commitments === undefined ? null : <CardCommitmentsBox commitments={commitments} />}
 
-      <ChargesList card={card} />
+      <ChargesList card={card} resolved={resolved} />
 
       {/* Fee lines exist only in a shekel base (`cardFeeOccurrences`); say nothing otherwise. */}
       {baseCurrency === CARD_CURRENCY ? (
@@ -363,7 +373,7 @@ function HouseholdCommitments({
 }
 
 /** One card's סך הכל התחייבויות בכרטיס, and the plans behind it. */
-function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitments }) {
+export function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitments }) {
   const { t, i18n } = useTranslation('cards');
   const [open, setOpen] = useState(false);
   const date = (value: LocalDate) =>
@@ -411,6 +421,7 @@ function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitm
                         date: date(plan.last.date),
                       })}
                     </span>
+                    <FollowsPrime recurrence={plan.transaction.recurrence} />
                   </span>
                   <Money minor={plan.remainingMinor} currency={CARD_CURRENCY} className="shrink-0" />
                 </li>
@@ -420,6 +431,15 @@ function CardCommitmentsBox({ commitments }: { readonly commitments: CardCommitm
         </>
       )}
     </div>
+  );
+}
+
+/** A long קרדיט that will re-price with prime: from which payment. */
+function FollowsPrime({ recurrence }: { readonly recurrence: Recurrence }) {
+  const { t } = useTranslation('cards');
+  const at = followsPrimeFrom(recurrence);
+  return at === undefined ? null : (
+    <span className="block text-xs text-muted-foreground">{t('followsPrime', { at })}</span>
   );
 }
 
@@ -490,7 +510,7 @@ function LimitBar({ used, limit }: { readonly used: number; readonly limit: numb
       >
         <div
           className={cn('h-full rounded-full', share >= 0.9 ? 'bg-destructive' : 'bg-primary')}
-          style={{ width: `${String(Math.round(share * 1000) / 10)}%` }}
+          style={{ width: `${String(Math.round(share * 1000) / 10)}%` }} // money-allow: a CSS width
         />
       </div>
       <p className="text-xs text-muted-foreground">
@@ -504,13 +524,45 @@ function LimitBar({ used, limit }: { readonly used: number; readonly limit: numb
   );
 }
 
-/** What the card charges, as its company quotes it. */
-function ChargesList({ card }: { readonly card: PaymentMethod }) {
+/**
+ * What the card charges, as its company quotes it. A linked card's credit and
+ * late rates are read the way the purchase form reads them (`cardDealRate`):
+ * the person's own over the catalog's, so the two screens never disagree.
+ */
+export function ChargesList({
+  card,
+  resolved,
+}: {
+  readonly card: PaymentMethod;
+  readonly resolved: ResolvedCard | undefined;
+}) {
   const { t } = useTranslation('cards');
   const prime = usePrime();
   const details = card.card;
-  const credit = cardCreditRate(card, prime.primeRate);
-  const late = details?.lateRate === undefined ? undefined : rateOf(details.lateRate, prime.primeRate);
+  const linked = resolved !== undefined && details?.catalog !== undefined;
+  const termOf = (kind: 'credit' | 'late') =>
+    linked ? cardDealRate(details, resolved, kind)?.term : undefined;
+  const creditTerm = termOf('credit');
+  const lateTerm = termOf('late');
+  const credit = linked
+    ? creditTerm == null
+      ? ''
+      : (rateOfTerm(creditTerm, prime) ?? '')
+    : cardCreditRate(card, prime.primeRate);
+  const creditMargin = linked
+    ? creditTerm?.basis === 'prime'
+      ? creditTerm.margin
+      : undefined
+    : details?.creditPrimeMargin;
+  const lateShown = linked ? (lateTerm ?? undefined) : details?.lateRate;
+  const late =
+    lateShown === undefined
+      ? undefined
+      : linked
+        ? rateOfTerm(lateShown, prime)
+        : details?.lateRate === undefined
+          ? undefined
+          : rateOf(details.lateRate, prime.primeRate);
   const rows: { key: string; label: string; value: React.ReactNode }[] = [];
 
   if (details?.monthlyFeeMinor !== undefined) {
@@ -527,19 +579,14 @@ function ChargesList({ card }: { readonly card: PaymentMethod }) {
     rows.push({
       key: 'credit',
       label: t('creditRate'),
-      value: <RateValue margin={details?.creditPrimeMargin} rate={credit} />,
+      value: <RateValue margin={creditMargin} rate={credit} />,
     });
   }
-  if (late !== undefined && details?.lateRate !== undefined) {
+  if (late !== undefined && lateShown !== undefined) {
     rows.push({
       key: 'late',
       label: t('lateRate'),
-      value: (
-        <RateValue
-          margin={details.lateRate.basis === 'prime' ? details.lateRate.margin : undefined}
-          rate={late}
-        />
-      ),
+      value: <RateValue margin={lateShown.basis === 'prime' ? lateShown.margin : undefined} rate={late} />,
     });
   }
   if (rows.length === 0) return null;
@@ -620,7 +667,7 @@ function FeeStatus({
             <div
               className="h-full rounded-full bg-primary"
               style={{
-                width: `${String(Math.round(earnedShare(fee.spentMinor, fee.discount.minSpendMinor) * 1000) / 10)}%`,
+                width: `${String(Math.round(earnedShare(fee.spentMinor, fee.discount.minSpendMinor) * 1000) / 10)}%`, // money-allow: a CSS width
               }}
             />
           </div>

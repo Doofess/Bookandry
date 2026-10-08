@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import { Pencil, SkipForward, Trash2, Undo2 } from 'lucide-react';
+import { Pencil, SkipForward, Split, Trash2, Undo2 } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { formatLocalDate } from '@/lib/dates';
 import type { Occurrence } from '@/types/domain';
 
-export type RowAction = 'edit' | 'skip' | 'restore' | 'delete';
+export type RowAction = 'edit' | 'split' | 'skip' | 'restore' | 'delete';
 
 /**
  * The row menu, as ONE sheet at screen level rather than a dropdown per row.
@@ -30,11 +30,17 @@ export type RowAction = 'edit' | 'skip' | 'restore' | 'delete';
  */
 export function RowActionsSheet({
   occurrence,
+  split,
   onOpenChange,
   onAction,
 }: {
   /** The row whose menu is open, or undefined when closed. */
   readonly occurrence: Occurrence | undefined;
+  /**
+   * A purchase its card can split into payments (`useSplitOffer`), or one
+   * that could be once the card has a billing day: then the menu says so.
+   */
+  readonly split?: 'offer' | 'needs_billing_day' | undefined;
   readonly onOpenChange: (open: boolean) => void;
   readonly onAction: (action: RowAction, occurrence: Occurrence) => void;
 }) {
@@ -60,6 +66,23 @@ export function RowActionsSheet({
                 onAction('edit', occurrence);
               }}
             />
+
+            {split === 'needs_billing_day' ? (
+              <p className="flex min-h-11 items-center gap-3 px-3 text-xs text-muted-foreground">
+                <Split className="size-4 shrink-0" aria-hidden />
+                <span>{t('split.needsBillingDay')}</span>
+              </p>
+            ) : null}
+
+            {split === 'offer' ? (
+              <ActionRow
+                icon={Split}
+                label={t('split.action')}
+                onSelect={() => {
+                  onAction('split', occurrence);
+                }}
+              />
+            ) : null}
 
             {isSeries ? (
               occurrence.isSkipped ? (

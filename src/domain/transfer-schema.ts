@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { isLocalDate } from '@/lib/dates';
 import { normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
+import { DEAL_KINDS, EXTRA_RATE_KINDS } from '@/types/domain';
 
 import { isExpiresMonth } from './cards';
 
@@ -69,6 +70,17 @@ const recurrenceSchema = z.discriminatedUnion('type', [
       .string()
       .refine((value) => normalizeRateMargin(value) === value, 'not a margin over prime')
       .optional(),
+    // A long קרדיט that follows prime from one payment on; absent on rows from before it.
+    reset: z
+      .object({
+        atPayment: z.number().int().min(1).max(360),
+        primeAtPurchase: annualRate,
+        principalMinor: z.number().int().positive().max(1e15).optional(),
+        rate: annualRate.optional(),
+        paymentMinor: z.number().int().nonnegative().max(1e15).optional(),
+        frozen: z.literal(true).optional(),
+      })
+      .optional(),
   }),
   z.object({
     type: z.literal('yearly'),
@@ -115,6 +127,18 @@ const rateTerm = z.discriminatedUnion('basis', [
   z.object({ basis: z.literal('fixed'), rate: annualRate }),
 ]);
 
+const KNOWN_BASES: readonly string[] = ['prime', 'fixed', 'boi'];
+
+/**
+ * A rate the person set over the catalog's: a basis this release knows, in
+ * full, or one a later release added, kept as it came (`cardDealRate` reads
+ * it as a rate this release cannot price).
+ */
+const overrideTerm = z.union([
+  z.discriminatedUnion('basis', [...rateTerm.options, z.object({ basis: z.literal('boi'), margin })]),
+  z.looseObject({ basis: z.string().refine((basis) => !KNOWN_BASES.includes(basis), 'a known basis') }),
+]);
+
 const shortText = z.string().trim().min(1).max(40);
 const minorAmount = z.number().int().nonnegative().max(1e12);
 
@@ -146,6 +170,34 @@ export const cardSchema = z.object({
   creditPrimeMargin: margin.optional(),
   lateRate: rateTerm.optional(),
   accountId: z.string().min(1).optional(),
+  // Loose, like the card itself (payment-methods.ts checkedCard): a key a later
+  // release adds inside the link survives an edit made by this one.
+  catalog: z
+    .looseObject({
+      issuer: shortText,
+      bank: shortText,
+      tier: shortText,
+      club: shortText.optional(),
+      version: z.number().int().min(1),
+      updatedOn: localDate.optional(),
+      filled: z
+        .looseObject({
+          fxFeeRate: annualRate.optional(),
+          monthlyFeeMinor: minorAmount.optional(),
+          creditPrimeMargin: margin.optional(),
+          lateRate: rateTerm.optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  // Open on both axes, like `catalog`: a kind or a rate basis a later release
+  // adds must not make this one reject the whole card on a pull, or refuse to
+  // edit it. A kind and a basis this one knows are still checked in full.
+  overrides: z
+    .looseObject(
+      Object.fromEntries([...DEAL_KINDS, ...EXTRA_RATE_KINDS].map((kind) => [kind, overrideTerm.optional()])),
+    )
+    .optional(),
 });
 
 /** A bank account as the bank writes it; never anything that moves money (§12). */
@@ -204,6 +256,8 @@ const transactionSchema = z.object({
   recurrence: recurrenceSchema,
   date: localDate,
   note: z.string().max(2000).optional(),
+  // A 30+ purchase's rate; absent on every other row, and on rows from before it.
+  deferral: z.object({ rate: annualRate }).optional(),
   seriesStart: localDate,
   seriesEnd: localDate,
   isDeleted: z.union([z.literal(0), z.literal(1)]),

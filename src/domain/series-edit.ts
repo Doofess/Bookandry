@@ -118,8 +118,16 @@ export function previousSlot(
 
 /** Apply a patch's transaction-level fields. Per-occurrence fields are ignored. */
 function applyToTransaction(tx: Transaction, patch: TransactionPatch, now: IsoInstant): Transaction {
+  /*
+   * A 30+ deferral belongs to a one-off purchase. A row whose type changes to
+   * a plan or a repeat is not one any more, and a deferral left on it would
+   * bill every one of its payments a month late (`settleDate`).
+   */
+  const { deferral, ...rest } = tx;
+  const recurrence = patch.recurrence ?? tx.recurrence;
+  const base = deferral === undefined || recurrence.type !== 'one_time' ? rest : tx;
   return {
-    ...tx,
+    ...base,
     ...(patch.money === undefined ? {} : { money: patch.money }),
     ...(patch.categoryId === undefined ? {} : { categoryId: patch.categoryId }),
     ...(patch.paymentMethodId === undefined ? {} : { paymentMethodId: patch.paymentMethodId ?? undefined }),
@@ -187,6 +195,18 @@ export function planSeriesEdit(input: SeriesEditInput): SeriesEditResult {
      * original would be closed at a slot before its own start date, leaving a
      * row that can never emit anything and looks entirely normal in the table.
      * "This and all future" from the first occurrence IS "the whole series".
+     */
+    scope = 'all';
+    warnings.push({ kind: 'scope_promoted', from: 'future', to: 'all' });
+  }
+
+  if (scope === 'future' && tx.recurrence.type === 'monthly' && tx.recurrence.installments !== undefined) {
+    /*
+     * A plan (תשלומים, קרדיט) counts its payments from its own date. Split, the
+     * continuation would start the count again: a 36-payment plan split at
+     * payment 5 would run to 40, and its prime reset at payment 19 would land on
+     * the original's 23rd. A plan's terms are one agreement, so an edit to "this
+     * and the rest" of it is an edit to the whole plan.
      */
     scope = 'all';
     warnings.push({ kind: 'scope_promoted', from: 'future', to: 'all' });

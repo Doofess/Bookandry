@@ -1,4 +1,11 @@
-import { addMonthsClamped, compareLocal, endOfMonth, parseLocalDate, startOfMonth } from '@/lib/dates';
+import {
+  addMonthsClamped,
+  compareLocal,
+  endOfMonth,
+  monthsBetween,
+  parseLocalDate,
+  startOfMonth,
+} from '@/lib/dates';
 import {
   addRates,
   normalizeAnnualRate,
@@ -10,6 +17,7 @@ import {
   SHARED_OWNER,
   type InstallmentPlan,
   type Occurrence,
+  type Recurrence,
   type PaymentMethod,
   type RateTerm,
   type Transaction,
@@ -17,6 +25,8 @@ import {
 import type { Currency, LocalDate, Minor } from '@/types/money';
 
 import { isInstallmentPlan } from './tx-edit';
+
+type MonthlyRecurrence = Extract<Recurrence, { type: 'monthly' }>;
 
 /**
  * Credit cards as an Israeli card company runs them.
@@ -50,16 +60,34 @@ export function chargeDate(date: LocalDate, billingDay: number): LocalDate {
 }
 
 /**
+ * The day a 30+ purchase made on `date` is debited: the billing day after
+ * next - a month later than `chargeDate`, which is what its interest buys.
+ */
+export function deferredChargeDate(date: LocalDate, billingDay: number): LocalDate {
+  return addMonthsClamped(startOfMonth(date), 2, billingDay);
+}
+
+/** An occurrence on a billing card: its bill's date, a month later for a 30+ purchase. */
+type Billed = Pick<Occurrence, 'date'> & { readonly transaction?: Pick<Transaction, 'deferral'> };
+
+function billedOn(occurrence: Billed, billingDay: number): LocalDate {
+  return occurrence.transaction?.deferral === undefined
+    ? chargeDate(occurrence.date, billingDay)
+    : deferredChargeDate(occurrence.date, billingDay);
+}
+
+/**
  * When an occurrence's money actually leaves the bank: on its card's next
- * bill, or on its own date for anything not paid by a billing card.
+ * bill (the one after for a 30+ purchase), or on its own date for anything
+ * not paid by a billing card.
  */
 export function settleDate(
-  occurrence: Pick<Occurrence, 'date' | 'paymentMethodId'>,
+  occurrence: Pick<Occurrence, 'date' | 'paymentMethodId'> & Billed,
   methods: ReadonlyMap<string, PaymentMethod>,
 ): LocalDate {
   const id = occurrence.paymentMethodId;
   const day = id === undefined ? undefined : billingDayOf(methods.get(id));
-  return day === undefined ? occurrence.date : chargeDate(occurrence.date, day);
+  return day === undefined ? occurrence.date : billedOn(occurrence, day);
 }
 
 /** A rate term's annual rate today, or undefined while it is not a readable one. */
@@ -110,7 +138,7 @@ export function cardBills(occurrences: readonly Occurrence[], card: PaymentMetho
   for (const occurrence of occurrences) {
     if (occurrence.paymentMethodId !== card.id || occurrence.isSkipped) continue;
     if (occurrence.transaction.kind !== 'expense') continue;
-    const charge = chargeDate(occurrence.date, day);
+    const charge = billedOn(occurrence, day);
     const list = bills.get(charge);
     if (list === undefined) bills.set(charge, [occurrence]);
     else list.push(occurrence);
@@ -144,7 +172,7 @@ export function limitUsedMinor(
         o.paymentMethodId === card.id &&
         !o.isSkipped &&
         o.transaction.kind === 'expense' &&
-        compareLocal(chargeDate(o.date, day), today) > 0 &&
+        compareLocal(billedOn(o, day), today) > 0 &&
         (compareLocal(o.date, today) <= 0 || isInstallmentPlan(o.transaction.recurrence)),
     )
     .reduce((sum, o) => sum + o.money.baseAmountMinor, 0);
@@ -203,7 +231,7 @@ export function cardCommitments(
   today: LocalDate,
 ): CardCommitments {
   const day = billingDayOf(card);
-  const charged = (o: Occurrence) => (day === undefined ? o.date : chargeDate(o.date, day));
+  const charged = (o: Occurrence) => (day === undefined ? o.date : billedOn(o, day));
   let purchasesMinor = 0;
   const series = new Map<string, Occurrence[]>();
   for (const o of occurrences) {
@@ -226,13 +254,8 @@ export function cardCommitments(
     const recurrence = next?.transaction.recurrence;
     /* v8 ignore next -- a series is only listed with a payment, and isInstallmentPlan let only monthly plans in */
     if (next === undefined || last === undefined || recurrence?.type !== 'monthly') continue;
-    const amounts = payments.map((o) => o.money.baseAmountMinor);
-    const remainingMinor = amounts.reduce((sum, amount) => sum + amount, 0);
-    const rate = recurrence.creditAnnualRate;
-    const principal =
-      rate === undefined || normalizeAnnualRate(rate) === undefined
-        ? remainingMinor
-        : presentValueMinor(amounts, rate);
+    const remainingMinor = payments.reduce((sum, o) => sum + o.money.baseAmountMinor, 0);
+    const principal = principalOf(payments, recurrence);
     plans.push({
       seriesId,
       plan: recurrence.plan ?? 'installments',
@@ -246,6 +269,39 @@ export function cardCommitments(
     });
   }
   return commitmentsOf(purchasesMinor, plans);
+}
+
+/**
+ * The principal still owed on a plan's remaining payments (sorted by date):
+ * their present value at the plan's rate. A long קרדיט re-priced with prime
+ * owes, at its reset, the present value of the payments from there on at the
+ * reset's rate, and that balance is owed with the last payment before it.
+ * Without a rate it is interest-free, and the payments are all principal.
+ */
+function principalOf(payments: readonly Occurrence[], recurrence: MonthlyRecurrence): Minor {
+  const amounts = payments.map((o) => o.money.baseAmountMinor);
+  const rate = recurrence.creditAnnualRate;
+  if (rate === undefined || normalizeAnnualRate(rate) === undefined) {
+    return amounts.reduce((sum, amount) => sum + amount, 0);
+  }
+  const reset = recurrence.reset;
+  if (
+    reset?.paymentMinor === undefined ||
+    reset.rate === undefined ||
+    normalizeAnnualRate(reset.rate) === undefined
+  ) {
+    return presentValueMinor(amounts, rate);
+  }
+  const before: Minor[] = [];
+  const after: Minor[] = [];
+  for (const o of payments) {
+    const number = monthsBetween(o.transaction.date, o.originalDate) + 1;
+    (number < reset.atPayment ? before : after).push(o.money.baseAmountMinor);
+  }
+  const owedAtReset = presentValueMinor(after, reset.rate);
+  const last = before.pop();
+  if (last === undefined) return owedAtReset;
+  return presentValueMinor([...before, last + owedAtReset], rate);
 }
 
 /** The household's commitments: every card's, added up, with all their plans. */

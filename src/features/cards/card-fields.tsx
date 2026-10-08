@@ -1,14 +1,28 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useToday } from '@/app/app-context';
 import { Segmented } from '@/components/segmented';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { loadCatalog } from '@/data/card-catalog';
+import { resolveCard, type ResolvedCard } from '@/data/card-catalog/resolve';
 import { accountTail, bankByCode, bankName } from '@/domain/banks';
-import type { CardDraft, CardDraftField, RateDraft } from '@/domain/card-draft';
+import {
+  cardFieldsForOverride,
+  cardFromDraft,
+  hasOverrides,
+  linkedDraft,
+  type CardDraft,
+  type CardDraftField,
+  type RateDraft,
+} from '@/domain/card-draft';
 import { COMMON_BILLING_DAYS } from '@/domain/cards';
 import { ordinalDay } from '@/i18n/ordinal';
-import type { CardIssuer, CardKind, CardNetwork, PaymentMethod } from '@/types/domain';
+import type { CardCatalogLink, CardIssuer, CardKind, CardNetwork, PaymentMethod } from '@/types/domain';
+
+import { IssuerChooser } from './issuer-chooser';
+import { RateTable } from './rate-table';
 
 const ISSUERS: readonly CardIssuer[] = ['isracard', 'cal', 'max', 'amex', 'diners', 'other'];
 const NETWORKS: readonly CardNetwork[] = ['visa', 'mastercard', 'amex', 'diners', 'isracard'];
@@ -39,6 +53,7 @@ export function CardFields({
   readonly accounts?: readonly PaymentMethod[];
 }) {
   const { t, i18n } = useTranslation('cards');
+  const month = useToday().slice(0, 7);
   // Archived accounts are not offered, unless this card is already paid from one.
   const payers = accounts.filter((a) => a.isArchived === 0 || a.id === draft.accountId);
   // Nothing picked yet, an account, or "another account" once the bank is typed.
@@ -68,25 +83,47 @@ export function CardFields({
     fx: useId(),
   };
   const dayChoice = other ? OTHER_DAY : common.includes(draft.billingDay) ? draft.billingDay : '';
+  // A linked card's company, kind, bank, type and club are the link's: the chooser shows them.
+  const linkedCard = draft.catalog !== undefined;
   const bad = (field: CardDraftField) => invalid.includes(field);
 
   return (
     <div className="space-y-5 rounded-xl border border-border p-3">
+      <IssuerChooser
+        value={draft.catalog}
+        hasOverrides={hasOverrides(draft)}
+        stored={{
+          kind: draft.kind,
+          issuer: draft.issuer,
+          bank: draft.bank,
+          tier: draft.tier,
+          club: draft.club,
+        }}
+        onLink={(link, resolved, keepOverrides) => {
+          onChange(linkedDraft(draft, resolved, link, { keepOverrides, month, language: i18n.language }));
+        }}
+        onUnlink={() => {
+          onChange({ catalog: undefined, overrides: undefined });
+        }}
+      />
+
       <fieldset className="space-y-3">
         <legend className="text-sm font-semibold">{t('edit.theCard')}</legend>
 
-        <div className="space-y-1.5">
-          <Label id={ids.issuer}>{t('edit.issuer')}</Label>
-          <Segmented<CardIssuer | ''>
-            value={draft.issuer}
-            labelledBy={ids.issuer}
-            onChange={(issuer) => {
-              onChange({ issuer });
-            }}
-            size="sm"
-            options={ISSUERS.map((issuer) => ({ value: issuer, label: t(`issuer.${issuer}`) }))}
-          />
-        </div>
+        {linkedCard ? null : (
+          <div className="space-y-1.5">
+            <Label id={ids.issuer}>{t('edit.issuer')}</Label>
+            <Segmented<CardIssuer | ''>
+              value={draft.issuer}
+              labelledBy={ids.issuer}
+              onChange={(issuer) => {
+                onChange({ issuer });
+              }}
+              size="sm"
+              options={ISSUERS.map((issuer) => ({ value: issuer, label: t(`issuer.${issuer}`) }))}
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label id={ids.network}>{t('edit.network')}</Label>
@@ -101,18 +138,20 @@ export function CardFields({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label id={ids.kind}>{t('edit.kind')}</Label>
-          <Segmented<CardKind | ''>
-            value={draft.kind}
-            labelledBy={ids.kind}
-            onChange={(kind) => {
-              onChange({ kind });
-            }}
-            size="sm"
-            options={KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) }))}
-          />
-        </div>
+        {linkedCard ? null : (
+          <div className="space-y-1.5">
+            <Label id={ids.kind}>{t('edit.kind')}</Label>
+            <Segmented<CardKind | ''>
+              value={draft.kind}
+              labelledBy={ids.kind}
+              onChange={(kind) => {
+                onChange({ kind });
+              }}
+              size="sm"
+              options={KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) }))}
+            />
+          </div>
+        )}
 
         {/*
           The household's accounts, when there are any, as the first answer to
@@ -135,7 +174,9 @@ export function CardFields({
                 const bank = bankByCode(payers.find((a) => a.id === choice)?.account?.bank ?? '');
                 onChange({
                   accountId: choice,
-                  ...(bank === undefined ? {} : { bank: bankName(bank, i18n.language) }),
+                  ...(bank === undefined || (linkedCard && draft.kind === 'bank')
+                    ? {}
+                    : { bank: bankName(bank, i18n.language) }),
                 });
               }}
               size="sm"
@@ -160,7 +201,8 @@ export function CardFields({
             <p className="text-xs text-muted-foreground">{t('edit.debitedFromHint')}</p>
           </div>
         )}
-        {payers.length > 0 && !otherAccount && (linked || draft.accountId === '') ? null : (
+        {(payers.length > 0 && !otherAccount && (linked || draft.accountId === '')) ||
+        (linkedCard && draft.kind === 'bank') ? null : (
           <TextField
             id={ids.bank}
             label={draft.kind === 'bank' ? t('edit.bankOfCard') : t('edit.bankDebited')}
@@ -171,26 +213,28 @@ export function CardFields({
             }}
           />
         )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
-            id={ids.tier}
-            label={t('edit.tier')}
-            value={draft.tier}
-            placeholder={t('edit.tierPlaceholder')}
-            onChange={(tier) => {
-              onChange({ tier });
-            }}
-          />
-          <TextField
-            id={ids.club}
-            label={t('edit.club')}
-            value={draft.club}
-            placeholder={t('edit.clubPlaceholder')}
-            onChange={(club) => {
-              onChange({ club });
-            }}
-          />
-        </div>
+        {linkedCard ? null : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              id={ids.tier}
+              label={t('edit.tier')}
+              value={draft.tier}
+              placeholder={t('edit.tierPlaceholder')}
+              onChange={(tier) => {
+                onChange({ tier });
+              }}
+            />
+            <TextField
+              id={ids.club}
+              label={t('edit.club')}
+              value={draft.club}
+              placeholder={t('edit.clubPlaceholder')}
+              onChange={(club) => {
+                onChange({ club });
+              }}
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label htmlFor={ids.lastDigits}>{t('edit.lastDigits')}</Label>
@@ -387,24 +431,26 @@ export function CardFields({
             {t('edit.fxFeeHint')}
           </p>
         </div>
-        <RateField
-          label={t('edit.creditRate')}
-          hint={t('edit.creditRateHint')}
-          draft={draft.credit}
-          invalid={bad('credit')}
-          onChange={(credit) => {
-            onChange({ credit });
-          }}
-        />
-        <RateField
-          label={t('edit.lateRate')}
-          hint={t('edit.lateRateHint')}
-          draft={draft.late}
-          invalid={bad('late')}
-          onChange={(late) => {
-            onChange({ late });
-          }}
-        />
+        <LinkedRates draft={draft} month={month} onChange={onChange}>
+          <RateField
+            label={t('edit.creditRate')}
+            hint={t('edit.creditRateHint')}
+            draft={draft.credit}
+            invalid={bad('credit')}
+            onChange={(credit) => {
+              onChange({ credit });
+            }}
+          />
+          <RateField
+            label={t('edit.lateRate')}
+            hint={t('edit.lateRateHint')}
+            draft={draft.late}
+            invalid={bad('late')}
+            onChange={(late) => {
+              onChange({ late });
+            }}
+          />
+        </LinkedRates>
       </fieldset>
     </div>
   );
@@ -535,5 +581,64 @@ function RateField({
         {invalid ? t('edit.rateInvalid') : hint}
       </p>
     </div>
+  );
+}
+
+/**
+ * The rate table for a card linked to the catalog; the credit and late rate
+ * inputs (the children) for a card that is not, or while the list loads or
+ * cannot be had.
+ */
+function LinkedRates({
+  draft,
+  month,
+  onChange,
+  children,
+}: {
+  readonly draft: CardDraft;
+  readonly month: string;
+  readonly onChange: (patch: Partial<CardDraft>) => void;
+  readonly children: ReactNode;
+}) {
+  const link: CardCatalogLink | undefined = draft.catalog;
+  // Kept with the link it was resolved for, so a stale answer is never shown for another card.
+  const [found, setFound] = useState<{ key: string; resolved: ResolvedCard | undefined } | undefined>(
+    undefined,
+  );
+  const key = link === undefined ? '' : `${link.issuer}|${link.bank}|${link.tier}|${link.club ?? ''}`;
+  useEffect(() => {
+    let live = true;
+    if (link === undefined) return undefined;
+    loadCatalog().then(
+      (catalog) => {
+        if (live) setFound({ key, resolved: resolveCard(catalog, link) });
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+    // The link's parts, not its identity: the draft hands over a new object on every edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const resolved = found?.key === key ? found.resolved : undefined;
+  if (link === undefined || resolved === undefined) return <>{children}</>;
+  // A rate typed into a half-finished field is not read yet; the table shows the catalog's.
+  const read = cardFromDraft(draft, { month });
+  const card = read.ok && read.card !== undefined ? read.card : { catalog: link, overrides: draft.overrides };
+  return (
+    <RateTable
+      card={{ ...card, catalog: link }}
+      resolved={resolved}
+      onOverride={(kind, term) => {
+        const { [kind]: _was, ...rest } = draft.overrides ?? {};
+        const next = term === null ? rest : { ...rest, [kind]: term };
+        onChange({
+          overrides: Object.keys(next).length === 0 ? undefined : next,
+          ...cardFieldsForOverride(kind, term, link),
+        });
+      }}
+    />
   );
 }

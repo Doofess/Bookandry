@@ -36,9 +36,9 @@ export function oklchToSrgb({ l, c, h }: Oklch): readonly [number, number, numbe
   const a = c * Math.cos(radians);
   const b = c * Math.sin(radians);
 
-  const lCone = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const mCone = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const sCone = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const lCone = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3; // money-allow: colour space maths
+  const mCone = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3; // money-allow: colour space maths
+  const sCone = (l - 0.0894841775 * a - 1.291485548 * b) ** 3; // money-allow: colour space maths
 
   const linear = [
     4.0767416621 * lCone - 3.3077115913 * mCone + 0.2309699292 * sCone,
@@ -51,11 +51,11 @@ export function oklchToSrgb({ l, c, h }: Oklch): readonly [number, number, numbe
 
 function encodeGamma(channel: number): number {
   const clipped = Math.min(Math.max(channel, 0), 1);
-  return clipped <= 0.0031308 ? clipped * 12.92 : 1.055 * clipped ** (1 / 2.4) - 0.055;
+  return clipped <= 0.0031308 ? clipped * 12.92 : 1.055 * clipped ** (1 / 2.4) - 0.055; // money-allow: colour space maths
 }
 
 function decodeGamma(channel: number): number {
-  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; // money-allow: colour space maths
 }
 
 /** WCAG 2.2 relative luminance of a gamma-encoded sRGB triple. */

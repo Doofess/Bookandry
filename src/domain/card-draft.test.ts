@@ -29,6 +29,23 @@ const method = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
 const draft = (over: Partial<CardDraft> = {}): CardDraft => ({ ...EMPTY_CARD_DRAFT, ...over });
 
 describe('the card editor', () => {
+  it('keeps fields a newer version added when the card is edited', () => {
+    const previous: CardDetails & { catalog: object } = {
+      issuer: 'max',
+      billingDay: 10,
+      fxFeeRate: '2.5',
+      catalog: { issuer: 'max', bank: '20', tier: 'international', version: 1 },
+    };
+    const opened = cardDraftOf(method({ card: previous }));
+    const result = cardFromDraft({ ...opened, billingDay: '15' }, previous);
+    expect(result.ok && result.card).toMatchObject({ billingDay: 15, catalog: { bank: '20' } });
+
+    // A managed field the user cleared stays cleared.
+    const cleared = cardFromDraft({ ...opened, fxFee: '' }, previous);
+    expect(cleared.ok && cleared.card).not.toHaveProperty('fxFeeRate');
+    expect(cleared.ok && cleared.card).toHaveProperty('catalog');
+  });
+
   it('reads the expiry the way the card prints it', () => {
     expect(parseExpires('09/28')).toBe('2028-09');
     expect(parseExpires('9/2028')).toBe('2028-09');
@@ -206,5 +223,29 @@ describe('a card’s last four digits', () => {
       invalid: ['lastDigits'],
     });
     expect(cardDraftOf(method({ card: { lastDigits: '0427' } })).lastDigits).toBe('0427');
+  });
+});
+
+describe('a card linked to the catalog', () => {
+  const catalog = {
+    issuer: 'max',
+    bank: '20',
+    tier: 'basic',
+    version: 1,
+    filled: { fxFeeRate: '2.5' },
+  };
+  const overrides = { credit: { basis: 'prime' as const, margin: '1' } };
+
+  it('goes through the editor with its link, what was filled and its overrides', () => {
+    const stored = { fxFeeRate: '2.5', catalog, overrides };
+    const result = cardFromDraft(cardDraftOf(method({ card: stored })), stored);
+    expect(result).toMatchObject({ ok: true, card: stored });
+  });
+
+  it('is unlinked by a draft without the link', () => {
+    const stored = { catalog, overrides };
+    const result = cardFromDraft({ ...cardDraftOf(method({ card: stored })), catalog: undefined }, stored);
+    expect(result).toMatchObject({ ok: true, card: { overrides } });
+    expect(result.ok && result.card?.catalog).toBeUndefined();
   });
 });

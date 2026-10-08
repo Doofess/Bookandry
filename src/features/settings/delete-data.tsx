@@ -298,5 +298,5 @@ export function DeleteData({ onBackup }: { readonly onBackup: () => Promise<void
 function relativeTo(iso: string, locale: string): string {
   const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   const hours = Math.max(0, Math.ceil((Date.parse(iso) - systemClock.nowMs()) / 3_600_000));
-  return hours >= 24 ? format.format(Math.round(hours / 24), 'day') : format.format(hours, 'hour');
+  return hours >= 24 ? format.format(Math.round(hours / 24), 'day') : format.format(hours, 'hour'); // money-allow: days for a relative time
 }
