@@ -269,6 +269,11 @@
       "merchant_paid": "When the card company pays the store",
       "billing_date": "On the billing date",
       "request": "From the day you ask"
-    }
+    },
+    "typical": "Typical",
+    "changeFor": "Change {{label}}",
+    "backFor": "Back to the catalog's rate for {{label}}",
+    "clearFor": "Remove my rate for {{label}}",
+    "clear": "Remove my rate"
   }
 }

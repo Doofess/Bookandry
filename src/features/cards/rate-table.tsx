@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react';
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { usePrime } from '@/app/prime';
@@ -141,28 +141,56 @@ function RateRow({
   // The catalog gives no figure: the person's own is the only one there can be.
   const unpublished = row.rate?.basis == null;
 
+  const editorId = useId();
+  const errorId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const focusAfter = useRef<'input' | 'change' | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [info, setInfo] = useState(false);
-  const [basis, setBasis] = useState<'prime' | 'fixed'>(term?.basis === 'fixed' ? 'fixed' : 'prime');
-  const [text, setText] = useState(
-    term?.basis === 'prime' ? term.margin : term?.basis === 'fixed' ? term.rate : '',
-  );
+  const fieldsOf = (t: CardRateTerm | null) =>
+    ({
+      basis: t?.basis === 'fixed' ? 'fixed' : 'prime',
+      text: t?.basis === 'prime' ? t.margin : t?.basis === 'fixed' ? t.rate : '',
+    }) as const;
+  const [basis, setBasis] = useState<'prime' | 'fixed'>(fieldsOf(term).basis);
+  const [text, setText] = useState(fieldsOf(term).text);
   const [bad, setBad] = useState(false);
+  // The override as this row last wrote or saw it: a different one means it changed elsewhere.
+  const overrideKey = JSON.stringify(overridden ? term : null);
+  const [synced, setSynced] = useState(overrideKey);
+  if (synced !== overrideKey) {
+    setSynced(overrideKey);
+    setBasis(fieldsOf(overridden ? term : null).basis);
+    setText(fieldsOf(overridden ? term : null).text);
+    setBad(false);
+  }
+  // After a render that follows a deliberate move, put focus where the person's attention is.
+  useEffect(() => {
+    const target = focusAfter.current;
+    if (target === undefined) return;
+    focusAfter.current = undefined;
+    (target === 'input' ? inputRef.current : changeRef.current)?.focus();
+  });
 
+  const send = (next: CardRateTerm | null): void => {
+    setSynced(JSON.stringify(next));
+    onOverride(row.kind, next);
+  };
   const write = (nextBasis: 'prime' | 'fixed', nextText: string): void => {
     if (nextText.trim() === '') {
       setBad(false);
-      if (overridden) onOverride(row.kind, null);
+      if (overridden) send(null);
       return;
     }
     if (nextBasis === 'prime') {
       const margin = normalizeRateMargin(nextText);
       setBad(margin === undefined);
-      if (margin !== undefined) onOverride(row.kind, { basis: 'prime', margin });
+      if (margin !== undefined) send({ basis: 'prime', margin });
     } else {
       const rate = normalizeAnnualRate(nextText);
       setBad(rate === undefined);
-      if (rate !== undefined) onOverride(row.kind, { basis: 'fixed', rate });
+      if (rate !== undefined) send({ basis: 'fixed', rate });
     }
   };
 
@@ -188,7 +216,9 @@ function RateRow({
             ? 'rates.upTo'
             : found.quality === 'derived'
               ? 'rates.derived'
-              : 'rates.published';
+              : found.quality === 'typical'
+                ? 'rates.typical'
+                : 'rates.published';
 
   const reference = row.kind === 'over_limit' || row.kind === 'cash';
   const editing = unpublished || open;
@@ -251,7 +281,7 @@ function RateRow({
       </div>
 
       {editing ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div id={editorId} className="flex flex-wrap items-center gap-2">
           <Segmented<'prime' | 'fixed'>
             value={basis}
             labelledBy={labelId}
@@ -259,14 +289,14 @@ function RateRow({
               setBasis(next);
               write(next, text);
             }}
-            size="sm"
-            className="w-44"
+            className="w-52"
             options={[
               { value: 'prime', label: t('edit.basisPrime') },
               { value: 'fixed', label: t('edit.basisFixed') },
             ]}
           />
           <Input
+            ref={inputRef}
             id={inputId}
             aria-label={basis === 'prime' ? t('edit.marginLabel', { label }) : label}
             dir="ltr"
@@ -279,21 +309,30 @@ function RateRow({
               write(basis, next);
             }}
             aria-invalid={bad}
+            aria-describedby={bad ? errorId : undefined}
             className="h-11 w-24"
           />
           <span className="text-sm text-muted-foreground">%</span>
         </div>
       ) : null}
-      {bad ? <p className="text-xs text-destructive">{t('edit.rateInvalid')}</p> : null}
+      {bad ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {t('edit.rateInvalid')}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {unpublished ? null : (
           <Button
+            ref={changeRef}
             type="button"
             variant="outline"
             className="h-11"
+            aria-label={t('rates.changeFor', { label })}
             aria-expanded={open}
+            aria-controls={open ? editorId : undefined}
             onClick={() => {
+              if (!open) focusAfter.current = 'input';
               setOpen(!open);
             }}
           >
@@ -305,15 +344,17 @@ function RateRow({
             type="button"
             variant="ghost"
             className="h-11"
+            aria-label={t(unpublished ? 'rates.clearFor' : 'rates.backFor', { label })}
             onClick={() => {
+              focusAfter.current = unpublished ? 'input' : 'change';
               setOpen(false);
               setBad(false);
               setText('');
               setBasis('prime');
-              onOverride(row.kind, null);
+              send(null);
             }}
           >
-            {t('rates.back')}
+            {t(unpublished ? 'rates.clear' : 'rates.back')}
           </Button>
         ) : null}
       </div>

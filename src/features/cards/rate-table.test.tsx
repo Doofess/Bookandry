@@ -1,10 +1,10 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ResolvedCard } from '@/data/card-catalog/resolve';
 import type { CatalogRate, DealRule } from '@/data/card-catalog/types';
-import { annualEffectiveRate } from '@/lib/money';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { CardDetails } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
@@ -60,7 +60,22 @@ const card: CardDetails = { catalog: { issuer: 'max', bank: 'none', tier: 'basic
 
 function setup(resolved: ResolvedCard, c: CardDetails = card) {
   const onOverride = vi.fn();
-  renderWithProviders(<RateTable card={c} resolved={resolved} onOverride={onOverride} />);
+  // The editor keeps the overrides, as the card editor does.
+  function Held() {
+    const [overrides, setOverrides] = useState(c.overrides);
+    return (
+      <RateTable
+        card={{ ...c, ...(overrides === undefined ? {} : { overrides }) }}
+        resolved={resolved}
+        onOverride={(kind, term) => {
+          onOverride(kind, term);
+          const { [kind]: _was, ...rest } = overrides ?? {};
+          setOverrides(term === null ? rest : { ...rest, [kind]: term });
+        }}
+      />
+    );
+  }
+  renderWithProviders(<Held />);
   return { onOverride, user: userEvent.setup() };
 }
 const row = (kind: string) => within(screen.getByTestId(`rate-${kind}`));
@@ -73,17 +88,14 @@ describe('rate table', () => {
   it('shows prime plus margin, the annual rate and the effective rate', () => {
     setup(resolvedOf([deal('credit', 'Credit', rate())]));
     // prime 4.75 + 10.5 = 15.25
-    expect(row('credit').getByText(/Prime/)).toHaveTextContent('Prime');
     expect(screen.getByTestId('rate-credit')).toHaveTextContent(
-      `Prime + 10.50 · 15.25% annual · ${annualEffectiveRate('15.25', 12)}% effective (מתואמת)`,
+      'Prime + 10.50 · 15.25% annual · 16.36% effective (מתואמת)',
     );
   });
 
   it('uses four periods for a quarterly rate', () => {
     setup(resolvedOf([deal('credit', 'Credit', rate({ compounding: 4 }))]));
-    const q = annualEffectiveRate('15.25', 4);
-    expect(q).not.toBe(annualEffectiveRate('15.25', 12));
-    expect(screen.getByTestId('rate-credit')).toHaveTextContent(`${q}% effective`);
+    expect(screen.getByTestId('rate-credit')).toHaveTextContent('15.25% annual · 16.14% effective');
   });
 
   it('tags a maximum, a published, a derived, a statement and a changed rate', () => {
@@ -125,13 +137,13 @@ describe('rate table', () => {
       overrides: { credit: { basis: 'prime', margin: '8' } },
     });
     expect(screen.getByTestId('rate-credit')).toHaveTextContent('Prime + 8.00 · 12.75%');
-    await user.click(row('credit').getByRole('button', { name: "Back to the catalog's rate" }));
+    await user.click(row('credit').getByRole('button', { name: /^Back to the catalog's rate for Credit$/ }));
     expect(onOverride).toHaveBeenCalledWith('credit', null);
   });
 
   it('opens an edit on a published row', async () => {
     const { onOverride, user } = setup(resolvedOf([deal('credit', 'Credit', rate())]));
-    await user.click(row('credit').getByRole('button', { name: 'Change' }));
+    await user.click(row('credit').getByRole('button', { name: 'Change Credit' }));
     const input = row('credit').getByRole('textbox');
     await user.clear(input);
     await user.type(input, '7');
@@ -186,12 +198,82 @@ describe('rate table', () => {
     expect(screen.getByTestId('rate-cash')).toHaveTextContent('20.00% annual');
   });
 
+  it('shows a Bank of Israel row at the BOI rate plus its margin', () => {
+    setup(resolvedOf([deal('credit', 'Credit', rate({ basis: { kind: 'boi', margin: '2' } }))]));
+    expect(screen.getByTestId('rate-credit')).toHaveTextContent(
+      'Bank of Israel rate + 2.00 · 5.25% annual · 5.38% effective',
+    );
+  });
+
+  it('renders a negative margin with a minus sign', () => {
+    setup(resolvedOf([deal('credit', 'Credit', rate({ basis: { kind: 'prime', margin: '-0.4' } }))]));
+    expect(screen.getByTestId('rate-credit')).toHaveTextContent(
+      'Prime − 0.40 · 4.35% annual · 4.44% effective',
+    );
+  });
+
+  it('shows no figure for an unpublished rate, and never the raw source note', () => {
+    setup(
+      resolvedOf([
+        deal(
+          'credit',
+          'Credit',
+          rate({
+            basis: null,
+            source: { ...SOURCE, note: 'published nominal: 9; published effective: 9.5' },
+          }),
+        ),
+        deal(
+          'installments',
+          'Installments',
+          rate({ source: { ...SOURCE, note: 'published nominal: 15.25' } }),
+        ),
+      ]),
+    );
+    expect(screen.getByTestId('rate-credit')).not.toHaveTextContent(/[0-9]%/);
+    expect(document.body).not.toHaveTextContent('published nominal');
+  });
+
+  it('tags a typical rate as typical, not published', () => {
+    setup(resolvedOf([deal('credit', 'Credit', rate({ quality: 'typical' }))]));
+    expect(row('credit').getByText('Typical')).toBeInTheDocument();
+    expect(row('credit').queryByText('Published')).toBeNull();
+  });
+
+  it('moves focus into the editor on Change and back to Change after Back', async () => {
+    const { user } = setup(resolvedOf([deal('credit', 'Credit', rate())]), {
+      ...card,
+      overrides: { credit: { basis: 'prime', margin: '8' } },
+    });
+    const change = row('credit').getByRole('button', { name: 'Change Credit' });
+    await user.click(change);
+    expect(change).toHaveAttribute('aria-expanded', 'true');
+    expect(change).toHaveAttribute('aria-controls');
+    expect(row('credit').getByRole('textbox')).toHaveFocus();
+    await user.click(row('credit').getByRole('button', { name: /^Back to the catalog/ }));
+    expect(row('credit').getByRole('button', { name: 'Change Credit' })).toHaveFocus();
+  });
+
+  it('uses a Remove wording on an unpublished row, and ties the error to the input', async () => {
+    const { onOverride, user } = setup(resolvedOf([deal('credit', 'Credit', rate({ basis: null }))]), {
+      ...card,
+      overrides: { credit: { basis: 'fixed', rate: '12' } },
+    });
+    const input = row('credit').getByRole('textbox');
+    await user.clear(input);
+    await user.type(input, '1..');
+    expect(row('credit').getByRole('alert')).toHaveAttribute('id', input.getAttribute('aria-describedby'));
+    await user.click(row('credit').getByRole('button', { name: 'Remove my rate for Credit' }));
+    expect(onOverride).toHaveBeenLastCalledWith('credit', null);
+    expect(row('credit').queryByText("Back to the catalog's rate")).toBeNull();
+  });
+
   it('renders in Hebrew', async () => {
     await initTestI18n('he');
     setup(resolvedOf([deal('credit', 'Credit', rate())]));
     const r = screen.getByTestId('rate-credit');
     expect(r).toHaveTextContent('פריים + 10.50 · 15.25% שנתית ·');
-    expect(r).toHaveTextContent('מתואמת');
+    expect(r).toHaveTextContent('פריים + 10.50 · 15.25% שנתית · 16.36% מתואמת');
     expect(r).toHaveTextContent('מפורסם');
     expect(screen.getByText(/הריביות צמודות לפריים: 4\.75% היום/)).toBeInTheDocument();
     for (const bdi of r.querySelectorAll('bdi')) expect(bdi).toHaveAttribute('dir', 'ltr');
