@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '@/db/db';
+import { materialize } from '@/db/materialize';
+import { findCandidates } from '@/db/repos/transactions';
 import { makeTx, MONEY } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { Category, PaymentMethod, Profile } from '@/types/domain';
@@ -277,6 +279,33 @@ describe('editing a payment of a plan', () => {
     expect(await screen.findByRole('radio', { name: 'Only this one' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'The whole series' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'This and future' })).not.toBeInTheDocument();
+  });
+
+  it('moves one payment past the series’ end and still counts it, in its new month', async () => {
+    await db.transactions.put(
+      materialize(
+        makeTx({
+          id: 'rent',
+          profileId: 'p1',
+          date: '2026-06-08' as LocalDate,
+          recurrence: { type: 'monthly', dayOfMonth: 8, endDate: '2026-10-08' as LocalDate },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    edit('rent', '2026-10-08');
+    await user.click(await screen.findByRole('radio', { name: 'Only this one' }));
+    const date = screen.getByPlaceholderText(/YYYY/);
+    await user.clear(date);
+    await user.type(date, date.getAttribute('placeholder') === 'MM/DD/YYYY' ? '11/05/2026' : '05/11/2026');
+    await user.tab();
+    await user.click(save());
+
+    const november = { profileId: 'p1', from: '2026-11-01' as LocalDate, to: '2026-11-30' as LocalDate };
+    await waitFor(async () => {
+      expect(await db.overrides.count()).toBe(1);
+    });
+    expect((await findCandidates(db, november)).map((t) => t.id)).toEqual(['rent']);
   });
 
   it('still offers "this and future" on a series that is not a plan', async () => {

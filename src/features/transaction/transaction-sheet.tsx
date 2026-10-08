@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from 'cn';
 import { History, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { useAccount } from '@/app/account';
@@ -28,7 +28,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
-import { applyUndoablePlan, type UndoableAction } from '@/db/occurrence-actions';
+import { applyUndoablePlan, withSeriesBounds, type UndoableAction } from '@/db/occurrence-actions';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
@@ -101,6 +101,22 @@ function fallbackMode(mode: RecurrenceMode, offered: readonly RecurrenceMode[]):
   if (mode === 'deferred') return 'one_time';
   return undefined;
 }
+
+/** What the form's resolver is told about the edit: whether it is one payment, whose rule is not on show. */
+type TxFormContext = { readonly oneOccurrence: boolean };
+
+const schemaResolver = zodResolver(txFormSchema);
+
+/**
+ * The schema, minus the rule's end date when one payment is being edited.
+ *
+ * Moving one payment past its series' end is a move, not a rule change: the
+ * end-date field is not on screen in that scope, so an "ends before it starts"
+ * error on it would refuse the save without a word. The rule is not written
+ * in that scope either, so its end date has nothing to say about the move.
+ */
+const txFormResolver: Resolver<TxFormValues, TxFormContext, TxFormParsed> = (values, context, options) =>
+  schemaResolver(context?.oneOccurrence === true ? { ...values, endDate: '' } : values, context, options);
 
 /**
  * The add-transaction sheet.
@@ -400,9 +416,10 @@ function TransactionForm({
     };
   }, [focusAmount, amountId]);
 
-  const form = useForm<TxFormValues, unknown, TxFormParsed>({
+  const form = useForm<TxFormValues, TxFormContext, TxFormParsed>({
     defaultValues: initial,
-    resolver: zodResolver(txFormSchema),
+    resolver: txFormResolver,
+    context: { oneOccurrence: editing !== undefined && effectiveScope === 'one' },
     // Errors appear once a field has been visited, not on the first keystroke:
     // an amount field that turns red at "4" on the way to "45" is telling the
     // user off for typing.
@@ -726,7 +743,11 @@ function TransactionForm({
       const run = async (): Promise<void> => {
         // The same write, with what it overwrote kept, so the caller can offer
         // Undo, and whether the amount was all that changed, so it can say so.
-        const undoable = await applyUndoablePlan(db, plan);
+        // The series row goes with it only when a moved payment shifts its bounds.
+        const undoable = await applyUndoablePlan(
+          db,
+          withSeriesBounds(editing.transaction, editing.overrides, plan),
+        );
         const onlyAmount = Object.keys(patch).every((key) => key === 'money');
         onSaved(patch.date ?? editing.occurrence.date, undoable, onlyAmount);
       };
