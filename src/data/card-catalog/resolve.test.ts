@@ -149,11 +149,114 @@ describe('resolveCard', () => {
     expect(credit?.from).toBe('bank');
   });
 
-  it('keeps the card company values where the bank has none', () => {
+  it('keeps the card company’s rules where the bank has none, but never its fees', () => {
     const r = resolveCard(catalog, { issuer: 'cal', bank: 'b2', tier: 'gold' });
-    expect(r?.fxFee).toBe('2.5');
     expect(r?.billingDays).toEqual([2, 10]);
     expect(r?.deals.find((d) => d.kind === 'credit')?.rate).toBe(issuerCredit);
+    // A bank card pays the bank's fees: the card company's tariff is for its own cards.
+    expect(r?.fxFee).toBeUndefined();
+    expect(r?.monthlyFeeMinor).toBeUndefined();
+  });
+
+  it('takes no FX fee or card fee from a card company’s tier or club on a bank card', () => {
+    const cal = catalog.issuers[0]!;
+    const c: Catalog = {
+      ...catalog,
+      issuers: [
+        {
+          ...cal,
+          tiers: [{ ...cal.tiers[0]!, fxFee: '2' }, cal.tiers[1]!],
+          clubs: [{ ...cal.clubs[0]!, monthlyMinor: 990, fxFee: '1' }, cal.clubs[1]!],
+        },
+        catalog.issuers[1]!,
+      ],
+    };
+    const r = resolveCard(c, { issuer: 'cal', bank: 'b2', tier: 'gold', club: 'a' });
+    expect(r?.fxFee).toBeUndefined();
+    expect(r?.monthlyFeeMinor).toBeUndefined();
+    expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold', club: 'a' })?.fxFee).toBe('2');
+  });
+
+  it('takes a bank’s own FX fee for one card type over its fee for the card company', () => {
+    const c: Catalog = {
+      ...catalog,
+      banks: [
+        {
+          ...catalog.banks[0]!,
+          fxFeeTiers: [{ issuer: 'cal', tier: 'gold', fee: '1.5', source: src }],
+        },
+        catalog.banks[1]!,
+      ],
+    };
+    expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold' })?.fxFee).toBe('1.5');
+    expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'old' })?.fxFee).toBe('2');
+  });
+
+  it('takes a bank’s foreign-posting rule over the card company’s, tier’s and club’s', () => {
+    const cal = catalog.issuers[0]!;
+    const c: Catalog = {
+      ...catalog,
+      issuers: [
+        { ...cal, tiers: [{ ...cal.tiers[0]!, foreignPosting: 'immediate' }, cal.tiers[1]!] },
+        catalog.issuers[1]!,
+      ],
+      banks: [{ ...catalog.banks[0]!, foreignPosting: 'billing_date' }, catalog.banks[1]!],
+    };
+    expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold' })?.foreignPosting).toBe('billing_date');
+    expect(resolveCard(c, { issuer: 'cal', bank: 'b2', tier: 'gold' })?.foreignPosting).toBe('immediate');
+  });
+
+  it('never gives a bank card the card company’s late rate: it is the bank account’s', () => {
+    const r = resolveCard(catalog, { issuer: 'cal', bank: 'b2', tier: 'gold' });
+    expect(r?.extra.late).toBeUndefined();
+    expect(r?.extra.cash?.from).toBe('issuer'); // other rates still layer
+  });
+
+  it('does not claim a rate for the bank from an override whose rate key is undefined', () => {
+    const c: Catalog = {
+      ...catalog,
+      banks: [
+        {
+          ...catalog.banks[0]!,
+          rates: [],
+          dealOverrides: [{ issuer: 'cal', deal: { kind: 'credit', rate: undefined } }],
+        },
+        catalog.banks[1]!,
+      ],
+    };
+    const credit = resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold' })?.deals.find(
+      (d) => d.kind === 'credit',
+    );
+    expect(credit?.from).toBe('issuer');
+    expect(credit?.rate).toBe(issuerCredit);
+  });
+
+  it('takes a bank’s rate for a club over its rate for the tier, and club and tier over club alone', () => {
+    const forClub = rate({ kind: 'prime', margin: '5' });
+    const forClubTier = rate({ kind: 'prime', margin: '6' });
+    const c: Catalog = {
+      ...catalog,
+      banks: [
+        {
+          ...catalog.banks[0]!,
+          rates: [
+            { issuer: 'cal', tier: 'gold', deal: 'credit', rate: tableCredit },
+            { issuer: 'cal', club: 'a', deal: 'credit', rate: forClub },
+          ],
+        },
+        catalog.banks[1]!,
+      ],
+    };
+    const credit = (link: { tier: string; club?: string }) =>
+      resolveCard(c, { issuer: 'cal', bank: 'b1', ...link })?.deals.find((d) => d.kind === 'credit');
+    expect(credit({ tier: 'gold' })?.rate).toBe(tableCredit);
+    expect(credit({ tier: 'gold', club: 'a' })?.rate).toBe(forClub);
+    expect(credit({ tier: 'old', club: 'a' })?.rate).toBe(forClub);
+    expect(credit({ tier: 'old' })?.from).toBe('issuer');
+
+    c.banks[0]!.rates!.push({ issuer: 'cal', tier: 'gold', club: 'a', deal: 'credit', rate: forClubTier });
+    expect(credit({ tier: 'gold', club: 'a' })?.rate).toBe(forClubTier);
+    expect(credit({ tier: 'old', club: 'a' })?.rate).toBe(forClub);
   });
 
   it('still resolves a tier that is no longer issued, and a known club', () => {
@@ -178,7 +281,7 @@ describe('resolveCard', () => {
     expect(byTier).toMatchObject({ fxFee: '2', foreignPosting: 'billing_date', monthlyFeeMinor: 1500 });
     const byClub = resolveCard(c, { issuer: 'cal', bank: 'none', tier: 'gold', club: 'a' });
     expect(byClub).toMatchObject({ fxFee: '1', foreignPosting: 'billing_date', monthlyFeeMinor: 0 });
-    // The bank's FX fee still comes first.
+    // On a bank card, the bank's FX fee.
     expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold', club: 'a' })?.fxFee).toBe('2');
     // The old tier has none of its own: the card company's stand.
     expect(resolveCard(c, { issuer: 'cal', bank: 'none', tier: 'old' })).toMatchObject({

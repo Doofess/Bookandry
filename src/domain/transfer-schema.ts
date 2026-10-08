@@ -146,6 +146,32 @@ export const cardSchema = z.object({
   creditPrimeMargin: margin.optional(),
   lateRate: rateTerm.optional(),
   accountId: z.string().min(1).optional(),
+  catalog: z
+    .object({
+      issuer: shortText,
+      bank: shortText,
+      tier: shortText,
+      club: shortText.optional(),
+      version: z.number().int().min(1),
+      updatedOn: localDate.optional(),
+    })
+    .optional(),
+  overrides: z
+    .partialRecord(
+      z.enum([
+        'regular',
+        'installments',
+        'credit',
+        'long_credit',
+        'deferred',
+        'split_purchase',
+        'late',
+        'over_limit',
+        'cash',
+      ]),
+      z.discriminatedUnion('basis', [...rateTerm.options, z.object({ basis: z.literal('boi'), margin })]),
+    )
+    .optional(),
 });
 
 /** A bank account as the bank writes it; never anything that moves money (§12). */

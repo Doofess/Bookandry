@@ -83,18 +83,43 @@ export type CatalogIssuer = {
   extraRates?: Partial<Record<ExtraRateKind, CatalogRate>>;
 };
 
+/**
+ * A row of a bank's published rate table. Most rows name a tier; a row for a
+ * club card names the club, and the tier too where the table splits the club by
+ * tier. The most specific row that matches a card wins.
+ */
+export type BankRateRow = {
+  issuer: IssuerId;
+  tier?: string;
+  club?: string;
+  deal: DealKind;
+  rate: CatalogRate;
+};
+
 export type CatalogBank = {
   id: string; // Masav code where one exists
   name: { he: string; en: string };
   issuers: IssuerId[];
+  // A bank card pays the bank's FX fee, from the bank's tariff (see resolveCard).
   fxFee?: Partial<Record<IssuerId, string>>;
+  // The bank's own FX fee for one card type, where its tariff names one (Mizrahi: Max FIRST 2.00%).
+  fxFeeTiers?: { issuer: IssuerId; tier: string; fee: string; source: CatalogSource }[];
+  // A bank-wide rule for when foreign purchases are charged, over the card company's.
+  foreignPosting?: ForeignPosting;
   lateRate?: CatalogRate;
   extraRates?: Partial<Record<ExtraRateKind, CatalogRate>>;
-  // The bank's own rates, per issuer and tier; a missing entry means the bank publishes none.
-  rates?: { issuer: IssuerId; tier: string; deal: DealKind; rate: CatalogRate }[];
+  // The bank's own rates; a missing entry means the bank publishes none.
+  rates?: BankRateRow[];
   // e.g. Discount's long-credit rules; `kind` names the deal being overridden.
   dealOverrides?: { issuer: IssuerId; deal: Partial<DealRule> & { kind: DealKind } }[];
   billingDays?: number[];
+  // Where the bank's own figures come from.
+  sources?: {
+    issuers?: CatalogSource;
+    billingDays?: CatalogSource;
+    foreignPosting?: CatalogSource;
+    fxFee?: Partial<Record<IssuerId, CatalogSource>>;
+  };
 };
 
 export type Catalog = {
