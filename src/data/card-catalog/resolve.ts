@@ -70,8 +70,13 @@ export function resolveCard(
     }
   }
 
-  const fxFee = bank?.fxFee?.[issuer.id] ?? issuer.fxFee;
-  const monthlyFeeMinor = issuer.cardFees?.find((f) => f.tier === link.tier)?.monthlyMinor;
+  // A club's own figures, then the tier's, then the card company's.
+  const tier = issuer.tiers.find((t) => t.id === link.tier);
+  const club = link.club === undefined ? undefined : issuer.clubs.find((c) => c.id === link.club);
+  const fxFee = bank?.fxFee?.[issuer.id] ?? club?.fxFee ?? tier?.fxFee ?? issuer.fxFee;
+  const monthlyFeeMinor =
+    club?.monthlyMinor ?? issuer.cardFees?.find((f) => f.tier === link.tier)?.monthlyMinor;
+  const foreignPosting = club?.foreignPosting ?? tier?.foreignPosting ?? issuer.foreignPosting;
 
   return {
     issuer,
@@ -79,7 +84,7 @@ export function resolveCard(
     tier: link.tier,
     billingDays: bank?.billingDays ?? issuer.billingDays,
     ...(fxFee !== undefined ? { fxFee } : {}),
-    foreignPosting: issuer.foreignPosting,
+    foreignPosting,
     ...(monthlyFeeMinor !== undefined ? { monthlyFeeMinor } : {}),
     deals,
     extra,

@@ -191,6 +191,22 @@ describe('the data checks catch what they are for', () => {
     expect(p.filter((x) => x.includes('override'))).toHaveLength(2);
   });
 
+  it('flags an unsound source on a card company’s own figures', () => {
+    const bad = { url: 'http://x.com', seen: '2026-13-01' as LocalDate };
+    const p = broken((c) => {
+      const i = c.issuers[0]!;
+      i.sources = { billingDays: bad };
+      i.tiers[0]!.source = bad;
+      i.clubs[0]!.source = bad;
+      i.cardFees![0]!.source = bad;
+    });
+    for (const where of ['cal.sources.billingDays', 'cal.tier.gold', 'cal.club.a', 'cal.fee.gold'])
+      expect(
+        p.filter((x) => x.startsWith(`${where}:`)),
+        where,
+      ).toHaveLength(2);
+  });
+
   it('flags a late rate given twice', () => {
     const p = broken((c) => {
       c.banks[0]!.lateRate = fixedRate('9');
@@ -207,5 +223,177 @@ describe('the real card catalog', () => {
 
   it('has no problems', async () => {
     expect(catalogProblems(await loadCatalog())).toEqual([]);
+  });
+});
+
+describe('the card companies, as the research gives them', () => {
+  const issuer = async (id: string) => (await loadCatalog()).issuers.find((i) => i.id === id)!;
+
+  it('has all five card companies', async () => {
+    expect((await loadCatalog()).issuers.map((i) => i.id)).toEqual([
+      'isracard',
+      'amex',
+      'cal',
+      'diners',
+      'max',
+    ]);
+  });
+
+  it('has Max קרדיט פלוס as the research gives it', async () => {
+    const max = await issuer('max');
+    const long = max.deals.find((d) => d.kind === 'long_credit')!;
+    expect(long).toMatchObject({
+      label: { he: 'קרדיט פלוס' },
+      payments: { min: 19, max: 36 },
+      minDealMinor: 95_000,
+      minPaymentMinor: 5_000,
+      abroad: false,
+    });
+    expect(long.rate?.reset).toEqual({ atPayment: 19, rule: 'prime_delta' });
+  });
+
+  it('has Isracard late interest compounding quarterly on the Bank of Israel rate', async () => {
+    const isr = await issuer('isracard');
+    expect(isr.extraRates?.late).toMatchObject({
+      basis: { kind: 'boi', margin: '16.40' },
+      compounding: 4,
+      dayCount: 'actual/365',
+    });
+  });
+
+  it('no longer offers FlyCard under Cal', async () => {
+    const cal = await issuer('cal');
+    expect(cal.clubs.find((c) => /fly ?card/i.test(c.name))?.issued ?? false).toBe(false);
+  });
+
+  it('offers FlyCard and Hever under Isracard', async () => {
+    const isr = await issuer('isracard');
+    expect(isr.clubs.find((c) => c.id === 'flycard')).toMatchObject({ issued: true, fxFee: '2.5' });
+    expect(isr.clubs.find((c) => c.id === 'hever')).toMatchObject({
+      issued: true,
+      monthlyMinor: 0,
+      fxFee: '1',
+    });
+  });
+
+  it('has each card company’s billing days, posting and FX fee', async () => {
+    expect(await issuer('isracard')).toMatchObject({
+      billingDays: [2, 10, 15, 20],
+      foreignPosting: 'immediate',
+      fxFee: '2.9',
+    });
+    expect((await issuer('isracard')).sources?.billingDays?.note).toMatch(/undated/i);
+    expect(await issuer('amex')).toMatchObject({ fxFee: '2.5' });
+    expect(await issuer('cal')).toMatchObject({
+      billingDays: [2, 10, 15],
+      foreignPosting: 'immediate',
+      fxFee: '3',
+    });
+    expect(await issuer('diners')).toMatchObject({
+      billingDays: [2, 10, 15],
+      foreignPosting: 'billing_date',
+    });
+    expect(await issuer('max')).toMatchObject({
+      billingDays: [2, 10, 15],
+      foreignPosting: 'immediate',
+      fxFee: '3',
+    });
+  });
+
+  it('has Max’s per-tier FX fees', async () => {
+    const max = await issuer('max');
+    expect(max.tiers.find((t) => t.id === 'first')?.fxFee).toBe('2');
+    expect(max.tiers.find((t) => t.id === 'world_elite')?.fxFee).toBe('1.5');
+    expect(max.clubs.find((c) => c.id === 'skymax')?.fxFee).toBe('2.8');
+    expect(max.clubs.find((c) => c.id === 'skymax_premium')?.fxFee).toBe('1.9');
+  });
+
+  it('has the card fees with their spend waivers as published', async () => {
+    const fee = async (id: string, tier: string) => (await issuer(id)).cardFees?.find((f) => f.tier === tier);
+    expect(await fee('isracard', 'international')).toMatchObject({
+      monthlyMinor: 1790,
+      waivers: [
+        { spendMinor: 500_000, feeMinor: 1530 },
+        { spendMinor: 750_000, feeMinor: 0 },
+      ],
+    });
+    expect(await fee('max', 'classic')).toMatchObject({
+      monthlyMinor: 1290,
+      waivers: [
+        { spendMinor: 175_000, feeMinor: 790 },
+        { spendMinor: 500_000, feeMinor: 0 },
+      ],
+    });
+    expect(await fee('cal', 'platinum')).toMatchObject({
+      monthlyMinor: 1790,
+      waivers: [
+        { spendMinor: 750_000, feeMinor: 1590 },
+        { spendMinor: 1_200_000, feeMinor: 0 },
+      ],
+    });
+  });
+
+  it('has קרדיט 3–18 at ₪75 / ₪25, Spitzer at 30/360, accruing as each company says', async () => {
+    const accrues = { isracard: 'billing_date', amex: 'billing_date', cal: 'merchant_paid', max: 'purchase' };
+    for (const [id, from] of Object.entries(accrues)) {
+      const credit = (await issuer(id)).deals.find((d) => d.kind === 'credit')!;
+      expect(credit, id).toMatchObject({
+        payments: { min: 3, max: 18 },
+        minDealMinor: 7_500,
+        minPaymentMinor: 2_500,
+      });
+      expect(credit.rate, id).toMatchObject({
+        basis: null,
+        compounding: 12,
+        dayCount: '30/360',
+        accrues: from,
+      });
+    }
+    expect((await issuer('isracard')).deals.find((d) => d.kind === 'credit')?.label.he).toBe(
+      'קרדיט בתשלומים קבועים',
+    );
+  });
+
+  it('has Amex long credit up to 36 at ₪50 a payment, fixed', async () => {
+    const long = (await issuer('amex')).deals.find((d) => d.kind === 'long_credit')!;
+    expect(long).toMatchObject({ payments: { min: 20, max: 36 }, minPaymentMinor: 5_000 });
+    expect(long.rate).toMatchObject({ fixedAtPurchase: true });
+    expect(long.rate?.reset).toBeUndefined();
+  });
+
+  it('has Cal 30+ compounding quarterly and floating with prime', async () => {
+    const d = (await issuer('cal')).deals.find((x) => x.kind === 'deferred')!;
+    expect(d.rate).toMatchObject({
+      basis: null,
+      compounding: 4,
+      fixedAtPurchase: false,
+      accrues: 'billing_date',
+    });
+  });
+
+  it('has Max חלוקת עסקה with its two payment minimums', async () => {
+    const d = (await issuer('max')).deals.find((x) => x.kind === 'split_purchase')!;
+    expect(d).toMatchObject({
+      label: { he: 'חלוקת עסקה' },
+      payments: { min: 3, max: 36 },
+      minDealMinor: 7_500,
+      minPaymentMinor: 2_500,
+      minPaymentFrom: { payments: 19, minPaymentMinor: 5_000 },
+      abroad: false,
+    });
+  });
+
+  it('gives every issuer-level figure a source', async () => {
+    for (const i of (await loadCatalog()).issuers) {
+      for (const k of ['tiers', 'clubs', 'billingDays', 'foreignPosting', 'fxFee'] as const)
+        expect(i.sources?.[k], `${i.id}.${k}`).toBeDefined();
+      for (const f of i.cardFees ?? []) expect(f.source, `${i.id}.fee.${f.tier}`).toBeDefined();
+      for (const t of i.tiers)
+        if (t.fxFee !== undefined || t.foreignPosting !== undefined)
+          expect(t.source, `${i.id}.tier.${t.id}`).toBeDefined();
+      for (const c of i.clubs)
+        if (c.fxFee !== undefined || c.monthlyMinor !== undefined || c.foreignPosting !== undefined)
+          expect(c.source, `${i.id}.club.${c.id}`).toBeDefined();
+    }
   });
 });

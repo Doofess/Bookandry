@@ -161,6 +161,32 @@ describe('resolveCard', () => {
     expect(resolveCard(catalog, { issuer: 'cal', bank: 'none', tier: 'gold', club: 'b' })).toBeDefined();
   });
 
+  it('takes a club’s own figures over the tier’s, and the tier’s over the card company’s', () => {
+    const cal = catalog.issuers[0]!;
+    const c: Catalog = {
+      ...catalog,
+      issuers: [
+        {
+          ...cal,
+          tiers: [{ ...cal.tiers[0]!, fxFee: '2', foreignPosting: 'billing_date' }, cal.tiers[1]!],
+          clubs: [{ ...cal.clubs[0]!, monthlyMinor: 0, fxFee: '1' }, cal.clubs[1]!],
+        },
+        catalog.issuers[1]!,
+      ],
+    };
+    const byTier = resolveCard(c, { issuer: 'cal', bank: 'none', tier: 'gold' });
+    expect(byTier).toMatchObject({ fxFee: '2', foreignPosting: 'billing_date', monthlyFeeMinor: 1500 });
+    const byClub = resolveCard(c, { issuer: 'cal', bank: 'none', tier: 'gold', club: 'a' });
+    expect(byClub).toMatchObject({ fxFee: '1', foreignPosting: 'billing_date', monthlyFeeMinor: 0 });
+    // The bank's FX fee still comes first.
+    expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold', club: 'a' })?.fxFee).toBe('2');
+    // The old tier has none of its own: the card company's stand.
+    expect(resolveCard(c, { issuer: 'cal', bank: 'none', tier: 'old' })).toMatchObject({
+      fxFee: '2.5',
+      foreignPosting: 'immediate',
+    });
+  });
+
   it('is undefined for an unknown link', () => {
     expect(resolveCard(catalog, { issuer: 'nope', bank: 'none', tier: 'gold' })).toBeUndefined();
     expect(resolveCard(catalog, { issuer: 'cal', bank: 'none', tier: 'nope' })).toBeUndefined();

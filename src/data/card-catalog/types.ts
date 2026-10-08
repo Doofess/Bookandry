@@ -27,6 +27,8 @@ export type DealRule = {
   payments?: { min: number; max: number };
   minDealMinor?: number;
   minPaymentMinor?: number;
+  // A higher minimum payment from this many payments up (Max חלוקת עסקה: ₪50 above 18).
+  minPaymentFrom?: { payments: number; minPaymentMinor: number };
   abroad: boolean; // allowed on a foreign purchase
   rate?: CatalogRate; // for deal kinds that carry interest
   source: { url: string; seen: LocalDate };
@@ -34,19 +36,47 @@ export type DealRule = {
 
 export type IssuerId = 'isracard' | 'amex' | 'cal' | 'diners' | 'max';
 
+export type ForeignPosting = 'immediate' | 'billing_date';
+
+/** A spend waiver: a percent off the fee, or the reduced fee itself where that is what is published. */
+export type FeeWaiver = { spendMinor: number; percent: string } | { spendMinor: number; feeMinor: number };
+
+export type CatalogTier = {
+  id: string;
+  name: { he: string; en: string };
+  issued: boolean;
+  fxFee?: string; // this tier's own FX fee, where it differs from the card company's
+  foreignPosting?: ForeignPosting; // where it differs from the card company's
+  source?: CatalogSource; // for the tier's own figures
+};
+
+export type CatalogClub = {
+  id: string;
+  name: string;
+  issued: boolean;
+  movedTo?: string;
+  monthlyMinor?: number; // the club card's own fee, replacing the tier's
+  fxFee?: string;
+  foreignPosting?: ForeignPosting;
+  source?: CatalogSource; // for the club's own figures and its status
+};
+
 export type CatalogIssuer = {
   id: IssuerId;
   name: { he: string; en: string };
-  tiers: { id: string; name: { he: string; en: string }; issued: boolean }[];
-  clubs: { id: string; name: string; issued: boolean; movedTo?: string }[];
+  tiers: CatalogTier[];
+  clubs: CatalogClub[];
   billingDays: number[];
-  foreignPosting: 'immediate' | 'billing_date';
+  foreignPosting: ForeignPosting;
   fxFee?: string;
   cardFees?: {
     tier: string;
     monthlyMinor: number;
-    waivers: { spendMinor: number; percent: string }[];
+    waivers: FeeWaiver[];
+    source?: CatalogSource;
   }[];
+  // Where the card company's own figures come from.
+  sources?: Partial<Record<'tiers' | 'clubs' | 'billingDays' | 'foreignPosting' | 'fxFee', CatalogSource>>;
   deals: DealRule[]; // non-bank card rules and rates (rates mostly null: unpublished)
   lateRate?: CatalogRate;
   extraRates?: Partial<Record<ExtraRateKind, CatalogRate>>;
