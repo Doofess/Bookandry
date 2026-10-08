@@ -7,7 +7,7 @@ import { materialize } from '@/db/materialize';
 import { findCandidates } from '@/db/repos/transactions';
 import { makeTx, MONEY } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
-import type { Category, PaymentMethod, Profile } from '@/types/domain';
+import { SHARED_OWNER, type Category, type PaymentMethod, type Profile } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
 import { TransactionSheet } from './transaction-sheet';
@@ -289,6 +289,14 @@ describe('editing a payment of a plan', () => {
           profileId: 'p1',
           date: '2026-06-08' as LocalDate,
           recurrence: { type: 'monthly', dayOfMonth: 8, endDate: '2026-10-08' as LocalDate },
+          // In the base currency: no rate to look up, here or over the network.
+          money: {
+            ...MONEY,
+            currency: 'ILS',
+            baseCurrency: 'ILS',
+            amountMinor: 4_500,
+            baseAmountMinor: 4_500,
+          },
         }),
       ),
     );
@@ -435,6 +443,49 @@ describe('adding', () => {
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({ profileId: 'p1', note: 'Bike' });
     expect(saved[0]?.paymentMethodId).toBeUndefined();
+  });
+
+  it('lets go of a card when Whose? moves to someone who cannot pay with it', async () => {
+    const { onSaved, user } = add(
+      { mode: 'add', kind: 'expense' },
+      { profiles: [profile, yossi], methods: [maxCard, yossiCard] },
+    );
+    await user.click(await screen.findByRole('radio', { name: 'Yossi' }));
+    await fill(user, '120', 'Yossi Visa');
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Yossi Visa/);
+
+    await user.click(screen.getByRole('radio', { name: 'Dana' }));
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).not.toHaveAccessibleName(/Yossi Visa/);
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ profileId: 'p1' });
+    expect(saved?.paymentMethodId).toBeUndefined();
+  });
+
+  it('keeps a card both people can pay with when Whose? moves', async () => {
+    const joint: PaymentMethod = {
+      ...plainCard,
+      id: 'pm.joint',
+      profileId: SHARED_OWNER,
+      label: 'Joint Visa',
+    };
+    const { onSaved, user } = add(
+      { mode: 'add', kind: 'expense' },
+      { profiles: [profile, yossi], methods: [maxCard, joint] },
+    );
+    await fill(user, '120', 'Joint Visa');
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ profileId: 'p2', paymentMethodId: 'pm.joint' });
   });
 });
 
