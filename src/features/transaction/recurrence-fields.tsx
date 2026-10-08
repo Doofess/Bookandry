@@ -195,7 +195,9 @@ export function RecurrenceFields({
           onChange(recurrenceDefaults(next, values));
         }}
         options={modes.map((value) => ({ value, label: labelOf(value) }))}
-        size="sm"
+        // The full 44px: a linked card puts up to seven choices here, a phone's thumb on each.
+        // Whole choices wrap to the next row; a name ("Credit Plus", "30 פלוס") never breaks inside one.
+        className="*:whitespace-nowrap"
       />
 
       {mode === 'deferred' ? (

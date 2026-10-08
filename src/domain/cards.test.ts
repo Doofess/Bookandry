@@ -462,6 +462,9 @@ describe('a 30+ purchase', () => {
   it('is charged on the billing date after next', () => {
     expect(deferredChargeDate(d('2026-10-05'), 10)).toBe('2026-12-10');
     expect(deferredChargeDate(d('2026-12-20'), 31)).toBe('2027-02-28');
+    // Bought on the billing day itself: that day's bill is the month before's, so this one is two months on.
+    expect(chargeDate(d('2026-10-10'), 10)).toBe('2026-11-10');
+    expect(deferredChargeDate(d('2026-10-10'), 10)).toBe('2026-12-10');
     const all = methods(visa);
     const [o] = occurrences(later('a', '2026-10-05'));
     expect(settleDate(o!, all)).toBe('2026-12-10');

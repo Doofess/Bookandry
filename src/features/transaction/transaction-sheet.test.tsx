@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '@/db/db';
+import { makeTx, MONEY } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { Category, PaymentMethod, Profile } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
@@ -188,5 +189,53 @@ describe('a purchase on a card linked to the catalog', () => {
     expect(saved?.recurrence).toEqual({ type: 'one_time' });
     expect(saved?.money.amountMinor).toBe(101_292);
     expect(saved?.deferral).toEqual({ rate: '15.5' });
+  });
+});
+
+describe('editing a 30+ purchase', () => {
+  const ils = {
+    ...MONEY,
+    amountMinor: 101_292,
+    baseAmountMinor: 101_292,
+    currency: 'ILS',
+    baseCurrency: 'ILS',
+  };
+  const tx = (deferral?: { rate: string }) =>
+    makeTx({
+      id: 'later',
+      date: '2026-10-05' as LocalDate,
+      recurrence: { type: 'one_time' },
+      paymentMethodId: 'pm.max',
+      categoryId: 'cat.groceries',
+      money: ils,
+      ...(deferral === undefined ? {} : { deferral }),
+    });
+
+  function edit() {
+    renderWithProviders(
+      <TransactionSheet
+        target={{ mode: 'edit', transactionId: 'later', at: '2026-10-05' as LocalDate }}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries]}
+        paymentMethods={[maxCard]}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={() => undefined}
+      />,
+    );
+  }
+
+  it('says it is charged on the bill after next, where an ordinary purchase is on the next', async () => {
+    await db.transactions.put(tx({ rate: '15.5' }));
+    edit();
+    expect(await screen.findByTestId('card-charge-note')).toHaveTextContent('Dec 10, 2026');
+  });
+
+  it('says the next bill for a purchase that is not 30+', async () => {
+    await db.transactions.put(tx());
+    edit();
+    expect(await screen.findByTestId('card-charge-note')).toHaveTextContent('Nov 10, 2026');
   });
 });
