@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -153,6 +153,81 @@ describe('MonthCursor', () => {
     // empty month as if it were real.
     expect(next).toBeDisabled();
     expect(next).toHaveAttribute('title', 'Projections stop here');
+  });
+
+  it('opens a year and its twelve months from the month label', async () => {
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    renderWithProviders(
+      <MonthCursor month={d('2026-09-01')} today={TODAY} onStep={vi.fn()} onPick={onPick} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'September 2026' }));
+    const grid = await screen.findByRole('group', { name: '2026' });
+    const months = within(grid).getAllByRole('button');
+
+    expect(months).toHaveLength(12);
+    // Reading order: January first, in either language.
+    expect(months[0]).toHaveTextContent('Jan');
+    expect(within(grid).getByRole('button', { name: 'Sep' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(grid).getByRole('button', { name: 'Sep' })).toHaveClass('bg-primary');
+    // A forecast month is offered, in muted text.
+    expect(within(grid).getByRole('button', { name: 'Dec' })).toHaveClass('text-muted-foreground');
+
+    await user.click(within(grid).getByRole('button', { name: 'Mar' }));
+    expect(onPick).toHaveBeenCalledWith('2026-03-01');
+    expect(screen.queryByRole('group', { name: '2026' })).not.toBeInTheDocument();
+  });
+
+  it('disables the months past the horizon, and the year after the last', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonthCursor month={d('2027-09-01')} today={TODAY} onStep={vi.fn()} onPick={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'September 2027' }));
+    const grid = await screen.findByRole('group', { name: '2027' });
+
+    expect(within(grid).getByRole('button', { name: 'Sep' })).toBeEnabled();
+    expect(within(grid).getByRole('button', { name: 'Oct' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next year' })).toBeDisabled();
+  });
+
+  it('steps the year, and goes back to this month', async () => {
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    renderWithProviders(
+      <MonthCursor month={d('2026-03-01')} today={TODAY} onStep={vi.fn()} onPick={onPick} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'March 2026' }));
+    await user.click(await screen.findByRole('button', { name: 'Previous year' }));
+    expect(await screen.findByRole('group', { name: '2025' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Back to this month' }));
+    expect(onPick).toHaveBeenCalledWith('2026-09-01');
+  });
+
+  it('gives focus back to the label on Escape', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonthCursor month={d('2026-09-01')} today={TODAY} onStep={vi.fn()} onPick={vi.fn()} />,
+    );
+    const label = screen.getByRole('button', { name: 'September 2026' });
+
+    await user.click(label);
+    await screen.findByRole('group', { name: '2026' });
+    await user.keyboard('{Escape}');
+    expect(label).toHaveFocus();
+  });
+
+  it('keeps the arrows and the live heading', () => {
+    renderWithProviders(
+      <MonthCursor month={d('2026-09-01')} today={TODAY} onStep={vi.fn()} onPick={vi.fn()} />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'September 2026' })).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument();
   });
 
   it('flips its chevrons for RTL via a class, not by swapping components', () => {

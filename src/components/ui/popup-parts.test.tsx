@@ -149,7 +149,7 @@ describe('pop-outs', () => {
     // The arrow sits outside the popup's box, so the popup itself cannot clip;
     // the items scroll in a box of their own.
     const list = menu.querySelector<HTMLElement>('[data-slot="popup-scroll"]');
-    expect(list).toHaveClass('overflow-y-auto');
+    expect(list).toHaveClass('overflow-y-auto', 'overscroll-contain');
 
     act(() => {
       if (list === null) return;
@@ -240,6 +240,18 @@ describe('a tap outside a pop-out that points at something', () => {
     await expect.poll(() => screen.queryByTestId('pop')).toBeNull();
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'row' }));
+    expect(onRow).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops watching at a key press: a keyboard click after a press with no click is the user’s', async () => {
+    const { onRow } = setUp();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'open' }));
+    await screen.findByTestId('pop');
+    const under = backdrop();
+    if (under !== null) fireEvent.pointerDown(under);
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'row' }));
+
     expect(onRow).toHaveBeenCalledTimes(1);
   });
 

@@ -153,7 +153,7 @@ export function useAnchoredPopup<T extends { readonly anchor: HTMLElement }>(
  * it, so the click that follows on lift can land on whatever was underneath:
  * another row's body, which would open its editor, or a tab, which would
  * navigate. Exactly one click is swallowed. A new press, or a press that
- * became a scroll (pointercancel), ends the watch, so no later click is lost.
+ * became a scroll (pointercancel), or a key press (a keyboard or assistive-technology click), ends the watch, so no later click is lost.
  */
 function swallowNextClick(): void {
   const swallow = (event: MouseEvent): void => {
@@ -165,10 +165,12 @@ function swallowNextClick(): void {
     window.removeEventListener('click', swallow, true);
     window.removeEventListener('pointerdown', stop, true);
     window.removeEventListener('pointercancel', stop, true);
+    window.removeEventListener('keydown', stop, true);
   };
   window.addEventListener('click', swallow, true);
   window.addEventListener('pointerdown', stop, true);
   window.addEventListener('pointercancel', stop, true);
+  window.addEventListener('keydown', stop, true);
 }
 
 /**

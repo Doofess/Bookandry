@@ -79,7 +79,12 @@
   "month": {
     "previous": "Previous month",
     "next": "Next month",
-    "horizon": "Projections stop here"
+    "horizon": "Projections stop here",
+    "choose": "Choose a month",
+    "prevYear": "Previous year",
+    "nextYear": "Next year",
+    "thisMonth": "Back to this month",
+    "beyond": "Past the forecast"
   },
   "summary": {
     "balance": "Balance",

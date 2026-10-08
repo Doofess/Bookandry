@@ -41,7 +41,7 @@ export function ChartScreen() {
    * report a different period from another. The range is local, because it is
    * a property of this view rather than of the period being looked at.
    */
-  const { filters, stepMonth, setProfile } = useFeedFilters();
+  const { filters, stepMonth, setMonth, setProfile } = useFeedFilters();
   const [range, setRange] = useState<ChartRange>('3m');
   const rangeId = useId();
 
@@ -54,7 +54,7 @@ export function ChartScreen() {
         <ScreenTitle>{t('chart.title')}</ScreenTitle>
       </ScreenPanel>
       <PanelSheet className="px-4 pt-6">
-        <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
+        <MonthCursor month={filters.month} today={today} onStep={stepMonth} onPick={setMonth} />
 
         {lookups === undefined ? null : (
           <ProfileSwitcher

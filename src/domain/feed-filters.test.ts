@@ -9,10 +9,12 @@ import {
   isAtHorizon,
   isMonthStart,
   matchesKind,
+  monthGrid,
   monthParam,
   parseFeedFilters,
   PARAM,
   type FeedFilters,
+  yearBounds,
 } from './feed-filters';
 import { d } from './test-factories';
 
@@ -158,5 +160,34 @@ describe('month cursor bounds', () => {
   it('reports the forward edge', () => {
     expect(isAtHorizon(d('2027-09-01'), DEFAULTS.today)).toBe(true);
     expect(isAtHorizon(d('2027-08-01'), DEFAULTS.today)).toBe(false);
+  });
+});
+
+describe('monthGrid', () => {
+  const today = d('2026-09-15');
+
+  it('marks this year: the months so far as actual, the rest as forecast', () => {
+    const cells = monthGrid(2026, today);
+
+    expect(cells).toHaveLength(12);
+    expect(cells[0]).toEqual({ month: '2026-01-01', state: 'actual', isThisMonth: false });
+    expect(cells[8]).toEqual({ month: '2026-09-01', state: 'actual', isThisMonth: true });
+    expect(cells[9]?.state).toBe('forecast');
+    expect(cells[11]?.state).toBe('forecast');
+  });
+
+  it('stops offering months exactly where › stops', () => {
+    const cells = monthGrid(2027, today);
+    const lastOffered = cells.filter((c) => c.state !== 'beyond').at(-1);
+
+    // isAtHorizon is true on the last month › can reach, and false on the one before.
+    expect(lastOffered?.month).toBe('2027-09-01');
+    expect(isAtHorizon(d('2027-09-01'), today)).toBe(true);
+    expect(isAtHorizon(d('2027-08-01'), today)).toBe(false);
+    expect(cells.slice(9).every((c) => c.state === 'beyond')).toBe(true);
+  });
+
+  it('bounds the year stepper by the same limits', () => {
+    expect(yearBounds(today)).toEqual({ first: 1926, last: 2027 });
   });
 });
