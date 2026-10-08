@@ -234,6 +234,21 @@ export function useCollisionPadding(enabled: boolean): CollisionPadding {
 }
 
 /**
+ * A base-ui Positioner that keeps clear of the phone's tab bar when it is
+ * anchored to something on the page. The one wrapper both the popover and
+ * the menu use; mounted only while the pop-out is open.
+ */
+export function anchoredPositioner<P extends { readonly anchor?: unknown }>(
+  Positioner: React.ComponentType<P>,
+): React.ComponentType<P> {
+  function AnchoredPositioner(props: P) {
+    const padding = useCollisionPadding(props.anchor !== undefined);
+    return <Positioner {...props} {...(props.anchor === undefined ? {} : { collisionPadding: padding })} />;
+  }
+  return AnchoredPositioner;
+}
+
+/**
  * The click that ends a press on the backdrop is not the user's: swallow it.
  *
  * The press closes the pop-out on pointerdown, and the backdrop fades out with

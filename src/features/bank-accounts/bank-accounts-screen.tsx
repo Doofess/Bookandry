@@ -161,12 +161,16 @@ function AccountPanel({
       {/*
         The bank's colour as an edge, the way its own cards and statements carry
         it. Only an edge: the text stays on the app's surface, so its contrast is
-        never left to a brand's colour.
+        never left to a brand's colour. In dark mode a faint outline keeps the
+        near-black brands (One Zero, the FIBI group) from vanishing into the surface.
       */}
       <span
         aria-hidden="true"
         data-slot="account-accent"
-        className={cn('absolute inset-y-0 start-0 w-1.5', accent === undefined && 'bg-primary')}
+        className={cn(
+          'absolute inset-y-0 start-0 w-1.5 dark:ring-1 dark:ring-white/15 dark:ring-inset',
+          accent === undefined && 'bg-primary',
+        )}
         style={accent === undefined ? undefined : { backgroundColor: accent }}
       />
       <div className="flex items-start justify-between gap-3">
@@ -284,7 +288,7 @@ function CardCharge({
   readonly occurrences: readonly Occurrence[];
   readonly today: LocalDate;
 }) {
-  const { t, i18n } = useTranslation(['cards', 'categories']);
+  const { t, i18n } = useTranslation('cards');
   const next = cardBills(occurrences, card)
     .filter((bill) => compareLocal(bill.chargeDate, today) >= 0)
     .at(-1);
@@ -295,7 +299,7 @@ function CardCharge({
         {/* Why a closed card is here: it is still being paid off from the account. */}
         {card.isArchived === 1 ? (
           <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {t('categories:manage.archived')}
+            {t('accounts.archivedCard')}
           </span>
         ) : null}
       </span>

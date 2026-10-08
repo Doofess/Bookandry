@@ -266,7 +266,7 @@ export type DemoInput = {
  */
 const STRINGS = {
   en: {
-    people: ['Dana', 'Yossi', 'Household'],
+    people: ['Dana', 'Yossi', 'Shared'],
     danaCard: 'Dana card',
     yossiCard: 'Yossi card',
     jointCard: 'Joint card',
@@ -280,7 +280,7 @@ const STRINGS = {
     noteFreelance: 'Freelance project',
   },
   he: {
-    people: ['דנה', 'יוסי', 'משק בית'],
+    people: ['דנה', 'יוסי', 'משותף'],
     danaCard: 'כרטיס דנה',
     yossiCard: 'כרטיס יוסי',
     jointCard: 'כרטיס משותף',
