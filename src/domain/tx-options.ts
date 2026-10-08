@@ -38,7 +38,9 @@ export function categoriesFor(categories: readonly Category[], kind: Kind, keepI
  * A bank account takes everything but תשלומים, which is a card's.
  */
 export function methodFits(method: Pick<PaymentMethod, 'type'>, mode: RecurrenceMode): boolean {
-  if (mode === 'credit') return method.type === 'credit_card';
+  // A card's own credit deals: קרדיט, קרדיט פלוס and 30+.
+  if (mode === 'credit' || mode === 'long_credit' || mode === 'deferred')
+    return method.type === 'credit_card';
   // A standing order is charged to a card or taken from an account - never cash.
   if (mode === 'standing_order') return standingViaOf(method) !== undefined;
   if (method.type === 'cheque') return mode === 'one_time' || mode === 'installments' || mode === 'loan';

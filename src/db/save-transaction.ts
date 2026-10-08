@@ -105,6 +105,8 @@ export async function saveNewTransaction(db: BookandryDB, input: SaveInput): Pro
       recurrence: parsed.recurrence,
       date: parsed.date,
       ...(parsed.note === undefined ? {} : { note: parsed.note }),
+      // A 30+ purchase: charged on the bill after next, at this rate.
+      ...(parsed.deferral === undefined ? {} : { deferral: parsed.deferral }),
       // A new series is its own root. The field exists so that a later split
       // can be traced back, and seeding it with the id keeps every row's
       // lineage answerable without a null check.

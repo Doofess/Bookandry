@@ -70,6 +70,16 @@ const recurrenceSchema = z.discriminatedUnion('type', [
       .string()
       .refine((value) => normalizeRateMargin(value) === value, 'not a margin over prime')
       .optional(),
+    // A long קרדיט that follows prime from one payment on; absent on rows from before it.
+    reset: z
+      .object({
+        atPayment: z.number().int().min(1).max(360),
+        primeAtPurchase: annualRate,
+        rate: annualRate.optional(),
+        paymentMinor: z.number().int().nonnegative().max(1e15).optional(),
+        frozen: z.literal(true).optional(),
+      })
+      .optional(),
   }),
   z.object({
     type: z.literal('yearly'),
@@ -231,6 +241,8 @@ const transactionSchema = z.object({
   recurrence: recurrenceSchema,
   date: localDate,
   note: z.string().max(2000).optional(),
+  // A 30+ purchase's rate; absent on every other row, and on rows from before it.
+  deferral: z.object({ rate: annualRate }).optional(),
   seriesStart: localDate,
   seriesEnd: localDate,
   isDeleted: z.union([z.literal(0), z.literal(1)]),

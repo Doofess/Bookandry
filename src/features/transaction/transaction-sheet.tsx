@@ -30,10 +30,12 @@ import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { applySeriesEdit } from '@/db/series-edit';
-import { cardCreditRate, fxFeeFor } from '@/domain/cards';
+import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
+import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
 import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } from '@/domain/tx-edit';
 import {
+  chargesInterest,
   defaultFormValues,
   firstOccurrenceDate,
   partialFirstOf,
@@ -41,11 +43,14 @@ import {
   maxPaymentsFor,
   MIN_INSTALLMENTS,
   NOTE_MAX_LENGTH,
+  recurrenceDefaults,
   txFormSchema,
+  type RecurrenceMode,
   type TxFormParsed,
   type TxFormValues,
 } from '@/domain/tx-form';
 import { categoriesFor, methodFits, standingViaOf, type StandingVia } from '@/domain/tx-options';
+import { MethodForm } from '@/features/cards/method-editor';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
 import { formatLocalDate, isLocalDate, monthsBetween, parseLocalDate } from '@/lib/dates';
@@ -64,7 +69,9 @@ import { ScopeChooser } from './scope-chooser';
 import { useAutoCategory } from './use-auto-category';
 import { useRateField } from './use-rate-field';
 import {
+  resolveMethodCard,
   useEditTarget,
+  useResolvedCards,
   type EditTarget,
   type EditTargetState,
   type SheetTarget,
@@ -73,17 +80,20 @@ import {
 /** The built-in category a loan's repayments start in. */
 const LOANS_CATEGORY_ID = 'cat.loans';
 
+/** The modes a card's own credit deals use, priced from the card when chosen. */
+function isCardDeal(mode: RecurrenceMode): boolean {
+  return chargesInterest(mode) && mode !== 'loan';
+}
+
 /**
- * The interest a given card charges, or '' for no card and no rate.
- *
- * '' is a real answer rather than a missing one: a plan at no interest is
- * arithmetically תשלומים, which is a coherent thing to have chosen.
+ * Where a card does not offer the deal chosen, the nearest one it does: a
+ * קרדיט פלוס becomes a קרדיט, a 30+ purchase a regular one.
  */
-function rateOfCard(methods: readonly PaymentMethod[], methodId: string, primeRate: string): string {
-  return cardCreditRate(
-    methods.find((method) => method.id === methodId),
-    primeRate,
-  );
+function fallbackMode(mode: RecurrenceMode, offered: readonly RecurrenceMode[]): RecurrenceMode | undefined {
+  if (offered.includes(mode)) return undefined;
+  if (mode === 'long_credit') return 'credit';
+  if (mode === 'deferred') return 'one_time';
+  return undefined;
 }
 
 /**
@@ -313,6 +323,10 @@ function TransactionForm({
    */
   const [scope, setScope] = useState<EditScope>('one');
   const prime = usePrime();
+  // Every linked card's catalog entry; empty until the catalog loads, and if it cannot.
+  const resolvedCards = useResolvedCards(paymentMethods);
+  /** A card open in its editor from here, to give the rate a deal needs. */
+  const [cardOpen, setCardOpen] = useState<PaymentMethod | undefined>(undefined);
   /** A rule change that would discard per-occurrence edits, awaiting a yes. */
   const [pendingDrop, setPendingDrop] = useState<{ count: number; run: () => void } | undefined>(undefined);
 
@@ -384,6 +398,19 @@ function TransactionForm({
   const chosenMethod = paymentMethods.find((m) => m.id === values.paymentMethodId);
   const via: StandingVia =
     viaChoice ?? (chosenMethod === undefined ? undefined : standingViaOf(chosenMethod)) ?? 'bank';
+
+  /*
+   * The chosen card's own deals, when it is linked to the catalog and its
+   * entry has loaded. Only where the type can still be chosen: a saved plan
+   * is read-only, and a single occurrence cannot change its rule.
+   */
+  const recurrenceEditable = !isPlan && !(editing !== undefined && effectiveScope === 'one');
+  const resolvedOf = (id: string) => resolvedCards.get(id);
+  const resolved = values.kind === 'expense' ? resolvedOf(values.paymentMethodId) : undefined;
+  const priced =
+    values.kind === 'expense' ? dealRate(chosenMethod, resolved, values.mode, prime) : { missing: false };
+  // The one rule that holds a save back: a deal whose rate nobody has given.
+  const needRate = recurrenceEditable && priced.missing && values.annualRate.trim() === '';
 
   /*
    * Changing income/expense invalidates the category.
@@ -511,7 +538,7 @@ function TransactionForm({
   const submit = form.handleSubmit(async (parsed) => {
     setSaveError(undefined);
     const resolution = rateField.resolution;
-    if (resolution.status === 'invalid') return;
+    if (resolution.status === 'invalid' || needRate) return;
 
     const rate =
       resolution.status === 'resolved'
@@ -654,444 +681,523 @@ function TransactionForm({
     }
   });
 
+  /** A change from the type's controls, applied to the form. */
+  const applyRecurrence = (patch: Partial<TxFormValues>): void => {
+    // Applied key by key rather than by spreading over Object.entries:
+    // the generic form of setValue cannot type a (key, value) pair from
+    // a loop, and the `as never` it takes to compile would let a typo
+    // through silently.
+    if (patch.mode !== undefined) setValue('mode', patch.mode);
+    // A method this kind of transaction does not take (a cheque on a
+    // standing order, cash on a קרדיט) is let go rather than carried
+    // into it: the picker no longer offers it, so nothing on screen
+    // would explain it.
+    const methodId = form.getValues('paymentMethodId');
+    const method = paymentMethods.find((m) => m.id === methodId);
+    const methodKept = patch.mode === undefined || method === undefined || methodFits(method, patch.mode);
+    if (!methodKept) setValue('paymentMethodId', '');
+    if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
+    if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
+    if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
+    // A loan's repayments are filed under Loans, unless a category was
+    // picked by hand: the type is a better answer than a guess from
+    // the name, and a worse one than the person's own choice.
+    if (patch.mode !== undefined) {
+      auto.typeChosen(
+        patch.mode === 'loan' ? LOANS_CATEGORY_ID : undefined,
+        form.getValues('note'),
+        form.getValues('kind'),
+      );
+    }
+    if (patch.mode !== undefined && isCardDeal(patch.mode)) {
+      // Entering a card's credit deal: the card's rate is the answer to a
+      // question the user should not have to be asked, so it arrives filled in.
+      setValue(
+        'annualRate',
+        methodKept ? dealRate(method, resolvedOf(methodId), patch.mode, prime).rate : '',
+      );
+    } else if (patch.annualRate !== undefined) {
+      setValue('annualRate', patch.annualRate, { shouldValidate: true });
+    }
+    if (patch.rateBasis !== undefined) setValue('rateBasis', patch.rateBasis, { shouldValidate: true });
+    if (patch.primeMargin !== undefined) {
+      setValue('primeMargin', patch.primeMargin, { shouldValidate: true });
+    }
+    if (patch.frequency !== undefined) {
+      // Validated on change, not on blur: it is a segmented control, so
+      // there is no blur to wait for, and the error would otherwise sit
+      // on screen after the user had answered it.
+      setValue('frequency', patch.frequency, { shouldValidate: true });
+    }
+  };
+
+  /*
+   * Re-price the plan against the card that will actually be charged.
+   *
+   * The rate belongs to the card, so switching cards mid-form has to move the
+   * rate with it - otherwise the plan is priced with one card's interest and
+   * charged to another's, and nothing on screen says so. A deal the new card
+   * does not have gives way to the nearest one it does. Done in the CHANGE
+   * HANDLER and not an effect: React Compiler forbids setState in an effect
+   * body, and an effect would also fight the user's own typing.
+   */
+  const changeMethod = (id: string): void => {
+    const mode = form.getValues('mode');
+    const next = fallbackMode(mode, availableModes(resolvedOf(id), 'expense'));
+    if (next !== undefined && recurrenceEditable) {
+      applyRecurrence(recurrenceDefaults(next, form.getValues()));
+      return;
+    }
+    if (isCardDeal(mode)) {
+      const method = paymentMethods.find((m) => m.id === id);
+      form.setValue('annualRate', dealRate(method, resolvedOf(id), mode, prime).rate, {
+        shouldValidate: true,
+      });
+    }
+  };
+
+  /** The card was saved from here: the rate it now has fills the deal's, if none was typed meanwhile. */
+  const cardSaved = (saved: PaymentMethod): void => {
+    void resolveMethodCard(saved).then((card) => {
+      const now = form.getValues();
+      if (now.paymentMethodId !== saved.id || !isCardDeal(now.mode) || now.annualRate.trim() !== '') return;
+      setValue('annualRate', dealRate(saved, card, now.mode, prime).rate, { shouldValidate: true });
+    });
+  };
+
+  /** Fields the sheet supplies at save time, from the card's rule: where a long credit resets with prime. */
+  const beforeSubmit = (): void => {
+    const mode = form.getValues('mode');
+    const at = mode === 'long_credit' ? dealRuleFor(resolved, mode)?.rate?.reset?.atPayment : undefined;
+    setValue('resetAt', at);
+    if (at !== undefined && form.getValues('primeRate') === '') setValue('primeRate', prime.primeRate);
+  };
+
   return (
-    <form
-      onSubmit={(event) => {
-        void submit(event);
-      }}
-      className="space-y-4 px-4 pb-6"
-      noValidate
-    >
-      {isSeries ? <ScopeChooser value={scope} onChange={setScope} at={editing.occurrence.date} /> : null}
+    <>
+      <form
+        onSubmit={(event) => {
+          beforeSubmit();
+          void submit(event);
+        }}
+        className="space-y-4 px-4 pb-6"
+        noValidate
+      >
+        {isSeries ? <ScopeChooser value={scope} onChange={setScope} at={editing.occurrence.date} /> : null}
 
-      <div className="space-y-1.5">
-        <Label id={kindId}>{t('tx.kind')}</Label>
-        <Controller
-          control={form.control}
-          name="kind"
-          render={({ field }) => (
-            <Segmented<Kind>
-              value={field.value}
-              labelledBy={kindId}
-              onChange={changeKind}
-              options={[
-                { value: 'expense', label: t('tx.expense') },
-                { value: 'income', label: t('tx.income') },
-              ]}
-            />
-          )}
-        />
-      </div>
-
-      {/* What it was, in the person's words - and from it, the category. */}
-      <div className="space-y-1.5">
-        <Label htmlFor={noteId}>{t('tx.name')}</Label>
-        <Input
-          id={noteId}
-          placeholder={t('tx.namePlaceholder')}
-          autoComplete="off"
-          aria-invalid={errors.note !== undefined}
-          {...form.register('note', {
-            onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
-              auto.nameChanged(event.target.value, form.getValues('kind'));
-            },
-          })}
-        />
-        {errors.note === undefined ? null : <p className="text-xs text-destructive">{errors.note}</p>}
-      </div>
-
-      <div className="flex gap-2">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <Label htmlFor={amountId}>{t('tx.amount')}</Label>
+        <div className="space-y-1.5">
+          <Label id={kindId}>{t('tx.kind')}</Label>
           <Controller
             control={form.control}
-            name="amount"
+            name="kind"
             render={({ field }) => (
-              <AmountInput
-                id={amountId}
-                currency={values.currency}
-                value={parseAmount(field.value, values.currency)}
-                onChange={(minor) => {
-                  // Minor units back to the display string the form holds.
-                  // Safe to round-trip on every keystroke: AmountInput keeps
-                  // its own text and only re-syncs when the incoming value
-                  // disagrees with what that text parses to, so "45." is not
-                  // rewritten to "45.00" under the cursor.
-                  field.onChange(minor === undefined ? '' : toDecimalString(minor, values.currency));
-                }}
-                aria-invalid={errors.amount !== undefined}
-                aria-describedby={`${amountId}-error`}
-              />
-            )}
-          />
-        </div>
-        <div className="w-40 space-y-1.5">
-          <Label htmlFor={currencyId} id={`${currencyId}-label`}>
-            {t('currency.label')}
-          </Label>
-          <Controller
-            control={form.control}
-            name="currency"
-            render={({ field }) => (
-              <CurrencySelect
-                id={currencyId}
+              <Segmented<Kind>
                 value={field.value}
-                onChange={field.onChange}
-                aria-labelledby={`${currencyId}-label`}
+                labelledBy={kindId}
+                onChange={changeKind}
+                options={[
+                  { value: 'expense', label: t('tx.expense') },
+                  { value: 'income', label: t('tx.income') },
+                ]}
               />
             )}
           />
         </div>
-      </div>
-      {errors.amount === undefined ? null : (
-        <p id={`${amountId}-error`} className="text-xs text-destructive">
-          {errors.amount}
-        </p>
-      )}
 
-      {values.currency === baseCurrency ? null : (
-        <RateField
-          state={rateField}
-          currency={values.currency}
-          baseCurrency={baseCurrency}
-          onRateChange={rateField.setRate}
-          onChargedChange={rateField.setCharged}
-          onEntryChange={rateField.setEntry}
-        />
-      )}
+        {/* What it was, in the person's words - and from it, the category. */}
+        <div className="space-y-1.5">
+          <Label htmlFor={noteId}>{t('tx.name')}</Label>
+          <Input
+            id={noteId}
+            placeholder={t('tx.namePlaceholder')}
+            autoComplete="off"
+            aria-invalid={errors.note !== undefined}
+            {...form.register('note', {
+              onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+                auto.nameChanged(event.target.value, form.getValues('kind'));
+              },
+            })}
+          />
+          {errors.note === undefined ? null : <p className="text-xs text-destructive">{errors.note}</p>}
+        </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <Label id={categoryId}>{t('tx.category')}</Label>
-          {/* Said quietly, beside the field it is about, and announced once. */}
-          <p className="flex items-center gap-1 text-xs text-muted-foreground" aria-live="polite">
-            {auto.status === 'idle' ? null : (
-              <>
-                <Sparkles
-                  className={cn('size-3.5', auto.status === 'thinking' && 'motion-safe:animate-pulse')}
-                  aria-hidden="true"
+        <div className="flex gap-2">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Label htmlFor={amountId}>{t('tx.amount')}</Label>
+            <Controller
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <AmountInput
+                  id={amountId}
+                  currency={values.currency}
+                  value={parseAmount(field.value, values.currency)}
+                  onChange={(minor) => {
+                    // Minor units back to the display string the form holds.
+                    // Safe to round-trip on every keystroke: AmountInput keeps
+                    // its own text and only re-syncs when the incoming value
+                    // disagrees with what that text parses to, so "45." is not
+                    // rewritten to "45.00" under the cursor.
+                    field.onChange(minor === undefined ? '' : toDecimalString(minor, values.currency));
+                  }}
+                  aria-invalid={errors.amount !== undefined}
+                  aria-describedby={`${amountId}-error`}
                 />
-                {auto.status === 'thinking' ? t('tx.autoThinking') : t('tx.autoChosen')}
-              </>
-            )}
-          </p>
-        </div>
-        <Controller
-          control={form.control}
-          name="categoryId"
-          render={({ field }) => (
-            <CategoryField
-              value={field.value}
-              onChange={(id) => {
-                field.onChange(id);
-                auto.choseManually();
-              }}
-              kind={values.kind}
-              categories={categories}
-              labelledBy={categoryId}
-              invalid={errors.categoryId !== undefined}
-              translate={translateCategory}
+              )}
             />
-          )}
-        />
-        {errors.categoryId === undefined ? null : (
-          <p className="text-xs text-destructive">{errors.categoryId}</p>
-        )}
-      </div>
-
-      {values.kind === 'expense' && values.mode === 'standing_order' ? (
-        <div className="space-y-1.5">
-          <Label id={viaId}>{t('tx.standingVia')}</Label>
-          <Segmented<StandingVia>
-            value={via}
-            labelledBy={viaId}
-            onChange={(next) => {
-              setVia(next);
-              // A card on a bank order, or an account on a card's: let go, as the picker no longer offers it.
-              const method = paymentMethods.find((m) => m.id === values.paymentMethodId);
-              if (method !== undefined && standingViaOf(method) !== next) setValue('paymentMethodId', '');
-            }}
-            options={[
-              { value: 'card', label: t('tx.standingViaCard') },
-              { value: 'bank', label: t('tx.standingViaBank') },
-            ]}
-            size="sm"
-          />
-          <p className="text-xs text-muted-foreground">
-            {t(via === 'card' ? 'tx.standingViaCardHint' : 'tx.standingViaBankHint')}
-          </p>
+          </div>
+          <div className="w-40 space-y-1.5">
+            <Label htmlFor={currencyId} id={`${currencyId}-label`}>
+              {t('currency.label')}
+            </Label>
+            <Controller
+              control={form.control}
+              name="currency"
+              render={({ field }) => (
+                <CurrencySelect
+                  id={currencyId}
+                  value={field.value}
+                  onChange={field.onChange}
+                  aria-labelledby={`${currencyId}-label`}
+                />
+              )}
+            />
+          </div>
         </div>
-      ) : null}
+        {errors.amount === undefined ? null : (
+          <p id={`${amountId}-error`} className="text-xs text-destructive">
+            {errors.amount}
+          </p>
+        )}
 
-      {values.kind === 'expense' ? (
-        <div className="space-y-1.5">
-          <Label id={methodId}>{t('tx.paymentMethod')}</Label>
-          <Controller
-            control={form.control}
-            name="paymentMethodId"
-            render={({ field }) => (
-              <PaymentMethodField
-                value={field.value}
-                onChange={(methodId_) => {
-                  field.onChange(methodId_);
-                  /*
-                   * Re-price the plan against the card that will actually be
-                   * charged.
-                   *
-                   * The rate belongs to the card, so switching cards mid-form
-                   * has to move the rate with it - otherwise the plan is priced
-                   * with one card's interest and charged to another's, and
-                   * nothing on screen says so. Done in the CHANGE HANDLER and
-                   * not an effect: React Compiler forbids setState in an effect
-                   * body, and an effect would also fight the user's own typing.
-                   */
-                  if (values.mode === 'credit') {
-                    form.setValue('annualRate', rateOfCard(paymentMethods, methodId_, prime.primeRate), {
-                      shouldValidate: true,
-                    });
-                  }
-                }}
-                profileId={values.profileId}
-                mode={values.mode}
-                methods={paymentMethods}
-                {...(values.mode === 'standing_order' ? { via } : {})}
-                labelledBy={methodId}
-              />
-            )}
-          />
-          <CardChargeNote
-            method={paymentMethods.find((m) => m.id === values.paymentMethodId)}
-            date={values.date}
+        {values.currency === baseCurrency ? null : (
+          <RateField
+            state={rateField}
             currency={values.currency}
-            amountMinor={amountMinor}
+            baseCurrency={baseCurrency}
+            onRateChange={rateField.setRate}
+            onChargedChange={rateField.setCharged}
+            onEntryChange={rateField.setEntry}
           />
-        </div>
-      ) : null}
-
-      {/* One profile makes the switcher pure noise - as on the feed. */}
-      {profiles.length > 1 ? (
-        <div className="space-y-1.5">
-          <Label id={profileLabelId}>{t('tx.profile')}</Label>
-          <Controller
-            control={form.control}
-            name="profileId"
-            render={({ field }) => (
-              <Segmented
-                value={field.value}
-                labelledBy={profileLabelId}
-                onChange={field.onChange}
-                size="sm"
-                options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
-              />
-            )}
-          />
-        </div>
-      ) : null}
-
-      <div className="space-y-1.5">
-        <Label id={dateId}>{repeats ? t('tx.dateFirst') : t('tx.date')}</Label>
-        <Controller
-          control={form.control}
-          name="date"
-          render={({ field }) => (
-            <DateField
-              value={field.value as LocalDate}
-              onChange={(next) => {
-                field.onChange(next);
-                // A date picked for a repeating rule is its first payment, so
-                // the day it repeats on follows it: a standing order from
-                // 01/11/2025 is paid on the 1st. Still its own field, for a
-                // rule that does land elsewhere.
-                if (values.mode !== 'one_time') {
-                  setValue('dayOfMonth', String(parseLocalDate(next).day), { shouldValidate: true });
-                }
-                // A first payment someone picked is one that may start mid-month.
-                setValue('partialFirst', true);
-              }}
-              labelledBy={dateId}
-              invalid={errors.date !== undefined}
-              // Moving a date means moving ONE occurrence. Applied to a rule it
-              // silently becomes "move every one of them", which is why the
-              // planner refuses it outside scope 'one'.
-              disabled={editing !== undefined && effectiveScope !== 'one'}
-            />
-          )}
-        />
-        {/* Starting in the past fills the past in; said before saving, not discovered after. */}
-        {past === undefined ? null : (
-          <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-            <History className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-            {t('tx.pastPayments', {
-              count: past.count,
-              from: formatLocalDate(past.first, i18n.language, { month: 'long', year: 'numeric' }),
-              to: formatLocalDate(past.last, i18n.language, { month: 'long', year: 'numeric' }),
-            })}
-          </p>
         )}
-      </div>
 
-      {isPlan ? (
-        /*
-         * An instalment plan is shown, not edited.
-         *
-         * Changing the count or the total would have to re-split the payments
-         * AND rewrite the first-occurrence remainder override in step, or the
-         * plan stops summing to its total - the one invariant תשלומים has. A
-         * read-only line and a clear instruction beat a control that silently
-         * breaks it.
-         */
-        <div className="rounded-xl border border-border bg-muted/40 p-3">
-          <p className="text-sm font-medium">{t('tx.installmentPlan')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('tx.installmentReadonly', {
-              index: installmentIndex(editing),
-              count: installmentCountOf(editing),
-            })}
-          </p>
-        </div>
-      ) : editing !== undefined && effectiveScope === 'one' ? null : ( // editor is absent rather than present and rejected on submit. // Scope 'one' cannot change the rule - the planner refuses it - so the
-        <RecurrenceFields
-          values={values}
-          onChange={(patch) => {
-            // Applied key by key rather than by spreading over Object.entries:
-            // the generic form of setValue cannot type a (key, value) pair from
-            // a loop, and the `as never` it takes to compile would let a typo
-            // through silently.
-            if (patch.mode !== undefined) setValue('mode', patch.mode);
-            // A method this kind of transaction does not take (a cheque on a
-            // standing order, cash on a קרדיט) is let go rather than carried
-            // into it: the picker no longer offers it, so nothing on screen
-            // would explain it.
-            const method = paymentMethods.find((m) => m.id === values.paymentMethodId);
-            const methodKept =
-              patch.mode === undefined || method === undefined || methodFits(method, patch.mode);
-            if (!methodKept) setValue('paymentMethodId', '');
-            if (patch.dayOfMonth !== undefined) setValue('dayOfMonth', patch.dayOfMonth);
-            if (patch.endDate !== undefined) setValue('endDate', patch.endDate);
-            if (patch.installmentCount !== undefined) setValue('installmentCount', patch.installmentCount);
-            // A loan's repayments are filed under Loans, unless a category was
-            // picked by hand: the type is a better answer than a guess from
-            // the name, and a worse one than the person's own choice.
-            if (patch.mode !== undefined) {
-              auto.typeChosen(
-                patch.mode === 'loan' ? LOANS_CATEGORY_ID : undefined,
-                form.getValues('note'),
-                values.kind,
-              );
-            }
-            if (patch.mode === 'credit') {
-              // Entering קרדיט: the card's rate is the answer to a question the
-              // user should not have to be asked, so it arrives filled in.
-              setValue(
-                'annualRate',
-                methodKept ? rateOfCard(paymentMethods, values.paymentMethodId, prime.primeRate) : '',
-              );
-            } else if (patch.annualRate !== undefined) {
-              setValue('annualRate', patch.annualRate, { shouldValidate: true });
-            }
-            if (patch.rateBasis !== undefined)
-              setValue('rateBasis', patch.rateBasis, { shouldValidate: true });
-            if (patch.primeMargin !== undefined) {
-              setValue('primeMargin', patch.primeMargin, { shouldValidate: true });
-            }
-            if (patch.frequency !== undefined) {
-              // Validated on change, not on blur: it is a segmented control, so
-              // there is no blur to wait for, and the error would otherwise sit
-              // on screen after the user had answered it.
-              setValue('frequency', patch.frequency, { shouldValidate: true });
-            }
-          }}
-          isExpense={values.kind === 'expense'}
-          submitted={form.formState.isSubmitted}
-          currency={values.currency}
-          amountMinor={amountMinor}
-          errors={errors}
-          prime={prime}
-        />
-      )}
-
-      {/* A part-month before the first full payment: charge only for its days, or the whole month. */}
-      {partMonth === undefined ? null : (
-        <div className="flex items-start justify-between gap-4 rounded-xl border border-border p-3">
-          <div className="space-y-1">
-            <Label htmlFor={partialId}>{t('tx.partialFirst')}</Label>
-            <p className="text-xs text-muted-foreground">
-              <Trans
-                i18nKey={values.partialFirst === true ? 'tx.partialFirstOn' : 'tx.partialFirstOff'}
-                values={{
-                  days: partMonth.days,
-                  period: partMonth.periodDays,
-                  start: formatLocalDate(values.date as LocalDate, i18n.language, {
-                    day: 'numeric',
-                    month: 'long',
-                  }),
-                  next: formatLocalDate(partMonth.nextBilling, i18n.language, {
-                    day: 'numeric',
-                    month: 'long',
-                  }),
-                }}
-                components={{
-                  amount: <Money minor={partMonth.amountMinor} currency={values.currency} announce={false} />,
-                }}
-              />
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <Label id={categoryId}>{t('tx.category')}</Label>
+            {/* Said quietly, beside the field it is about, and announced once. */}
+            <p className="flex items-center gap-1 text-xs text-muted-foreground" aria-live="polite">
+              {auto.status === 'idle' ? null : (
+                <>
+                  <Sparkles
+                    className={cn('size-3.5', auto.status === 'thinking' && 'motion-safe:animate-pulse')}
+                    aria-hidden="true"
+                  />
+                  {auto.status === 'thinking' ? t('tx.autoThinking') : t('tx.autoChosen')}
+                </>
+              )}
             </p>
           </div>
-          <Switch
-            id={partialId}
-            checked={values.partialFirst === true}
-            onCheckedChange={(on) => {
-              setValue('partialFirst', on);
-            }}
+          <Controller
+            control={form.control}
+            name="categoryId"
+            render={({ field }) => (
+              <CategoryField
+                value={field.value}
+                onChange={(id) => {
+                  field.onChange(id);
+                  auto.choseManually();
+                }}
+                kind={values.kind}
+                categories={categories}
+                labelledBy={categoryId}
+                invalid={errors.categoryId !== undefined}
+                translate={translateCategory}
+              />
+            )}
           />
+          {errors.categoryId === undefined ? null : (
+            <p className="text-xs text-destructive">{errors.categoryId}</p>
+          )}
         </div>
-      )}
 
-      {saveError === undefined ? null : (
-        <p role="alert" className="text-sm text-destructive">
-          {saveError}
-        </p>
-      )}
+        {values.kind === 'expense' && values.mode === 'standing_order' ? (
+          <div className="space-y-1.5">
+            <Label id={viaId}>{t('tx.standingVia')}</Label>
+            <Segmented<StandingVia>
+              value={via}
+              labelledBy={viaId}
+              onChange={(next) => {
+                setVia(next);
+                // A card on a bank order, or an account on a card's: let go, as the picker no longer offers it.
+                const method = paymentMethods.find((m) => m.id === values.paymentMethodId);
+                if (method !== undefined && standingViaOf(method) !== next) setValue('paymentMethodId', '');
+              }}
+              options={[
+                { value: 'card', label: t('tx.standingViaCard') },
+                { value: 'bank', label: t('tx.standingViaBank') },
+              ]}
+              size="sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(via === 'card' ? 'tx.standingViaCardHint' : 'tx.standingViaBankHint')}
+            </p>
+          </div>
+        ) : null}
 
-      <AlertDialog
-        open={pendingDrop !== undefined}
+        {values.kind === 'expense' ? (
+          <div className="space-y-1.5">
+            <Label id={methodId}>{t('tx.paymentMethod')}</Label>
+            <Controller
+              control={form.control}
+              name="paymentMethodId"
+              render={({ field }) => (
+                <PaymentMethodField
+                  value={field.value}
+                  onChange={(methodId_) => {
+                    field.onChange(methodId_);
+                    changeMethod(methodId_);
+                  }}
+                  profileId={values.profileId}
+                  mode={values.mode}
+                  methods={paymentMethods}
+                  {...(values.mode === 'standing_order' ? { via } : {})}
+                  labelledBy={methodId}
+                />
+              )}
+            />
+            <CardChargeNote
+              method={paymentMethods.find((m) => m.id === values.paymentMethodId)}
+              deferred={values.mode === 'deferred'}
+              date={values.date}
+              currency={values.currency}
+              amountMinor={amountMinor}
+            />
+          </div>
+        ) : null}
+
+        {/* One profile makes the switcher pure noise - as on the feed. */}
+        {profiles.length > 1 ? (
+          <div className="space-y-1.5">
+            <Label id={profileLabelId}>{t('tx.profile')}</Label>
+            <Controller
+              control={form.control}
+              name="profileId"
+              render={({ field }) => (
+                <Segmented
+                  value={field.value}
+                  labelledBy={profileLabelId}
+                  onChange={field.onChange}
+                  size="sm"
+                  options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
+                />
+              )}
+            />
+          </div>
+        ) : null}
+
+        <div className="space-y-1.5">
+          <Label id={dateId}>{repeats ? t('tx.dateFirst') : t('tx.date')}</Label>
+          <Controller
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <DateField
+                value={field.value as LocalDate}
+                onChange={(next) => {
+                  field.onChange(next);
+                  // A date picked for a repeating rule is its first payment, so
+                  // the day it repeats on follows it: a standing order from
+                  // 01/11/2025 is paid on the 1st. Still its own field, for a
+                  // rule that does land elsewhere.
+                  if (values.mode !== 'one_time') {
+                    setValue('dayOfMonth', String(parseLocalDate(next).day), { shouldValidate: true });
+                  }
+                  // A first payment someone picked is one that may start mid-month.
+                  setValue('partialFirst', true);
+                }}
+                labelledBy={dateId}
+                invalid={errors.date !== undefined}
+                // Moving a date means moving ONE occurrence. Applied to a rule it
+                // silently becomes "move every one of them", which is why the
+                // planner refuses it outside scope 'one'.
+                disabled={editing !== undefined && effectiveScope !== 'one'}
+              />
+            )}
+          />
+          {/* Starting in the past fills the past in; said before saving, not discovered after. */}
+          {past === undefined ? null : (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <History className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+              {t('tx.pastPayments', {
+                count: past.count,
+                from: formatLocalDate(past.first, i18n.language, { month: 'long', year: 'numeric' }),
+                to: formatLocalDate(past.last, i18n.language, { month: 'long', year: 'numeric' }),
+              })}
+            </p>
+          )}
+        </div>
+
+        {isPlan ? (
+          /*
+           * An instalment plan is shown, not edited.
+           *
+           * Changing the count or the total would have to re-split the payments
+           * AND rewrite the first-occurrence remainder override in step, or the
+           * plan stops summing to its total - the one invariant תשלומים has. A
+           * read-only line and a clear instruction beat a control that silently
+           * breaks it.
+           */
+          <div className="rounded-xl border border-border bg-muted/40 p-3">
+            <p className="text-sm font-medium">{t('tx.installmentPlan')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('tx.installmentReadonly', {
+                index: installmentIndex(editing),
+                count: installmentCountOf(editing),
+              })}
+            </p>
+          </div>
+        ) : editing !== undefined && effectiveScope === 'one' ? null : ( // editor is absent rather than present and rejected on submit. // Scope 'one' cannot change the rule - the planner refuses it - so the
+          <RecurrenceFields
+            values={values}
+            onChange={applyRecurrence}
+            isExpense={values.kind === 'expense'}
+            submitted={form.formState.isSubmitted}
+            currency={values.currency}
+            amountMinor={amountMinor}
+            errors={errors}
+            prime={prime}
+            {...(resolved === undefined || chosenMethod === undefined
+              ? {}
+              : {
+                  card: {
+                    resolved,
+                    needRate,
+                    onOpenCard: () => {
+                      setCardOpen(chosenMethod);
+                    },
+                    abroad: values.currency !== CARD_CURRENCY,
+                    shekelsMinor: values.currency === CARD_CURRENCY ? amountMinor : undefined,
+                    offerDeferred: editing === undefined,
+                  },
+                })}
+          />
+        )}
+
+        {/* A part-month before the first full payment: charge only for its days, or the whole month. */}
+        {partMonth === undefined ? null : (
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-border p-3">
+            <div className="space-y-1">
+              <Label htmlFor={partialId}>{t('tx.partialFirst')}</Label>
+              <p className="text-xs text-muted-foreground">
+                <Trans
+                  i18nKey={values.partialFirst === true ? 'tx.partialFirstOn' : 'tx.partialFirstOff'}
+                  values={{
+                    days: partMonth.days,
+                    period: partMonth.periodDays,
+                    start: formatLocalDate(values.date as LocalDate, i18n.language, {
+                      day: 'numeric',
+                      month: 'long',
+                    }),
+                    next: formatLocalDate(partMonth.nextBilling, i18n.language, {
+                      day: 'numeric',
+                      month: 'long',
+                    }),
+                  }}
+                  components={{
+                    amount: (
+                      <Money minor={partMonth.amountMinor} currency={values.currency} announce={false} />
+                    ),
+                  }}
+                />
+              </p>
+            </div>
+            <Switch
+              id={partialId}
+              checked={values.partialFirst === true}
+              onCheckedChange={(on) => {
+                setValue('partialFirst', on);
+              }}
+            />
+          </div>
+        )}
+
+        {saveError === undefined ? null : (
+          <p role="alert" className="text-sm text-destructive">
+            {saveError}
+          </p>
+        )}
+
+        <AlertDialog
+          open={pendingDrop !== undefined}
+          onOpenChange={(next) => {
+            if (!next) setPendingDrop(undefined);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('tx.confirmTitle', { count: pendingDrop?.count ?? 0 })}</AlertDialogTitle>
+              <AlertDialogDescription>{t('tx.confirmBody')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('action.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                // Destructive styling, not the primary green: this discards work
+                // the user did on purpose, and a confirmation whose dangerous
+                // answer looks like the safe default is a confirmation in name
+                // only.
+                variant="destructive"
+                onClick={() => {
+                  const pending = pendingDrop;
+                  setPendingDrop(undefined);
+                  pending?.run();
+                }}
+              >
+                {t('tx.confirmGo')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <div className="flex gap-2 pt-1">
+          <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+            {t('action.cancel')}
+          </Button>
+          <Button
+            type="submit"
+            disabled={form.formState.isSubmitting || rateBlocked || needRate}
+            className="flex-1"
+          >
+            {form.formState.isSubmitting ? t('tx.saving') : t('action.save')}
+          </Button>
+        </div>
+      </form>
+      {/* The chosen card, opened over the form to give a deal's rate; the purchase waits underneath.
+          Outside the <form>: React carries a portal's events up its own tree, so the
+          card's own save would otherwise submit the purchase too. */}
+      <Sheet
+        open={cardOpen !== undefined}
         onOpenChange={(next) => {
-          if (!next) setPendingDrop(undefined);
+          if (!next) setCardOpen(undefined);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('tx.confirmTitle', { count: pendingDrop?.count ?? 0 })}</AlertDialogTitle>
-            <AlertDialogDescription>{t('tx.confirmBody')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('action.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              // Destructive styling, not the primary green: this discards work
-              // the user did on purpose, and a confirmation whose dangerous
-              // answer looks like the safe default is a confirmation in name
-              // only.
-              variant="destructive"
-              onClick={() => {
-                const pending = pendingDrop;
-                setPendingDrop(undefined);
-                pending?.run();
+        <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{t('categories:manage.methodEdit')}</SheetTitle>
+          </SheetHeader>
+          {cardOpen === undefined ? null : (
+            <MethodForm
+              target={cardOpen}
+              profiles={profiles}
+              className="px-4 pb-6"
+              onDone={(saved) => {
+                setCardOpen(undefined);
+                if (saved !== undefined) cardSaved(saved);
               }}
-            >
-              {t('tx.confirmGo')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <div className="flex gap-2 pt-1">
-        <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
-          {t('action.cancel')}
-        </Button>
-        <Button type="submit" disabled={form.formState.isSubmitting || rateBlocked} className="flex-1">
-          {form.formState.isSubmitting ? t('tx.saving') : t('action.save')}
-        </Button>
-      </div>
-    </form>
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 
