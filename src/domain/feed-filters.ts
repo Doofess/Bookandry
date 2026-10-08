@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-import { addMonthsClamped, compareLocal, isLocalDate, makeLocalDate, startOfMonth } from '@/lib/dates';
+import {
+  addMonthsClamped,
+  compareLocal,
+  isLocalDate,
+  makeLocalDate,
+  parseLocalDate,
+  startOfMonth,
+} from '@/lib/dates';
 import { ALL_PROFILES } from '@/types/domain';
 import type { Kind, LocalDate } from '@/types/money';
 
@@ -202,4 +209,38 @@ export function clampMonthToHorizon(month: LocalDate, today: LocalDate): LocalDa
 /** Whether a month sits at the forward edge, so the feed can say the future stops here. */
 export function isAtHorizon(month: LocalDate, today: LocalDate): boolean {
   return compareLocal(month, startOfMonth(addMonthsClamped(startOfMonth(today), MONTHS_FORWARD, 1))) >= 0;
+}
+
+export type MonthCellState = 'actual' | 'forecast' | 'beyond';
+export type MonthCell = {
+  readonly month: LocalDate;
+  readonly state: MonthCellState;
+  readonly isThisMonth: boolean;
+};
+
+/**
+ * A year's twelve months, as the month pop-out offers them, January first.
+ *
+ * `beyond` is everything › cannot reach: the same bound as `isAtHorizon`,
+ * so the grid never offers a month the arrows refuse. `forecast` is a month
+ * still to come, shown but muted, because what it holds is projected.
+ */
+export function monthGrid(year: number, today: LocalDate): readonly MonthCell[] {
+  const thisMonth = startOfMonth(today);
+  const latest = startOfMonth(addMonthsClamped(thisMonth, MONTHS_FORWARD, 1));
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = makeLocalDate(year, index + 1, 1);
+    const state: MonthCellState =
+      compareLocal(month, latest) > 0 ? 'beyond' : compareLocal(month, thisMonth) > 0 ? 'forecast' : 'actual';
+    return { month, state, isThisMonth: month === thisMonth };
+  });
+}
+
+/** The first and last year the month pop-out can show, from the cursor's own bounds. */
+export function yearBounds(today: LocalDate): { readonly first: number; readonly last: number } {
+  const thisMonth = startOfMonth(today);
+  return {
+    first: parseLocalDate(addMonthsClamped(thisMonth, -MONTHS_BACK, 1)).year,
+    last: parseLocalDate(addMonthsClamped(thisMonth, MONTHS_FORWARD, 1)).year,
+  };
 }

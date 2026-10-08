@@ -218,7 +218,13 @@ export function FeedScreen() {
             320: month, then profile + prime. One row from sm up.
           */}
           <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="panel-pills">
-            <MonthCursor month={filters.month} today={today} onStep={stepMonth} tone="panel" />
+            <MonthCursor
+              month={filters.month}
+              today={today}
+              onStep={stepMonth}
+              onPick={setMonth}
+              tone="panel"
+            />
             {lookups === undefined ? null : (
               <ProfileSwitcher
                 profiles={lookups.profiles}

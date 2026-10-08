@@ -84,7 +84,10 @@ function DropdownMenuContent({
             </MenuPrimitive.Arrow>
           ) : null}
           {arrow ? (
-            <div data-slot="popup-scroll" className="min-h-0 overflow-x-hidden overflow-y-auto">
+            <div
+              data-slot="popup-scroll"
+              className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain"
+            >
               {children}
             </div>
           ) : (
