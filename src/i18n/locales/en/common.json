@@ -36,6 +36,16 @@
     "aiHint": "From a file or a photo of a statement",
     "aiUnavailable": "Needs a Bookandry account"
   },
+  "categoryPop": {
+    "title": "Category",
+    "chip": "Category: {{name}}. Change it",
+    "more": "More",
+    "scopeQuestion": "Change it to {{name}} for…",
+    "scopeOne": "Only this time",
+    "scopeFuture": "From now on",
+    "scopeAll": "Every payment",
+    "changed": "Category changed to {{name}}"
+  },
   "theme": {
     "label": "Theme",
     "light": "Light",

@@ -1,15 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { expandOccurrences } from '@/domain/occurrences';
-import { d, MONEY } from '@/domain/test-factories';
+import { planSeriesEdit } from '@/domain/series-edit';
+import { d, modify, MONEY } from '@/domain/test-factories';
 import { counterIdFactory } from '@/lib/id';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import type { Occurrence, Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { materialize } from './materialize';
-import { deleteTransaction, restoreOccurrence, skipOccurrence } from './occurrence-actions';
+import {
+  changeCategory,
+  deleteTransaction,
+  editOccurrence,
+  restoreOccurrence,
+  skipOccurrence,
+} from './occurrence-actions';
 import { listRecentlyDeleted } from './repos/transactions';
+import { applySeriesEdit } from './series-edit';
 
 const TODAY = d('2026-09-15');
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
@@ -276,5 +284,185 @@ describe('deleteTransaction', () => {
     await deleteTransaction(handle.db, 'rent', NOW);
 
     await expect(handle.db.overrides.count()).resolves.toBe(1);
+  });
+});
+
+describe('changing a category', () => {
+  const snapshot = async (db: TestDb['db']) => ({
+    transactions: (await db.transactions.toArray()).map(({ updatedAt: _u, ...rest }) => rest),
+    overrides: (await db.overrides.toArray()).map(({ updatedAt: _u, ...rest }) => rest),
+  });
+
+  it('only this time: writes a modify override, and undo removes it', async () => {
+    const target = await seed();
+    const before = await snapshot(handle.db);
+
+    const undoable = await changeCategory(handle.db, {
+      occurrence: target,
+      categoryId: 'cat.food',
+      scope: 'one',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    const [override] = await handle.db.overrides.toArray();
+    expect(override).toMatchObject({
+      action: 'modify',
+      occurrenceDate: '2026-09-10',
+      patch: { categoryId: 'cat.food' },
+    });
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('keeps an earlier per-occurrence edit, and undo restores THAT override, not a bare slot', async () => {
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const earlier = modify('rent', d('2026-09-10'), { money: { ...MONEY, amountMinor: 999 } });
+    await handle.db.overrides.add(earlier);
+    const target = occurrence(tx, '2026-09-10', [earlier]);
+    const before = await snapshot(handle.db);
+
+    const undoable = await changeCategory(handle.db, {
+      occurrence: target,
+      categoryId: 'cat.food',
+      scope: 'one',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await handle.db.overrides.get(earlier.id)).toMatchObject({
+      patch: { categoryId: 'cat.food', money: { amountMinor: 999 } },
+    });
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+    expect((await handle.db.overrides.get(earlier.id))?.updatedAt).toBe(LATER);
+  });
+
+  it('from now on: splits the series exactly as the edit form does, and undo puts it back whole', async () => {
+    const target = await seed();
+    const before = await snapshot(handle.db);
+
+    // The edit form's own path, on a second database, with the same ids.
+    const other = freshDb();
+    await other.db.transactions.add(rent());
+    const planned = planSeriesEdit({
+      transaction: rent(),
+      overrides: [],
+      scope: 'future',
+      at: target.originalDate,
+      patch: { categoryId: 'cat.food' },
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    if (!planned.ok) throw new Error('refused');
+    await applySeriesEdit(other.db, planned.plan);
+
+    const undoable = await changeCategory(handle.db, {
+      occurrence: target,
+      categoryId: 'cat.food',
+      scope: 'future',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await snapshot(handle.db)).toEqual(await snapshot(other.db));
+    expect(await handle.db.transactions.count()).toBe(2);
+    await other.dispose();
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('from now on, at the first occurrence, is the whole series, and undo restores it', async () => {
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const first = occurrence(tx, '2026-03-10');
+    const before = await snapshot(handle.db);
+
+    const undoable = await changeCategory(handle.db, {
+      occurrence: first,
+      categoryId: 'cat.food',
+      scope: 'future',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    // No zero-occurrence original: the series itself changed.
+    expect(await handle.db.transactions.count()).toBe(1);
+    expect((await handle.db.transactions.get('rent'))?.categoryId).toBe('cat.food');
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('every payment of a plan: the whole plan changes, and undo restores it byte for byte', async () => {
+    /*
+     * A plan (תשלומים, קרדיט) is one agreement and never splits: the pop-out
+     * offers "Every payment" (`all`) for it, as the edit form does. An earlier
+     * per-payment edit stays as it was, and so does everything after undo.
+     */
+    const plan = materialize({
+      ...rent(),
+      id: 'sofa',
+      seriesRootId: 'sofa',
+      recurrence: { type: 'monthly', dayOfMonth: 10, installments: 12 },
+    });
+    await handle.db.transactions.add(plan);
+    const earlier = modify('sofa', d('2026-05-10'), { note: 'the odd agorot' });
+    await handle.db.overrides.add(earlier);
+    const target = occurrence(plan, '2026-09-10', [earlier]);
+    const rawBefore = {
+      transactions: await handle.db.transactions.toArray(),
+      overrides: await handle.db.overrides.toArray(),
+    };
+
+    const undoable = await changeCategory(handle.db, {
+      occurrence: target,
+      categoryId: 'cat.food',
+      scope: 'all',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await handle.db.transactions.count()).toBe(1);
+    expect((await handle.db.transactions.get('sofa'))?.categoryId).toBe('cat.food');
+    const after = await handle.db.overrides.toArray();
+    expect(after).toEqual(rawBefore.overrides);
+    const payments = expandOccurrences(
+      (await handle.db.transactions.get('sofa'))!,
+      after,
+      d('2026-03-01'),
+      d('2027-03-31'),
+      { today: TODAY },
+    );
+    expect(payments).toHaveLength(12);
+    expect(new Set(payments.map((p) => p.categoryId))).toEqual(new Set(['cat.food']));
+
+    await undoable.undo(LATER);
+    expect(await handle.db.transactions.toArray()).toEqual(
+      rawBefore.transactions.map((t) => ({ ...t, updatedAt: LATER })),
+    );
+    expect(await handle.db.overrides.toArray()).toEqual(rawBefore.overrides);
+  });
+
+  it('refuses a transaction deleted meanwhile, changing nothing', async () => {
+    const target = await seed();
+    await handle.db.transactions.update('rent', { isDeleted: 1 });
+
+    await expect(
+      editOccurrence(handle.db, {
+        occurrence: target,
+        scope: 'one',
+        patch: { categoryId: 'x' },
+        today: TODAY,
+        now: NOW,
+        newId: ids(),
+      }),
+    ).rejects.toThrow();
+    expect(await handle.db.overrides.count()).toBe(0);
   });
 });

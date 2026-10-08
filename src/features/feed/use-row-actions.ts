@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -47,19 +48,20 @@ export function useRowActions(): (action: RowAction, occurrence: Occurrence) => 
                 date: formatLocalDate(occurrence.date, i18n.language, { dateStyle: 'medium' }),
               }),
               undoable,
+              t,
             );
             return;
           }
 
           case 'restore': {
             const undoable = await restoreOccurrence(db, occurrence, now, newId);
-            offerUndo(t('tx.toastRestored'), undoable);
+            offerUndo(t('tx.toastRestored'), undoable, t);
             return;
           }
 
           case 'delete': {
             const undoable = await deleteTransaction(db, occurrence.transaction.id, now);
-            offerUndo(t('tx.toastDeleted'), undoable);
+            offerUndo(t('tx.toastDeleted'), undoable, t);
             return;
           }
 
@@ -75,23 +77,43 @@ export function useRowActions(): (action: RowAction, occurrence: Occurrence) => 
         // hunting for a half-applied state that does not exist.
         toast.error(t('tx.toastFailed'));
       }
-
-      function offerUndo(message: string, undoable: UndoableAction): void {
-        toast(message, {
-          action: {
-            label: t('action.undo'),
-            onClick: () => {
-              // The instant the UNDO happened, not the instant of the action it
-              // reverses: `updatedAt` decides the winner of an import merge, and
-              // reusing the original timestamp would make the undo lose to it.
-              void undoable.undo(systemClock.nowIso()).catch(() => {
-                toast.error(t('tx.toastFailed'));
-              });
-            },
-          },
-        });
-      }
     },
     [t, i18n.language],
+  );
+}
+
+/** The toast after an undoable write, with its Undo. */
+function offerUndo(message: string, undoable: UndoableAction, t: TFunction): void {
+  toast(message, {
+    action: {
+      label: t('action.undo'),
+      onClick: () => {
+        // The instant the UNDO happened, not the instant of the action it
+        // reverses: `updatedAt` decides the winner of an import merge, and
+        // reusing the original timestamp would make the undo lose to it.
+        void undoable.undo(systemClock.nowIso()).catch(() => {
+          toast.error(t('tx.toastFailed'));
+        });
+      },
+    },
+  });
+}
+
+/**
+ * Run one undoable write, then offer to take it back - the row menu's toast,
+ * for the pop-outs that write (the category, and "not counted yet").
+ */
+export function useUndoableWrite(): (write: () => Promise<UndoableAction>, message: string) => Promise<void> {
+  const { t } = useTranslation();
+  return useCallback(
+    async (write: () => Promise<UndoableAction>, message: string) => {
+      try {
+        offerUndo(message, await write(), t);
+      } catch {
+        // One Dexie transaction: a failure changed nothing.
+        toast.error(t('tx.toastFailed'));
+      }
+    },
+    [t],
   );
 }

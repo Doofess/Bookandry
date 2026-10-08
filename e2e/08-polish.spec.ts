@@ -118,6 +118,7 @@ for (const size of WIDTHS) {
             ['text', '[data-testid="row-text"]'],
             ['avatar', '[data-person]'],
             ['amount', '[data-testid="row-amount"]'],
+            ['more', '[data-testid="row-more"]'],
           ];
           for (const row of document.querySelectorAll('[role="listitem"]')) {
             const boxes: [string, DOMRect][] = [];
