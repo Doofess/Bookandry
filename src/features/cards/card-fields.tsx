@@ -1,7 +1,9 @@
+import { CircleHelp } from 'lucide-react';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useToday } from '@/app/app-context';
+import { BrandMark, NeutralMark } from '@/components/brand-mark';
 import { Segmented } from '@/components/segmented';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -120,7 +122,17 @@ export function CardFields({
                 onChange({ issuer });
               }}
               size="sm"
-              options={ISSUERS.map((issuer) => ({ value: issuer, label: t(`issuer.${issuer}`) }))}
+              options={ISSUERS.map((issuer) => ({
+                value: issuer,
+                label: t(`issuer.${issuer}`),
+                icon:
+                  issuer === 'other' ? (
+                    <NeutralMark icon={CircleHelp} />
+                  ) : (
+                    <BrandMark brand={`issuer-${issuer}`} />
+                  ),
+              }))}
+              className="grid grid-cols-3"
             />
           </div>
         )}
@@ -134,7 +146,14 @@ export function CardFields({
               onChange({ network });
             }}
             size="sm"
-            options={NETWORKS.map((network) => ({ value: network, label: t(`network.${network}`) }))}
+            // The marks stand alone: each is its own name, which a screen reader still hears.
+            options={NETWORKS.map((network) => ({
+              value: network,
+              label: t(`network.${network}`),
+              icon: <BrandMark brand={`network-${network}`} />,
+              labelHidden: true,
+            }))}
+            className="grid grid-cols-5"
           />
         </div>
 

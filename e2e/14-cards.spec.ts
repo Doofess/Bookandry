@@ -188,6 +188,65 @@ test.describe('@cards archive', () => {
   });
 });
 
+test.describe('@cards the brands’ logos', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'en',
+      'Logos are the same in every language; the pickers are unit-tested.',
+    );
+  });
+
+  /** Every logo on the page has loaded: bundled, precached and decodable, not a broken image. */
+  const allLoaded = (page: Page) =>
+    page
+      .locator('[data-slot="brand-mark"] img')
+      .evaluateAll((imgs) =>
+        imgs.map((img) => (img instanceof HTMLImageElement && img.complete ? img.naturalWidth : 0)),
+      );
+
+  test('shows each bank, card company and network by its own logo, and fits a 320px phone', async ({
+    page,
+  }) => {
+    await completeFirstRun(page, 'en', { demo: false });
+    await page.getByRole('link', { name: 'Cards' }).click();
+    await page.getByRole('button', { name: 'Add a card' }).click();
+    const dialog = page.getByRole('dialog');
+    const banks = dialog.getByRole('radiogroup', { name: 'Bank', exact: true });
+    await expect(banks.getByRole('radio', { name: 'Bank Leumi' })).toBeVisible();
+    await banks.getByRole('radio', { name: 'Bank Leumi' }).click();
+    await expect(dialog.getByRole('radiogroup', { name: 'Card company', exact: true })).toBeVisible();
+
+    const loaded = async () => {
+      await expect.poll(async () => (await allLoaded(page)).length).toBeGreaterThan(20);
+      await expect.poll(async () => (await allLoaded(page)).filter((width) => width === 0)).toEqual([]);
+    };
+    await loaded();
+    // Each network by its mark alone, still named for a screen reader.
+    for (const network of ['Visa', 'Mastercard', 'Amex', 'Diners', 'Isracard']) {
+      await expect(
+        dialog
+          .getByRole('radiogroup', { name: 'Network' })
+          .getByRole('radio', { name: network, exact: true }),
+      ).toBeVisible();
+    }
+
+    await page.setViewportSize({ width: 320, height: 720 });
+    await loaded();
+    const sideways = await dialog.evaluate((sheet) => {
+      const wide = [...sheet.querySelectorAll('[role="radiogroup"]')].filter(
+        (group) => group.scrollWidth > group.clientWidth + 1,
+      );
+      return {
+        page: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        sheet: sheet.scrollWidth > sheet.clientWidth + 1,
+        groups: wide.map((group) => group.getAttribute('aria-labelledby')),
+      };
+    });
+    expect(sideways).toEqual({ page: false, sheet: false, groups: [] });
+  });
+});
+
 test.describe('@cards the monthly fee', () => {
   // A shekel base: the fee is in shekels, so the Hebrew project is the one.
   // eslint-disable-next-line no-empty-pattern

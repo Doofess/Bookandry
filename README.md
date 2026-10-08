@@ -425,6 +425,11 @@ the archive month, and a card still owed on stays in commitments.
 **Duplicate keeps the source row's person.** It keeps the card only if that
 person can use it.
 
+**Banks, card companies and networks show their real logos, on white tiles.**
+White in both themes, as the logos are drawn for it; rendered as `<img>`,
+never inlined, so artwork from outside cannot run anything. Sources and terms
+are in `src/assets/brands/SOURCES.md`.
+
 **Amounts render in a `dir="ltr"` island with `data-value` carrying the
 integer.** CLDR's Hebrew currency pattern injects two right-to-left marks and
 puts the symbol after the number; left to inherit page direction, a leading

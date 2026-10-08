@@ -52,8 +52,18 @@ const FIXTURE: Catalog = {
       fxFee: { max: '2.5', isracard: '2.7' },
     },
     { id: '10', name: { en: 'Leumi', he: 'לאומי' }, issuers: ['cal'], fxFee: { cal: '2' } },
+    { id: '31', name: { en: 'FIBI', he: 'הבינלאומי' }, issuers: ['max'], fxFee: { max: '2' } },
   ],
 };
+
+/** FIBI's wordmark as the build serves it: the group shares one mark, so the pickers show the name. */
+const WORDMARK = Object.values(
+  import.meta.glob<string>('/src/assets/brands/bank-31-wordmark.svg', {
+    eager: true,
+    query: '?url',
+    import: 'default',
+  }),
+)[0];
 
 const mocks = vi.hoisted(() => ({ fail: false }));
 
@@ -104,7 +114,7 @@ describe('the chooser', () => {
     expect(screen.getByText('Loading the card list…')).toBeInTheDocument();
     await screen.findByRole('group', { name: 'Who issues this card' });
     await chooser().findByRole('radiogroup', { name: 'Bank' });
-    expect(labels('Bank')).toEqual(['Not through a bank', 'Mizrahi', 'Leumi', 'Not in the list']);
+    expect(labels('Bank')).toEqual(['Not through a bank', 'Mizrahi', 'Leumi', 'FIBI', 'Not in the list']);
   });
 
   it('narrows the card companies to the chosen bank', async () => {
@@ -430,6 +440,75 @@ describe('fix round 2', () => {
     );
     await chooser().findByRole('radiogroup', { name: 'Bank' });
     expect(screen.getByLabelText('Charged to the account at')).toHaveValue('Leumi');
+  });
+});
+
+/** Which brand's logo an option shows. */
+const brand = (radio: HTMLElement) => radio.querySelector('img')?.getAttribute('data-brand');
+
+describe('the brands’ own logos', () => {
+  it('shows each bank by its logo, its name still the text', async () => {
+    renderWithProviders(<Harness />);
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+
+    expect(brand(group('Bank').getByRole('radio', { name: 'Leumi' }))).toBe('bank-10');
+    // The FIBI group shares one mark: its own wordmark tells it apart.
+    const fibi = group('Bank').getByRole('radio', { name: 'FIBI' });
+    expect(WORDMARK).toBeDefined();
+    expect(fibi.querySelector('img')).toHaveAttribute('src', WORDMARK);
+  });
+
+  it('shows "Not through a bank" and "Not in the list" as plain line icons, not logos', async () => {
+    renderWithProviders(<Harness />);
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+
+    for (const name of ['Not through a bank', 'Not in the list']) {
+      const radio = group('Bank').getByRole('radio', { name });
+      expect(radio.querySelector('img')).toBeNull();
+      expect(radio.querySelector('[data-slot="neutral-mark"] svg')).not.toBeNull();
+    }
+  });
+
+  it('shows each card company at the bank by its logo', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await choose(user, 'Bank', 'Mizrahi');
+
+    expect(brand(group('Card company').getByRole('radio', { name: 'Max' }))).toBe('issuer-max');
+    expect(brand(group('Card company').getByRole('radio', { name: 'Isracard' }))).toBe('issuer-isracard');
+    const unlisted = group('Card company').getByRole('radio', { name: 'Not in the list' });
+    expect(unlisted.querySelector('[data-slot="neutral-mark"]')).not.toBeNull();
+  });
+});
+
+describe('the manual company and network pickers', () => {
+  it('names each network and shows its logo alone', async () => {
+    renderWithProviders(<Harness />);
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+    const networks = within(screen.getByRole('radiogroup', { name: 'Network' }));
+
+    for (const [name, key] of [
+      ['Visa', 'network-visa'],
+      ['Mastercard', 'network-mastercard'],
+      ['Amex', 'network-amex'],
+      ['Diners', 'network-diners'],
+      ['Isracard', 'network-isracard'],
+    ] as const) {
+      const radio = networks.getByRole('radio', { name });
+      expect(radio.querySelector('img')).toHaveAttribute('data-brand', key);
+      expect(within(radio).getByText(name)).toHaveClass('sr-only');
+    }
+  });
+
+  it('shows each card company by its logo, and "Other" by a neutral mark', async () => {
+    renderWithProviders(<Harness />);
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+    const companies = within(screen.getByRole('radiogroup', { name: 'Card company (manual)' }));
+
+    expect(brand(companies.getByRole('radio', { name: 'Cal' }))).toBe('issuer-cal');
+    const other = companies.getByRole('radio', { name: 'Other' });
+    expect(other.querySelector('img')).toBeNull();
+    expect(other.querySelector('[data-slot="neutral-mark"] svg')).not.toBeNull();
   });
 });
 
