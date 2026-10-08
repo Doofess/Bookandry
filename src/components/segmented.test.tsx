@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -149,5 +149,79 @@ describe('pointer', () => {
     await user.click(screen.getByRole('radio', { name: 'Plum' }));
 
     expect(onChange).toHaveBeenCalledWith('plum');
+  });
+});
+
+describe('options with an icon', () => {
+  const Icon = () => <svg data-testid="icon" aria-hidden="true" />;
+  const BANKS = [
+    { value: 'none' as const, label: 'Not through a bank', icon: <Icon /> },
+    { value: '10' as const, label: 'Bank Leumi', hint: 'Code 10', icon: <Icon /> },
+    { value: '12' as const, label: 'Bank Hapoalim', icon: <Icon /> },
+    { value: 'visa' as const, label: 'Visa', icon: <Icon />, labelHidden: true },
+  ];
+  type Bank = (typeof BANKS)[number]['value'];
+
+  function renderBanks(value: Bank, onChange = vi.fn()) {
+    renderWithProviders(
+      <div>
+        <span id="bank">Bank</span>
+        <Segmented<Bank>
+          value={value}
+          onChange={onChange}
+          options={BANKS}
+          labelledBy="bank"
+          className="grid grid-cols-3 sm:grid-cols-4"
+        />
+      </div>,
+    );
+    return { onChange };
+  }
+
+  it('keeps the name it had, with the icon above the label', () => {
+    renderBanks('none');
+    const leumi = screen.getByRole('radio', { name: /^Bank Leumi\s?Code 10$/ });
+
+    expect(within(leumi).getByTestId('icon')).toBeInTheDocument();
+    expect(leumi).toHaveClass('flex-col', 'items-center', 'gap-1', 'min-h-16');
+    // The icon comes first: above the label, in reading order.
+    expect(leumi.firstElementChild).toBe(within(leumi).getByTestId('icon'));
+  });
+
+  it('is still named when its label is hidden, for the marks that stand alone', () => {
+    renderBanks('none');
+    const visa = screen.getByRole('radio', { name: 'Visa' });
+
+    expect(within(visa).getByText('Visa')).toHaveClass('sr-only');
+    expect(within(visa).getByTestId('icon')).toBeInTheDocument();
+  });
+
+  it('leaves an option with no icon as it was', () => {
+    render('apple');
+
+    expect(screen.getByRole('radio', { name: 'Apple' })).not.toHaveClass('flex-col');
+  });
+
+  it('lets the caller lay it out as a grid, in place of its own wrapping row', () => {
+    renderBanks('none');
+    const group = screen.getByRole('radiogroup', { name: 'Bank' });
+
+    expect(group).toHaveClass('grid', 'grid-cols-3', 'sm:grid-cols-4');
+    expect(group).not.toHaveClass('flex');
+  });
+
+  it('still moves in reading order with the arrow keys, row to row', async () => {
+    // A grid changes where the options sit, not their order: ArrowDown is
+    // "next", as in any radio group, and the last of a row leads to the next row.
+    const user = userEvent.setup();
+    const { onChange } = renderBanks('12');
+
+    await user.tab();
+    await user.keyboard('{ArrowDown}');
+    expect(onChange).toHaveBeenLastCalledWith('visa');
+    expect(screen.getByRole('radio', { name: 'Visa' })).toHaveFocus();
+
+    await user.keyboard('{ArrowRight}');
+    expect(onChange).toHaveBeenLastCalledWith('none');
   });
 });

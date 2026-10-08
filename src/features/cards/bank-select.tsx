@@ -3,6 +3,7 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { BankMark } from '@/components/brand-mark';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -21,6 +22,9 @@ const GROUP_KEY = {
   merged: 'accounts.edit.groupMerged',
   arab: 'accounts.edit.groupArab',
 } as const;
+
+/** One width for every bank's mark, logo or not, so the names line up in a column. */
+const MARK = 'w-16';
 
 /** The code as it is printed before the branch: "12", "04". */
 function printedCode(code: string): string {
@@ -70,6 +74,7 @@ export function BankSelect({
                 <span className="text-muted-foreground">{t('accounts.edit.bankChoose')}</span>
               ) : (
                 <>
+                  <BankMark code={selected.code} className={MARK} />
                   <CodeBadge code={selected.code} />
                   <span className="truncate">{bankName(selected, i18n.language)}</span>
                 </>
@@ -141,6 +146,7 @@ function BankOption({
       onSelect={onSelect}
       className="items-start gap-2"
     >
+      <BankMark code={bank.code} className={MARK} />
       <CodeBadge code={bank.code} />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{bankName(bank, i18n.language)}</span>

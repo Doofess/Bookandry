@@ -1,6 +1,8 @@
+import { CircleHelp, CreditCard } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { BankMark, BrandMark, NeutralMark } from '@/components/brand-mark';
 import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
@@ -253,9 +255,9 @@ export function IssuerChooser({
   };
 
   const bankOptions = [
-    { value: NO_BANK, label: t('catalog.noBank') },
-    ...catalog.banks.map((b) => ({ value: b.id, label: bankName(b) })),
-    { value: UNLISTED, label: t('catalog.notListed') },
+    { value: NO_BANK, label: t('catalog.noBank'), icon: <NeutralMark icon={CreditCard} /> },
+    ...catalog.banks.map((b) => ({ value: b.id, label: bankName(b), icon: <BankMark code={b.id} /> })),
+    { value: UNLISTED, label: t('catalog.notListed'), icon: <NeutralMark icon={CircleHelp} /> },
   ];
   const companies =
     current.bank === undefined || current.bank === UNLISTED ? undefined : issuersAt(catalog, current.bank);
@@ -299,6 +301,7 @@ export function IssuerChooser({
           labelledBy={ids.bank}
           onChange={pickBank}
           options={bankOptions}
+          className="grid grid-cols-3 sm:grid-cols-4"
         />
       </div>
 
@@ -318,9 +321,14 @@ export function IssuerChooser({
               if (current.bank !== undefined) choose({ bank: current.bank, issuer: id }, 'issuer');
             }}
             options={[
-              ...companies.map((i) => ({ value: i.id, label: i.name[lang] })),
-              { value: UNLISTED, label: t('catalog.notListed') },
+              ...companies.map((i) => ({
+                value: i.id,
+                label: i.name[lang],
+                icon: <BrandMark brand={`issuer-${i.id}`} />,
+              })),
+              { value: UNLISTED, label: t('catalog.notListed'), icon: <NeutralMark icon={CircleHelp} /> },
             ]}
+            className="grid grid-cols-3"
           />
         </div>
       )}

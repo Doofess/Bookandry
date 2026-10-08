@@ -1,18 +1,22 @@
+import { cn } from 'cn';
 import { Landmark, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { BankMark } from '@/components/brand-mark';
 import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
+import { brandColor } from '@/data/brands';
 import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
 import { methodOwnedBy } from '@/domain/tx-options';
+import { cardColorValue } from '@/features/cards/card-colors';
 import { MethodEditor } from '@/features/cards/method-editor';
 import { UnfinishedNotice } from '@/features/cards/unfinished-notice';
 import { useBranch } from '@/features/cards/use-branch';
@@ -116,6 +120,14 @@ function printedAccount(bank: string, branch: string | undefined, number: string
   return [bank.padStart(2, '0'), branch, number].filter((part) => part !== undefined).join('-');
 }
 
+/**
+ * The colour an account is marked with: the one the person gave it, else its
+ * bank's own. Undefined leaves it the app's own accent.
+ */
+function accountAccent(account: PaymentMethod): string | undefined {
+  return cardColorValue(account.color) ?? brandColor(`bank-${account.account?.bank ?? ''}`);
+}
+
 function AccountPanel({
   account,
   cards,
@@ -139,14 +151,27 @@ function AccountPanel({
     .map((id) => profiles.get(id))
     .filter((profile) => profile !== undefined);
   const titleId = `account-${account.id}`;
+  const accent = accountAccent(account);
 
   return (
-    <article aria-labelledby={titleId} className="space-y-3 rounded-2xl border border-border p-4">
+    <article
+      aria-labelledby={titleId}
+      className="relative space-y-3 overflow-hidden rounded-2xl border border-border p-4 ps-5"
+    >
+      {/*
+        The bank's colour as an edge, the way its own cards and statements carry
+        it. Only an edge: the text stays on the app's surface, so its contrast is
+        never left to a brand's colour.
+      */}
+      <span
+        aria-hidden="true"
+        data-slot="account-accent"
+        className={cn('absolute inset-y-0 start-0 w-1.5', accent === undefined && 'bg-primary')}
+        style={accent === undefined ? undefined : { backgroundColor: accent }}
+      />
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Landmark className="size-5" aria-hidden="true" />
-          </span>
+          <BankMark code={details?.bank ?? ''} className="mt-0.5" />
           <div className="min-w-0">
             <h2 id={titleId} className="truncate font-semibold">
               {account.label}
@@ -259,13 +284,21 @@ function CardCharge({
   readonly occurrences: readonly Occurrence[];
   readonly today: LocalDate;
 }) {
-  const { t, i18n } = useTranslation('cards');
+  const { t, i18n } = useTranslation(['cards', 'categories']);
   const next = cardBills(occurrences, card)
     .filter((bill) => compareLocal(bill.chargeDate, today) >= 0)
     .at(-1);
   return (
     <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-      <span className="min-w-0 truncate">{card.label}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate">{card.label}</span>
+        {/* Why a closed card is here: it is still being paid off from the account. */}
+        {card.isArchived === 1 ? (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {t('categories:manage.archived')}
+          </span>
+        ) : null}
+      </span>
       {next === undefined ? (
         <span className="text-muted-foreground">{t('accounts.noCharge')}</span>
       ) : (
