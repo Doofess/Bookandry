@@ -377,3 +377,55 @@ describe('buildPatch', () => {
     expect(patch).toEqual({ money: changed, categoryId: 'cat.rent', note: 'new' });
   });
 });
+
+describe('long credit and 30+ rows, and rows from before them', () => {
+  const plan = (reset?: { atPayment: number; primeAtPurchase: string }) =>
+    makeTx({
+      id: 'plus',
+      date: d('2026-10-08'),
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 8,
+        installments: 24,
+        plan: 'credit',
+        creditAnnualRate: '15.5',
+        ...(reset === undefined ? {} : { reset }),
+      },
+    });
+
+  it('opens a long credit, reset or not, as the קרדיט plan it is stored as - read-only, unchanged', () => {
+    for (const tx of [plan(), plan({ atPayment: 19, primeAtPurchase: '4.75' })]) {
+      expect(recurrenceModeOf(tx.recurrence)).toBe('credit');
+      expect(isInstallmentPlan(tx.recurrence)).toBe(true);
+      const occurrence = occurrenceOf(tx, [], '2026-10-08');
+      expect(occurrenceToFormValues(occurrence, tx)).toMatchObject({
+        mode: 'credit',
+        installmentCount: '24',
+      });
+    }
+  });
+
+  it('keeps a 30+ purchase’s deferral through an edit of its note, and adds none to an old row', () => {
+    const deferred = makeTx({
+      id: 'later',
+      date: d('2026-10-08'),
+      recurrence: { type: 'one_time' },
+      deferral: { rate: '15.5' },
+    });
+    const old = makeTx({ id: 'old', date: d('2026-10-08'), recurrence: { type: 'one_time' } });
+    for (const tx of [deferred, old]) {
+      const occurrence = occurrenceOf(tx, [], '2026-10-08');
+      const form = occurrenceToFormValues(occurrence, tx);
+      expect(form.mode).toBe('one_time');
+      const patch = buildPatch({
+        parsed: parse({ ...form, note: 'tv' }),
+        occurrence,
+        transaction: tx,
+        scope: 'all',
+        money: occurrence.money,
+      });
+      // Only the note: nothing that would drop, or add, a deferral.
+      expect(patch).toEqual({ note: 'tv' });
+    }
+  });
+});

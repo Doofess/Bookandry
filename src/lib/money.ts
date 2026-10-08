@@ -665,6 +665,17 @@ export function annualEffectiveRate(nominalPercent: string, periodsPerYear: 12 |
 }
 
 /**
+ * An amount with one month's interest at an annual nominal rate added - a 30+
+ * purchase, charged a month late: P × (1 + rate/12), exact and rounded once.
+ */
+export function withMonthOfInterest(principalMinor: Minor, annualRatePercent: string): Minor {
+  const rate = decimalToRational(annualRatePercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  const b = rate.d * 1200n;
+  return toSafeNumber(divRound(BigInt(principalMinor) * (b + rate.n), b));
+}
+
+/**
  * A קרדיט פלוס rate after prime moves: the rate at purchase plus however far
  * prime has travelled since, never below zero. Exact decimal strings in and out.
  */

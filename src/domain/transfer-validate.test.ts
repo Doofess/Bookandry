@@ -248,6 +248,57 @@ describe('referential integrity', () => {
     }
   });
 
+  it('keeps a long credit’s prime reset and a 30+ purchase’s rate, and reads rows from before them', () => {
+    const plan = (reset: unknown) =>
+      validateEnvelope(
+        withTx({
+          recurrence: {
+            type: 'monthly',
+            dayOfMonth: 12,
+            installments: 24,
+            plan: 'credit',
+            creditAnnualRate: '15.5',
+            ...(reset === undefined ? {} : { reset }),
+          },
+          seriesEnd: '2028-02-12',
+        }),
+      );
+    const kept = plan({ atPayment: 19, primeAtPurchase: '4.75' });
+    expect(kept.ok && kept.doc.data.transactions[0]?.recurrence).toMatchObject({
+      reset: { atPayment: 19, primeAtPurchase: '4.75' },
+    });
+    const frozen = plan({
+      atPayment: 19,
+      primeAtPurchase: '4.75',
+      rate: '16',
+      paymentMinor: 13_000,
+      frozen: true,
+    });
+    expect(frozen.ok).toBe(true);
+    for (const bad of [
+      { atPayment: 0, primeAtPurchase: '4.75' },
+      { atPayment: 19, primeAtPurchase: 'x' },
+      {},
+    ]) {
+      expect(plan(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+    // Written before this release: no reset, read exactly as before.
+    const old = plan(undefined);
+    expect(old.ok && old.doc.data.transactions[0]?.recurrence).toEqual({
+      type: 'monthly',
+      dayOfMonth: 12,
+      installments: 24,
+      plan: 'credit',
+      creditAnnualRate: '15.5',
+    });
+
+    const deferred = validateEnvelope(withTx({ deferral: { rate: '15.5' } }));
+    expect(deferred.ok && deferred.doc.data.transactions[0]?.deferral).toEqual({ rate: '15.5' });
+    expect(validateEnvelope(withTx({ deferral: { rate: '1e1' } })).ok).toBe(false);
+    const before = validateEnvelope(withTx({}));
+    expect(before.ok && before.doc.data.transactions[0]).not.toHaveProperty('deferral');
+  });
+
   it('accepts what a card company shows about a card, and refuses what does not read', () => {
     const doc = envelope() as ExportEnvelope;
     const [first] = doc.data.paymentMethods;

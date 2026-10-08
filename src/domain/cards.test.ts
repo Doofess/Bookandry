@@ -20,6 +20,7 @@ import {
   cardFeeOccurrences,
   cardCreditRate,
   chargeDate,
+  deferredChargeDate,
   expiryStatus,
   fxFeeFor,
   householdCommitments,
@@ -451,5 +452,40 @@ describe('the monthly card fee', () => {
     expect(fees({ cards: [card({ billingDay: 10 })] })).toEqual([]);
     // Only whole month-ends inside the window.
     expect(fees({ from: d('2026-08-31'), to: d('2026-09-15') }).map((o) => o.date)).toEqual(['2026-08-31']);
+  });
+});
+
+describe('a 30+ purchase', () => {
+  const visa = card();
+  const later = (id: string, date: string) => purchase(id, date, { deferral: { rate: '15.5' } });
+
+  it('is charged on the billing date after next', () => {
+    expect(deferredChargeDate(d('2026-10-05'), 10)).toBe('2026-12-10');
+    expect(deferredChargeDate(d('2026-12-20'), 31)).toBe('2027-02-28');
+    const all = methods(visa);
+    const [o] = occurrences(later('a', '2026-10-05'));
+    expect(settleDate(o!, all)).toBe('2026-12-10');
+    // Not on a card without a billing day: nothing to defer it to.
+    expect(settleDate(o!, methods(card({})))).toBe('2026-10-05');
+  });
+
+  it('goes on that later bill, and holds the limit until then', () => {
+    const list = [
+      ...occurrences(later('tv', '2026-09-15'), 5_000),
+      ...occurrences(purchase('a', '2026-09-03'), 1_000),
+    ];
+    expect(cardBills(list, visa).map((b) => [b.chargeDate, b.totalMinor])).toEqual([
+      ['2026-11-10', 5_000],
+      ['2026-10-10', 1_000],
+    ]);
+    // On the 12th of October September's bill is paid, but the 30+ purchase is not.
+    expect(limitUsedMinor(list, visa, d('2026-10-12'))).toBe(5_000);
+    expect(cardCommitments(list, visa, d('2026-10-12')).purchasesMinor).toBe(5_000);
+  });
+
+  it('leaves a purchase written before 30+ existed on its usual bill', () => {
+    const [o] = occurrences(purchase('old', '2026-10-05'));
+    expect(o!.transaction).not.toHaveProperty('deferral');
+    expect(settleDate(o!, methods(visa))).toBe('2026-11-10');
   });
 });

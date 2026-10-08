@@ -357,6 +357,23 @@ export type Recurrence =
       readonly rateBasis?: 'prime';
       /** What the loan adds to prime, as a signed decimal string ("1.5", "-0.4"). */
       readonly primeMargin?: string;
+      /**
+       * A long קרדיט (קרדיט פלוס) whose rate follows prime from one payment
+       * on: from `atPayment` the rate is the plan's rate plus however far
+       * prime has moved since `primeAtPurchase` (Max: payment 19). Absent on
+       * every plan that is fixed for its whole life, and on rows written before
+       * it existed - an older app reads the plan as an ordinary fixed קרדיט.
+       *
+       * `rate`, `paymentMinor` and `frozen` are for once the reset payment's
+       * date has passed: its rate and payment are then saved and never move.
+       */
+      readonly reset?: {
+        readonly atPayment: number;
+        readonly primeAtPurchase: string;
+        readonly rate?: string;
+        readonly paymentMinor?: number;
+        readonly frozen?: true;
+      };
     }
   | {
       readonly type: 'yearly';
@@ -377,6 +394,13 @@ export type Transaction = {
   /** First occurrence of the series. */
   readonly date: LocalDate;
   readonly note?: string;
+  /**
+   * A 30+ purchase (אשראי 30 פלוס): charged on the card's billing date after
+   * next, a month late, with that month's interest already in its amount.
+   * `rate` is the annual nominal rate it was priced at, snapshotted. Absent on
+   * every ordinary purchase, and on every row written before it existed.
+   */
+  readonly deferral?: { readonly rate: string };
 
   // --- denormalised by materialize(); never written by hand ---
   /** === date */

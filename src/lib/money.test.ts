@@ -9,6 +9,7 @@ import {
   annualEffectiveRate,
   longCreditPayments,
   resetRate,
+  withMonthOfInterest,
   AmountOverflowError,
   convertMinor,
   creditSchedule,
@@ -909,5 +910,19 @@ describe('longCreditPayments balance', () => {
 describe('annualEffectiveRate guards', () => {
   it('rejects a negative rate', () => {
     expect(() => annualEffectiveRate('-1', 12)).toThrow(RangeError);
+  });
+});
+
+describe('withMonthOfInterest', () => {
+  it('adds one month of interest at the annual rate, rounded once', () => {
+    // ₪1,000 × (1 + 15.5% / 12) = ₪1,012.91666…
+    expect(withMonthOfInterest(100_000, '15.5')).toBe(101_292);
+    // ₪100 × (1 + 6% / 12) = ₪100.50 exactly.
+    expect(withMonthOfInterest(10_000, '6')).toBe(10_050);
+    expect(withMonthOfInterest(100_000, '0')).toBe(100_000);
+  });
+
+  it('rejects a negative rate', () => {
+    expect(() => withMonthOfInterest(100, '-1')).toThrow(RangeError);
   });
 });

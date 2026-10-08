@@ -50,16 +50,34 @@ export function chargeDate(date: LocalDate, billingDay: number): LocalDate {
 }
 
 /**
+ * The day a 30+ purchase made on `date` is debited: the billing day after
+ * next - a month later than `chargeDate`, which is what its interest buys.
+ */
+export function deferredChargeDate(date: LocalDate, billingDay: number): LocalDate {
+  return addMonthsClamped(startOfMonth(date), 2, billingDay);
+}
+
+/** An occurrence on a billing card: its bill's date, a month later for a 30+ purchase. */
+type Billed = Pick<Occurrence, 'date'> & { readonly transaction?: Pick<Transaction, 'deferral'> };
+
+function billedOn(occurrence: Billed, billingDay: number): LocalDate {
+  return occurrence.transaction?.deferral === undefined
+    ? chargeDate(occurrence.date, billingDay)
+    : deferredChargeDate(occurrence.date, billingDay);
+}
+
+/**
  * When an occurrence's money actually leaves the bank: on its card's next
- * bill, or on its own date for anything not paid by a billing card.
+ * bill (the one after for a 30+ purchase), or on its own date for anything
+ * not paid by a billing card.
  */
 export function settleDate(
-  occurrence: Pick<Occurrence, 'date' | 'paymentMethodId'>,
+  occurrence: Pick<Occurrence, 'date' | 'paymentMethodId'> & Billed,
   methods: ReadonlyMap<string, PaymentMethod>,
 ): LocalDate {
   const id = occurrence.paymentMethodId;
   const day = id === undefined ? undefined : billingDayOf(methods.get(id));
-  return day === undefined ? occurrence.date : chargeDate(occurrence.date, day);
+  return day === undefined ? occurrence.date : billedOn(occurrence, day);
 }
 
 /** A rate term's annual rate today, or undefined while it is not a readable one. */
@@ -110,7 +128,7 @@ export function cardBills(occurrences: readonly Occurrence[], card: PaymentMetho
   for (const occurrence of occurrences) {
     if (occurrence.paymentMethodId !== card.id || occurrence.isSkipped) continue;
     if (occurrence.transaction.kind !== 'expense') continue;
-    const charge = chargeDate(occurrence.date, day);
+    const charge = billedOn(occurrence, day);
     const list = bills.get(charge);
     if (list === undefined) bills.set(charge, [occurrence]);
     else list.push(occurrence);
@@ -144,7 +162,7 @@ export function limitUsedMinor(
         o.paymentMethodId === card.id &&
         !o.isSkipped &&
         o.transaction.kind === 'expense' &&
-        compareLocal(chargeDate(o.date, day), today) > 0 &&
+        compareLocal(billedOn(o, day), today) > 0 &&
         (compareLocal(o.date, today) <= 0 || isInstallmentPlan(o.transaction.recurrence)),
     )
     .reduce((sum, o) => sum + o.money.baseAmountMinor, 0);
@@ -203,7 +221,7 @@ export function cardCommitments(
   today: LocalDate,
 ): CardCommitments {
   const day = billingDayOf(card);
-  const charged = (o: Occurrence) => (day === undefined ? o.date : chargeDate(o.date, day));
+  const charged = (o: Occurrence) => (day === undefined ? o.date : billedOn(o, day));
   let purchasesMinor = 0;
   const series = new Map<string, Occurrence[]>();
   for (const o of occurrences) {
