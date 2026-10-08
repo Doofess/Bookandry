@@ -10,7 +10,7 @@ import { pendingShares, sweepShared } from '@/app/shared-files';
 import { PanelSheet } from '@/components/brand-panel';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
-import { changeCategory } from '@/db/occurrence-actions';
+import { changeCategory, moveOccurrence } from '@/db/occurrence-actions';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
@@ -18,7 +18,7 @@ import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
-import { startOfMonth } from '@/lib/dates';
+import { formatLocalDate, startOfMonth } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import { ALL_PROFILES } from '@/types/domain';
 
@@ -28,10 +28,11 @@ import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
 import { FilterBar } from './filter-bar';
 import { ProfileSwitcher } from './profile-switcher';
+import { ProjectedPopout, type ProjectedTarget } from './projected-popout';
 import { RowActionsMenu, type RowMenuTarget } from './row-actions-menu';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
-import { useRowActions, useUndoableWrite } from './use-row-actions';
+import { offerUndo, useRowActions, useUndoableWrite } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
@@ -52,7 +53,7 @@ const ImportSheet = lazy(() => import('../import/import-sheet').then((m) => ({ d
 type Breakdown = 'balance' | 'expense' | undefined;
 
 export function FeedScreen() {
-  const { t } = useTranslation(['common', 'categories', 'profiles']);
+  const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
   const today = useToday();
   const settings = useSettings();
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
@@ -73,6 +74,8 @@ export function FeedScreen() {
   /** The row whose category pop-out is open, with its chip: transient, like the menu. */
   const [categoryFor, setCategoryFor] = useState<CategoryTarget | undefined>(undefined);
   const undoable = useUndoableWrite();
+  /** The row whose "not counted yet" pop-out is open, with its chip: transient, like the menu. */
+  const [projectedFor, setProjectedFor] = useState<ProjectedTarget | undefined>(undefined);
   /** The purchase being split into payments, kept once its menu has closed. */
   const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
   const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
@@ -298,6 +301,9 @@ export function FeedScreen() {
               onCategory={(occurrence, anchor) => {
                 setCategoryFor({ occurrence, anchor });
               }}
+              onProjected={(occurrence, anchor) => {
+                setProjectedFor({ occurrence, anchor });
+              }}
             />
           )}
         </div>
@@ -313,13 +319,17 @@ export function FeedScreen() {
           activeProfileId={filters.profileId}
           baseCurrency={settings.defaultCurrency}
           today={today}
-          onSaved={(date) => {
+          onSaved={(date, undone) => {
+            // An amount changed from "not counted yet" is offered back, like
+            // the pop-out's other two choices. Every other save is as before.
+            const fromChip = sheet.target.mode === 'edit' && sheet.target.focus === 'amount';
             sheet.close();
             // Jump to the month the row landed in, so a bill dated next month
             // does not save into apparent nothingness - and so an edit that
             // MOVED an occurrence follows it. liveQuery brings the data; this
             // is only about which window is on screen.
             setMonth(startOfMonth(date));
+            if (fromChip && undone !== undefined) offerUndo(t('projected.amountSaved'), undone, t);
           }}
         />
       )}
@@ -400,6 +410,26 @@ export function FeedScreen() {
           }}
         />
       )}
+
+      <ProjectedPopout
+        target={projectedFor}
+        today={today}
+        onClose={() => {
+          setProjectedFor(undefined);
+        }}
+        onMove={(occurrence, to) => {
+          // Closed first, so the toast's Undo is not under it.
+          setProjectedFor(undefined);
+          void undoable(
+            () => moveOccurrence(db, { occurrence, to, today, now: systemClock.nowIso(), newId }),
+            t('projected.moved', { date: formatLocalDate(to, i18n.language, { dateStyle: 'medium' }) }),
+          );
+        }}
+        onAmount={(occurrence) => {
+          setProjectedFor(undefined);
+          sheet.openEdit(occurrence, { focus: 'amount' });
+        }}
+      />
 
       <SplitPurchaseSheet
         offer={splitting}

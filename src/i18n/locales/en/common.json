@@ -46,6 +46,16 @@
     "scopeAll": "Every payment",
     "changed": "Category changed to {{name}}"
   },
+  "projected": {
+    "chip": "Not counted yet. Change it",
+    "today": "Charged today",
+    "todayHint": "Count it in the balance now",
+    "amount": "A different amount…",
+    "date": "A different date…",
+    "notStarted": "The series starts on {{date}}",
+    "moved": "Moved to {{date}}",
+    "amountSaved": "Amount changed"
+  },
   "theme": {
     "label": "Theme",
     "light": "Light",

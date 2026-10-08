@@ -13,10 +13,11 @@ import {
   changeCategory,
   deleteTransaction,
   editOccurrence,
+  moveOccurrence,
   restoreOccurrence,
   skipOccurrence,
 } from './occurrence-actions';
-import { listRecentlyDeleted } from './repos/transactions';
+import { findCandidates, listRecentlyDeleted } from './repos/transactions';
 import { applySeriesEdit } from './series-edit';
 
 const TODAY = d('2026-09-15');
@@ -449,6 +450,75 @@ describe('changing a category', () => {
     expect(await handle.db.overrides.toArray()).toEqual(rawBefore.overrides);
   });
 
+  it('undo refuses, changing nothing, once the series was deleted after the change', async () => {
+    // Inside the toast's window: Undo would otherwise put the deleted series back.
+    const target = await seed();
+    const undoable = await changeCategory(handle.db, {
+      occurrence: target,
+      categoryId: 'cat.food',
+      scope: 'future',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    await deleteTransaction(handle.db, 'rent', LATER);
+    const afterDelete = {
+      transactions: await handle.db.transactions.toArray(),
+      overrides: await handle.db.overrides.toArray(),
+    };
+
+    await expect(undoable.undo('2026-09-15T10:00:06.000Z' as IsoInstant)).rejects.toThrow('changed_since');
+    expect(await handle.db.transactions.toArray()).toEqual(afterDelete.transactions);
+    expect(await handle.db.overrides.toArray()).toEqual(afterDelete.overrides);
+    expect((await handle.db.transactions.get('rent'))?.isDeleted).toBe(1);
+  });
+
+  it('undo refuses once the same occurrence was edited again, and the later edit survives', async () => {
+    const target = await seed();
+    const undoable = await changeCategory(handle.db, {
+      occurrence: target,
+      categoryId: 'cat.food',
+      scope: 'one',
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    await editOccurrence(handle.db, {
+      occurrence: target,
+      scope: 'one',
+      patch: { note: 'Later' },
+      today: TODAY,
+      now: LATER,
+      newId: ids(),
+    });
+
+    await expect(undoable.undo('2026-09-15T10:00:06.000Z' as IsoInstant)).rejects.toThrow('changed_since');
+    const [override] = await handle.db.overrides.toArray();
+    expect(override).toMatchObject({ patch: { categoryId: 'cat.food', note: 'Later' }, updatedAt: LATER });
+  });
+
+  it('undo refuses once an override it removed was written again', async () => {
+    // A rule change drops overrides the new rule no longer reaches; one put back meanwhile is not the plan's to delete.
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const stale = modify('rent', d('2026-08-10'), { note: 'Stale' });
+    await handle.db.overrides.add(stale);
+    const target = occurrence(tx, '2026-09-10', [stale]);
+    const undoable = await editOccurrence(handle.db, {
+      occurrence: target,
+      scope: 'all',
+      patch: { recurrence: { type: 'monthly', dayOfMonth: 20 } },
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await handle.db.overrides.count()).toBe(0);
+    await handle.db.overrides.add({ ...stale, updatedAt: LATER });
+
+    await expect(undoable.undo('2026-09-15T10:00:06.000Z' as IsoInstant)).rejects.toThrow('changed_since');
+    expect(await handle.db.overrides.get(stale.id)).toMatchObject({ updatedAt: LATER });
+  });
+
   it('refuses a transaction deleted meanwhile, changing nothing', async () => {
     const target = await seed();
     await handle.db.transactions.update('rent', { isDeleted: 1 });
@@ -463,6 +533,159 @@ describe('changing a category', () => {
         newId: ids(),
       }),
     ).rejects.toThrow();
+    expect(await handle.db.overrides.count()).toBe(0);
+  });
+});
+
+describe('moving a projected occurrence', () => {
+  const snapshot = async (db: TestDb['db']) => ({
+    transactions: (await db.transactions.toArray()).map(({ updatedAt: _u, ...rest }) => rest),
+    overrides: (await db.overrides.toArray()).map(({ updatedAt: _u, ...rest }) => rest),
+  });
+
+  it('charged today: a modify override moving this one occurrence to today', async () => {
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const next = occurrence(tx, '2026-10-10');
+    const before = await snapshot(handle.db);
+
+    const undoable = await moveOccurrence(handle.db, {
+      occurrence: next,
+      to: TODAY,
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    const [override] = await handle.db.overrides.toArray();
+    expect(override).toMatchObject({
+      action: 'modify',
+      occurrenceDate: '2026-10-10',
+      patch: { date: '2026-09-15' },
+    });
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('keeps an earlier amount change, and undo restores that override exactly', async () => {
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const earlier = modify('rent', d('2026-10-10'), {
+      money: { ...MONEY, amountMinor: 999 },
+      note: 'Raised',
+    });
+    await handle.db.overrides.add(earlier);
+    const next = occurrence(tx, '2026-10-10', [earlier]);
+    const before = await snapshot(handle.db);
+
+    const undoable = await moveOccurrence(handle.db, {
+      occurrence: next,
+      to: TODAY,
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await handle.db.overrides.get(earlier.id)).toMatchObject({
+      patch: { date: '2026-09-15', note: 'Raised', money: { amountMinor: 999 } },
+    });
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('moves a one-time row by its own date, so the feed still finds it in its new month', async () => {
+    const once = materialize({
+      ...rent(),
+      id: 'sofa',
+      seriesRootId: 'sofa',
+      recurrence: { type: 'one_time' },
+      date: d('2026-11-02'),
+    });
+    await handle.db.transactions.add(once);
+    const target = occurrence(once, '2026-11-02');
+    const before = await snapshot(handle.db);
+
+    const undoable = await moveOccurrence(handle.db, {
+      occurrence: target,
+      to: TODAY,
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await handle.db.transactions.get('sofa')).toMatchObject({
+      date: '2026-09-15',
+      seriesStart: '2026-09-15',
+      seriesEnd: '2026-09-15',
+    });
+    expect(await handle.db.overrides.count()).toBe(0);
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('moves an override on a one-time row with it, and undo puts it back on the old day', async () => {
+    const once = materialize({
+      ...rent(),
+      id: 'sofa',
+      seriesRootId: 'sofa',
+      recurrence: { type: 'one_time' },
+      date: d('2026-11-02'),
+    });
+    await handle.db.transactions.add(once);
+    const note = modify('sofa', d('2026-11-02'), { note: 'Delivery' });
+    await handle.db.overrides.add(note);
+    const target = occurrence(once, '2026-11-02', [note]);
+    const before = await snapshot(handle.db);
+
+    const undoable = await moveOccurrence(handle.db, {
+      occurrence: target,
+      to: d('2026-10-03'),
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect(await handle.db.overrides.get(note.id)).toMatchObject({ occurrenceDate: '2026-10-03' });
+    expect(
+      occurrence((await handle.db.transactions.get('sofa'))!, '2026-10-03', [
+        (await handle.db.overrides.get(note.id))!,
+      ]),
+    ).toMatchObject({ note: 'Delivery' });
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('moved past the series end, the feed still finds it in its new month, until undone', async () => {
+    const ending = materialize({
+      ...rent(),
+      recurrence: { type: 'monthly', dayOfMonth: 10, endDate: d('2026-10-31') },
+    });
+    await handle.db.transactions.add(ending);
+    const last = occurrence(ending, '2026-10-10');
+    const before = await snapshot(handle.db);
+    const november = { profileId: 'p1', from: d('2026-11-01'), to: d('2026-11-30') };
+
+    const undoable = await moveOccurrence(handle.db, {
+      occurrence: last,
+      to: d('2026-11-05'),
+      today: TODAY,
+      now: NOW,
+      newId: ids(),
+    });
+    expect((await findCandidates(handle.db, november)).map((t) => t.id)).toEqual(['rent']);
+
+    await undoable.undo(LATER);
+    expect(await snapshot(handle.db)).toEqual(before);
+  });
+
+  it('refuses to move a series occurrence before the series starts', async () => {
+    const later = materialize({ ...rent(), date: d('2026-10-10') });
+    await handle.db.transactions.add(later);
+    const first = occurrence(later, '2026-10-10');
+
+    await expect(
+      moveOccurrence(handle.db, { occurrence: first, to: TODAY, today: TODAY, now: NOW, newId: ids() }),
+    ).rejects.toThrow('before_series_start');
     expect(await handle.db.overrides.count()).toBe(0);
   });
 });

@@ -10,9 +10,12 @@ import type { Category, Occurrence, Recurrence } from '@/types/domain';
 
 import { CategoryPopout, type CategoryTarget } from './category-popout';
 
+/** True while a test wants the frequent categories still loading. */
+const frequent = vi.hoisted(() => ({ loading: false }));
+
 vi.mock('./use-frequent-categories', () => ({
   useFrequentCategories: (_kind: string, _current: string, categories: readonly Category[]) =>
-    categories.filter((c) => c.kind === 'expense').slice(0, 7),
+    frequent.loading ? undefined : categories.filter((c) => c.kind === 'expense').slice(0, 7),
 }));
 
 const TODAY = d('2026-09-15');
@@ -108,6 +111,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const anchor of anchors.splice(0)) anchor.remove();
+  frequent.loading = false;
 });
 
 describe('CategoryPopout', () => {
@@ -128,6 +132,21 @@ describe('CategoryPopout', () => {
     expect(within(grid).getByRole('button', { name: /rent/ })).toHaveAttribute('aria-pressed', 'true');
     expect(within(grid).getByRole('button', { name: /rent/ })).toHaveClass('bg-primary');
     for (const cell of cells) expect(cell).toHaveClass('min-h-16');
+  });
+
+  it('holds seven same-size places while the frequent ones load, so it opens at its full size', async () => {
+    // Only "More" while loading, the arrowed pop-out grew once they came, and could flip.
+    frequent.loading = true;
+    renderPopout(occurrence({ type: 'one_time' }));
+    const grid = await screen.findByRole('group', { name: 'Category' });
+    const places = grid.querySelectorAll('[data-slot="category-placeholder"]');
+
+    expect(places).toHaveLength(7);
+    for (const place of places) {
+      expect(place).toHaveClass('min-h-16');
+      expect(place).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(within(grid).getAllByRole('button')).toHaveLength(1);
   });
 
   it('changes a one-time row at once', async () => {
