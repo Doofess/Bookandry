@@ -2,6 +2,8 @@ allowBuilds:
   unrs-resolver: true
   esbuild: true
   sharp: true
+  # Its postinstall only mirrors what the `prepare` script does explicitly.
+  simple-git-hooks: false
 minimumReleaseAgeExclude:
   - '@tanstack/react-virtual@3.14.13'
   - '@tanstack/virtual-core@3.17.11'
