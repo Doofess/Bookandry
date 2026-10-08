@@ -15,7 +15,7 @@ import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
 import type { ResolvedCard } from '@/data/card-catalog/resolve';
 import { db } from '@/db/db';
-import { setPaymentMethodArchived } from '@/db/repos/payment-methods';
+import { putArchiveState, setPaymentMethodArchived } from '@/db/repos/payment-methods';
 import { writeSettings } from '@/db/repos/settings';
 import { cardDealRate } from '@/domain/card-catalog-link';
 import {
@@ -245,15 +245,20 @@ export function CardsScreen() {
                 return;
               case 'archive':
               case 'restore': {
-                // One write path both ways, each with the other as its Undo.
+                // One write path both ways. Undo puts back exactly what was there, archive date and all.
                 const archived = action === 'archive';
                 if (!archived) restoring.current = card.id;
                 void undoable(
                   async () => {
-                    await setPaymentMethodArchived(db, card.id, archived, systemClock.nowIso());
+                    const before = await setPaymentMethodArchived(
+                      db,
+                      card.id,
+                      archived,
+                      systemClock.nowIso(),
+                    );
                     return {
                       undo: async (at) => {
-                        await setPaymentMethodArchived(db, card.id, !archived, at);
+                        if (before !== undefined) await putArchiveState(db, card.id, before, at);
                       },
                     };
                   },
