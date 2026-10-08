@@ -228,7 +228,13 @@ describe('a card that is already linked', () => {
 });
 
 describe('an existing unlinked card', () => {
-  const legacy: Partial<CardDraft> = { issuer: 'cal', bank: 'leumi', tier: 'Cal Gold', fxFee: '9' };
+  const legacy: Partial<CardDraft> = {
+    kind: 'bank',
+    issuer: 'cal',
+    bank: 'leumi',
+    tier: 'Cal Gold',
+    fxFee: '9',
+  };
 
   it('offers to link it, and changes nothing until Link', async () => {
     const user = userEvent.setup();
@@ -252,10 +258,118 @@ describe('an existing unlinked card', () => {
   });
 
   it('stays quiet when nothing in the catalog matches', async () => {
-    renderWithProviders(<Harness start={{ issuer: 'cal', bank: 'Some other bank' }} />);
+    renderWithProviders(<Harness start={{ kind: 'bank', issuer: 'cal', bank: 'Some other bank' }} />);
     await screen.findByRole('group', { name: 'Who issues this card' });
     await chooser().findByRole('radiogroup', { name: 'Bank' });
     expect(screen.queryByRole('button', { name: 'Link' })).toBeNull();
+  });
+});
+
+describe('fix round 1', () => {
+  const linked: Partial<CardDraft> = {
+    catalog: { issuer: 'cal', bank: '10', tier: 'classic', version: 1 },
+    fxFee: '9',
+    issuer: 'cal',
+    kind: 'bank',
+    bank: 'Leumi',
+    tier: 'Cal Classic',
+  };
+  const focused = (step: string) =>
+    chooser().getByRole('radiogroup', { name: step }).contains(document.activeElement);
+
+  it('does nothing when the current choice is picked again', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={linked} />);
+    await choose(user, 'Card type', 'Cal Classic');
+    await choose(user, 'Bank', 'Leumi');
+    expect(drafted().fxFee).toBe('9'); // a relink would have replaced it with the catalog's
+  });
+
+  it('asks nothing when the current choice is picked again with rates entered', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Harness start={{ ...linked, overrides: { credit: { basis: 'prime', margin: '1' } } }} />,
+    );
+    await choose(user, 'Card type', 'Cal Classic');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('hides the manual company, kind, bank, type and club while linked, and brings them back on unlink', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={linked} />);
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+    expect(screen.getAllByRole('radiogroup', { name: 'Card company' })).toHaveLength(1);
+    expect(screen.queryByLabelText('Card level')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Issued by' })).toBeNull();
+    await choose(user, 'Card company', 'Not in the list');
+    expect(screen.getByLabelText('Card level')).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Card company (manual)' })).toBeInTheDocument();
+  });
+
+  it('keeps a half-typed value the catalog leaves empty', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={{ monthlyFee: '-5' }} />);
+    await choose(user, 'Bank', 'Leumi');
+    await choose(user, 'Card company', 'Cal');
+    await choose(user, 'Card type', 'Cal Gold');
+    expect(drafted().catalog?.tier).toBe('gold');
+    expect(drafted().monthlyFee).toBe('-5');
+  });
+
+  it('does not offer a non-bank card the bank of its debit account', async () => {
+    renderWithProviders(<Harness start={{ kind: 'non_bank', issuer: 'cal', bank: 'Leumi' }} />);
+    await chooser().findByRole('radiogroup', { name: 'Bank' });
+    expect(screen.queryByRole('button', { name: 'Link' })).toBeNull();
+  });
+
+  it('links at once when the company has one type', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={{ kind: 'bank', issuer: 'max', bank: 'Mizrahi' }} />);
+    await user.click(await screen.findByRole('button', { name: 'Link' }));
+    expect(drafted().catalog).toMatchObject({ issuer: 'max', bank: '20', tier: 'basic' });
+    expect(drafted().fxFee).toBe('2.5');
+  });
+
+  it('otherwise preselects, takes the person to the type step and says so', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={{ kind: 'bank', issuer: 'cal', bank: 'Leumi' }} />);
+    await user.click(await screen.findByRole('button', { name: 'Link' }));
+    expect(drafted().catalog).toBeUndefined();
+    expect(screen.getByText('Nothing changes until you pick the card type.')).toBeInTheDocument();
+    expect(chooser().getByRole('radio', { name: 'Leumi' })).toBeChecked();
+    expect(chooser().getByRole('radio', { name: 'Cal' })).toBeChecked();
+    await waitFor(() => {
+      expect(focused('Card type')).toBe(true);
+    });
+  });
+
+  it('moves focus to the first control on "Not now"', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={{ kind: 'bank', issuer: 'cal', bank: 'Leumi' }} />);
+    await user.click(await screen.findByRole('button', { name: 'Not now' }));
+    await waitFor(() => {
+      expect(focused('Bank')).toBe(true);
+    });
+  });
+
+  it('returns focus to the control that opened the question', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Harness start={{ ...linked, overrides: { credit: { basis: 'prime', margin: '1' } } }} />,
+    );
+    await choose(user, 'Card type', 'Cal Gold');
+    await user.click(await screen.findByRole('button', { name: 'Keep mine' }));
+    await waitFor(() => {
+      expect(focused('Card type')).toBe(true);
+    });
+  });
+
+  it('keeps the old link, and says nothing changes yet, while a new bank has no company chosen', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness start={linked} />);
+    await choose(user, 'Bank', 'Mizrahi');
+    expect(drafted().catalog?.issuer).toBe('cal');
+    expect(screen.getByText('Nothing changes until you pick the card type.')).toBeInTheDocument();
   });
 });
 

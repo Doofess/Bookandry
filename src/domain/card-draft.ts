@@ -305,13 +305,17 @@ export function cardFromDraft(
 function readable(
   draft: CardDraft,
   month: string,
-): { draft: CardDraft; result: CardDraftResult & { ok: true } } {
+): { draft: CardDraft; result: CardDraftResult & { ok: true }; blanked: readonly CardDraftField[] } {
   let current = draft;
+  const blanked: CardDraftField[] = [];
   for (;;) {
     const result = cardFromDraft(current, { month });
-    if (result.ok) return { draft: current, result };
+    if (result.ok) return { draft: current, result, blanked };
     const blank: Record<string, unknown> = {};
-    for (const field of result.invalid) blank[field] = EMPTY_CARD_DRAFT[field];
+    for (const field of result.invalid) {
+      blanked.push(field);
+      blank[field] = EMPTY_CARD_DRAFT[field];
+    }
     current = { ...current, ...blank };
   }
 }
@@ -333,11 +337,18 @@ export function linkedDraft(
   link: Omit<CardCatalogLink, 'version' | 'updatedOn' | 'filled'>,
   opts: { readonly keepOverrides: boolean; /** YYYY-MM */ readonly month: string; readonly language: string },
 ): CardDraft {
-  const { draft: base, result } = readable(draft, opts.month);
+  const { draft: base, result, blanked } = readable(draft, opts.month);
   const linked = linkCard(result.card ?? {}, resolved, link, opts);
   const lang = opts.language.startsWith('he') ? 'he' : 'en';
   const club = link.club === undefined ? undefined : resolved.issuer.clubs.find((c) => c.id === link.club);
   const next = cardDraftFromDetails(linked, result.creditAnnualRate ?? undefined);
+  // What the person half-typed and the catalog leaves empty is theirs still.
+  const kept = <K extends 'billingDay' | 'monthlyFee' | 'fxFee' | 'credit' | 'late'>(
+    field: K,
+  ): CardDraft[K] =>
+    blanked.includes(field) && JSON.stringify(next[field]) === JSON.stringify(EMPTY_CARD_DRAFT[field])
+      ? draft[field]
+      : next[field];
   return {
     ...draft,
     issuer: resolved.issuer.id,
@@ -346,11 +357,11 @@ export function linkedDraft(
     bank: resolved.bank === undefined ? draft.bank : resolved.bank.name[lang],
     tier: resolved.issuer.tiers.find((t) => t.id === link.tier)?.name[lang] ?? base.tier,
     club: club?.name ?? '',
-    billingDay: next.billingDay,
-    monthlyFee: next.monthlyFee,
-    fxFee: next.fxFee,
-    credit: next.credit,
-    late: next.late,
+    billingDay: kept('billingDay'),
+    monthlyFee: kept('monthlyFee'),
+    fxFee: kept('fxFee'),
+    credit: kept('credit'),
+    late: kept('late'),
     catalog: next.catalog,
     overrides: next.overrides,
   };

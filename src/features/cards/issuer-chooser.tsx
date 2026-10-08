@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Segmented } from '@/components/segmented';
@@ -33,6 +33,8 @@ const UNLISTED = 'unlisted';
 const NO_BANK = 'none';
 const NO_CLUB = 'none';
 
+type Step = 'bank' | 'issuer' | 'tier' | 'club';
+
 type Loaded =
   | { readonly status: 'loading' }
   | { readonly status: 'failed' }
@@ -40,11 +42,17 @@ type Loaded =
 
 /** What an existing card says about itself in its own fields. */
 export type StoredCard = {
+  readonly kind: string;
   readonly issuer: string;
   readonly bank: string;
   readonly tier: string;
   readonly club: string;
 };
+
+/** Whether a complete selection is exactly this link. */
+function sameLink(s: Selection, l: Link): boolean {
+  return s.bank === l.bank && s.issuer === l.issuer && s.tier === l.tier && s.club === l.club;
+}
 
 const same = (a: string, b: string): boolean => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
@@ -105,7 +113,20 @@ export function IssuerChooser({
   // undefined: following the card's own link.
   const [picked, setPicked] = useState<Selection | undefined>(undefined);
   const [dismissed, setDismissed] = useState(false);
-  const [asking, setAsking] = useState<{ link: Link; resolved: ResolvedCard } | undefined>(undefined);
+  const box = useRef<HTMLFieldSetElement>(null);
+  const focusNext = useRef<Step | undefined>(undefined);
+  // After a render that follows a deliberate move, put focus where the person's attention is.
+  useEffect(() => {
+    const step = focusNext.current;
+    if (step === undefined) return;
+    focusNext.current = undefined;
+    const radios = box.current?.querySelectorAll<HTMLElement>(`[data-step="${step}"] [role="radio"]`);
+    const target = Array.from(radios ?? []).find((r) => r.tabIndex === 0) ?? radios?.[0];
+    target?.focus();
+  });
+  const [asking, setAsking] = useState<{ link: Link; resolved: ResolvedCard; from: Step } | undefined>(
+    undefined,
+  );
 
   const legend = <legend className="text-sm font-semibold">{t('catalog.title')}</legend>;
   if (loaded.status === 'loading') {
@@ -144,7 +165,12 @@ export function IssuerChooser({
   const bankName = (b: CatalogBank): string => b.name[lang];
 
   /** Commit a selection: link when it is complete and known, otherwise just show it. */
-  const choose = (next: Selection): void => {
+  const choose = (next: Selection, from: Step): void => {
+    // Segmented fires on every click and arrow key, the current option included.
+    if (value !== undefined && sameLink(next, value)) {
+      setPicked(undefined);
+      return;
+    }
     setPicked(next);
     if (next.bank === UNLISTED || next.issuer === UNLISTED) {
       onUnlink();
@@ -160,22 +186,26 @@ export function IssuerChooser({
     const resolved = resolveCard(catalog, link);
     if (resolved === undefined) return;
     if (value !== undefined && hasOverrides) {
-      setAsking({ link, resolved });
+      setAsking({ link, resolved, from });
       return;
     }
     setPicked(undefined);
+    focusNext.current = from;
     onLink(link, resolved, true);
   };
 
   const answer = (keepOverrides: boolean): void => {
-    if (asking !== undefined) onLink(asking.link, asking.resolved, keepOverrides);
+    if (asking !== undefined) {
+      onLink(asking.link, asking.resolved, keepOverrides);
+      focusNext.current = asking.from;
+    }
     setAsking(undefined);
     setPicked(undefined);
   };
 
   const pickBank = (bank: string): void => {
     if (bank === UNLISTED) {
-      choose({ bank });
+      choose({ bank }, 'bank');
       return;
     }
     const offered = issuersAt(catalog, bank).some((i) => i.id === current.issuer);
@@ -188,13 +218,16 @@ export function IssuerChooser({
             ...(current.club === undefined ? {} : { club: current.club }),
           }
         : { bank },
+      'bank',
     );
   };
 
   // An existing card whose own fields name a catalog entry.
   const suggestion = (():
     { bank: CatalogBank; issuer: CatalogIssuer; tier?: string; club?: string } | undefined => {
-    if (value !== undefined || picked !== undefined || dismissed) return undefined;
+    if (value !== undefined || picked?.bank === UNLISTED || picked?.issuer === UNLISTED || dismissed)
+      return undefined;
+    if (stored.kind !== 'bank') return undefined; // otherwise the bank is the debit account's
     const company = catalog.issuers.find((i) => i.id === stored.issuer);
     const bank = company === undefined ? undefined : bankOf(catalog, company.id, stored.bank);
     if (company === undefined || bank === undefined) return undefined;
@@ -207,13 +240,17 @@ export function IssuerChooser({
 
   const link = (): void => {
     if (suggestion === undefined) return;
+    const only = tiersOf(suggestion.issuer);
+    const tier = suggestion.tier ?? (only.length === 1 ? only[0]?.id : undefined);
     const next: Selection = {
       bank: suggestion.bank.id,
       issuer: suggestion.issuer.id,
-      ...(suggestion.tier === undefined ? {} : { tier: suggestion.tier }),
+      ...(tier === undefined ? {} : { tier }),
       ...(suggestion.club === undefined ? {} : { club: suggestion.club }),
     };
-    choose(next);
+    // With no type to name, the person is taken to that step to pick it.
+    if (tier === undefined) focusNext.current = 'tier';
+    choose(next, 'tier');
   };
 
   const bankOptions = [
@@ -226,7 +263,7 @@ export function IssuerChooser({
   const clubs = issuer === undefined ? [] : clubsOf(issuer);
 
   return (
-    <fieldset className="space-y-3">
+    <fieldset ref={box} className="space-y-3">
       {legend}
 
       {suggestion === undefined ? null : (
@@ -246,6 +283,7 @@ export function IssuerChooser({
               variant="outline"
               className="h-11 flex-1"
               onClick={() => {
+                focusNext.current = 'bank';
                 setDismissed(true);
               }}
             >
@@ -255,7 +293,7 @@ export function IssuerChooser({
         </div>
       )}
 
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-step="bank">
         <Label id={ids.bank}>{t('catalog.bank')}</Label>
         <Segmented<string>
           value={current.bank ?? ''}
@@ -265,14 +303,20 @@ export function IssuerChooser({
         />
       </div>
 
+      {picked === undefined || picked.bank === UNLISTED || picked.issuer === UNLISTED ? null : (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t('catalog.pending')}
+        </p>
+      )}
+
       {companies === undefined ? null : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-step="issuer">
           <Label id={ids.issuer}>{t('catalog.issuer')}</Label>
           <Segmented<string>
             value={current.issuer ?? ''}
             labelledBy={ids.issuer}
             onChange={(id) => {
-              if (current.bank !== undefined) choose({ bank: current.bank, issuer: id });
+              if (current.bank !== undefined) choose({ bank: current.bank, issuer: id }, 'issuer');
             }}
             options={[
               ...companies.map((i) => ({ value: i.id, label: i.name[lang] })),
@@ -283,13 +327,13 @@ export function IssuerChooser({
       )}
 
       {issuer === undefined ? null : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-step="tier">
           <Label id={ids.tier}>{t('catalog.tier')}</Label>
           <Segmented<string>
             value={current.tier ?? ''}
             labelledBy={ids.tier}
             onChange={(tier) => {
-              choose({ ...current, tier });
+              choose({ ...current, tier }, 'tier');
             }}
             options={tiersOf(issuer).map((x) => ({ value: x.id, label: x.name[lang] }))}
           />
@@ -297,14 +341,14 @@ export function IssuerChooser({
       )}
 
       {issuer === undefined || current.tier === undefined || clubs.length === 0 ? null : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-step="club">
           <Label id={ids.club}>{t('catalog.club')}</Label>
           <Segmented<string>
             value={current.club ?? NO_CLUB}
             labelledBy={ids.club}
             onChange={(club) => {
               const { club: _was, ...rest } = current;
-              choose(club === NO_CLUB ? rest : { ...rest, club });
+              choose(club === NO_CLUB ? rest : { ...rest, club }, 'club');
             }}
             options={[
               { value: NO_CLUB, label: t('catalog.noClub') },
@@ -318,6 +362,7 @@ export function IssuerChooser({
         open={asking !== undefined}
         onOpenChange={(open) => {
           if (!open) {
+            if (asking !== undefined) focusNext.current = asking.from;
             setAsking(undefined);
             setPicked(undefined);
           }
