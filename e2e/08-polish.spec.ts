@@ -100,6 +100,57 @@ for (const size of WIDTHS) {
 
         expect(lines, `${lang} at ${String(size.width)}px`).toBeLessThanOrEqual(2);
       });
+
+      test(`keeps a feed row's parts apart, in ${lang}`, async ({ page }) => {
+        /*
+         * A projected row carries a type chip and "not counted yet" beside the
+         * category, an avatar and the amount. At 320px the chips kept their
+         * width while the text column shrank under them, and drew on top of the
+         * avatar and the amount. Every part of every row must own its box.
+         */
+        await completeFirstRun(page, lang);
+        await expect(page.getByTestId('row-not-counted').first()).toBeVisible();
+
+        const clashes = await page.evaluate(() => {
+          const bad: string[] = [];
+          const parts: [string, string][] = [
+            ['category chip', '[data-slot="category-chip"]'],
+            ['text', '[data-testid="row-text"]'],
+            ['avatar', '[data-person]'],
+            ['amount', '[data-testid="row-amount"]'],
+          ];
+          for (const row of document.querySelectorAll('[role="listitem"]')) {
+            const boxes: [string, DOMRect][] = [];
+            for (const [name, selector] of parts) {
+              const el = row.querySelector(selector);
+              if (el !== null) boxes.push([name, el.getBoundingClientRect()]);
+            }
+            for (const [a, boxA] of boxes) {
+              for (const [b, boxB] of boxes) {
+                if (a >= b) continue;
+                const across = Math.min(boxA.right, boxB.right) - Math.max(boxA.left, boxB.left);
+                const down = Math.min(boxA.bottom, boxB.bottom) - Math.max(boxA.top, boxB.top);
+                if (across > 0.5 && down > 0.5) bad.push(`${a} overlaps ${b}`);
+              }
+            }
+
+            const column = row.querySelector<HTMLElement>('[data-testid="row-text"]');
+            if (column !== null && column.scrollWidth > column.clientWidth + 1)
+              bad.push('text content spills out of its column');
+
+            // The flag lives INSIDE the text column: it must not spill out of it.
+            const flag = row.querySelector('[data-testid="row-not-counted"]')?.getBoundingClientRect();
+            const text = row.querySelector('[data-testid="row-text"]')?.getBoundingClientRect();
+            if (flag !== undefined && text !== undefined) {
+              if (flag.left < text.left - 0.5 || flag.right > text.right + 0.5)
+                bad.push('not counted spills out of the text column');
+            }
+          }
+          return [...new Set(bad)];
+        });
+
+        expect(clashes, `${lang} at ${String(size.width)}px`).toEqual([]);
+      });
     }
   });
 }
@@ -245,15 +296,21 @@ test.describe('@collapse the summary header', () => {
 
     // The virtualizer's reference line sits at the pinned slot, not at the
     // list: the rows themselves must not move for it. The first day starts
-    // exactly where the list does.
-    const first = await page.evaluate(() => {
+    // exactly where the list does, and its first row one header (36px) below.
+    // Item 0 is the pinned header and never shifts; it is the SECOND item that
+    // would be dragged by a misplaced reference line.
+    const offsets = await page.evaluate(() => {
       const list = document.querySelector('[role="list"]');
-      const item = document.querySelector('[data-index="0"]');
-      return list === null || item === null
-        ? undefined
-        : item.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      const top = (index: number): number | undefined => {
+        const item = document.querySelector(`[data-index="${String(index)}"]`);
+        return list === null || item === null
+          ? undefined
+          : item.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      };
+      return { first: top(0), second: top(1) };
     });
-    expect(first).toBe(0);
+    expect(offsets.first).toBe(0);
+    expect(offsets.second).toBe(36);
 
     const probe = async (y: number) => {
       await scrollTo(page, y);
