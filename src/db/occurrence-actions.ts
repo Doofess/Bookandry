@@ -1,8 +1,15 @@
-import type { Occurrence, Override } from '@/types/domain';
-import type { IsoInstant } from '@/types/money';
+import {
+  planSeriesEdit,
+  type EditScope,
+  type SeriesEditPlan,
+  type TransactionPatch,
+} from '@/domain/series-edit';
+import type { Occurrence, Override, Transaction } from '@/types/domain';
+import type { IsoInstant, LocalDate } from '@/types/money';
 
 import type { BookandryDB } from './db';
 import { restoreDeleted, softDelete } from './repos/transactions';
+import { applySeriesEdit } from './series-edit';
 
 /**
  * Skipping, restoring and deleting - the three destructive-ish row actions.
@@ -141,4 +148,97 @@ export async function deleteTransaction(
       await restoreDeleted(db, transactionId, undoneAt);
     },
   };
+}
+
+/**
+ * Apply a series-edit plan and keep what it overwrote, so Undo puts back
+ * every row it touched exactly as it was.
+ *
+ * A row that did not exist before (a split's continuation, a new override)
+ * is deleted on undo; every other row is written back whole, stamped with
+ * the undo instant so it wins a later merge. Both halves are one transaction.
+ */
+export async function applyUndoablePlan(db: BookandryDB, plan: SeriesEditPlan): Promise<UndoableAction> {
+  const transactionIds = plan.transactions.map((t) => t.id);
+  const overrideIds = [...new Set([...plan.overrides.map((o) => o.id), ...plan.deleteOverrideIds])];
+  let transactionsBefore: readonly (Transaction | undefined)[] = [];
+  let overridesBefore: readonly (Override | undefined)[] = [];
+
+  await db.transaction('rw', [db.transactions, db.overrides], async () => {
+    transactionsBefore = await db.transactions.bulkGet(transactionIds);
+    overridesBefore = await db.overrides.bulkGet(overrideIds);
+    await applySeriesEdit(db, plan);
+  });
+
+  return {
+    undo: async (undoneAt: IsoInstant) => {
+      await db.transaction('rw', [db.transactions, db.overrides], async () => {
+        for (const [i, id] of overrideIds.entries()) {
+          const before = overridesBefore[i];
+          if (before === undefined) await db.overrides.delete(id);
+          else await db.overrides.put({ ...before, updatedAt: undoneAt });
+        }
+        for (const [i, id] of transactionIds.entries()) {
+          const before = transactionsBefore[i];
+          if (before === undefined) await db.transactions.delete(id);
+          else await db.transactions.put({ ...before, updatedAt: undoneAt });
+        }
+      });
+    },
+  };
+}
+
+/**
+ * One edit of one occurrence, through exactly the path the edit form takes
+ * (`planSeriesEdit`, then `applySeriesEdit`), so overrides and splits behave
+ * as they do there. Throws when the plan is refused or the row is gone.
+ */
+export async function editOccurrence(
+  db: BookandryDB,
+  input: {
+    readonly occurrence: Occurrence;
+    readonly scope: EditScope;
+    readonly patch: TransactionPatch;
+    readonly today: LocalDate;
+    readonly now: IsoInstant;
+    readonly newId: () => string;
+  },
+): Promise<UndoableAction> {
+  const transaction = await db.transactions.get(input.occurrence.transaction.id);
+  if (transaction === undefined || transaction.isDeleted === 1) throw new Error('gone');
+  const overrides = await db.overrides.where('transactionId').equals(transaction.id).toArray();
+
+  const planned = planSeriesEdit({
+    transaction,
+    overrides,
+    scope: input.scope,
+    // The ORIGINAL slot, never the moved date: it is the override's key.
+    at: input.occurrence.originalDate,
+    patch: input.patch,
+    today: input.today,
+    now: input.now,
+    newId: input.newId,
+  });
+  if (!planned.ok) throw new Error(planned.error.kind);
+  return applyUndoablePlan(db, planned.plan);
+}
+
+/**
+ * The category pop-out's write. "Only this time" is scope `one`; "from now on"
+ * is `future` for a plain series; "every payment" is `all` for a plan, which
+ * the domain never splits - the same choices the edit form's scope offers.
+ */
+export async function changeCategory(
+  db: BookandryDB,
+  input: {
+    readonly occurrence: Occurrence;
+    readonly categoryId: string;
+    readonly scope: 'one' | 'future' | 'all';
+    readonly today: LocalDate;
+    readonly now: IsoInstant;
+    readonly newId: () => string;
+  },
+): Promise<UndoableAction> {
+  const { categoryId, ...rest } = input;
+  return editOccurrence(db, { ...rest, patch: { categoryId } });
 }

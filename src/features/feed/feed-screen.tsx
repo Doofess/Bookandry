@@ -10,6 +10,7 @@ import { pendingShares, sweepShared } from '@/app/shared-files';
 import { PanelSheet } from '@/components/brand-panel';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
+import { changeCategory } from '@/db/occurrence-actions';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
@@ -18,9 +19,11 @@ import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { startOfMonth } from '@/lib/dates';
+import { newId } from '@/lib/id';
 import { ALL_PROFILES } from '@/types/domain';
 
 import { AddMenu } from './add-menu';
+import { CategoryPopout, type CategoryTarget } from './category-popout';
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
 import { FilterBar } from './filter-bar';
@@ -28,7 +31,7 @@ import { ProfileSwitcher } from './profile-switcher';
 import { RowActionsMenu, type RowMenuTarget } from './row-actions-menu';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
-import { useRowActions } from './use-row-actions';
+import { useRowActions, useUndoableWrite } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
@@ -67,6 +70,9 @@ export function FeedScreen() {
    */
   const [menuFor, setMenuFor] = useState<RowMenuTarget | undefined>(undefined);
   const runAction = useRowActions();
+  /** The row whose category pop-out is open, with its chip: transient, like the menu. */
+  const [categoryFor, setCategoryFor] = useState<CategoryTarget | undefined>(undefined);
+  const undoable = useUndoableWrite();
   /** The purchase being split into payments, kept once its menu has closed. */
   const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
   const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
@@ -289,6 +295,9 @@ export function FeedScreen() {
                 if (isCardFee(occurrence)) void navigate(ROUTES.cards);
                 else setMenuFor({ occurrence, anchor });
               }}
+              onCategory={(occurrence, anchor) => {
+                setCategoryFor({ occurrence, anchor });
+              }}
             />
           )}
         </div>
@@ -361,6 +370,36 @@ export function FeedScreen() {
           void runAction(action, occurrence);
         }}
       />
+
+      {context === undefined ? null : (
+        <CategoryPopout
+          target={categoryFor}
+          categories={context.categories}
+          today={today}
+          onClose={() => {
+            setCategoryFor(undefined);
+          }}
+          onChange={(occurrence, categoryId, scope) => {
+            // Closed first, so the toast's Undo is not under it.
+            setCategoryFor(undefined);
+            const category = context.categories.get(categoryId);
+            void undoable(
+              () =>
+                changeCategory(db, {
+                  occurrence,
+                  categoryId,
+                  scope,
+                  today,
+                  now: systemClock.nowIso(),
+                  newId,
+                }),
+              t('categoryPop.changed', {
+                name: category === undefined ? categoryId : categoryDisplayName(category, t),
+              }),
+            );
+          }}
+        />
+      )}
 
       <SplitPurchaseSheet
         offer={splitting}

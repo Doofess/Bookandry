@@ -68,11 +68,13 @@ export function VirtualFeed({
   context,
   onOpen,
   onMenu,
+  onCategory,
 }: {
   rows: readonly FeedRow[];
   context: RowContext;
   onOpen?: (occurrence: Occurrence) => void;
   onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -211,6 +213,7 @@ export function VirtualFeed({
               context,
               onOpen,
               onMenu,
+              onCategory,
               position: positions[item.index] ?? 1,
               setSize: rowCount,
               horizonLabel: (date) =>
@@ -229,6 +232,7 @@ type RenderOptions = {
   readonly context: RowContext;
   readonly onOpen?: (occurrence: Occurrence) => void;
   readonly onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  readonly onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
   readonly position: number;
   readonly setSize: number;
   readonly horizonLabel: (date: LocalDate) => string;
@@ -262,6 +266,7 @@ function renderRow(row: FeedRow, options: RenderOptions) {
       setSize={options.setSize}
       onOpen={options.onOpen}
       onMenu={options.onMenu}
+      onCategory={options.onCategory}
     />
   );
 }

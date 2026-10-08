@@ -105,57 +105,82 @@ export function PickerField({
         }
       />
       <PopoverContent className="w-(--anchor-width) min-w-64 p-0" align="start">
-        <Command
-          /*
-           * Items are keyed by ID and searched by KEYWORD.
-           *
-           * cmdk needs each item's `value` to be unique - two cards both called
-           * "Visa" would otherwise share one selection - and it needs the search
-           * to match what the user can actually read. Those are different
-           * strings, so the id is the value and the label is a keyword, rather
-           * than both crammed into one string behind a separator that some
-           * label will eventually contain.
-           *
-           * Substring rather than cmdk's default fuzzy scorer, matching the
-           * currency picker: on a list of short nouns, fuzzy ranking surfaces
-           * surprising matches ahead of the obvious one.
-           */
-          filter={(_value, search, keywords) =>
-            (keywords ?? []).join(' ').toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()) ? 1 : 0
-          }
-        >
-          <CommandInput placeholder={searchPlaceholder} />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.id}
-                  // cmdk treats an empty value as "no value" and the item stops
-                  // being selectable, so the "not specified" choice - whose id
-                  // IS the empty string - needs a stand-in here.
-                  value={option.id === '' ? EMPTY_VALUE : option.id}
-                  keywords={[option.label]}
-                  onSelect={() => {
-                    onChange(option.id);
-                    setOpen(false);
-                  }}
-                  className="gap-2"
-                >
-                  {option.icon}
-                  <span className="truncate">{option.label}</span>
-                  {option.hint === undefined ? null : (
-                    <span className="truncate text-xs text-muted-foreground">{option.hint}</span>
-                  )}
-                  {option.id === value ? (
-                    <Check className="ms-auto size-4 shrink-0" aria-hidden="true" />
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+        <PickerList
+          options={options}
+          value={value}
+          searchPlaceholder={searchPlaceholder}
+          emptyText={emptyText}
+          onSelect={(id) => {
+            onChange(id);
+            setOpen(false);
+          }}
+        />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** The searchable list itself: inside the picker field's popover, and inside the category pop-out's "More". */
+export function PickerList({
+  options,
+  value,
+  onSelect,
+  searchPlaceholder,
+  emptyText,
+}: {
+  readonly options: readonly PickerOption[];
+  readonly value: string;
+  readonly onSelect: (id: string) => void;
+  readonly searchPlaceholder: string;
+  readonly emptyText: string;
+}) {
+  return (
+    <Command
+      /*
+       * Items are keyed by ID and searched by KEYWORD.
+       *
+       * cmdk needs each item's `value` to be unique - two cards both called
+       * "Visa" would otherwise share one selection - and it needs the search
+       * to match what the user can actually read. Those are different
+       * strings, so the id is the value and the label is a keyword, rather
+       * than both crammed into one string behind a separator that some
+       * label will eventually contain.
+       *
+       * Substring rather than cmdk's default fuzzy scorer, matching the
+       * currency picker: on a list of short nouns, fuzzy ranking surfaces
+       * surprising matches ahead of the obvious one.
+       */
+      filter={(_value, search, keywords) =>
+        (keywords ?? []).join(' ').toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()) ? 1 : 0
+      }
+    >
+      <CommandInput placeholder={searchPlaceholder} />
+      <CommandList>
+        <CommandEmpty>{emptyText}</CommandEmpty>
+        <CommandGroup>
+          {options.map((option) => (
+            <CommandItem
+              key={option.id}
+              // cmdk treats an empty value as "no value" and the item stops
+              // being selectable, so the "not specified" choice - whose id
+              // IS the empty string - needs a stand-in here.
+              value={option.id === '' ? EMPTY_VALUE : option.id}
+              keywords={[option.label]}
+              onSelect={() => {
+                onSelect(option.id);
+              }}
+              className="gap-2"
+            >
+              {option.icon}
+              <span className="truncate">{option.label}</span>
+              {option.hint === undefined ? null : (
+                <span className="truncate text-xs text-muted-foreground">{option.hint}</span>
+              )}
+              {option.id === value ? <Check className="ms-auto size-4 shrink-0" aria-hidden="true" /> : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+    </Command>
   );
 }

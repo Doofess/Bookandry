@@ -1,6 +1,8 @@
 import { screen } from '@testing-library/react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { CARD_FEE_PREFIX } from '@/domain/cards';
 import { MONEY, d, makeTx } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
@@ -296,6 +298,49 @@ describe('TransactionRow', () => {
     // A missing category must render a row, not throw inside the list.
     expect(screen.getByText('cat.vanished')).toBeInTheDocument();
   });
+
+  it('makes the chip a button that reports itself, except on card-fee and skipped rows', async () => {
+    await initTestI18n('en');
+    const onCategory = vi.fn();
+    const { rerender } = renderWithProviders(
+      <TransactionRow
+        occurrence={occurrence()}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={onCategory}
+      />,
+    );
+    const chip = screen.getByRole('button', { name: /Category: .*Change it/ });
+
+    expect(chip).toHaveClass('size-11');
+    await userEvent.setup().click(chip);
+    expect(onCategory).toHaveBeenCalledWith(expect.objectContaining({ key: 't1@2026-09-10' }), chip);
+
+    rerender(
+      <TransactionRow
+        occurrence={occurrence({ isSkipped: true })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={onCategory}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Category: / })).not.toBeInTheDocument();
+  });
+
+  it('draws no chip button on a card fee, which is changed where the card is', () => {
+    render(
+      <TransactionRow
+        occurrence={occurrence({ seriesId: `${CARD_FEE_PREFIX}visa` })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Category: / })).not.toBeInTheDocument();
+  });
 });
 
 describe('DayHeader', () => {
@@ -345,6 +390,8 @@ describe('the card an expense was paid with', () => {
   it('shows a card icon and its last four digits, and says so', () => {
     paidWith(card());
     expect(screen.getByTestId('row-card').textContent).toBe('3214');
+    // Cut short below sm: the full name is a hover away.
+    expect(screen.getByTestId('row-card')).toHaveAttribute('title', 'Max Gold');
     expect(
       screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 3214$/ }),
     ).toBeInTheDocument();

@@ -36,6 +36,16 @@
     "aiHint": "מקובץ או מצילום של דף פירוט",
     "aiUnavailable": "דורש חשבון Bookandry"
   },
+  "categoryPop": {
+    "title": "קטגוריה",
+    "chip": "קטגוריה: {{name}}. לשינוי",
+    "more": "עוד",
+    "scopeQuestion": "לשנות ל{{name}}…",
+    "scopeOne": "רק הפעם",
+    "scopeFuture": "מעכשיו והלאה",
+    "scopeAll": "כל התשלומים",
+    "changed": "הקטגוריה שונתה ל{{name}}"
+  },
   "theme": {
     "label": "ערכת נושא",
     "light": "בהיר",

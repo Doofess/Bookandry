@@ -8,6 +8,7 @@ import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
+import { isCardFee } from '@/domain/cards';
 import { recurrenceModeOf } from '@/domain/tx-edit';
 import { standingViaOf } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -115,15 +116,15 @@ function cardOf(
   occurrence: Occurrence,
   methods: ReadonlyMap<string, PaymentMethod> | undefined,
   t: TFunction<['common', 'categories']>,
-): { readonly text: string; readonly label: string } | undefined {
+): { readonly text: string; readonly label: string; readonly name: string } | undefined {
   if (occurrence.transaction.kind !== 'expense' || occurrence.paymentMethodId === undefined) return undefined;
   const method = methods?.get(occurrence.paymentMethodId);
   if (method === undefined || (method.type !== 'credit_card' && method.type !== 'debit_card'))
     return undefined;
   const digits = method.card?.lastDigits;
   return digits === undefined
-    ? { text: method.label, label: t('feed.paidWith', { name: method.label }) }
-    : { text: digits, label: t('feed.cardEnding', { digits }) };
+    ? { text: method.label, label: t('feed.paidWith', { name: method.label }), name: method.label }
+    : { text: digits, label: t('feed.cardEnding', { digits }), name: method.label };
 }
 
 /**
@@ -142,6 +143,7 @@ export const TransactionRow = memo(function TransactionRow({
   setSize,
   onOpen,
   onMenu,
+  onCategory,
 }: {
   occurrence: Occurrence;
   context: RowContext;
@@ -156,6 +158,8 @@ export const TransactionRow = memo(function TransactionRow({
   setSize: number;
   onOpen?: (occurrence: Occurrence) => void;
   onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  /** The chip was tapped: change the category from the row. */
+  onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories']);
 
@@ -191,20 +195,40 @@ export const TransactionRow = memo(function TransactionRow({
       aria-posinset={position}
       aria-setsize={setSize}
       className={cn(
-        'flex items-center gap-1 rounded-xl px-1 py-2.5 sm:gap-3 sm:px-3',
+        // The chip's 44px target carries its own 4px inset, so the start padding gives it back.
+        'flex items-center gap-1 rounded-xl py-2.5 ps-0 pe-1 sm:gap-3 sm:ps-2 sm:pe-3',
         occurrence.isSkipped && 'opacity-50',
       )}
       data-projected={occurrence.isProjected ? 'true' : undefined}
       data-key={occurrence.key}
     >
+      {/*
+        Its own button, beside the row's: a button inside a button is not one.
+        The ring is inset: the row clips what is outside it, and the chip sits at its edge.
+      */}
+      {onCategory === undefined || occurrence.isSkipped || isCardFee(occurrence) ? (
+        <span className="flex size-11 shrink-0 items-center justify-center" aria-hidden="true">
+          <CategoryChip icon={category?.icon ?? 'Circle'} />
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label={t('categoryPop.chip', { name: categoryName })}
+          onClick={(event) => {
+            onCategory(occurrence, event.currentTarget);
+          }}
+          className="flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+        >
+          <CategoryChip icon={category?.icon ?? 'Circle'} />
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => onOpen?.(occurrence)}
         aria-label={label}
         className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:gap-3"
       >
-        <CategoryChip icon={category?.icon ?? 'Circle'} />
-
         <span className="min-w-0 flex-1" data-testid="row-text">
           <span className="block truncate text-sm font-medium">{occurrence.note ?? categoryName}</span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -263,6 +287,8 @@ export const TransactionRow = memo(function TransactionRow({
             <span
               className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground max-sm:max-w-14"
               data-testid="row-card"
+              // Cut short below sm: the card's full name is a hover away.
+              title={card.name}
             >
               <CreditCard className="size-3 shrink-0" aria-hidden="true" />
               <span className="truncate tabular-nums">{card.text}</span>
@@ -282,6 +308,7 @@ export const TransactionRow = memo(function TransactionRow({
         variant="ghost"
         size="icon"
         className="size-11 shrink-0 max-sm:-mx-1"
+        data-testid="row-more"
         aria-label={t('a11y.rowActions', { name: label })}
         onClick={(event) => onMenu?.(occurrence, event.currentTarget)}
       >
