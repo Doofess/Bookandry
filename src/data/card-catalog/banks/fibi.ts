@@ -33,6 +33,12 @@ const TYPES = 'https://www.fibi.co.il/private/creditcard/types/';
 const TARIFF =
   'https://www.fibi.co.il/media/bwxl02kb/%D7%97%D7%9C%D7%A7-6-%D7%9B%D7%A8%D7%98%D7%99%D7%A1%D7%99-%D7%90%D7%A9%D7%A8%D7%90%D7%99-31.pdf';
 const ISRACARD_FIBI = 'https://digital.isracard.co.il/globalassets/isracard/pdf/beinleumi25.pdf';
+const AMEX_FIBI = 'https://he.americanexpress.co.il/globalassets/pdf/taarifonbenleumijan26.pdf';
+
+const NOT_READ =
+  'Accrual (whole months from the regular billing date) and 30/360 are from FIBI’s Isracard agreement (§3.5a); FIBI’s own Cal and Max agreements were not read (UNCONFIRMED).';
+const PLUS30 =
+  'Accrual and day count are not stated (UNCONFIRMED): the regular billing date and actual/365 are recorded.';
 
 const CREDIT = {
   quality: 'exact',
@@ -41,24 +47,31 @@ const CREDIT = {
   accrues: 'billing_date',
   fixedAtPurchase: true,
 } as const;
-const credit = (margin: string, nominal: string, effective: string): CatalogRate =>
-  primeRate(CREDIT, margin, at(NOTICE, pair(nominal, effective)));
-const plus30 = (compounding: 12 | 4, margin: string, nominal: string, effective: string): CatalogRate =>
-  primeRate(
+const credit = (margin: string, nominal: string, effective: string, caveat?: string): CatalogRate => ({
+  ...primeRate(CREDIT, margin, at(NOTICE, pair(nominal, effective))),
+  ...(caveat ? { caveat } : {}),
+});
+/** Cal and Diners, and Max: the rule is the Isracard agreement's. */
+const creditNotRead = (margin: string, nominal: string, effective: string): CatalogRate =>
+  credit(margin, nominal, effective, NOT_READ);
+const plus30 = (compounding: 12 | 4, margin: string, nominal: string, effective: string): CatalogRate => ({
+  ...primeRate(
     { ...CREDIT, compounding, dayCount: 'actual/365', fixedAtPurchase: false },
     margin,
     at(NOTICE, pair(nominal, effective)),
-  );
+  ),
+  caveat: PLUS30,
+});
 
 const CAL_OTHER = ['basic', 'local', 'international', 'business'];
 
 const rates: BankRateRow[] = [
   // Cal / Diners: קרדיט*.
-  ...forTiers('cal', ['platinum'], 'credit', credit('5.00', '9.75', '10.20')),
-  ...forTiers('cal', ['gold'], 'credit', credit('8.25', '13.00', '13.80')),
-  ...forTiers('cal', CAL_OTHER, 'credit', credit('9.50', '14.25', '15.22')),
-  ...forTiers('diners', ['platinum'], 'credit', credit('5.00', '9.75', '10.20')),
-  ...forTiers('diners', ['classic'], 'credit', credit('9.50', '14.25', '15.22')),
+  ...forTiers('cal', ['platinum'], 'credit', creditNotRead('5.00', '9.75', '10.20')),
+  ...forTiers('cal', ['gold'], 'credit', creditNotRead('8.25', '13.00', '13.80')),
+  ...forTiers('cal', CAL_OTHER, 'credit', creditNotRead('9.50', '14.25', '15.22')),
+  ...forTiers('diners', ['platinum'], 'credit', creditNotRead('5.00', '9.75', '10.20')),
+  ...forTiers('diners', ['classic'], 'credit', creditNotRead('9.50', '14.25', '15.22')),
   // Cal: ויזה פלוס 30, quarterly.
   ...forTiers('cal', ['platinum'], 'deferred', plus30(4, '4.50', '9.25', '9.58')),
   ...forTiers('cal', ['gold'], 'deferred', plus30(4, '7.50', '12.25', '12.83')),
@@ -75,9 +88,9 @@ const rates: BankRateRow[] = [
   ...forTiers('amex', ['blue', 'credit'], 'credit', credit('9.50', '14.25', '15.22')),
 
   // Max: אשראי קרדיט, and פלוס 30.
-  ...forTiers('max', ['platinum'], 'credit', credit('6.50', '11.25', '11.85')),
-  ...forTiers('max', ['gold'], 'credit', credit('8.25', '13.00', '13.80')),
-  ...forTiers('max', ['international'], 'credit', credit('9.50', '14.25', '15.22')),
+  ...forTiers('max', ['platinum'], 'credit', creditNotRead('6.50', '11.25', '11.85')),
+  ...forTiers('max', ['gold'], 'credit', creditNotRead('8.25', '13.00', '13.80')),
+  ...forTiers('max', ['international'], 'credit', creditNotRead('9.50', '14.25', '15.22')),
   ...forTiers('max', ['platinum'], 'deferred', plus30(12, '6.50', '11.25', '11.85')),
   ...forTiers('max', ['gold'], 'deferred', plus30(12, '8.25', '13.00', '13.80')),
   ...forTiers('max', ['international'], 'deferred', plus30(12, '9.50', '14.25', '15.22')),
@@ -86,7 +99,7 @@ const rates: BankRateRow[] = [
 /*
  * ריבית פיגורים is "הריבית המרבית": the bank's highest rate on unapproved debit
  * balances. From 6/9/2026: prime 4.75 + 9.90 + "תוספת ריבית חריגה 3.50%",
- * quarterly. Day count not stated; account interest is daily.
+ * quarterly.
  */
 const lateRate: CatalogRate = {
   basis: { kind: 'prime', margin: '13.40' },
@@ -96,12 +109,14 @@ const lateRate: CatalogRate = {
   accrues: 'billing_date',
   fixedAtPurchase: false,
   source: at(NOTICE, pair('18.15', '19.43')),
+  caveat:
+    'Day count not stated (UNCONFIRMED): account interest is daily, so actual/365 is recorded. The formula gives 19.42% at m = 4; the published 19.43% is kept.',
 };
 
 /** The group's shared figures. Beyond Platinum's 1% FX fee is FIBI's own programme, not a catalog club. */
 const group = {
   issuers: ['cal', 'diners', 'amex', 'isracard', 'max'],
-  fxFee: { cal: '3', isracard: '2.7' },
+  fxFee: { cal: '3', isracard: '2.7', amex: '2.5' },
   lateRate,
   rates,
   sources: {
@@ -111,6 +126,10 @@ const group = {
       isracard: at(
         ISRACARD_FIBI,
         'Isracard’s schedule for FIBI-group cards: 2.7% from 1.7.2022 (isracard.md §3).',
+      ),
+      amex: at(
+        AMEX_FIBI,
+        'American Express’s schedule for FIBI-group cards: 2.5% from 1.7.2026 (isracard.md §3).',
       ),
     },
   },

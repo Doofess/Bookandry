@@ -204,6 +204,21 @@ describe('resolveCard', () => {
     };
     expect(resolveCard(c, { issuer: 'cal', bank: 'b1', tier: 'gold' })?.foreignPosting).toBe('billing_date');
     expect(resolveCard(c, { issuer: 'cal', bank: 'b2', tier: 'gold' })?.foreignPosting).toBe('immediate');
+
+    // The bank's own rule for one card type comes before its bank-wide one.
+    const d: Catalog = {
+      ...c,
+      banks: [
+        {
+          ...c.banks[0]!,
+          foreignPosting: 'immediate',
+          foreignPostingTiers: [{ issuer: 'cal', tier: 'old', posting: 'billing_date', source: src }],
+        },
+        c.banks[1]!,
+      ],
+    };
+    expect(resolveCard(d, { issuer: 'cal', bank: 'b1', tier: 'old' })?.foreignPosting).toBe('billing_date');
+    expect(resolveCard(d, { issuer: 'cal', bank: 'b1', tier: 'gold' })?.foreignPosting).toBe('immediate');
   });
 
   it('never gives a bank card the card company’s late rate: it is the bank account’s', () => {

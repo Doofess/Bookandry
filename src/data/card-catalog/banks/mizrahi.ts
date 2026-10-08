@@ -34,8 +34,16 @@ const CREDIT = {
   dayCount: '30/360',
   accrues: 'billing_date',
   fixedAtPurchase: true,
+  caveat:
+    'Mizrahi does not state when interest starts (UNCONFIRMED): the regular billing date is recorded, as at every bank whose agreement was read; the first payment falls a month after it.',
 } as const;
-const THIRTY_PLUS = { ...CREDIT, dayCount: 'actual/365', fixedAtPurchase: false } as const;
+const THIRTY_PLUS = {
+  ...CREDIT,
+  dayCount: 'actual/365',
+  fixedAtPurchase: false,
+  caveat:
+    'Mizrahi states neither when interest starts nor the day count (UNCONFIRMED): the regular billing date and actual/365 are recorded. This pair fits m = 12, though FIBI publishes Cal 30+ at m = 4.',
+} as const;
 
 const credit = (margin: string, nominal: string, effective: string) =>
   primeRate(CREDIT, margin, at(RATES, pair(nominal, effective)));
@@ -120,7 +128,7 @@ export const mizrahi: CatalogBank = {
   ],
   // "עו"ש חובה" (a debit balance with no line), the late and over-limit case on the
   // account the card debits: prime + 13.80, quarterly. Whether Mizrahi charges it as
-  // the card's ריבית פיגורים is UNCONFIRMED (§M.7): quality 'typical'.
+  // the card's ריבית פיגורים is UNCONFIRMED (§M.7): quality 'typical', and the caveat says so.
   lateRate: {
     basis: { kind: 'prime', margin: '13.80' },
     quality: 'typical',
@@ -129,6 +137,8 @@ export const mizrahi: CatalogBank = {
     accrues: 'billing_date',
     fixedAtPurchase: false,
     source: at(RATES, pair('18.55', '19.88')),
+    caveat:
+      'The account rate for a debit balance with no line ("עו"ש חובה"). Whether Mizrahi charges it as a card bill’s ריבית פיגורים is UNCONFIRMED: its current card agreement was not found online.',
   },
   rates,
   sources: {

@@ -64,6 +64,8 @@ export function catalogProblems(catalog: Catalog): string[] {
     for (const o of b.dealOverrides ?? [])
       if (o.deal.source) checkSource(`${b.id}.override.${o.deal.kind}`, o.deal.source);
     for (const f of b.fxFeeTiers ?? []) checkSource(`${b.id}.fxFeeTiers.${f.issuer}.${f.tier}`, f.source);
+    for (const f of b.foreignPostingTiers ?? [])
+      checkSource(`${b.id}.foreignPostingTiers.${f.issuer}.${f.tier}`, f.source);
 
     // Every bank-level figure names its source.
     const s = b.sources ?? {};
@@ -141,6 +143,13 @@ export function catalogProblems(catalog: Catalog): string[] {
       if (!b.issuers.includes(f.issuer)) p.push(`${where}: FX fee for undistributed ${f.issuer}`);
       const issuer = catalog.issuers.find((i) => i.id === f.issuer);
       if (issuer && !issuer.tiers.some((t) => t.id === f.tier)) p.push(`${where}: FX fee for unknown tier`);
+    }
+    for (const f of b.foreignPostingTiers ?? []) {
+      const where = `${b.id}.foreignPostingTiers.${f.issuer}.${f.tier}`;
+      if (!b.issuers.includes(f.issuer)) p.push(`${where}: posting rule for undistributed ${f.issuer}`);
+      const issuer = catalog.issuers.find((i) => i.id === f.issuer);
+      if (issuer && !issuer.tiers.some((t) => t.id === f.tier))
+        p.push(`${where}: posting rule for unknown tier`);
     }
     if (b.lateRate && b.extraRates?.late) p.push(`${b.id}: late rate given twice`);
     for (const row of b.rates ?? []) {

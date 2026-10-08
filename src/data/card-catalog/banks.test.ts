@@ -140,9 +140,9 @@ describe('the banks, as the research gives them', () => {
     expect(await fx('11')).toEqual({ cal: '3', max: '3' });
     expect(await fx('17')).toEqual({ cal: '3' });
     for (const id of ['31', '52', '14', '26'])
-      expect(await fx(id), id).toEqual({ cal: '3', isracard: '2.7' });
+      expect(await fx(id), id).toEqual({ cal: '3', isracard: '2.7', amex: '2.5' });
     expect(await fx('46')).toEqual({ isracard: '2.7' });
-    expect(await fx('4')).toEqual({ isracard: '2.7' });
+    expect(await fx('4')).toEqual({ isracard: '2.7', amex: '2.5' });
     expect(await fx('18')).toEqual({ isracard: '0' });
   });
 
@@ -208,8 +208,8 @@ describe('the banks, as the research gives them', () => {
 
   it('has Hapoalim’s own קרדיט בתשלומים rules on each card company its agreements cover', async () => {
     const c = await loadCatalog();
-    for (const issuer of ['isracard', 'amex', 'cal', 'max'] as const) {
-      const r = resolveCard(c, { issuer, bank: '12', tier: 'gold' });
+    for (const issuer of ['isracard', 'amex', 'cal', 'max', 'diners'] as const) {
+      const r = resolveCard(c, { issuer, bank: '12', tier: issuer === 'diners' ? 'classic' : 'gold' });
       expect(deal(r, 'credit'), issuer).toMatchObject({
         payments: { min: 3, max: 18 },
         minDealMinor: 7_500,
@@ -242,5 +242,58 @@ describe('the banks, as the research gives them', () => {
       if (b.billingDays) expect(b.sources?.billingDays, `${b.id}.billingDays`).toBeDefined();
       if (b.foreignPosting) expect(b.sources?.foreignPosting, `${b.id}.foreignPosting`).toBeDefined();
     }
+  });
+
+  it('has Leumi’s own קרדיט: 3–36 payments, fixed for life from the voucher’s arrival, on every card company', async () => {
+    const c = await loadCatalog();
+    for (const [issuer, tier] of [
+      ['max', 'international'],
+      ['cal', 'gold'],
+      ['isracard', 'gold'],
+      ['diners', 'classic'],
+    ] as const) {
+      const r = resolveCard(c, { issuer, bank: '10', tier });
+      expect(deal(r, 'credit'), issuer).toMatchObject({
+        payments: { min: 3, max: 18 },
+        from: 'bank',
+        rate: { basis: null, dayCount: '30/360', accrues: 'purchase', fixedAtPurchase: true },
+      });
+      const long = deal(r, 'long_credit');
+      expect(long, issuer).toMatchObject({
+        payments: { min: 19, max: 36 },
+        from: 'bank',
+        rate: { basis: null, fixedAtPurchase: true },
+      });
+      expect(long?.rate?.reset, issuer).toBeUndefined(); // Max at Leumi: no reset at 19
+    }
+  });
+
+  it('records Discount’s foreign posting: on arrival, Visa Platinum at the billing date', async () => {
+    const c = await loadCatalog();
+    const posting = (issuer: string, tier: string) =>
+      resolveCard(c, { issuer, bank: '11', tier })?.foreignPosting;
+    expect(posting('cal', 'gold')).toBe('immediate');
+    expect(posting('diners', 'classic')).toBe('immediate');
+    expect(posting('cal', 'platinum')).toBe('billing_date');
+    expect(posting('max', 'platinum')).toBe('billing_date');
+  });
+
+  it('shows Yahav’s late rate as the bank’s, unpublished, with its overdraft benchmarks', async () => {
+    const late = (await bank('4')).lateRate!;
+    expect(late).toMatchObject({ basis: null, compounding: 4 });
+    expect(late.source.note).toContain('13.55');
+  });
+
+  it('puts One Zero’s plan condition and the conflicting 2% in the FX source', async () => {
+    const note = (await bank('18')).sources?.fxFee?.isracard?.note ?? '';
+    expect(note).toContain('במסלולי One');
+    expect(note).toContain('2%');
+  });
+
+  it('keeps each caveat in the data, apart from the published pair', async () => {
+    const mizrahi = (await bank('20')).lateRate!;
+    expect(mizrahi.source.note).toMatch(PAIR);
+    expect(mizrahi.caveat).toContain('UNCONFIRMED');
+    for (const id of ['12', '31']) expect((await bank(id)).lateRate?.caveat, id).toBeDefined();
   });
 });

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { isLocalDate } from '@/lib/dates';
 import { normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
+import { DEAL_KINDS, EXTRA_RATE_KINDS } from '@/types/domain';
 
 import { isExpiresMonth } from './cards';
 
@@ -154,21 +155,19 @@ export const cardSchema = z.object({
       club: shortText.optional(),
       version: z.number().int().min(1),
       updatedOn: localDate.optional(),
+      filled: z
+        .object({
+          fxFeeRate: annualRate.optional(),
+          monthlyFeeMinor: minorAmount.optional(),
+          creditPrimeMargin: margin.optional(),
+          lateRate: rateTerm.optional(),
+        })
+        .optional(),
     })
     .optional(),
   overrides: z
     .partialRecord(
-      z.enum([
-        'regular',
-        'installments',
-        'credit',
-        'long_credit',
-        'deferred',
-        'split_purchase',
-        'late',
-        'over_limit',
-        'cash',
-      ]),
+      z.enum([...DEAL_KINDS, ...EXTRA_RATE_KINDS]),
       z.discriminatedUnion('basis', [...rateTerm.options, z.object({ basis: z.literal('boi'), margin })]),
     )
     .optional(),

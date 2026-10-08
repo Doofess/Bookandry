@@ -4,8 +4,7 @@
 // להנפקת הכרטיס ובדף הפירוט החודשי" (§1.5), so it has no `rates`. Its
 // קרדיט and קרדיט פלוס rules (§1.4) go in `dealOverrides`.
 //
-// Not recorded: foreign posting (immediate, but Visa Platinum is deferred to the
-// billing date, a per-card rule, §1.2); Diners' FX fee (the tariff gives Cal's and
+// Not recorded: Diners' FX fee (the tariff gives Cal's and
 // Max's); the card fees (appendix D's names and amounts may be misaligned, §1.8).
 import type { CatalogBank, CatalogRate, DealRule, IssuerId } from '../types';
 import { at } from './shared';
@@ -66,6 +65,19 @@ export const discount: CatalogBank = {
   issuers: ['cal', 'diners', 'max'],
   fxFee: { cal: '3', max: '3' },
   billingDays: [2, 10, 15],
+  foreignPosting: 'immediate',
+  // "בכרטיס ויזה פלטינום החיוב יידחה למועד החיוב הקרוב ללא ריבית". The page names
+  // Visa Platinum; Cal and Max both issue Platinum, and the catalog's Platinum tiers
+  // do not tell Visa from Mastercard, so the exception is set on both.
+  foreignPostingTiers: (['cal', 'max'] as const).map((issuer) => ({
+    issuer,
+    tier: 'platinum',
+    posting: 'billing_date' as const,
+    source: at(
+      VISA,
+      '"בכרטיס ויזה פלטינום החיוב יידחה למועד החיוב הקרוב ללא ריבית". Named for Visa Platinum; whether Mastercard Platinum is deferred too is UNCONFIRMED.',
+    ),
+  })),
   lateRate: {
     basis: null,
     quality: 'typical',
@@ -113,6 +125,10 @@ export const discount: CatalogBank = {
     issuers: at(
       TYPES,
       'Visa (מפתח דיסקונט), Mastercard, Diners, Diners Extra Home, Fly Card / FlyAll. The tariff has Cal and Max chapters and no Isracard or Amex section.',
+    ),
+    foreignPosting: at(
+      VISA,
+      '"חיוב הרכישות של עסקאות מחו"ל יבוצע במועד הגעת החיוב מחו"ל"; part ז’ §9א(3): "בסמוך לאחר מועד הגעת החיוב לבנק ו/או לחברת כרטיסי האשראי", unless the bank agrees to a credit arrangement.',
     ),
     billingDays: at(
       VISA,
