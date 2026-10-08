@@ -36,7 +36,9 @@ type Combo = {
 const BLOCKING: readonly Combo[] = [
   { route: '/', name: 'feed', lang: 'en', theme: 'light' },
   { route: '/chart', name: 'chart', lang: 'he', theme: 'dark' },
-  { route: '/household', name: 'household', lang: 'he', theme: 'light' },
+  // Account linking left the tabs for a settings page, which needs an account
+  // this build does not have: Settings stands in its place, in Hebrew.
+  { route: '/settings', name: 'settings', lang: 'he', theme: 'light' },
   { route: '/settings', name: 'settings', lang: 'en', theme: 'dark' },
   { route: '/cards', name: 'cards', lang: 'he', theme: 'dark' },
   { route: '/cards', name: 'cards', lang: 'en', theme: 'light' },
@@ -49,11 +51,7 @@ const REPORTING: readonly Combo[] = [
   { route: '/chart', name: 'chart', lang: 'en', theme: 'light' },
   { route: '/chart', name: 'chart', lang: 'en', theme: 'dark' },
   { route: '/chart', name: 'chart', lang: 'he', theme: 'light' },
-  { route: '/household', name: 'household', lang: 'en', theme: 'light' },
-  { route: '/household', name: 'household', lang: 'en', theme: 'dark' },
-  { route: '/household', name: 'household', lang: 'he', theme: 'dark' },
   { route: '/settings', name: 'settings', lang: 'en', theme: 'light' },
-  { route: '/settings', name: 'settings', lang: 'he', theme: 'light' },
   { route: '/settings', name: 'settings', lang: 'he', theme: 'dark' },
 ];
 

@@ -1,4 +1,4 @@
-import { Check, Users } from 'lucide-react';
+import { Check, Link2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -88,7 +88,7 @@ export function LinkScreen() {
       await accountController().acceptInvite(token, currency);
       forgetPendingInvite();
       toast(t('link.joined'));
-      void navigate(ROUTES.household, { replace: true });
+      void navigate(SETTINGS_ROUTES.linking, { replace: true });
     } catch (error) {
       const code = error instanceof ServerError ? error.code : undefined;
       toast.error(
@@ -191,7 +191,7 @@ export function LinkScreen() {
 
   // Every end state offers the way out, and forgets the token on the way, so
   // the app stops bringing the person back here. Unreachable, or already in
-  // the household, is one too: the link in the email still works later.
+  // linked with them, is one too: the link in the email still works later.
   const done =
     state.kind === 'invalid' ||
     state.kind === 'wrong_account' ||
@@ -206,7 +206,7 @@ export function LinkScreen() {
       <PanelSheet>
         <section className="space-y-4 px-4 pt-8 pb-10">
           <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
-            <Users className="size-6" aria-hidden="true" />
+            <Link2 className="size-6" aria-hidden="true" />
           </span>
           <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
           {body}

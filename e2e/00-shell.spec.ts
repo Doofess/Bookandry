@@ -8,7 +8,7 @@ import { bootAs, completeFirstRun } from './support/seed';
  * observable claims on their own; these are.
  */
 
-const ROUTES = ['/', '/chart', '/cards', '/household', '/settings'] as const;
+const ROUTES = ['/', '/chart', '/cards', '/settings'] as const;
 
 test.describe('@smoke0 first run', () => {
   test('gates a fresh install on the wizard, not on the shell', async ({ page }) => {
@@ -113,6 +113,27 @@ test.describe('@smoke0 app shell', () => {
     const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test('has three tabs: account linking is a page in Settings, not a tab', async ({ page }) => {
+    const nav = page.getByRole('navigation', { name: /primary|ניווט/i });
+    // The rail's mark is a link home too, shown only on a wide screen.
+    const tabs = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
+    await expect(tabs).toHaveCount(3);
+    await expect(nav.getByRole('link', { name: /household|account linking|משק|קישור/i })).toHaveCount(0);
+  });
+
+  for (const old of ['/household', '/profiles']) {
+    test(`still lands ${old}, in Settings`, async ({ page }) => {
+      /*
+       * Both go to /settings/linking. That page needs an account, which this
+       * build does not have, so it goes on to Settings - as Account does. Either
+       * way an old link opens Settings, never a page that is not there.
+       */
+      await page.goto(old);
+      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page.getByRole('heading', { level: 1, name: /settings|הגדרות/i })).toBeVisible();
+    });
+  }
 });
 
 test.describe('@theme switching language', () => {

@@ -73,7 +73,9 @@ afterEach(() => {
 describe('WipeScreen', () => {
   it('names the requester, what is erased and kept, and the dates, with both buttons', async () => {
     render();
-    expect(await screen.findByText("Dana asked to delete all of your household's data")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Dana asked to delete all of your linked accounts' data"),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^Erased:/)).toBeInTheDocument();
     expect(screen.getByText(/^Kept:/)).toBeInTheDocument();
     expect(screen.getByText(/Asked .+ · open until /)).toBeInTheDocument();

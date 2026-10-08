@@ -133,7 +133,7 @@
     "bank": "bank",
     "branch": "branch",
     "number": "account number",
-    "holders": "holders in the household"
+    "holders": "account holders"
   },
   "cardFlag": {
     "reads_disagree": "Check it: read twice, it came out differently.",

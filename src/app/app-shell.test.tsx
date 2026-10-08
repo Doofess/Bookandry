@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { DEFAULT_SETTINGS } from '@/db/repos/settings';
@@ -29,15 +29,22 @@ describe('AppShell', () => {
     await initTestI18n('en');
   });
 
-  it('renders one primary navigation landmark with its three routes', () => {
+  it('renders one primary navigation landmark with its three tabs', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav).toBeInTheDocument();
     // Where anchored pop-outs find the phone's tab bar, to keep clear of it.
     expect(nav).toHaveAttribute('data-slot', 'tab-bar');
-    for (const label of ['Feed', 'Chart', 'Household']) {
-      expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
-    }
+    // The rail's mark goes home too; every other link in the bar is a tab.
+    const tabs = within(nav)
+      .getAllByRole('link')
+      .filter((link) => link.textContent !== 'Bookandry');
+    expect(tabs.map((tab) => tab.textContent.replace('(current)', ''))).toEqual(['Feed', 'Chart', 'Cards']);
+  });
+
+  it('has no tab for account linking: it is a page in Settings', () => {
+    renderShell();
+    expect(screen.queryByRole('link', { name: /Household|Account linking/ })).not.toBeInTheDocument();
   });
 
   it('keeps settings out of the tabs, and leaves the account menu to each screen panel', () => {

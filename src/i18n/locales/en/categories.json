@@ -65,7 +65,7 @@
     "methodLabelPlaceholder": "Blue card",
     "methodType": "Type",
     "methodOwner": "Belongs to",
-    "methodShared": "Household",
+    "methodShared": "Shared",
     "methodSharedHint": "Shared by everyone. Useful for joint rent, groceries and bills.",
     "methodEmpty": "No payment methods yet.",
     "methodDeleteTitle": "Delete {{name}}?",
