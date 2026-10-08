@@ -62,7 +62,9 @@ export function ProfileSwitcher({
           ) : (
             <PersonAvatar person={current} size="sm" className="size-6 text-[10px]" />
           )}
-          <span className="max-w-40 truncate">
+          {/* On a phone's panel only the faces show, so it shares a line with the
+              month; the name is still the trigger's accessible name. */}
+          <span className={cn('max-w-40 truncate', tone === 'panel' ? 'max-sm:sr-only' : undefined)}>
             {current === undefined ? t('profile.all') : nameOf(current)}
           </span>
           <ChevronDown

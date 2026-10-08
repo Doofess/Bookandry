@@ -74,6 +74,33 @@ for (const size of WIDTHS) {
 
       expect(small).toEqual([]);
     });
+
+    for (const lang of ['en', 'he'] as const) {
+      test(`keeps the panel's pills to two lines at most, in ${lang}`, async ({ page }) => {
+        /*
+         * Month, people and prime each on a line of their own made the panel
+         * half an iPhone SE, with a row and a half of the list above the fold.
+         * Measured by CENTRE, because the pills share `items-center` but are
+         * not all the same height (the month pill carries a border).
+         */
+        await completeFirstRun(page, lang);
+
+        const pills = page.getByTestId('panel-pills').locator(':scope > *');
+        await expect(pills).toHaveCount(3);
+
+        const centres: number[] = [];
+        for (const pill of await pills.all()) {
+          const box = await pill.boundingBox();
+          expect(box).not.toBeNull();
+          if (box !== null) centres.push(box.y + box.height / 2);
+        }
+        // A new line wherever the next centre is clearly lower than the last.
+        centres.sort((a, b) => a - b);
+        const lines = centres.filter((c, i) => i === 0 || c - (centres[i - 1] ?? c) > 12).length;
+
+        expect(lines, `${lang} at ${String(size.width)}px`).toBeLessThanOrEqual(2);
+      });
+    }
   });
 }
 
@@ -186,6 +213,57 @@ test.describe('@collapse the summary header', () => {
     // and, more to the point, to the SAME number.
     expect(measured?.top).toBe('48px');
     expect(measured?.barHeight).toBe(48);
+  });
+
+  test('pins the day of the rows under it, from the first rows on', async ({ page }) => {
+    /*
+     * The pinned header was taken from the first RENDERED item, which counts
+     * the overscan: for the first eight or so rows of scrolling it kept the
+     * first day pinned over later days' rows. And directly under the pinned
+     * header there must be a row at all - a list whose scroll margin is
+     * measured from the wrong parent draws rows where the reader is not.
+     */
+    await completeFirstRun(page, 'en');
+
+    const start = await page.evaluate(() => {
+      const list = document.querySelector('[role="list"]');
+      return list === null ? 0 : list.getBoundingClientRect().top + window.scrollY;
+    });
+    expect(start).toBeGreaterThan(0);
+
+    for (let y = start; y <= start + 900; y += 60) {
+      await scrollTo(page, y);
+      const probe = await page.evaluate(() => {
+        const pinned = [...document.querySelectorAll<HTMLElement>('[data-index]')].find(
+          (el) => el.style.position === 'sticky',
+        );
+        if (pinned === undefined) return { pinned: undefined, under: undefined, days: [] as number[] };
+
+        const box = pinned.getBoundingClientRect();
+        const hit = document.elementFromPoint(window.innerWidth / 2, box.bottom + 4);
+        const under = hit?.closest<HTMLElement>('[data-index]') ?? null;
+        const underIndex = under === null ? undefined : Number(under.dataset.index);
+
+        // The day that row belongs to: the nearest header at or before it.
+        // A header is the item whose content is not a list item.
+        const headers = [...document.querySelectorAll<HTMLElement>('[data-index]')]
+          .filter((el) => el.querySelector('[role="listitem"]') === null && el.querySelector('p') === null)
+          .map((el) => Number(el.dataset.index))
+          .filter((i) => underIndex !== undefined && i <= underIndex);
+
+        return {
+          pinned: Number(pinned.dataset.index),
+          under: underIndex,
+          // The row's own day, or - right at a day boundary, where the next
+          // header is sliding up under the pinned one - the day before it.
+          days: headers.sort((a, b) => a - b).slice(-2),
+        };
+      });
+
+      if (probe.pinned === undefined) continue;
+      expect(probe.under, `a row under the pinned header at ${String(y)}`).not.toBeUndefined();
+      expect(probe.days, `the pinned day at ${String(y)}`).toContain(probe.pinned);
+    }
   });
 });
 

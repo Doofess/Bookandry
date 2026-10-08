@@ -211,8 +211,12 @@ export function FeedScreen() {
 
       <div ref={measureHeader} data-testid="feed-header">
         <ScreenPanel>
-          {/* Wraps onto two lines on a 320px phone rather than overflowing. */}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          {/*
+            At most two lines on a phone: below sm the profile pill is faces
+            only and prime drops its icon. 375: month + profile, then prime.
+            320: month, then profile + prime. One row from sm up.
+          */}
+          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="panel-pills">
             <MonthCursor month={filters.month} today={today} onStep={stepMonth} tone="panel" />
             {lookups === undefined ? null : (
               <ProfileSwitcher

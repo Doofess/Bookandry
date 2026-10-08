@@ -29,7 +29,9 @@ export function ScreenPanel({
   return (
     <BrandPanel
       className={cn(
-        'px-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-10 lg:mt-4 lg:rounded-3xl lg:px-8 lg:pt-5 lg:pb-12',
+        // A square foot on desktop too: the sheet's rounded top rises into it,
+        // as on a phone, rather than leaving two curves crossing.
+        'px-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-10 lg:mt-4 lg:rounded-3xl lg:rounded-b-none lg:px-8 lg:pt-5 lg:pb-12',
         className,
       )}
     >

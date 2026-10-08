@@ -135,6 +135,25 @@ export function activeHeaderIndex(headers: readonly number[], firstVisible: numb
 }
 
 /**
+ * The item at a scroll offset: the last one, in the order they are laid out,
+ * whose start is at or above it. Not simply the first item drawn - the drawn
+ * range begins with overscan rows above the screen, and with a pinned header
+ * the extractor puts before them.
+ *
+ * Above the first item, the first item; with none, nothing.
+ */
+export function indexAtOffset(
+  items: readonly { readonly index: number; readonly start: number }[],
+  offset: number,
+): number | undefined {
+  let found: { readonly index: number; readonly start: number } | undefined;
+  for (const item of items) {
+    if (item.start <= offset && (found === undefined || item.start >= found.start)) found = item;
+  }
+  return (found ?? items[0])?.index;
+}
+
+/**
  * Apply the URL filters to an already-expanded window.
  *
  * Kept out of the expansion memo on purpose: typing in the search box must not

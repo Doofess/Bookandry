@@ -27,6 +27,8 @@ describe('PrimePill', () => {
     expect(pill).toHaveTextContent('Prime');
     expect(pill).toHaveTextContent('4.75%');
     expect(pill).toHaveClass('rounded-full', 'min-h-11');
+    // The ⓘ goes on a phone, so the pill shares a line with the profile pill.
+    expect(pill.querySelector('svg')).toHaveClass('max-sm:hidden');
   });
 
   it('opens what the strip carried, and gives focus back on Escape', async () => {

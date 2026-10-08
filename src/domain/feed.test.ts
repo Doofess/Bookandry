@@ -9,6 +9,7 @@ import {
   emptyReason,
   flattenFeed,
   headerIndices,
+  indexAtOffset,
   type FeedLookup,
 } from './feed';
 import { defaultFilters, type FeedFilters } from './feed-filters';
@@ -173,6 +174,31 @@ describe('sticky header indices', () => {
   it('has nothing to pin above the first header', () => {
     expect(activeHeaderIndex([3], 0)).toBeUndefined();
     expect(activeHeaderIndex([], 0)).toBeUndefined();
+  });
+
+  it('reads the first visible row from where the rows ARE, not from the first one drawn', () => {
+    /*
+     * The rendered range starts eight rows of overscan above the screen, so
+     * its first item is not the first visible one: pinning from it kept the
+     * first day stuck over later days' rows for the first screenful of scroll.
+     */
+    const items = [
+      { index: 0, start: 0 },
+      { index: 1, start: 36 },
+      { index: 2, start: 100 },
+      { index: 3, start: 164 },
+      { index: 4, start: 200 },
+    ];
+    expect(indexAtOffset(items, 0)).toBe(0);
+    expect(indexAtOffset(items, 120)).toBe(2);
+    expect(indexAtOffset(items, 164)).toBe(3);
+    expect(indexAtOffset(items, 999)).toBe(4);
+    // A pinned header the extractor prepended sits first, out of order; it
+    // never wins over a later row that covers the offset.
+    expect(indexAtOffset([{ index: 0, start: 0 }, ...items.slice(2)], 170)).toBe(3);
+    // Above the list entirely: the first item, as before.
+    expect(indexAtOffset(items.slice(2), 10)).toBe(2);
+    expect(indexAtOffset([], 10)).toBeUndefined();
   });
 });
 
