@@ -10,14 +10,14 @@ export default defineConfig({
     maskable: {
       sizes: [512],
       padding: 0.3,
-      resizeOptions: { background: '#16794a' },
+      resizeOptions: { background: '#0F3A8A' },
     },
     apple: {
       sizes: [180],
       // iOS ignores transparency and clips to a superellipse, so an opaque,
       // padded source is required or the circle gets shaved.
       padding: 0.1,
-      resizeOptions: { background: '#16794a' },
+      resizeOptions: { background: '#0F3A8A' },
     },
   },
   images: ['public/favicon.svg'],

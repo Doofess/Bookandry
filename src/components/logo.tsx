@@ -3,7 +3,7 @@ import { cn } from 'cn';
 type LogoProps = {
   size?: number;
   className?: string;
-  /** 'inverse': a light disc, for the deep-green brand panel. */
+  /** 'inverse': a light disc, for the deep sapphire panel. */
   tone?: 'brand' | 'inverse';
 } & ({ title: string } | { decorative: true });
 
