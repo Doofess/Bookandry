@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { balanceBreakdown, forecastBreakdown } from '@/domain/breakdown';
 import { d } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
@@ -87,7 +88,8 @@ describe('CollapsedSummaryBar', () => {
       <CollapsedSummaryBar
         state={{ status: 'blocked', currencies: ['EUR'] }}
         currency="USD"
-        onOpenBreakdown={vi.fn()}
+        breakdown={balanceBreakdown({ openingMinor: 0, incomeMinor: 0, expenseMinor: 0 })}
+        onFullBreakdown={vi.fn()}
       />,
     );
     // An affordance pointing into a sheet the disabled button cannot open.
@@ -254,7 +256,7 @@ describe('MonthCursor', () => {
 
 describe('the panel figures', () => {
   it('sets the balance in the display face, tabular, and a size smaller below 360px', () => {
-    renderWithProviders(<BalanceFigure state={ready(5_325_874)} currency="ILS" onOpenBreakdown={vi.fn()} />);
+    renderWithProviders(<BalanceFigure state={ready(5_325_874)} currency="ILS" />);
     const figure = screen.getByTestId('balance-amount');
 
     expect(figure).toHaveClass('font-display', 'text-[2.75rem]', 'max-[359px]:text-[2.25rem]');
@@ -267,22 +269,22 @@ describe('the panel figures', () => {
     expect(screen.getByText(/Needs a rate for EUR/)).not.toHaveClass('text-destructive');
   });
 
-  it('sets the forecast in the serif at 1rem, and opens its breakdown', async () => {
-    const onOpen = vi.fn();
+  it('sets the forecast in the serif at 1rem, and opens its pop-out', async () => {
     renderWithProviders(
       <ForecastLine
         expense={{ total: 381_652, spentSoFar: 361_700, remaining: 19_952 }}
         currency="ILS"
         month={d('2026-09-01')}
         today={TODAY}
-        onOpenBreakdown={onOpen}
+        breakdown={forecastBreakdown([])}
+        onFullBreakdown={vi.fn()}
       />,
     );
     const button = screen.getByRole('button', { name: /Expected this month/ });
 
     expect(button.querySelector('.font-display')).toHaveClass('text-base');
     await userEvent.setup().click(button);
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('forecast-popout')).toBeInTheDocument();
   });
 });
 
@@ -310,5 +312,18 @@ describe('CollapsedSummaryBar on sapphire', () => {
     expect(bar).toHaveClass('bg-brand-deep', 'text-brand-deep-foreground');
     expect(bar.style.height).toBe('calc(48px + env(safe-area-inset-top, 0px))');
     expect(container.querySelector('[data-value]')).toHaveClass('font-display');
+  });
+
+  it('opens the balance pop-out from the collapsed bar too', async () => {
+    renderWithProviders(
+      <CollapsedSummaryBar
+        state={ready(5_325_874)}
+        currency="ILS"
+        breakdown={balanceBreakdown({ openingMinor: 0, incomeMinor: 5_325_874, expenseMinor: 0 })}
+        onFullBreakdown={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole('button'));
+    expect(await screen.findByTestId('balance-popout')).toBeInTheDocument();
   });
 });

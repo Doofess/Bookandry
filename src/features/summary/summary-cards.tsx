@@ -3,11 +3,13 @@ import { Trans, useTranslation } from 'react-i18next';
 import { useCountUp } from '@/components/count-up';
 import { Money } from '@/components/money';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { BalanceBreakdown, ForecastBreakdown } from '@/domain/breakdown';
 import type { MonthlyExpenseResult } from '@/domain/calculators';
 import { formatMoney } from '@/i18n/money-format';
 import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
 import type { Currency, LocalDate } from '@/types/money';
 
+import { BalancePopover, ForecastPopover } from './breakdown-popouts';
 import type { BalanceState } from './use-balance';
 
 /**
@@ -26,11 +28,13 @@ import type { BalanceState } from './use-balance';
 export function BalanceFigure({
   state,
   currency,
-  onOpenBreakdown,
+  breakdown,
+  onFullBreakdown,
 }: {
   readonly state: BalanceState;
   readonly currency: Currency;
-  readonly onOpenBreakdown?: () => void;
+  readonly breakdown?: BalanceBreakdown;
+  readonly onFullBreakdown?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const target = state.status === 'ready' ? state.minor : 0;
@@ -63,27 +67,44 @@ export function BalanceFigure({
     date: formatLocalDate(state.since, i18n.language, { dateStyle: 'medium' }),
   });
 
+  const figure = (
+    <>
+      {/* Two spans, so "Balance" is still its own text for anything that finds it by name. */}
+      <span className="block text-sm text-brand-deep-foreground/80">
+        <span>{title}</span> · <span>{since}</span>
+      </span>
+      {/*
+        The animating figure is hidden from assistive tech and ONE live region
+        carries the settled value. Announcing every frame turns a balance into
+        ~39 interruptions; announcing nothing leaves a number that changed
+        silently. Frank Ruhl Libre has tabular figures, so the count-up never
+        makes the line jitter.
+      */}
+      <span
+        className="mt-1 block font-display text-[2.75rem] leading-none font-bold tracking-tight max-[359px]:text-[2.25rem]"
+        data-testid="balance-amount"
+      >
+        <Money minor={animated} currency={currency} announce={false} />
+      </span>
+    </>
+  );
+
   return (
     <>
-      <PanelFigureButton label={t('summary.breakdownOf', { title })} onClick={onOpenBreakdown}>
-        {/* Two spans, so "Balance" is still its own text for anything that finds it by name. */}
-        <span className="block text-sm text-brand-deep-foreground/80">
-          <span>{title}</span> · <span>{since}</span>
-        </span>
-        {/*
-          The animating figure is hidden from assistive tech and ONE live region
-          carries the settled value. Announcing every frame turns a balance into
-          ~39 interruptions; announcing nothing leaves a number that changed
-          silently. Frank Ruhl Libre has tabular figures, so the count-up never
-          makes the line jitter.
-        */}
-        <span
-          className="mt-1 block font-display text-[2.75rem] leading-none font-bold tracking-tight max-[359px]:text-[2.25rem]"
-          data-testid="balance-amount"
+      {breakdown === undefined || onFullBreakdown === undefined ? (
+        <div>{figure}</div>
+      ) : (
+        <BalancePopover
+          breakdown={breakdown}
+          since={state.since}
+          currency={currency}
+          onFullBreakdown={onFullBreakdown}
+          triggerClassName={PANEL_FIGURE}
+          triggerLabel={t('summary.breakdownOf', { title })}
         >
-          <Money minor={animated} currency={currency} announce={false} />
-        </span>
-      </PanelFigureButton>
+          {figure}
+        </BalancePopover>
+      )}
       <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="balance-announced">
         {title}: {settled.aria}
       </p>
@@ -96,13 +117,15 @@ export function ForecastLine({
   currency,
   month,
   today,
-  onOpenBreakdown,
+  breakdown,
+  onFullBreakdown,
 }: {
   readonly expense: MonthlyExpenseResult | undefined;
   readonly currency: Currency;
   readonly month: LocalDate;
   readonly today: LocalDate;
-  readonly onOpenBreakdown?: () => void;
+  readonly breakdown?: ForecastBreakdown;
+  readonly onFullBreakdown?: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -113,21 +136,21 @@ export function ForecastLine({
   const isPast = compareLocal(month, startOfMonth(today)) < 0;
   const title = isPast ? t('summary.spent') : t('summary.expected');
 
-  return (
-    <PanelFigureButton label={t('summary.breakdownOf', { title })} onClick={onOpenBreakdown}>
+  const line = (
+    <>
       <span className="block font-display text-base">
         {title} <Money minor={expense.total} currency={currency} className="font-bold" />
       </span>
       {isPast ? null : (
         <span className="mt-0.5 block text-xs text-brand-deep-foreground/80">
           {/*
-            ONE key, not three fragments joined in JSX.
-            "X spent so far / Y still due" is a sentence, and Hebrew reverses
-            its clause order. Concatenating in code fixes the order in English
-            and leaves the translator no way to change it - and the separator is
-            bidi-neutral, so where it lands is decided by its neighbours rather
-            than by anyone's intent.
-          */}
+          ONE key, not three fragments joined in JSX.
+          "X spent so far / Y still due" is a sentence, and Hebrew reverses
+          its clause order. Concatenating in code fixes the order in English
+          and leaves the translator no way to change it - and the separator is
+          bidi-neutral, so where it lands is decided by its neighbours rather
+          than by anyone's intent.
+        */}
           <Trans
             i18nKey="summary.splitLine"
             components={{
@@ -137,29 +160,24 @@ export function ForecastLine({
           />
         </span>
       )}
-    </PanelFigureButton>
+    </>
+  );
+
+  if (breakdown === undefined || onFullBreakdown === undefined) return <div>{line}</div>;
+  return (
+    <ForecastPopover
+      breakdown={breakdown}
+      month={month}
+      currency={currency}
+      onFullBreakdown={onFullBreakdown}
+      triggerClassName={PANEL_FIGURE}
+      triggerLabel={t('summary.breakdownOf', { title })}
+    >
+      {line}
+    </ForecastPopover>
   );
 }
 
-/** A figure on the panel that opens what it is made of. Plain text when nothing does. */
-function PanelFigureButton({
-  label,
-  onClick,
-  children,
-}: {
-  readonly label: string;
-  readonly onClick?: () => void;
-  readonly children: React.ReactNode;
-}) {
-  if (onClick === undefined) return <div>{children}</div>;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className="-mx-2 block min-h-11 rounded-xl px-2 py-1 text-start transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none"
-    >
-      {children}
-    </button>
-  );
-}
+/** The classes of a figure on the panel that opens what it is made of. */
+export const PANEL_FIGURE =
+  '-mx-2 block min-h-11 rounded-xl px-2 py-1 text-start transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none';

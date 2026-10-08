@@ -160,7 +160,6 @@
   },
   "breakdown": {
     "balanceBody": "כל מה שנספר מ-{{date}}.",
-    "opening": "יתרת פתיחה",
     "income": "הכנסות",
     "expense": "הוצאות",
     "total": "יתרה",
@@ -171,7 +170,11 @@
     "groupInstallments": "תשלומים",
     "groupYearly": "פעם בשנה",
     "groupOneTime": "חד-פעמי",
-    "cardPending": "נקנה בכרטיס, טרם חויב"
+    "cardPending": "נקנה בכרטיס, טרם חויב",
+    "full": "פירוט מלא",
+    "more_one": "ועוד {{count}}",
+    "more_two": "ועוד {{count}}",
+    "more_other": "ועוד {{count}}"
   },
   "profile": {
     "switcher": "של מי",

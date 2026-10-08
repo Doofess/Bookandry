@@ -36,6 +36,7 @@ import { MonthCursor } from '../summary/month-cursor';
 import { PrimePill } from '../summary/prime-pill';
 import { BalanceFigure, ForecastLine } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
+import { useBreakdowns } from '../summary/use-breakdowns';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
 import { SplitPurchaseSheet } from '../transaction/split-purchase';
 import { TransactionSheet } from '../transaction/transaction-sheet';
@@ -135,6 +136,7 @@ export function FeedScreen() {
         : groupMonthlyExpenses(occurrences.filter((o) => o.date >= window.from && o.date <= window.to)),
     [occurrences, window.from, window.to],
   );
+  const breakdowns = useBreakdowns(balance, expenseGroups);
 
   const context = useMemo<RowContext | undefined>(
     () =>
@@ -204,7 +206,8 @@ export function FeedScreen() {
         <CollapsedSummaryBar
           state={balance}
           currency={settings.defaultCurrency}
-          onOpenBreakdown={() => {
+          breakdown={breakdowns.balance}
+          onFullBreakdown={() => {
             setBreakdown('balance');
           }}
         />
@@ -239,7 +242,8 @@ export function FeedScreen() {
             <BalanceFigure
               state={balance}
               currency={settings.defaultCurrency}
-              onOpenBreakdown={() => {
+              breakdown={breakdowns.balance}
+              onFullBreakdown={() => {
                 setBreakdown('balance');
               }}
             />
@@ -250,7 +254,8 @@ export function FeedScreen() {
               currency={settings.defaultCurrency}
               month={filters.month}
               today={today}
-              onOpenBreakdown={() => {
+              breakdown={breakdowns.forecast}
+              onFullBreakdown={() => {
                 setBreakdown('expense');
               }}
             />
@@ -369,13 +374,13 @@ export function FeedScreen() {
         }}
       />
 
-      {balance.status === 'ready' ? (
+      {breakdowns.balance !== undefined && balance.status === 'ready' ? (
         <BalanceBreakdownSheet
           open={breakdown === 'balance'}
           onOpenChange={(open) => {
             setBreakdown(open ? 'balance' : undefined);
           }}
-          parts={balance.parts}
+          breakdown={breakdowns.balance}
           since={balance.since}
           currency={settings.defaultCurrency}
         />
@@ -387,7 +392,7 @@ export function FeedScreen() {
           onOpenChange={(open) => {
             setBreakdown(open ? 'expense' : undefined);
           }}
-          groups={expenseGroups}
+          breakdown={breakdowns.forecast}
           month={filters.month}
           currency={settings.defaultCurrency}
           categories={context.categories}

@@ -159,7 +159,6 @@
   },
   "breakdown": {
     "balanceBody": "Everything counted since {{date}}.",
-    "opening": "Starting balance",
     "income": "Income",
     "expense": "Expenses",
     "total": "Balance",
@@ -170,7 +169,10 @@
     "groupInstallments": "Instalments",
     "groupYearly": "Once a year",
     "groupOneTime": "One-off",
-    "cardPending": "Bought by card, not yet charged"
+    "cardPending": "Bought by card, not yet charged",
+    "full": "Full breakdown",
+    "more_one": "and {{count}} more",
+    "more_other": "and {{count}} more"
   },
   "profile": {
     "switcher": "Whose money",
