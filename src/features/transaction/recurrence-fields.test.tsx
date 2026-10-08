@@ -222,7 +222,7 @@ describe('in Hebrew', () => {
     await initTestI18n('he');
     render(values({ mode: 'long_credit', amount: '900', installmentCount: '19', annualRate: '15.5' }), {});
     expect(choices().slice(0, 5)).toEqual(['רגילה', 'תשלומים', 'קרדיט', 'קרדיט פלוס', '30 פלוס']);
-    expect(screen.getByText(/^קרדיט פלוס בכרטיס הזה דורש לפחות .*950/)).toBeInTheDocument();
+    expect(screen.getByText(/^בקרדיט פלוס בכרטיס הזה צריך לפחות .*950/)).toBeInTheDocument();
     expect(screen.getByTestId('deal-schedule')).toHaveTextContent(
       /^19 תשלומים של .* · ריבית .* · 16.65% מתואמת/,
     );

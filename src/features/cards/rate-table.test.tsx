@@ -168,9 +168,30 @@ describe('rate table', () => {
         'Fixed for payments 1–18. From payment 19 it moves by any change in prime since you bought.',
       ),
     ).toBeInTheDocument();
-    expect(dialog.getByText('UNCONFIRMED for bank cards')).toBeInTheDocument();
+    expect(dialog.queryByText('UNCONFIRMED for bank cards')).toBeNull();
+    expect(
+      dialog.getByText(
+        "The card company doesn't publish every detail of this rate. Check it against your statement.",
+      ),
+    ).toBeInTheDocument();
     expect(dialog.getByRole('link', { name: 'Source' })).toHaveAttribute('href', SOURCE.url);
+    expect(dialog.getByText('seen Sep 1, 2026')).toBeInTheDocument();
     expect(dialog.getByText('Payments')).toBeInTheDocument();
+  });
+
+  it('says it in Hebrew, never the research note', async () => {
+    await initTestI18n('he');
+    const { user } = setup(
+      resolvedOf([deal('long_credit', 'Max long credit', rate({ caveat: 'AG25 §1, m = 4 (UNCONFIRMED)' }))]),
+    );
+    await user.click(row('long_credit').getByRole('button', { name: /^פרטים על/ }));
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.queryByText(/UNCONFIRMED|AG25/)).toBeNull();
+    expect(
+      dialog.getByText('חברת האשראי לא מפרסמת את כל הפרטים של הריבית הזו. כדאי לבדוק אותה מול דף הפירוט.'),
+    ).toBeInTheDocument();
+    expect(dialog.getByRole('link', { name: 'מקור' })).toHaveAttribute('href', SOURCE.url);
+    await initTestI18n('en');
   });
 
   it('follows prime in the footer, and says when the card list updated the rates', () => {
@@ -266,6 +287,32 @@ describe('rate table', () => {
     await user.click(row('credit').getByRole('button', { name: 'Remove my rate for Credit' }));
     expect(onOverride).toHaveBeenLastCalledWith('credit', null);
     expect(row('credit').queryByText("Back to the catalog's rate")).toBeNull();
+  });
+
+  it('lets a rate typed onto the card before it was linked be removed, by button or by clearing it', async () => {
+    const unpublished = resolvedOf([deal('credit', 'Credit', rate({ basis: null }))]);
+    const { onOverride, user } = setup(unpublished, { ...card, creditPrimeMargin: '9' });
+    expect(row('credit').getByRole('textbox')).toHaveValue('9');
+    await user.click(row('credit').getByRole('button', { name: 'Remove my rate for Credit' }));
+    expect(onOverride).toHaveBeenLastCalledWith('credit', null);
+  });
+
+  it('removes a rate typed onto the card before it was linked when its field is cleared', async () => {
+    const unpublished = resolvedOf([deal('credit', 'Credit', rate({ basis: null }))]);
+    const { onOverride, user } = setup(unpublished, { ...card, creditPrimeMargin: '9' });
+    await user.clear(row('credit').getByRole('textbox'));
+    expect(onOverride).toHaveBeenLastCalledWith('credit', null);
+  });
+
+  it('says the Remove button the way it is shown, in Hebrew too', async () => {
+    await initTestI18n('he');
+    setup(resolvedOf([deal('credit', 'Credit', rate({ basis: null }))]), {
+      ...card,
+      overrides: { credit: { basis: 'fixed', rate: '12' } },
+    });
+    const button = row('credit').getByRole('button', { name: /הריבית שלי/ });
+    expect(button.getAttribute('aria-label')?.startsWith(button.textContent)).toBe(true);
+    await initTestI18n('en');
   });
 
   it('renders in Hebrew', async () => {

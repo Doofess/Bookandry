@@ -148,7 +148,7 @@ describe('the chooser', () => {
     await choose(user, 'Bank', 'Not in the list');
     expect(chooser().queryByRole('radiogroup', { name: 'Card company' })).toBeNull();
     expect(drafted().catalog).toBeUndefined();
-    expect(screen.getByLabelText('Card level (manual)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Card type (manual)')).toBeInTheDocument();
   });
 
   it('says so when the list cannot be loaded, and the manual fields stay', async () => {
@@ -157,7 +157,7 @@ describe('the chooser', () => {
     expect(
       await screen.findByText("Couldn't load the card list. You can still fill the card in yourself."),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Card level (manual)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Card type (manual)')).toBeInTheDocument();
   });
 });
 
@@ -299,10 +299,10 @@ describe('fix round 1', () => {
     renderWithProviders(<Harness start={linked} />);
     await chooser().findByRole('radiogroup', { name: 'Bank' });
     expect(screen.getAllByRole('radiogroup', { name: 'Card company' })).toHaveLength(1);
-    expect(screen.queryByLabelText('Card level (manual)')).toBeNull();
+    expect(screen.queryByLabelText('Card type (manual)')).toBeNull();
     expect(screen.queryByRole('radiogroup', { name: 'Issued by' })).toBeNull();
     await choose(user, 'Card company', 'Not in the list');
-    expect(screen.getByLabelText('Card level (manual)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Card type (manual)')).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Card company (manual)' })).toBeInTheDocument();
   });
 

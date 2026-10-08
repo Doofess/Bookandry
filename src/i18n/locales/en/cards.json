@@ -75,7 +75,7 @@
     "bankOfCard": "Bank (manual)",
     "bankDebited": "Charged to the account at",
     "bankPlaceholder": "e.g. Leumi",
-    "tier": "Card level (manual)",
+    "tier": "Card type (manual)",
     "tierPlaceholder": "e.g. Platinum",
     "club": "Club or programme",
     "clubPlaceholder": "e.g. FLY CARD",
@@ -275,6 +275,7 @@
     "changeFor": "Change {{label}}",
     "backFor": "Back to the catalog's rate for {{label}}",
     "clearFor": "Remove my rate for {{label}}",
-    "clear": "Remove my rate"
+    "clear": "Remove my rate",
+    "caveat": "The card company doesn't publish every detail of this rate. Check it against your statement."
   }
 }

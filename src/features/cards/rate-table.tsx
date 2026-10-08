@@ -140,6 +140,9 @@ function RateRow({
   const overridden = found?.source === 'override';
   // The catalog gives no figure: the person's own is the only one there can be.
   const unpublished = row.rate?.basis == null;
+  // The person's rate, set here or, on an unpublished row, typed into the card
+  // before it was linked: either way theirs to change and to remove.
+  const mine = overridden || (unpublished && found?.source === 'card' && term !== null);
 
   const editorId = useId();
   const errorId = useId();
@@ -156,13 +159,13 @@ function RateRow({
   const [basis, setBasis] = useState<'prime' | 'fixed'>(fieldsOf(term).basis);
   const [text, setText] = useState(fieldsOf(term).text);
   const [bad, setBad] = useState(false);
-  // The override as this row last wrote or saw it: a different one means it changed elsewhere.
-  const overrideKey = JSON.stringify(overridden ? term : null);
+  // The person's rate as this row last wrote or saw it: a different one means it changed elsewhere.
+  const overrideKey = JSON.stringify(mine ? term : null);
   const [synced, setSynced] = useState(overrideKey);
   if (synced !== overrideKey) {
     setSynced(overrideKey);
-    setBasis(fieldsOf(overridden ? term : null).basis);
-    setText(fieldsOf(overridden ? term : null).text);
+    setBasis(fieldsOf(mine ? term : null).basis);
+    setText(fieldsOf(mine ? term : null).text);
     setBad(false);
   }
   // After a render that follows a deliberate move, put focus where the person's attention is.
@@ -180,7 +183,7 @@ function RateRow({
   const write = (nextBasis: 'prime' | 'fixed', nextText: string): void => {
     if (nextText.trim() === '') {
       setBad(false);
-      if (overridden) send(null);
+      if (mine) send(null);
       return;
     }
     if (nextBasis === 'prime') {
@@ -339,7 +342,7 @@ function RateRow({
             {t('rates.change')}
           </Button>
         )}
-        {overridden ? (
+        {mine ? (
           <Button
             type="button"
             variant="ghost"
@@ -449,7 +452,12 @@ function RateInfo({
           })}
         </p>
       )}
-      {rate?.caveat === undefined ? null : <p className="text-muted-foreground">{rate.caveat}</p>}
+      {/*
+        The caveat itself is the research's note to its reviewers, in English and
+        its jargon: it stays with the data. The person is told only that the rate
+        is not published in full, in their own language.
+      */}
+      {rate?.caveat === undefined ? null : <p className="text-muted-foreground">{t('rates.caveat')}</p>}
       {source === undefined ? null : (
         <p className="text-xs text-muted-foreground">
           <a
