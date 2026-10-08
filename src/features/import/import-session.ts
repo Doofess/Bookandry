@@ -33,3 +33,19 @@ export const readSession = (): ImportSession | undefined => current;
 export function writeSession(next: ImportSession | undefined): void {
   current = next;
 }
+
+/**
+ * The session the import sheet opens on. Opened for one card ("Import a
+ * statement" on the Cards screen), a new session, or one still at picking
+ * files, takes that card as its batch method. A session already reading or
+ * in review keeps its own: it belongs to files already chosen.
+ */
+export function startSession(
+  existing: ImportSession | undefined,
+  empty: ImportSession,
+  via: string | undefined,
+): ImportSession {
+  const base = existing ?? empty;
+  if (via === undefined || base.stage !== 'pick') return base;
+  return { ...base, batch: { ...base.batch, methodId: via } };
+}

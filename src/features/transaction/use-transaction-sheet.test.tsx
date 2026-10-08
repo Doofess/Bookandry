@@ -161,3 +161,23 @@ describe('useTransactionSheet edit', () => {
     expect(screen.getByTestId('search')).not.toHaveTextContent('focus');
   });
 });
+
+describe('useTransactionSheet import', () => {
+  beforeAll(async () => {
+    await initTestI18n('en');
+  });
+
+  it('carries the card a statement import is for', () => {
+    renderWithProviders(<Probe />, { route: '/?import=1&via=card-1' });
+    expect(target()).toEqual({ mode: 'import', via: 'card-1' });
+  });
+
+  it('reads an empty card as none, and drops it once something else opens', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Probe />, { route: '/?import=1&via=' });
+    expect(target()).toEqual({ mode: 'import' });
+
+    await user.click(screen.getByRole('button', { name: 'plain' }));
+    expect(screen.getByTestId('search')).not.toHaveTextContent('via');
+  });
+});
