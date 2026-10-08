@@ -1,5 +1,6 @@
 import { cn } from 'cn';
 import { ChevronRight } from 'lucide-react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Money } from '@/components/money';
@@ -42,12 +43,14 @@ export function CollapsedSummaryBar({
 }) {
   const { t } = useTranslation();
   const opens = state.status === 'ready' && breakdown !== undefined && onFullBreakdown !== undefined;
+  // What the pop-out's arrow points at: the amount, not the whole bar.
+  const figure = useRef<HTMLSpanElement>(null);
 
   const row = (
     <>
       <span className="text-xs text-brand-deep-foreground/80">{t('summary.balance')}</span>
 
-      <span className="flex min-w-0 items-center gap-1">
+      <span ref={figure} className="flex min-w-0 items-center gap-1">
         {/*
           THREE states, not two.
 
@@ -126,6 +129,7 @@ export function CollapsedSummaryBar({
           onFullBreakdown={onFullBreakdown}
           triggerClassName={ROW}
           triggerLabel={t('summary.breakdownOf', { title: t('summary.balance') })}
+          figure={figure}
         >
           {row}
         </BalancePopover>
