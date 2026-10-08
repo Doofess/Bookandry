@@ -65,5 +65,9 @@ test('links a Max card through Mizrahi, shows its real rates, and prices a Credi
   const sheet = page.locator('[data-slot="sheet-content"]');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet).toHaveCount(0);
-  await expect(page.getByTestId('row-card').first()).toContainText('Max Mizrahi');
+  const row = page.getByRole('listitem').filter({ has: page.getByTestId('row-card') });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('Max Mizrahi');
+  await expect(row).toContainText('Credit 1 of 24');
+  await expect(row).toContainText(/−\$\d/);
 });
