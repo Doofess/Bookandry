@@ -6,9 +6,10 @@ import { useTranslation } from 'react-i18next';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTitle } from '@/components/ui/popover';
 import { PopupItemContent, useAnchoredPopup } from '@/components/ui/popup-parts';
+import { billingDayOf } from '@/domain/cards';
 import { movableRange } from '@/domain/feed-filters';
 import { compareLocal, formatLocalDate, fromPickerDate, startOfMonth, toPickerDate } from '@/lib/dates';
-import type { Occurrence } from '@/types/domain';
+import type { Occurrence, PaymentMethod } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 export type ProjectedTarget = { readonly occurrence: Occurrence; readonly anchor: HTMLElement };
@@ -24,6 +25,7 @@ const FIRST_MONTH = new Date(1990, 0);
 export function ProjectedPopout({
   target,
   today,
+  methods,
   onClose,
   onMove,
   onAmount,
@@ -31,6 +33,8 @@ export function ProjectedPopout({
   /** The row whose chip was tapped, with that chip; undefined when closed. */
   readonly target: ProjectedTarget | undefined;
   readonly today: LocalDate;
+  /** The payment methods by id: a payment on a card is charged on its next bill, not today. */
+  readonly methods?: ReadonlyMap<string, PaymentMethod>;
   readonly onClose: () => void;
   readonly onMove: (occurrence: Occurrence, to: LocalDate) => void;
   readonly onAmount: (occurrence: Occurrence) => void;
@@ -66,6 +70,13 @@ export function ProjectedPopout({
             key={shown.occurrence.key}
             occurrence={shown.occurrence}
             today={today}
+            onCard={
+              billingDayOf(
+                shown.occurrence.paymentMethodId === undefined
+                  ? undefined
+                  : methods?.get(shown.occurrence.paymentMethodId),
+              ) !== undefined
+            }
             onMove={onMove}
             onAmount={onAmount}
             onClose={onClose}
@@ -79,12 +90,15 @@ export function ProjectedPopout({
 function Choices({
   occurrence,
   today,
+  onCard,
   onMove,
   onAmount,
   onClose,
 }: {
   readonly occurrence: Occurrence;
   readonly today: LocalDate;
+  /** Paid by a card with a billing day: charged today, it reaches the balance on the next bill. */
+  readonly onCard: boolean;
   readonly onMove: (occurrence: Occurrence, to: LocalDate) => void;
   readonly onAmount: (occurrence: Occurrence) => void;
   readonly onClose: () => void;
@@ -170,7 +184,9 @@ function Choices({
             ? t('projected.notStarted', {
                 date: formatLocalDate(earliest, i18n.language, { dateStyle: 'medium' }),
               })
-            : t('projected.todayHint')
+            : onCard
+              ? t('projected.todayCardHint')
+              : t('projected.todayHint')
         }
         onClick={() => {
           onMove(occurrence, today);

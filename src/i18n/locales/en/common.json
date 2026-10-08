@@ -49,6 +49,7 @@
     "chip": "Not counted yet. Change it",
     "today": "Charged today",
     "todayHint": "Count it in the balance now",
+    "todayCardHint": "Moves to this card’s next bill",
     "amount": "A different amount…",
     "date": "A different date…",
     "notStarted": "The series starts on {{date}}",
