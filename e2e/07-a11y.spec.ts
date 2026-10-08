@@ -104,3 +104,58 @@ for (const combo of REPORTING) {
     expect(results.violations.length).toBeGreaterThanOrEqual(0);
   });
 }
+
+test('@a11y BLOCKING the feed pop-outs, open', async ({ page }) => {
+  await completeFirstRun(page, 'he', { theme: 'dark' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  await expect(page.getByRole('main')).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+
+  const scanOpen = async (): Promise<void> => {
+    const results = await new AxeBuilder({ page })
+      .withTags(TAGS)
+      .include('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]')
+      .analyze();
+    expect(results.violations, summarise(results)).toEqual([]);
+    await page.keyboard.press('Escape');
+  };
+
+  const openers = [
+    () => page.getByTestId('prime-pill').click(),
+    () => page.getByRole('heading', { level: 2 }).getByRole('button').first().click(),
+    () =>
+      page
+        .getByRole('button', { name: /^הצגת הפירוט של/ })
+        .first()
+        .click(),
+    () =>
+      page
+        .getByRole('button', { name: /^הצגת הפירוט של/ })
+        .nth(1)
+        .click(),
+    () =>
+      page
+        .getByRole('button', { name: /^פעולות עבור/ })
+        .first()
+        .click(),
+    () =>
+      page
+        .getByRole('button', { name: /^קטגוריה: / })
+        .first()
+        .click(),
+  ];
+  for (const open of openers) {
+    await open();
+    await scanOpen();
+  }
+
+  // The card's ⋯, opened from /cards.
+  await page.goto('/cards');
+  await expect(page.getByRole('main')).toBeVisible();
+  await page
+    .getByRole('button', { name: /^אפשרויות עבור/ })
+    .first()
+    .click();
+  await scanOpen();
+});
