@@ -288,7 +288,12 @@ describe('refreshLinkedCard', () => {
       creditPrimeMargin: '8',
       lateRate: { basis: 'prime', margin: '14' }, // still the catalog's: it follows
     });
-    expect(refreshed.catalog?.filled).toEqual({ lateRate: { basis: 'prime', margin: '14' } });
+    // The records of what was filled stay, so the edits stay the person's.
+    expect(refreshed.catalog?.filled).toEqual({
+      fxFeeRate: '2.7',
+      creditPrimeMargin: '9.5',
+      lateRate: { basis: 'prime', margin: '14' },
+    });
 
     // Cleared by the person after it was filled: it stays cleared.
     const { fxFeeRate: _gone, ...cleared } = behind();
@@ -330,8 +335,56 @@ describe('refreshLinkedCard', () => {
         ...card.catalog,
         version: 2,
         updatedOn: TODAY,
-        filled: { fxFeeRate: '2.7', creditPrimeMargin: '10' },
+        // The overridden late rate's record stays: once the override goes, the card's
+        // 13.80 is still known for the catalog's.
+        filled: { fxFeeRate: '2.7', creditPrimeMargin: '10', lateRate: { basis: 'prime', margin: '13.80' } },
       },
+    });
+  });
+
+  describe('keeps a field the person’s through release after release', () => {
+    // Two releases, each changing every figure, so any field the refresh owned would move.
+    const release1 = catalogWith({
+      credit: rate({ kind: 'prime', margin: '10' }),
+      late: rate({ kind: 'prime', margin: '14' }),
+    });
+    const c = catalogWith({
+      credit: rate({ kind: 'prime', margin: '11' }),
+      late: rate({ kind: 'prime', margin: '15' }),
+    });
+    const release2: Catalog = { ...c, banks: [{ ...c.banks[0]!, fxFee: { cal: '3.1' } }, c.banks[1]!] };
+    /** Refresh at release 1, then mark it one behind again and refresh at release 2. */
+    const twice = (card: CardDetails): CardDetails => {
+      const first = refreshLinkedCard(card, resolved(release1), TODAY)!;
+      const behindAgain = { ...first, catalog: { ...first.catalog!, version: 1 } };
+      return refreshLinkedCard(behindAgain, resolved(release2), '2026-11-08' as LocalDate)!;
+    };
+
+    it('(a) a figure the person cleared stays cleared', () => {
+      const { fxFeeRate: _gone, creditPrimeMargin: _also, ...cleared } = behind();
+      const after = twice(cleared);
+      expect(after).not.toHaveProperty('fxFeeRate');
+      expect(after).not.toHaveProperty('creditPrimeMargin');
+      expect(after.lateRate).toEqual({ basis: 'prime', margin: '15' }); // the catalog's: it follows
+    });
+
+    it('(b) a figure the person changed stays theirs', () => {
+      const after = twice({ ...behind(), fxFeeRate: '1.5', creditPrimeMargin: '8' });
+      expect(after).toMatchObject({ fxFeeRate: '1.5', creditPrimeMargin: '8' });
+    });
+
+    it('(c) an overridden figure stays, and follows the catalog again once the override goes', () => {
+      const overridden = { ...behind(), overrides: { credit: { basis: 'prime', margin: '7' } } } as const;
+      const after = twice(overridden);
+      expect(after.creditPrimeMargin).toBe('9.5');
+      // Without the override, the card's 9.5 is still the catalog's own: the next release moves it.
+      const { overrides: _none, ...plain } = after;
+      const next = refreshLinkedCard(
+        { ...plain, catalog: { ...plain.catalog!, version: 1 } },
+        resolved(release2),
+        TODAY,
+      );
+      expect(next?.creditPrimeMargin).toBe('11');
     });
   });
 });

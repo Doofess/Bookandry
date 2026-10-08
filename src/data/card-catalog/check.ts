@@ -176,6 +176,14 @@ export function catalogProblems(catalog: Catalog): string[] {
     }
   }
 
+  // Caveats: words, and never a published pair, which belongs in the note where it is checked.
+  for (const { where, rate } of allRates(catalog)) {
+    const caveat = rate.caveat;
+    if (caveat === undefined) continue;
+    if (caveat.trim() === '') p.push(`${where}: empty caveat`);
+    if (/published (nominal|effective)/.test(caveat)) p.push(`${where}: a published pair in the caveat`);
+  }
+
   // Published nominal/effective pairs.
   for (const { where, rate } of allRates(catalog)) {
     const note = rate.source.note;

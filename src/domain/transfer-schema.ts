@@ -147,8 +147,10 @@ export const cardSchema = z.object({
   creditPrimeMargin: margin.optional(),
   lateRate: rateTerm.optional(),
   accountId: z.string().min(1).optional(),
+  // Loose, like the card itself (payment-methods.ts checkedCard): a key a later
+  // release adds inside the link survives an edit made by this one.
   catalog: z
-    .object({
+    .looseObject({
       issuer: shortText,
       bank: shortText,
       tier: shortText,
@@ -156,7 +158,7 @@ export const cardSchema = z.object({
       version: z.number().int().min(1),
       updatedOn: localDate.optional(),
       filled: z
-        .object({
+        .looseObject({
           fxFeeRate: annualRate.optional(),
           monthlyFeeMinor: minorAmount.optional(),
           creditPrimeMargin: margin.optional(),

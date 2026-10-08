@@ -141,7 +141,7 @@ describe('the banks, as the research gives them', () => {
     expect(await fx('17')).toEqual({ cal: '3' });
     for (const id of ['31', '52', '14', '26'])
       expect(await fx(id), id).toEqual({ cal: '3', isracard: '2.7', amex: '2.5' });
-    expect(await fx('46')).toEqual({ isracard: '2.7' });
+    expect(await fx('46')).toEqual({ isracard: '2.7', amex: '2.5' });
     expect(await fx('4')).toEqual({ isracard: '2.7', amex: '2.5' });
     expect(await fx('18')).toEqual({ isracard: '0' });
   });

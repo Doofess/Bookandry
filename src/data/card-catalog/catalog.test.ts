@@ -313,6 +313,18 @@ describe('the data checks catch what they are for', () => {
     expect(broken((c) => (tier(c).issuer = 'max')).join()).toContain('FX fee for undistributed max');
   });
 
+  it('flags an empty caveat, or a published pair hidden in one, and accepts a plain caveat', () => {
+    const caveat = (text: string) =>
+      broken((c) => {
+        c.banks[0]!.rates![0]!.rate.caveat = text;
+      });
+    expect(caveat('  ').join()).toContain('empty caveat');
+    expect(caveat('published nominal: 10; published effective: 10.47').join()).toContain(
+      'a published pair in the caveat',
+    );
+    expect(caveat('Day count not stated (UNCONFIRMED).')).toEqual([]);
+  });
+
   it('flags a bank posting rule for a card type the bank cannot apply it to', () => {
     const rule = (c: Catalog) => c.banks[0]!.foreignPostingTiers![0]!;
     expect(broken((c) => (rule(c).tier = 'nope')).join()).toContain('posting rule for unknown tier');

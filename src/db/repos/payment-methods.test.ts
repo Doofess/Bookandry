@@ -362,6 +362,32 @@ describe('a credit card’s details', () => {
     await expect(updatePaymentMethod(handle.db, 'visa', { card: { billingDay: 99 } }, NOW)).rejects.toThrow();
   });
 
+  it('keep keys a later release adds inside the catalog link, through an edit here', async () => {
+    const linked = {
+      billingDay: 10,
+      catalog: {
+        issuer: 'max',
+        bank: '20',
+        tier: 'international',
+        version: 1,
+        later: 'kept',
+        filled: { fxFeeRate: '3', laterToo: 1 },
+      },
+    };
+    await createPaymentMethod(
+      handle.db,
+      'visa',
+      { label: 'Visa', type: 'credit_card', profileId: 'p1', card: linked },
+      NOW,
+    );
+    await updatePaymentMethod(handle.db, 'visa', { card: { ...linked, billingDay: 15 } }, NOW);
+    expect((await handle.db.paymentMethods.get('visa'))?.card).toEqual({ ...linked, billingDay: 15 });
+    // Still validated: a known key that does not read is refused.
+    await expect(
+      updatePaymentMethod(handle.db, 'visa', { card: { catalog: { ...linked.catalog, version: 0 } } }, NOW),
+    ).rejects.toThrow();
+  });
+
   it('are refused when they do not read, by the repository and not only the screen', async () => {
     await expect(
       createPaymentMethod(
