@@ -224,5 +224,51 @@
     "keepMine": "Keep mine",
     "useNew": "Use the new card's rates",
     "pending": "Nothing changes until you pick the card type."
+  },
+  "rates": {
+    "upTo": "Up to",
+    "published": "Published",
+    "derived": "Worked out from the published margin",
+    "fromStatement": "From your statement",
+    "changed": "Changed by you",
+    "unpublished": "Enter it from your statement or welcome letter",
+    "back": "Back to the catalog's rate",
+    "followPrime": "Rates follow prime: {{prime}}% today ({{date}}).",
+    "reference": "Shown for reference; the app doesn't charge it.",
+    "nominal": "annual",
+    "effective": "effective (מתואמת)",
+    "resetRule": "Fixed for payments 1–{{last}}. From payment {{at}} it moves by any change in prime since you bought.",
+    "updated": "The card list updated these rates on {{date}}.",
+    "prime": "Prime",
+    "boi": "Bank of Israel rate",
+    "change": "Change",
+    "info": "About {{label}}",
+    "infoHint": "The rules of this rate and where they come from.",
+    "source": "Source",
+    "seen": "seen {{date}}",
+    "kind": {
+      "late": "Late payment",
+      "overLimit": "Going over the limit",
+      "cash": "Cash withdrawal"
+    },
+    "rule": {
+      "payments": "Payments",
+      "minDeal": "Smallest purchase",
+      "minPayment": "Smallest payment",
+      "minPaymentFrom": "Smallest payment from payment {{from}}",
+      "abroad": "Abroad",
+      "allowed": "Allowed",
+      "notAllowed": "Not allowed",
+      "accrues": "Interest starts",
+      "rate": "Rate",
+      "fixed": "Fixed when you buy",
+      "floating": "Follows prime"
+    },
+    "accrues": {
+      "purchase": "On the day of the purchase",
+      "merchant_paid": "When the card company pays the store",
+      "billing_date": "On the billing date",
+      "request": "From the day you ask"
+    }
   }
 }
