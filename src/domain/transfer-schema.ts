@@ -127,6 +127,18 @@ const rateTerm = z.discriminatedUnion('basis', [
   z.object({ basis: z.literal('fixed'), rate: annualRate }),
 ]);
 
+const KNOWN_BASES: readonly string[] = ['prime', 'fixed', 'boi'];
+
+/**
+ * A rate the person set over the catalog's: a basis this release knows, in
+ * full, or one a later release added, kept as it came (`cardDealRate` reads
+ * it as a rate this release cannot price).
+ */
+const overrideTerm = z.union([
+  z.discriminatedUnion('basis', [...rateTerm.options, z.object({ basis: z.literal('boi'), margin })]),
+  z.looseObject({ basis: z.string().refine((basis) => !KNOWN_BASES.includes(basis), 'a known basis') }),
+]);
+
 const shortText = z.string().trim().min(1).max(40);
 const minorAmount = z.number().int().nonnegative().max(1e12);
 
@@ -178,10 +190,12 @@ export const cardSchema = z.object({
         .optional(),
     })
     .optional(),
+  // Open on both axes, like `catalog`: a kind or a rate basis a later release
+  // adds must not make this one reject the whole card on a pull, or refuse to
+  // edit it. A kind and a basis this one knows are still checked in full.
   overrides: z
-    .partialRecord(
-      z.enum([...DEAL_KINDS, ...EXTRA_RATE_KINDS]),
-      z.discriminatedUnion('basis', [...rateTerm.options, z.object({ basis: z.literal('boi'), margin })]),
+    .looseObject(
+      Object.fromEntries([...DEAL_KINDS, ...EXTRA_RATE_KINDS].map((kind) => [kind, overrideTerm.optional()])),
     )
     .optional(),
 });
