@@ -17,9 +17,10 @@ export type BalanceState =
       readonly since: LocalDate;
       readonly profiles: readonly Profile[];
       /**
-       * opening + income - expense, computed HERE.
+       * The balance's parts (opening, income, expense, and what cards still
+       * owe), computed HERE.
        *
-       * The breakdown sheet needs the three numbers, and this is the only place
+       * The breakdown needs them, and this is the only place
        * holding the occurrences they come from - the feed's window is one
        * month. Returning the array instead would hand every consumer a decade
        * of objects to keep alive.

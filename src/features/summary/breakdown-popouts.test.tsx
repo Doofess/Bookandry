@@ -20,6 +20,16 @@ const balance = balanceBreakdown({
   cardPendingMinor: 4_500,
 });
 
+const PENDING = 'Not in the balance yet: bought by card, not yet charged';
+
+/** The pending line: below the total, and an amount on its own, never a minus. */
+function expectPendingApart(within_: HTMLElement): void {
+  const term = [...within_.querySelectorAll('dt')].find((t) => t.textContent === PENDING);
+  const amount = term?.nextElementSibling?.textContent ?? '';
+  expect(amount).toMatch(/45/);
+  expect(amount).not.toMatch(/[-−]/);
+}
+
 describe('BalancePopover', () => {
   it('lists the parts in order, ends with the full breakdown, and hands focus back', async () => {
     const user = userEvent.setup();
@@ -44,7 +54,8 @@ describe('BalancePopover', () => {
     const terms = within(pop)
       .getAllByRole('term')
       .map((t) => t.textContent);
-    expect(terms).toEqual(['Income', 'Expenses', 'Bought by card, not yet charged', 'Balance']);
+    expect(terms).toEqual(['Income', 'Expenses', 'Balance', PENDING]);
+    expectPendingApart(pop);
     expect(pop.querySelector('[data-slot="popup-arrow"]')).not.toBeNull();
 
     await user.keyboard('{Escape}');
@@ -110,6 +121,7 @@ describe('BalanceBreakdownSheet', () => {
     const terms = within(screen.getByRole('dialog'))
       .getAllByRole('term')
       .map((t) => t.textContent);
-    expect(terms).toEqual(['Income', 'Expenses', 'Bought by card, not yet charged', 'Balance']);
+    expect(terms).toEqual(['Income', 'Expenses', 'Balance', PENDING]);
+    expectPendingApart(screen.getByRole('dialog'));
   });
 });

@@ -57,10 +57,14 @@ export function BalanceBreakdownSheet({
 const BALANCE_LABELS = {
   income: 'breakdown.income',
   expense: 'breakdown.expense',
-  cardPending: 'breakdown.cardPending',
 } as const;
 
-/** The balance's parts and its total: the same list in the pop-out and the sheet. */
+/**
+ * The balance's parts and its total: the same list in the pop-out and the sheet.
+ *
+ * What cards still owe comes after the total, set apart and without a sign: it
+ * is not in the balance yet, and a minus above the line would read as taken.
+ */
 export function BalanceLines({
   breakdown,
   currency,
@@ -69,27 +73,13 @@ export function BalanceLines({
   readonly currency: Currency;
 }) {
   const { t } = useTranslation();
+  const pending = breakdown.pendingOnCardsMinor;
   return (
     <dl>
       {breakdown.lines.map((line) => (
-        <div
-          key={line.key}
-          className={
-            line.key === 'cardPending'
-              ? 'my-1 flex items-baseline justify-between gap-4 rounded-lg bg-muted px-3 py-2'
-              : 'flex items-baseline justify-between gap-4 py-1.5'
-          }
-        >
-          <dt
-            className={
-              line.key === 'cardPending' ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'
-            }
-          >
-            {t(BALANCE_LABELS[line.key])}
-          </dt>
+        <div key={line.key} className="flex items-baseline justify-between gap-4 py-1.5">
+          <dt className="text-sm text-muted-foreground">{t(BALANCE_LABELS[line.key])}</dt>
           <dd className="shrink-0 text-sm font-medium whitespace-nowrap">
-            {/* The opening balance is the usual answer to "that is not how much
-                money I have": typed once, months ago, and forgotten. */}
             <Money minor={line.minor} currency={currency} signMode="always" />
           </dd>
         </div>
@@ -100,6 +90,14 @@ export function BalanceLines({
           <Money minor={breakdown.totalMinor} currency={currency} />
         </dd>
       </div>
+      {pending === undefined ? null : (
+        <div className="mt-2 flex items-baseline justify-between gap-4 rounded-lg bg-muted px-3 py-2">
+          <dt className="text-xs text-muted-foreground">{t('breakdown.cardPending')}</dt>
+          <dd className="shrink-0 text-xs font-medium whitespace-nowrap">
+            <Money minor={pending} currency={currency} />
+          </dd>
+        </div>
+      )}
     </dl>
   );
 }
