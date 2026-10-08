@@ -619,7 +619,8 @@
     "title": "Prime rate",
     "detail": "Bank of Israel <boi></boi> + 1.5%",
     "next": "Next decision {{date}}",
-    "asOf": "As of {{date}}"
+    "asOf": "As of {{date}}",
+    "pill": "Prime"
   },
   "household": {
     "title": "Household",

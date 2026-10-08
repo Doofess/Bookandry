@@ -69,6 +69,21 @@ describe('ProfileSwitcher', () => {
     await user.click(await screen.findByRole('menuitemradio', { name: 'Yossi' }));
     expect(onSelect).toHaveBeenCalledWith('p2');
   });
+
+  it('is an outlined panel pill, 44px on a phone, when it sits on the panel', () => {
+    renderWithProviders(
+      <ProfileSwitcher
+        profiles={[profile('p1', 'Dana', '#16794a'), profile('p2', 'Yossi', '#0369a1')]}
+        active="all"
+        onSelect={vi.fn()}
+        tone="panel"
+      />,
+    );
+    const trigger = screen.getByRole('button', { name: /Whose money/ });
+
+    expect(trigger).toHaveClass('rounded-full', 'border-white/35', 'min-h-11', 'ps-1.5', 'pe-3');
+    expect(trigger).not.toHaveClass('bg-card');
+  });
 });
 
 describe('FilterBar', () => {
