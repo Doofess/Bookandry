@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, type RefObject, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Money } from '@/components/money';
@@ -28,10 +28,17 @@ export function BalancePopover({
   triggerClassName,
   triggerLabel,
   children,
+  figure,
 }: TriggerProps & {
   readonly breakdown: BalanceBreakdown;
   readonly since: LocalDate;
   readonly currency: Currency;
+  /**
+   * The figure inside a wide trigger, for the arrow to point at: the collapsed
+   * bar is one full-width button, with the word Balance at one end and the
+   * amount at the other. The pop-out lines up with it at the end.
+   */
+  readonly figure?: RefObject<HTMLElement | null>;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -40,7 +47,12 @@ export function BalancePopover({
       <PopoverTrigger className={triggerClassName} aria-label={triggerLabel}>
         {children}
       </PopoverTrigger>
-      <PopoverContent arrow align="start" className="w-72" data-testid="balance-popout">
+      <PopoverContent
+        arrow
+        {...(figure === undefined ? { align: 'start' as const } : { anchor: figure, align: 'end' as const })}
+        className="w-72"
+        data-testid="balance-popout"
+      >
         <PopoverTitle>{t('summary.balance')}</PopoverTitle>
         <p className="text-xs text-muted-foreground">
           {t('breakdown.balanceBody', { date: formatLocalDate(since, i18n.language, { dateStyle: 'long' }) })}

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { ADD_EXPENSE } from './support/add';
+import { ADD_EXPENSE, openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -435,6 +435,85 @@ test.describe('@collapse on the desktop rail', () => {
     const rowCentre = (row?.x ?? 0) + (row?.width ?? 0) / 2;
 
     expect(Math.abs(columnCentre - rowCentre)).toBeLessThanOrEqual(2);
+  });
+});
+
+test.describe('@collapse the collapsed bar’s pop-out', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('points its arrow at the balance figure, not at the word Balance', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.evaluate(() => {
+      window.scrollTo(0, 600);
+    });
+    const bar = page.getByTestId('collapsed-summary');
+    await expect(bar).toBeVisible();
+    const figure = await bar.locator('[data-value]').boundingBox();
+    const label = await bar.getByText('Balance', { exact: true }).boundingBox();
+
+    await bar.getByRole('button').click();
+    const pop = page.getByTestId('balance-popout');
+    await expect(pop).toBeVisible();
+    const arrow = await pop.locator('[data-slot="popup-arrow"]').boundingBox();
+    if (figure === null || label === null || arrow === null) throw new Error('nothing to measure');
+
+    const centre = (box: { x: number; width: number }) => box.x + box.width / 2;
+    expect(Math.abs(centre(arrow) - centre(figure))).toBeLessThan(Math.abs(centre(arrow) - centre(label)));
+    // Over the figure itself, not only nearer to it.
+    expect(centre(arrow)).toBeGreaterThanOrEqual(figure.x - 4);
+    expect(centre(arrow)).toBeLessThanOrEqual(figure.x + figure.width + 4);
+  });
+});
+
+test.describe('@narrow the date picker at 320px in Hebrew', () => {
+  test.use({ viewport: { width: 320, height: 568 } });
+
+  test('fits the phone, keeps month and year clear of the arrows, and keeps every day a target', async ({
+    page,
+  }) => {
+    // The caption was narrowed to clear the 44px arrows (px-11): checked where it is tightest.
+    await completeFirstRun(page, 'he');
+    await openAddSheet(page);
+    await page.getByRole('button', { name: 'בחרו תאריך' }).click();
+    const calendar = page.locator('[data-slot="calendar"]');
+    await expect(calendar).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    const measured = await calendar.evaluate((root) => {
+      const box = (el: Element | null) => el?.getBoundingClientRect();
+      const previous = box(root.querySelector('.rdp-button_previous'));
+      const next = box(root.querySelector('.rdp-button_next'));
+      const dropdowns = [...root.querySelectorAll('.rdp-dropdown_root')].map((el) =>
+        el.getBoundingClientRect(),
+      );
+      const days = [...root.querySelectorAll('[data-day] button')].map((el) => el.getBoundingClientRect());
+      const rootBox = root.getBoundingClientRect();
+      return {
+        left: rootBox.left,
+        right: rootBox.right,
+        overflow: root.scrollWidth - root.clientWidth,
+        previous,
+        next,
+        dropdowns,
+        narrowestDay: Math.min(...days.map((d) => d.width)),
+      };
+    });
+
+    expect(measured.left).toBeGreaterThanOrEqual(0);
+    expect(measured.right).toBeLessThanOrEqual(320);
+    expect(measured.overflow).toBeLessThanOrEqual(0);
+    expect(measured.dropdowns).toHaveLength(2);
+    // Month and year sit between the two arrows, overlapping neither.
+    const arrows = [measured.previous, measured.next].filter((b) => b !== undefined);
+    expect(arrows).toHaveLength(2);
+    for (const dropdown of measured.dropdowns) {
+      for (const arrow of arrows) {
+        const apart = dropdown.right <= arrow.left + 0.5 || dropdown.left >= arrow.right - 0.5;
+        expect(apart, 'a caption dropdown under an arrow').toBe(true);
+      }
+    }
+    expect(measured.narrowestDay).toBeGreaterThanOrEqual(28);
+    expect(await page.evaluate(() => document.body.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   });
 });
 
