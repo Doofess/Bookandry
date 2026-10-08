@@ -68,10 +68,10 @@
   "edit": {
     "open": "Edit card",
     "theCard": "The card",
-    "issuer": "Card company",
+    "issuer": "Card company (manual)",
     "network": "Network",
     "kind": "Issued by",
-    "bankOfCard": "Bank",
+    "bankOfCard": "Bank (manual)",
     "bankDebited": "Charged to the account at",
     "bankPlaceholder": "e.g. Leumi",
     "tier": "Card level",
@@ -222,6 +222,7 @@
     "notNow": "Not now",
     "keepTitle": "Keep the rates you entered?",
     "keepMine": "Keep mine",
-    "useNew": "Use the new card's rates"
+    "useNew": "Use the new card's rates",
+    "pending": "Nothing changes until you pick the card type."
   }
 }

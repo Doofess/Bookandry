@@ -78,6 +78,8 @@ export function CardFields({
     fx: useId(),
   };
   const dayChoice = other ? OTHER_DAY : common.includes(draft.billingDay) ? draft.billingDay : '';
+  // A linked card's company, kind, bank, type and club are the link's: the chooser shows them.
+  const linkedCard = draft.catalog !== undefined;
   const bad = (field: CardDraftField) => invalid.includes(field);
 
   return (
@@ -85,7 +87,13 @@ export function CardFields({
       <IssuerChooser
         value={draft.catalog}
         hasOverrides={hasOverrides(draft)}
-        stored={{ issuer: draft.issuer, bank: draft.bank, tier: draft.tier, club: draft.club }}
+        stored={{
+          kind: draft.kind,
+          issuer: draft.issuer,
+          bank: draft.bank,
+          tier: draft.tier,
+          club: draft.club,
+        }}
         onLink={(link, resolved, keepOverrides) => {
           onChange(linkedDraft(draft, resolved, link, { keepOverrides, month, language: i18n.language }));
         }}
@@ -97,18 +105,20 @@ export function CardFields({
       <fieldset className="space-y-3">
         <legend className="text-sm font-semibold">{t('edit.theCard')}</legend>
 
-        <div className="space-y-1.5">
-          <Label id={ids.issuer}>{t('edit.issuer')}</Label>
-          <Segmented<CardIssuer | ''>
-            value={draft.issuer}
-            labelledBy={ids.issuer}
-            onChange={(issuer) => {
-              onChange({ issuer });
-            }}
-            size="sm"
-            options={ISSUERS.map((issuer) => ({ value: issuer, label: t(`issuer.${issuer}`) }))}
-          />
-        </div>
+        {linkedCard ? null : (
+          <div className="space-y-1.5">
+            <Label id={ids.issuer}>{t('edit.issuer')}</Label>
+            <Segmented<CardIssuer | ''>
+              value={draft.issuer}
+              labelledBy={ids.issuer}
+              onChange={(issuer) => {
+                onChange({ issuer });
+              }}
+              size="sm"
+              options={ISSUERS.map((issuer) => ({ value: issuer, label: t(`issuer.${issuer}`) }))}
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label id={ids.network}>{t('edit.network')}</Label>
@@ -123,18 +133,20 @@ export function CardFields({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label id={ids.kind}>{t('edit.kind')}</Label>
-          <Segmented<CardKind | ''>
-            value={draft.kind}
-            labelledBy={ids.kind}
-            onChange={(kind) => {
-              onChange({ kind });
-            }}
-            size="sm"
-            options={KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) }))}
-          />
-        </div>
+        {linkedCard ? null : (
+          <div className="space-y-1.5">
+            <Label id={ids.kind}>{t('edit.kind')}</Label>
+            <Segmented<CardKind | ''>
+              value={draft.kind}
+              labelledBy={ids.kind}
+              onChange={(kind) => {
+                onChange({ kind });
+              }}
+              size="sm"
+              options={KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) }))}
+            />
+          </div>
+        )}
 
         {/*
           The household's accounts, when there are any, as the first answer to
@@ -157,7 +169,9 @@ export function CardFields({
                 const bank = bankByCode(payers.find((a) => a.id === choice)?.account?.bank ?? '');
                 onChange({
                   accountId: choice,
-                  ...(bank === undefined ? {} : { bank: bankName(bank, i18n.language) }),
+                  ...(bank === undefined || (linkedCard && draft.kind === 'bank')
+                    ? {}
+                    : { bank: bankName(bank, i18n.language) }),
                 });
               }}
               size="sm"
@@ -182,7 +196,8 @@ export function CardFields({
             <p className="text-xs text-muted-foreground">{t('edit.debitedFromHint')}</p>
           </div>
         )}
-        {payers.length > 0 && !otherAccount && (linked || draft.accountId === '') ? null : (
+        {(payers.length > 0 && !otherAccount && (linked || draft.accountId === '')) ||
+        (linkedCard && draft.kind === 'bank') ? null : (
           <TextField
             id={ids.bank}
             label={draft.kind === 'bank' ? t('edit.bankOfCard') : t('edit.bankDebited')}
@@ -193,26 +208,28 @@ export function CardFields({
             }}
           />
         )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
-            id={ids.tier}
-            label={t('edit.tier')}
-            value={draft.tier}
-            placeholder={t('edit.tierPlaceholder')}
-            onChange={(tier) => {
-              onChange({ tier });
-            }}
-          />
-          <TextField
-            id={ids.club}
-            label={t('edit.club')}
-            value={draft.club}
-            placeholder={t('edit.clubPlaceholder')}
-            onChange={(club) => {
-              onChange({ club });
-            }}
-          />
-        </div>
+        {linkedCard ? null : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              id={ids.tier}
+              label={t('edit.tier')}
+              value={draft.tier}
+              placeholder={t('edit.tierPlaceholder')}
+              onChange={(tier) => {
+                onChange({ tier });
+              }}
+            />
+            <TextField
+              id={ids.club}
+              label={t('edit.club')}
+              value={draft.club}
+              placeholder={t('edit.clubPlaceholder')}
+              onChange={(club) => {
+                onChange({ club });
+              }}
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label htmlFor={ids.lastDigits}>{t('edit.lastDigits')}</Label>
