@@ -71,6 +71,14 @@ describe('nextReset', () => {
     }
   });
 
+  it('re-prices but never freezes when told prime may be out of date', () => {
+    expect(nextReset(plan(fresh), '6.5', d('2028-03-01'), { freeze: false })).toEqual({
+      ...fresh,
+      rate: '16',
+      paymentMinor: after('16'),
+    });
+  });
+
   it('leaves a frozen plan alone, whatever prime does', () => {
     const frozen = { ...fresh, rate: '16', paymentMinor: after('16'), frozen: true } as const;
     expect(nextReset(plan(frozen), '9', d('2027-07-04'))).toBeUndefined();

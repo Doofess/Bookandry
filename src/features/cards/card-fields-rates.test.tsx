@@ -97,4 +97,36 @@ describe('the card editor rates', () => {
     await user.click(credit.getByRole('button', { name: /^Back to the catalog's rate for Credit$/ }));
     expect((JSON.parse(screen.getByTestId('draft').textContent) as CardDraft).overrides).toBeUndefined();
   });
+
+  it('writes a changed credit rate onto the card’s own field, and puts the catalog’s back when removed', async () => {
+    const user = userEvent.setup();
+    const catalog = {
+      issuer: 'max',
+      bank: 'none',
+      tier: 'basic',
+      version: 1,
+      filled: { creditPrimeMargin: '2' },
+    };
+    renderWithProviders(<Harness start={{ catalog, credit: { basis: 'prime', value: '2' } }} />);
+    const credit = within(await screen.findByTestId('rate-credit'));
+    await user.click(credit.getByRole('button', { name: 'Change Credit' }));
+    const input = credit.getByRole('textbox');
+    await user.clear(input);
+    await user.type(input, '9');
+    const draft = JSON.parse(screen.getByTestId('draft').textContent) as CardDraft;
+    const saved = cardFromDraft(draft, { month: '2026-09' });
+    // Every reader of the card's own field (the Cards screen, older versions) sees the person's rate.
+    expect(saved.ok && saved.card).toMatchObject({
+      creditPrimeMargin: '9',
+      overrides: { credit: { basis: 'prime', margin: '9' } },
+    });
+
+    await user.click(credit.getByRole('button', { name: /^Back to the catalog's rate for Credit$/ }));
+    const back = cardFromDraft(JSON.parse(screen.getByTestId('draft').textContent) as CardDraft, {
+      month: '2026-09',
+    });
+    // The catalog's own value again, so a later release still owns it.
+    expect(back.ok && back.card?.creditPrimeMargin).toBe('2');
+    expect(back.ok && back.card?.overrides).toBeUndefined();
+  });
 });

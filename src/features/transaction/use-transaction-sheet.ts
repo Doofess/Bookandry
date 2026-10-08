@@ -267,6 +267,18 @@ const NO_CARDS: ReadonlyMap<string, ResolvedCard> = new Map();
  * card not linked, and nothing waits on it.
  */
 export function useResolvedCards(methods: readonly PaymentMethod[]): ReadonlyMap<string, ResolvedCard> {
+  return useResolvedCardsState(methods).cards;
+}
+
+/**
+ * `useResolvedCards`, and whether the catalog has answered for these cards:
+ * false while it is still loading, true once it has loaded, or failed to. A
+ * linked card is "not resolved yet" only while `settled` is false.
+ */
+export function useResolvedCardsState(methods: readonly PaymentMethod[]): {
+  readonly cards: ReadonlyMap<string, ResolvedCard>;
+  readonly settled: boolean;
+} {
   const linked = methods.flatMap((m) => {
     const link = linkOf(m);
     return link === undefined ? [] : [{ id: m.id, link }];
@@ -289,14 +301,18 @@ export function useResolvedCards(methods: readonly PaymentMethod[]): ReadonlyMap
         }
         setFound({ key, cards });
       },
-      () => undefined,
+      () => {
+        // Cannot be had: the form is what it always was, for a card not linked.
+        if (live) setFound({ key, cards: NO_CARDS });
+      },
     );
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  return found?.key === key ? found.cards : NO_CARDS;
+  if (key === '') return { cards: NO_CARDS, settled: true };
+  return found?.key === key ? { cards: found.cards, settled: true } : { cards: NO_CARDS, settled: false };
 }
 
 /** One card's catalog entry, for a card just saved; undefined when it is not linked or cannot be had. */

@@ -2,13 +2,16 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { loadCatalog } from '@/data/card-catalog';
+import { resolveCard } from '@/data/card-catalog/resolve';
 import { cardCommitments } from '@/domain/cards';
+import { dealRate } from '@/domain/deal-rules';
 import { expandOccurrences } from '@/domain/occurrences';
 import { d, makeTx, MONEY } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { PaymentMethod, Recurrence } from '@/types/domain';
 
-import { CardCommitmentsBox } from './cards-screen';
+import { CardCommitmentsBox, ChargesList } from './cards-screen';
 
 beforeAll(async () => {
   await initTestI18n();
@@ -81,5 +84,44 @@ describe('a plan that follows prime, on the Cards screen', () => {
     await openPlans(undefined);
     expect(screen.getByText('Television', { exact: false })).toBeInTheDocument();
     expect(screen.queryByText(/Follows prime/)).not.toBeInTheDocument();
+  });
+});
+
+describe('what a linked card charges, on the Cards screen', () => {
+  /** Max International through Mizrahi-Tefahot, its credit rate changed by the person to prime + 9. */
+  const linked = (card: NonNullable<PaymentMethod['card']>): PaymentMethod => ({
+    ...max,
+    card: { billingDay: 10, ...card },
+  });
+  const link = { issuer: 'max', bank: '20', tier: 'international', version: 1 };
+  const prime = { primeRate: '4.75', boiRate: '4.5' };
+
+  it('shows the rate the purchase form prices with, after the person changed it', async () => {
+    await initTestI18n('en');
+    const resolved = resolveCard(await loadCatalog(), link);
+    // As the editor now saves it: the override, written through to the card's own field.
+    const card = linked({
+      catalog: { ...link, filled: { creditPrimeMargin: '10.75' } },
+      creditPrimeMargin: '9',
+      overrides: { credit: { basis: 'prime', margin: '9' } },
+    });
+    const form = dealRate(card, resolved, 'credit', prime).rate;
+    expect(form).toBe('13.75');
+
+    renderWithProviders(<ChargesList card={card} resolved={resolved} />);
+    expect(screen.getByText('13.75%', { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText('15.5%', { exact: false })).not.toBeInTheDocument();
+  });
+
+  it('reads the override even where the card’s own field still holds the catalog’s figure', async () => {
+    await initTestI18n('en');
+    const resolved = resolveCard(await loadCatalog(), link);
+    const card = linked({
+      catalog: { ...link, filled: { creditPrimeMargin: '10.75' } },
+      creditPrimeMargin: '10.75',
+      overrides: { credit: { basis: 'prime', margin: '9' } },
+    });
+    renderWithProviders(<ChargesList card={card} resolved={resolved} />);
+    expect(screen.getByText('13.75%', { exact: false })).toBeInTheDocument();
   });
 });

@@ -109,6 +109,24 @@ afterAll(async () => {
 });
 
 describe('splitting a purchase', () => {
+  it('refuses a split whose first bill has been charged since the sheet opened', async () => {
+    // Opened on the 8th; the device sleeps, and the save comes on the 11th, after the bill on the 10th.
+    const { onDone, user } = await open(purchase('2026-09-20'), d('2026-10-08'));
+    await user.type(rateField(), '12');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 11, 9, 0));
+    try {
+      await user.click(splitIt());
+      await waitFor(() => {
+        expect(splitIt()).toBeEnabled();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(onDone).not.toHaveBeenCalled();
+    expect((await db.transactions.get('tv'))?.recurrence).toEqual({ type: 'one_time' });
+  });
+
   it('not yet billed: the same purchase becomes the plan, first paid on its own bill', async () => {
     const { onDone, user } = await open(purchase('2026-09-20'), d('2026-10-08'));
     expect(screen.getByRole('heading', { name: 'Split this purchase' })).toBeInTheDocument();

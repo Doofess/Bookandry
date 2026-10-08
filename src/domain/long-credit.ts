@@ -27,7 +27,13 @@ type Reset = NonNullable<Extract<Recurrence, { type: 'monthly' }>['reset']>;
  * its payments at its own rate: the principal to within an agora or two of
  * rounding, and - worked out of the row alone - the same on every device.
  */
-export function nextReset(tx: Transaction, primePercent: string, today: LocalDate): Reset | undefined {
+export function nextReset(
+  tx: Transaction,
+  primePercent: string,
+  today: LocalDate,
+  /** False: re-price, but never freeze - prime here may be out of date (`sweepLongCredit`). */
+  opts: { readonly freeze?: boolean } = {},
+): Reset | undefined {
   const recurrence = tx.recurrence;
   if (tx.isDeleted === 1 || recurrence.type !== 'monthly') return undefined;
   const reset = recurrence.reset;
@@ -54,7 +60,7 @@ export function nextReset(tx: Transaction, primePercent: string, today: LocalDat
   if (paymentMinor === undefined) return undefined;
 
   const due = addMonthsClamped(tx.date, reset.atPayment - 1, recurrence.dayOfMonth);
-  const frozen = compareLocal(due, today) <= 0;
+  const frozen = opts.freeze !== false && compareLocal(due, today) <= 0;
   if (reset.rate === newRate && reset.paymentMinor === paymentMinor && !frozen) return undefined;
   return {
     atPayment: reset.atPayment,

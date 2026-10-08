@@ -239,3 +239,55 @@ describe('editing a 30+ purchase', () => {
     expect(await screen.findByTestId('card-charge-note')).toHaveTextContent('Nov 10, 2026');
   });
 });
+
+describe('editing a payment of a plan', () => {
+  function edit(id: string, at: string) {
+    renderWithProviders(
+      <TransactionSheet
+        target={{ mode: 'edit', transactionId: id, at: at as LocalDate }}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries]}
+        paymentMethods={[maxCard]}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={() => undefined}
+      />,
+    );
+  }
+
+  it('offers this one or the whole plan, never "this and future", which would restart its count', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'plus',
+        date: '2026-06-08' as LocalDate,
+        paymentMethodId: 'pm.max',
+        recurrence: {
+          type: 'monthly',
+          dayOfMonth: 8,
+          installments: 36,
+          plan: 'credit',
+          creditAnnualRate: '15.5',
+          reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 },
+        },
+      }),
+    );
+    edit('plus', '2026-10-08');
+    expect(await screen.findByRole('radio', { name: 'Only this one' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'The whole series' })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'This and future' })).not.toBeInTheDocument();
+  });
+
+  it('still offers "this and future" on a series that is not a plan', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'rent',
+        date: '2026-06-08' as LocalDate,
+        recurrence: { type: 'monthly', dayOfMonth: 8 },
+      }),
+    );
+    edit('rent', '2026-10-08');
+    expect(await screen.findByRole('radio', { name: 'This and future' })).toBeInTheDocument();
+  });
+});

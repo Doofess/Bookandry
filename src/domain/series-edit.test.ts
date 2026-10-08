@@ -211,6 +211,39 @@ describe('scope: future — the split', () => {
     expect(result.warnings).toEqual([{ kind: 'scope_promoted', from: 'future', to: 'all' }]);
   });
 
+  it('edits a whole plan, never splitting it, so its payment count and prime reset stay where they are', () => {
+    const credit = makeTx({
+      id: 'plus',
+      date: d('2026-10-08'),
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 8,
+        installments: 36,
+        plan: 'credit',
+        creditAnnualRate: '15.5',
+        reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 },
+      },
+    });
+    // A category change "this and future" at payment 5.
+    const result = plan({
+      transaction: credit,
+      scope: 'future',
+      at: d('2027-02-08'),
+      patch: { categoryId: 'cat.other' },
+      today: d('2027-02-01'),
+    });
+
+    expect(result.effectiveScope).toBe('all');
+    expect(result.warnings).toEqual([{ kind: 'scope_promoted', from: 'future', to: 'all' }]);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]).toMatchObject({
+      id: 'plus',
+      date: '2026-10-08',
+      categoryId: 'cat.other',
+      recurrence: { installments: 36, reset: { atPayment: 19 } },
+    });
+  });
+
   it('re-homes future overrides onto the continuation, keeping their ids', () => {
     const overrides: Override[] = [
       { ...skip('rent', d('2026-04-10')), id: 'past' },

@@ -71,7 +71,7 @@ import { useRateField } from './use-rate-field';
 import {
   resolveMethodCard,
   useEditTarget,
-  useResolvedCards,
+  useResolvedCardsState,
   type EditTarget,
   type EditTargetState,
   type SheetTarget,
@@ -324,7 +324,7 @@ function TransactionForm({
   const [scope, setScope] = useState<EditScope>('one');
   const prime = usePrime();
   // Every linked card's catalog entry; empty until the catalog loads, and if it cannot.
-  const resolvedCards = useResolvedCards(paymentMethods);
+  const { cards: resolvedCards, settled: catalogSettled } = useResolvedCardsState(paymentMethods);
   /** A card open in its editor from here, to give the rate a deal needs. */
   const [cardOpen, setCardOpen] = useState<PaymentMethod | undefined>(undefined);
   /** A rule change that would discard per-occurrence edits, awaiting a yes. */
@@ -407,8 +407,16 @@ function TransactionForm({
   const recurrenceEditable = !isPlan && !(editing !== undefined && effectiveScope === 'one');
   const resolvedOf = (id: string) => resolvedCards.get(id);
   const resolved = values.kind === 'expense' ? resolvedOf(values.paymentMethodId) : undefined;
+  // A linked card whose catalog entry is still on its way: its deal's rate is
+  // not known yet, so an interest-bearing deal waits rather than save at 0%.
+  const resolving =
+    !catalogSettled && chosenMethod?.type === 'credit_card' && chosenMethod.card?.catalog !== undefined;
   const priced =
-    values.kind === 'expense' ? dealRate(chosenMethod, resolved, values.mode, prime) : { missing: false };
+    values.kind !== 'expense'
+      ? { missing: false }
+      : resolving && isCardDeal(values.mode)
+        ? { missing: true }
+        : dealRate(chosenMethod, resolved, values.mode, prime);
   // The one rule that holds a save back: a deal whose rate nobody has given.
   const needRate = recurrenceEditable && priced.missing && values.annualRate.trim() === '';
 
@@ -784,7 +792,9 @@ function TransactionForm({
         className="space-y-4 px-4 pb-6"
         noValidate
       >
-        {isSeries ? <ScopeChooser value={scope} onChange={setScope} at={editing.occurrence.date} /> : null}
+        {isSeries ? (
+          <ScopeChooser value={scope} onChange={setScope} at={editing.occurrence.date} plan={isPlan} />
+        ) : null}
 
         <div className="space-y-1.5">
           <Label id={kindId}>{t('tx.kind')}</Label>

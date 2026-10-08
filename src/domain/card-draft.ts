@@ -6,6 +6,9 @@ import type {
   CardIssuer,
   CardKind,
   CardNetwork,
+  CardRateTerm,
+  DealKind,
+  ExtraRateKind,
   PaymentMethod,
   RateTerm,
 } from '@/types/domain';
@@ -318,6 +321,45 @@ function readable(
     }
     current = { ...current, ...blank };
   }
+}
+
+/** A rate term as the editor's fields hold it. */
+function rateDraftOf(term: RateTerm | undefined): RateDraft {
+  if (term === undefined) return { basis: 'prime', value: '' };
+  return term.basis === 'prime'
+    ? { basis: 'prime', value: term.margin }
+    : { basis: 'fixed', value: term.rate };
+}
+
+/**
+ * The card's own credit or late field for a rate the person set over the
+ * catalog's, or removed (`term` null).
+ *
+ * Written through, so every reader agrees: the Cards screen, and versions of
+ * the app from before overrides, read the card's own fields. Set, the field
+ * holds the person's rate; it no longer matches what the catalog filled, so a
+ * catalog release leaves it theirs. Removed, it goes back to what the catalog
+ * filled, so the catalog owns it again, or empty where the catalog filled
+ * nothing (its rate is unpublished, or not one a card field can hold).
+ * A Bank of Israel-based rate has no card field: the field is left as it is.
+ */
+export function cardFieldsForOverride(
+  kind: DealKind | ExtraRateKind,
+  term: CardRateTerm | null,
+  link: CardCatalogLink | undefined,
+): Partial<Pick<CardDraft, 'credit' | 'late'>> {
+  if (kind !== 'credit' && kind !== 'late') return {};
+  if (term !== null && term.basis === 'boi') return {};
+  if (term !== null) return { [kind]: rateDraftOf(term) };
+  const filled = link?.filled;
+  if (kind === 'late') return { late: rateDraftOf(filled?.lateRate) };
+  return {
+    credit: rateDraftOf(
+      filled?.creditPrimeMargin === undefined
+        ? undefined
+        : { basis: 'prime', margin: filled.creditPrimeMargin },
+    ),
+  };
 }
 
 /** Whether the person has set any rate over the catalog's. */
