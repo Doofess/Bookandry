@@ -237,7 +237,7 @@ export async function editOccurrence(
     newId: input.newId,
   });
   if (!planned.ok) throw new Error(planned.error.kind);
-  return applyUndoablePlan(db, planned.plan);
+  return applyUndoablePlan(db, withSeriesBounds(transaction, overrides, planned.plan));
 }
 
 /**
@@ -315,25 +315,37 @@ export async function moveOccurrence(
     newId: input.newId,
   });
   if (!planned.ok) throw new Error(planned.error.kind);
-  /*
-   * Scope `one` writes the override alone. The series goes through with it
-   * only when the override changes what the series row stores: a payment
-   * moved past the series' end widens `seriesEnd` (or one moved back
-   * narrows it), and `applySeriesEdit` materialises the series against the new
-   * override, so the feed still finds it in its new month.
-   *
-   * Otherwise the series is left alone, row and sync state both. Sync is
-   * whole-row last-write-wins: re-putting an unchanged series would push this
-   * device's copy over an edit to it that another device made and this one has
-   * not pulled yet. Undo restores only what the plan wrote, so it leaves the
-   * series alone too.
-   */
-  const { plan } = planned;
+  return applyUndoablePlan(db, withSeriesBounds(transaction, overrides, planned.plan));
+}
+
+/**
+ * A plan, plus its series row when the plan's overrides move the series' first
+ * or last day.
+ *
+ * Scope `one` writes the override alone. The series goes through with it
+ * only when the override changes what the series row stores: a payment
+ * moved past the series' end widens `seriesEnd` (or one moved back
+ * narrows it), and `applySeriesEdit` materialises the series against the new
+ * override, so the feed and the balance still find it in its new month.
+ *
+ * Otherwise the series is left alone, row and sync state both. Sync is
+ * whole-row last-write-wins: re-putting an unchanged series would push this
+ * device's copy over an edit to it that another device made and this one has
+ * not pulled yet. Undo restores only what the plan wrote, so it leaves the
+ * series alone too.
+ */
+export function withSeriesBounds(
+  transaction: Transaction,
+  overrides: readonly Override[],
+  plan: SeriesEditPlan,
+): SeriesEditPlan {
+  if (plan.transactions.some((t) => t.id === transaction.id)) return plan;
   const written = new Set(plan.overrides.map((o) => o.id));
-  const after = [...overrides.filter((o) => !written.has(o.id)), ...plan.overrides];
+  const dropped = new Set(plan.deleteOverrideIds);
+  const after = [...overrides.filter((o) => !written.has(o.id) && !dropped.has(o.id)), ...plan.overrides];
   const rematerialized = materialize(transaction, after);
   const changes =
     rematerialized.seriesStart !== transaction.seriesStart ||
     rematerialized.seriesEnd !== transaction.seriesEnd;
-  return applyUndoablePlan(db, changes ? { ...plan, transactions: [transaction] } : plan);
+  return changes ? { ...plan, transactions: [...plan.transactions, transaction] } : plan;
 }
