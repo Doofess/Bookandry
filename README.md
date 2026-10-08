@@ -440,6 +440,12 @@ different banks.
   account is credited, within two business days, or from the regular billing
   date if the purchase has not been charged yet.
 
+- **Plans are edited one payment at a time, or whole.** A payment plan
+  (installments, קרדיט, long credit, a loan or a mortgage) no longer offers
+  "this and future payments". Splitting a plan there restarted its payment
+  count, which also moved the payment-19 re-price. To change every payment
+  from now on, edit the whole plan.
+
 **Not covered yet.**
 
 - Revolving credit, ישראקרדיט-style pooled credit, and minimum payments.
