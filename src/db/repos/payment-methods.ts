@@ -160,18 +160,41 @@ function checkedRate(input: string): string {
   return rate;
 }
 
+/** Whether a method is archived, and since when: what an Undo of Archive or Restore puts back. */
+export type ArchiveState = Pick<PaymentMethod, 'isArchived' | 'archivedAt'>;
+
+/**
+ * Archive or restore a method. Returns what it was before, so an Undo can put
+ * exactly that back with `putArchiveState`: re-archiving with a fresh date
+ * would move the card's last fee month to today and charge the months between.
+ */
 export async function setPaymentMethodArchived(
   db: BookandryDB,
   id: string,
   archived: boolean,
   now: IsoInstant,
-): Promise<void> {
+): Promise<ArchiveState | undefined> {
+  return putArchiveState(db, id, archived ? { isArchived: 1, archivedAt: now } : { isArchived: 0 }, now);
+}
+
+/** Write an archive state as given (an Undo's), returning the one it replaced. */
+export async function putArchiveState(
+  db: BookandryDB,
+  id: string,
+  state: ArchiveState,
+  now: IsoInstant,
+): Promise<ArchiveState | undefined> {
   // Cash and cheques are always there: nobody can be left without them.
   if (isBuiltinPaymentMethod(id)) throw new Error(`${id} is built in and is always available`);
-  await db.paymentMethods.update(id, {
-    isArchived: archived ? 1 : 0,
-    archivedAt: archived ? now : undefined,
-    updatedAt: now,
+  return db.transaction('rw', db.paymentMethods, async () => {
+    const before = await db.paymentMethods.get(id);
+    if (before === undefined) return undefined;
+    await db.paymentMethods.update(id, {
+      isArchived: state.isArchived,
+      archivedAt: state.isArchived === 1 ? state.archivedAt : undefined,
+      updatedAt: now,
+    });
+    return { isArchived: before.isArchived, archivedAt: before.archivedAt };
   });
 }
 

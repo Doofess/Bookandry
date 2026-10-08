@@ -7,6 +7,7 @@ import { SettingsProvider } from '@/app/settings-provider';
 import { db } from '@/db/db';
 import { createPaymentMethod } from '@/db/repos/payment-methods';
 import { DEFAULT_SETTINGS } from '@/db/repos/settings';
+import { chargesFeeIn } from '@/domain/cards';
 import { d, makeTx, MONEY } from '@/domain/test-factories';
 import { instantFromMs } from '@/lib/dates';
 import { initTestI18n, renderWithProviders } from '@/test/render';
@@ -144,6 +145,36 @@ describe('a card on the Cards screen', () => {
     const [, options_] = toasts.toast.mock.calls[0] as [string, { action: { onClick: () => void } }];
     options_.action.onClick();
     await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(0);
+    expect((await db.paymentMethods.get('card-1'))?.archivedAt).toBeUndefined();
+  });
+
+  it('undoes a Restore exactly: the card is archived again on the day it first was, with no fees after', async () => {
+    const march = '2026-03-12T09:00:00.000Z' as typeof NOW;
+    const before = await db.paymentMethods.get('card-1');
+    if (before?.card === undefined) throw new Error('no card');
+    await db.paymentMethods.update('card-1', {
+      isArchived: 1,
+      archivedAt: march,
+      card: { ...before.card, monthlyFeeMinor: 1990 },
+    });
+    const user = userEvent.setup();
+    render();
+    await user.click(await screen.findByRole('button', { name: 'Archived cards (1)' }));
+    const list = screen.getByRole('list', { name: 'Archived cards (1)' });
+    await user.click(within(list).getByRole('button', { name: 'Options for Max Gold' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Restore' }));
+    await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(0);
+
+    const [, restored] = toasts.toast.mock.lastCall as [string, { action: { onClick: () => void } }];
+    restored.action.onClick();
+    await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(1);
+
+    const card = await db.paymentMethods.get('card-1');
+    expect(card?.archivedAt).toBe(march);
+    if (card === undefined) throw new Error('no card');
+    expect(chargesFeeIn(card, d('2026-03-31'))).toBe(true);
+    expect(chargesFeeIn(card, d('2026-04-30'))).toBe(false);
+    expect(chargesFeeIn(card, d('2026-09-30'))).toBe(false);
   });
 
   it('keeps an archived card under Archived cards, and Restore brings it back', async () => {

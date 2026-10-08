@@ -12,6 +12,7 @@ import {
   deletePaymentMethod,
   ensureBuiltinPaymentMethods,
   listPaymentMethods,
+  putArchiveState,
   setPaymentMethodArchived,
   updatePaymentMethod,
 } from './payment-methods';
@@ -72,6 +73,25 @@ describe('listPaymentMethods', () => {
     // pm.cash is seeded by populate() and shared by every profile.
     expect(ids.sort()).toEqual(['joint', 'mine', 'pm.cash', 'pm.cheque']);
     expect(ids).not.toContain('theirs');
+  });
+
+  it('returns the archive state it replaced, and puts one back exactly', async () => {
+    const march = '2026-03-12T09:00:00.000Z' as IsoInstant;
+    expect(await setPaymentMethodArchived(handle.db, 'mine', true, march)).toEqual({
+      isArchived: 0,
+      archivedAt: undefined,
+    });
+    const restoredFrom = await setPaymentMethodArchived(handle.db, 'mine', false, NOW);
+    expect(restoredFrom).toEqual({ isArchived: 1, archivedAt: march });
+    expect((await handle.db.paymentMethods.get('mine'))?.archivedAt).toBeUndefined();
+
+    if (restoredFrom === undefined) throw new Error('no state');
+    await putArchiveState(handle.db, 'mine', restoredFrom, NOW);
+    const back = await handle.db.paymentMethods.get('mine');
+    expect(back?.isArchived).toBe(1);
+    expect(back?.archivedAt).toBe(march);
+    expect(back?.updatedAt).toBe(NOW);
+    expect(await setPaymentMethodArchived(handle.db, 'missing', true, NOW)).toBeUndefined();
   });
 
   it('hides archived methods unless asked', async () => {
