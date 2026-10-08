@@ -84,7 +84,8 @@
     "prevYear": "Previous year",
     "nextYear": "Next year",
     "thisMonth": "Back to this month",
-    "beyond": "Past the forecast"
+    "beyond": "Past the forecast",
+    "before": "Before the earliest month"
   },
   "summary": {
     "balance": "Balance",

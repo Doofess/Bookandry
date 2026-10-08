@@ -208,6 +208,16 @@ describe('MonthCursor', () => {
     expect(onPick).toHaveBeenCalledWith('2026-09-01');
   });
 
+  it('names the pop-out for assistive technology', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonthCursor month={d('2026-09-01')} today={TODAY} onStep={vi.fn()} onPick={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'September 2026' }));
+    expect(await screen.findByRole('dialog', { name: 'Choose a month' })).toBeInTheDocument();
+  });
+
   it('gives focus back to the label on Escape', async () => {
     const user = userEvent.setup();
     renderWithProviders(

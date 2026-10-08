@@ -187,6 +187,15 @@ describe('monthGrid', () => {
     expect(cells.slice(9).every((c) => c.state === 'beyond')).toBe(true);
   });
 
+  it('stops offering months exactly where ‹ stops, at the back edge', () => {
+    // 1200 months before 2026-09 is 1926-09.
+    const cells = monthGrid(1926, today);
+
+    expect(cells.slice(0, 8).every((c) => c.state === 'before')).toBe(true);
+    expect(cells[8]).toEqual({ month: '1926-09-01', state: 'actual', isThisMonth: false });
+    expect(cells[11]?.state).toBe('actual');
+  });
+
   it('bounds the year stepper by the same limits', () => {
     expect(yearBounds(today)).toEqual({ first: 1926, last: 2027 });
   });
