@@ -156,6 +156,7 @@ export function TransactionSheet({
     [profiles, activeProfileId, me],
   );
 
+  const addKind = target.mode === 'add' ? target.kind : 'expense';
   const adding = useMemo<TxFormValues>(
     () => ({
       ...defaultFormValues({
@@ -164,9 +165,11 @@ export function TransactionSheet({
         today,
         primeRate: prime.primeRate,
       }),
-      categoryId: categoriesFor(categories, 'expense')[0]?.id ?? '',
+      // Preset by the Add menu's choice; the kind control can still switch it.
+      kind: addKind,
+      categoryId: categoriesFor(categories, addKind)[0]?.id ?? '',
     }),
-    [defaultProfileId, baseCurrency, today, categories, prime.primeRate],
+    [defaultProfileId, baseCurrency, today, categories, prime.primeRate, addKind],
   );
 
   const isAdd = target.mode === 'add';
@@ -189,7 +192,7 @@ export function TransactionSheet({
          */}
         {isAdd ? (
           <TransactionForm
-            key="add"
+            key={`add-${addKind}`}
             initial={adding}
             profiles={profiles}
             categories={categories}

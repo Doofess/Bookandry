@@ -24,13 +24,16 @@
     "edit": "עריכה",
     "undo": "שחזר",
     "close": "סגירה",
-    "retry": "נסה שוב",
-    "addTransaction": "הוספת תנועה"
+    "retry": "נסה שוב"
   },
   "addMenu": {
-    "manual": "הוספה ידנית",
+    "add": "הוספה",
+    "expense": "הוצאה",
+    "expenseHint": "רכישה, חשבון, תשלום",
+    "income": "הכנסה",
+    "incomeHint": "משכורת, החזר, מתנה",
     "ai": "ייבוא חכם",
-    "aiHint": "תמונות, PDF, אקסל, צילומי מסך",
+    "aiHint": "מקובץ או מצילום של דף פירוט",
     "aiUnavailable": "דורש חשבון Bookandry"
   },
   "theme": {

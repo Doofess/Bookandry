@@ -82,7 +82,7 @@ function open(methods: readonly PaymentMethod[] = [maxCard, plainCard]) {
   const onSaved = vi.fn();
   renderWithProviders(
     <TransactionSheet
-      target={{ mode: 'add' }}
+      target={{ mode: 'add', kind: 'expense' }}
       onOpenChange={() => undefined}
       profiles={[profile]}
       categories={[groceries]}

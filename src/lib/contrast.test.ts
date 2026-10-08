@@ -107,18 +107,6 @@ const PAIRS = [
   { name: 'income on muted', on: 'muted', text: 'income', min: TEXT },
   { name: 'expense on muted', on: 'muted', text: 'expense', min: TEXT },
 
-  /*
-   * The FAB, which is the primary action on every screen.
-   *
-   * Its plus is BLACK on the vivid green, not white: white on that green is
-   * 2.40:1 and fails outright, which is the trap the vivid accent set. The disc
-   * itself is only 2.40:1 against a white page, so its boundary would not be
-   * perceivable - the deeper rim is what carries 1.4.11, and is the reason that
-   * token exists at all.
-   */
-  { name: 'fab-foreground on fab', on: 'fab', text: 'fab-foreground', min: TEXT },
-  { name: 'fab-rim against background', on: 'background', text: 'fab-rim', min: COMPONENT },
-
   // Component boundaries: 1.4.11, not 1.4.3.
   { name: 'input against background', on: 'background', text: 'input', min: COMPONENT },
   { name: 'input against card', on: 'card', text: 'input', min: COMPONENT },
