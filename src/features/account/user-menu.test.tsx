@@ -81,6 +81,9 @@ describe('the account menu', () => {
       .getAllByRole('menuitem')
       .map((i) => i.textContent);
     expect(items[0]).toBe('Account');
+    // Account linking sits with the account, between it and security.
+    expect(items[1]).toBe('Account linking');
+    expect(items[2]).toBe('Sign-in and security');
     for (const label of [
       'Sign-in and security',
       'Preferences',
@@ -112,6 +115,7 @@ describe('the account menu', () => {
       .map((i) => i.textContent);
     expect(items).toContain('Preferences');
     expect(items).not.toContain('Account');
+    expect(items).not.toContain('Account linking');
     expect(items).not.toContain('Sign out');
   });
 });

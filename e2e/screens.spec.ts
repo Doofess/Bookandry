@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { completeFirstRun, type SeedLanguage } from './support/seed';
 
 /**
- * The 20-image screenshot matrix: 5 routes x 2 languages x 2 themes.
+ * The 16-image screenshot matrix: 4 routes x 2 languages x 2 themes.
  *
  * This is the Phase 7 deliverable that replaces "audit every screen" - a gate
  * nobody can check twice the same way. The suite can assert that a page
@@ -33,7 +33,6 @@ const ROUTES = [
   { name: 'feed', path: '/' },
   { name: 'chart', path: '/chart' },
   { name: 'cards', path: '/cards' },
-  { name: 'household', path: '/household' },
   { name: 'settings', path: '/settings' },
 ] as const;
 

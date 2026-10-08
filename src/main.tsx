@@ -4,7 +4,7 @@ import '@/lib/zod-jitless';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
-import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import '@fontsource-variable/inter';
 import '@fontsource-variable/heebo';
@@ -13,12 +13,13 @@ import './index.css';
 
 import { initAccount } from '@/app/account';
 import { AccountGate } from '@/app/account-gate';
+import { appRoutes } from '@/app/app-routes';
 import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { capturePendingLinks } from '@/app/capture-pending';
 import { AppDirection } from '@/app/direction-provider';
 import { allowLongCreditSweep, startPrimeWatcher } from '@/app/prime';
-import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { ROUTES } from '@/app/routes';
 import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
 import { refreshCatalogCards } from '@/db/catalog-refresh';
@@ -27,21 +28,7 @@ import { ensureBuiltinCategories } from '@/db/repos/categories';
 import { ensureBuiltinPaymentMethods } from '@/db/repos/payment-methods';
 import { ensureSettings } from '@/db/repos/settings';
 import { startSweeper } from '@/db/sweeper';
-import { AccountScreen } from '@/features/account/account-screen';
-import { SecurityScreen } from '@/features/account/security-screen';
-import { BankAccountsScreen } from '@/features/bank-accounts/bank-accounts-screen';
-import { CardsScreen } from '@/features/cards/cards-screen';
-import { ChartScreen } from '@/features/chart/chart-screen';
-import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
-import { FeedScreen } from '@/features/feed/feed-screen';
 import { FirstRun } from '@/features/first-run/first-run';
-import { HouseholdScreen } from '@/features/household/household-screen';
-import { LinkScreen } from '@/features/household/link-screen';
-import { WipeScreen } from '@/features/household/wipe-screen';
-import { CategoriesScreen } from '@/features/settings/categories-screen';
-import { DataScreen } from '@/features/settings/data-screen';
-import { PreferencesScreen } from '@/features/settings/preferences-screen';
-import { SettingsScreen } from '@/features/settings/settings-screen';
 import i18n, { initI18n } from '@/i18n';
 import { systemClock } from '@/lib/clock';
 import { captureArrival } from '@/services/supabase/id-token';
@@ -58,30 +45,7 @@ captureArrival();
 // below can show the welcome screen in place of its page: see the file.
 capturePendingLinks();
 
-const router = createBrowserRouter([
-  {
-    path: ROUTES.feed,
-    element: <AppShell />,
-    children: [
-      { index: true, element: <FeedScreen /> },
-      { path: ROUTES.chart, element: <ChartScreen /> },
-      { path: ROUTES.cards, element: <CardsScreen /> },
-      { path: ROUTES.household, element: <HouseholdScreen /> },
-      { path: LINKED_ROUTES.profiles, element: <Navigate to={ROUTES.household} replace /> },
-      { path: LINKED_ROUTES.link, element: <LinkScreen /> },
-      { path: LINKED_ROUTES.wipe, element: <WipeScreen /> },
-      { path: ROUTES.settings, element: <SettingsScreen /> },
-      { path: SETTINGS_ROUTES.account, element: <AccountScreen /> },
-      { path: SETTINGS_ROUTES.security, element: <SecurityScreen /> },
-      { path: SETTINGS_ROUTES.preferences, element: <PreferencesScreen /> },
-      { path: SETTINGS_ROUTES.data, element: <DataScreen /> },
-      { path: LINKED_ROUTES.commitments, element: <CommitmentsScreen /> },
-      { path: LINKED_ROUTES.categories, element: <CategoriesScreen /> },
-      { path: LINKED_ROUTES.paymentMethods, element: <Navigate to={ROUTES.cards} replace /> },
-      { path: LINKED_ROUTES.bankAccounts, element: <BankAccountsScreen /> },
-    ],
-  },
-]);
+const router = createBrowserRouter([{ path: ROUTES.feed, element: <AppShell />, children: appRoutes }]);
 
 async function bootstrap(): Promise<void> {
   // index.html's boot script is sending this visit to https://bookandry.com

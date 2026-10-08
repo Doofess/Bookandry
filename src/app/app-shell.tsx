@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import { BarChart3, CreditCard, Receipt, Settings, Users } from 'lucide-react';
+import { BarChart3, CreditCard, Receipt } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router-dom';
@@ -7,17 +7,15 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { Engraving } from '@/components/engraving';
 import { Logo } from '@/components/logo';
 
-import { NAV_ORDER, ROUTES, type RouteKey } from './routes';
+import { NAV_ORDER, ROUTES, type NavKey } from './routes';
 import { Toaster } from './toaster';
 import { useReturnToInvite } from './use-return-to-invite';
 import { useWipeNotice } from './use-wipe-notice';
 
-const ICONS: Record<RouteKey, ComponentType<{ className?: string; strokeWidth?: number }>> = {
+const ICONS: Record<NavKey, ComponentType<{ className?: string; strokeWidth?: number }>> = {
   feed: Receipt,
   chart: BarChart3,
   cards: CreditCard,
-  household: Users,
-  settings: Settings,
 };
 
 /**

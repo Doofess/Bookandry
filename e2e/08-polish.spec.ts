@@ -21,7 +21,7 @@ test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'en', 'Viewport is set explicitly.');
 });
 
-const ROUTES = ['/', '/chart', '/cards', '/household', '/settings'] as const;
+const ROUTES = ['/', '/chart', '/cards', '/settings'] as const;
 
 /** The two widths the plan names: a common phone, and the narrowest still sold. */
 const WIDTHS = [
