@@ -5,6 +5,8 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { usePrime } from '@/app/prime';
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
@@ -83,75 +85,77 @@ export function CardsScreen() {
   );
 
   return (
-    <section className="mx-auto max-w-4xl space-y-5 px-4 py-6 pb-24 lg:pb-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
+    <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <ScreenTitle>{t('title')}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-5 px-4 pt-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing('new');
-          }}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          {t('add')}
-        </Button>
-      </header>
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing('new');
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            {t('add')}
+          </Button>
+        </header>
 
-      <UnfinishedNotice kind="card" />
+        <UnfinishedNotice kind="card" />
 
-      {data === undefined ? null : (
-        <ProfileSwitcher
-          profiles={[...data.profiles.values()]}
-          active={whose}
-          onSelect={(profileId) => {
-            void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+        {data === undefined ? null : (
+          <ProfileSwitcher
+            profiles={[...data.profiles.values()]}
+            active={whose}
+            onSelect={(profileId) => {
+              void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+            }}
+          />
+        )}
+
+        {data === undefined ? null : cards.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+            <CreditCard className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+            <h2 className="mt-3 font-medium">{t('emptyTitle')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('emptyBody')}</p>
+          </div>
+        ) : (
+          <>
+            <HouseholdCommitments cards={cards} commitments={commitments} />
+            <ul className="grid gap-6 md:grid-cols-2">
+              {cards.map((card) => (
+                <li key={card.id}>
+                  <CardPanel
+                    card={card}
+                    resolved={resolvedCards.get(card.id)}
+                    owner={data.profiles.get(card.profileId)}
+                    occurrences={data.occurrences}
+                    commitments={commitments.get(card.id)}
+                    today={today}
+                    baseCurrency={baseCurrency}
+                    onEdit={() => {
+                      setEditing(card);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <OtherMethods />
+
+        <MethodEditor
+          target={editing}
+          profiles={data === undefined ? [] : [...data.profiles.values()]}
+          onOpenChange={(open) => {
+            if (!open) setEditing(undefined);
           }}
+          newType="credit_card"
         />
-      )}
-
-      {data === undefined ? null : cards.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-          <CreditCard className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
-          <h2 className="mt-3 font-medium">{t('emptyTitle')}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t('emptyBody')}</p>
-        </div>
-      ) : (
-        <>
-          <HouseholdCommitments cards={cards} commitments={commitments} />
-          <ul className="grid gap-6 md:grid-cols-2">
-            {cards.map((card) => (
-              <li key={card.id}>
-                <CardPanel
-                  card={card}
-                  resolved={resolvedCards.get(card.id)}
-                  owner={data.profiles.get(card.profileId)}
-                  occurrences={data.occurrences}
-                  commitments={commitments.get(card.id)}
-                  today={today}
-                  baseCurrency={baseCurrency}
-                  onEdit={() => {
-                    setEditing(card);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      <OtherMethods />
-
-      <MethodEditor
-        target={editing}
-        profiles={data === undefined ? [] : [...data.profiles.values()]}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-        newType="credit_card"
-      />
+      </PanelSheet>
     </section>
   );
 }

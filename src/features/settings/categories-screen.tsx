@@ -4,6 +4,8 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { CategoryIcon } from '@/components/category-icon';
 import { ICON_NAMES } from '@/components/category-icons';
 import { Segmented } from '@/components/segmented';
@@ -66,74 +68,76 @@ export function CategoriesScreen() {
   const targets = (category: Category) => shown.filter((c) => c.id !== category.id && c.isArchived === 0);
 
   return (
-    <section className="mx-auto max-w-2xl space-y-4 px-4 py-6 pb-24 lg:pb-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('categories:manage.title')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('categories:manage.body')}</p>
-      </header>
+    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <ScreenTitle>{t('categories:manage.title')}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-4 px-4 pt-6">
+        <p className="text-sm text-muted-foreground">{t('categories:manage.body')}</p>
 
-      <Label id={kindId} className="sr-only">
-        {t('filter.kind')}
-      </Label>
-      <Segmented<Kind>
-        value={kind}
-        labelledBy={kindId}
-        onChange={setKind}
-        options={[
-          { value: 'expense', label: t('filter.kindExpense') },
-          { value: 'income', label: t('filter.kindIncome') },
-        ]}
-      />
+        <Label id={kindId} className="sr-only">
+          {t('filter.kind')}
+        </Label>
+        <Segmented<Kind>
+          value={kind}
+          labelledBy={kindId}
+          onChange={setKind}
+          options={[
+            { value: 'expense', label: t('filter.kindExpense') },
+            { value: 'income', label: t('filter.kindIncome') },
+          ]}
+        />
 
-      {shown.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {kind === 'expense' ? t('categories:manage.emptyExpense') : t('categories:manage.emptyIncome')}
-        </p>
-      ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border">
-          {shown.map((category) => (
-            <CategoryRow
-              key={category.id}
-              category={category}
-              onEdit={() => {
-                setEditing(category);
-              }}
-              onDelete={() => {
-                setDeleting(category);
-              }}
-            />
-          ))}
-        </ul>
-      )}
+        {shown.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {kind === 'expense' ? t('categories:manage.emptyExpense') : t('categories:manage.emptyIncome')}
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {shown.map((category) => (
+              <CategoryRow
+                key={category.id}
+                category={category}
+                onEdit={() => {
+                  setEditing(category);
+                }}
+                onDelete={() => {
+                  setDeleting(category);
+                }}
+              />
+            ))}
+          </ul>
+        )}
 
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        onClick={() => {
-          setEditing('new');
-        }}
-      >
-        <Plus className="size-4" aria-hidden="true" />
-        {kind === 'expense' ? t('categories:manage.addExpense') : t('categories:manage.addIncome')}
-      </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            setEditing('new');
+          }}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          {kind === 'expense' ? t('categories:manage.addExpense') : t('categories:manage.addIncome')}
+        </Button>
 
-      <CategoryEditor
-        target={editing}
-        kind={kind}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-      />
+        <CategoryEditor
+          target={editing}
+          kind={kind}
+          onOpenChange={(open) => {
+            if (!open) setEditing(undefined);
+          }}
+        />
 
-      <DeleteCategoryDialog
-        category={deleting}
-        targets={deleting === undefined ? [] : targets(deleting)}
-        count={deleting === undefined ? 0 : (data?.counts.get(deleting.id) ?? 0)}
-        onOpenChange={(open) => {
-          if (!open) setDeleting(undefined);
-        }}
-      />
+        <DeleteCategoryDialog
+          category={deleting}
+          targets={deleting === undefined ? [] : targets(deleting)}
+          count={deleting === undefined ? 0 : (data?.counts.get(deleting.id) ?? 0)}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(undefined);
+          }}
+        />
+      </PanelSheet>
     </section>
   );
 }

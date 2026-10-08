@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { initAccount, type AccountView } from '@/app/account';
+import { SettingsProvider } from '@/app/settings-provider';
+import { DEFAULT_SETTINGS } from '@/db/repos/settings';
+import { instantFromMs } from '@/lib/dates';
 import { freshDb } from '@/test/db-harness';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
@@ -17,6 +20,7 @@ import { SecurityScreen } from './security-screen';
  */
 
 const controller = initAccount(freshDb().db);
+const SETTINGS = { ...DEFAULT_SETTINGS, updatedAt: instantFromMs(Date.parse('2026-10-07T10:00:00.000Z')) };
 
 beforeAll(async () => {
   await initTestI18n();
@@ -54,12 +58,13 @@ function signedIn(keys: Extract<AccountView, { status: 'signed_in' }>['keys'], t
 
 function showCard(view: AccountView) {
   vi.spyOn(controller, 'getView').mockReturnValue(view);
-  // The account and security pages, where the card's parts now live.
+  // The account and security pages, where the card's parts now live. Their
+  // panels carry the account menu, which reads the settings.
   renderWithProviders(
-    <>
+    <SettingsProvider value={SETTINGS}>
       <AccountScreen />
       <SecurityScreen />
-    </>,
+    </SettingsProvider>,
   );
   return userEvent.setup();
 }

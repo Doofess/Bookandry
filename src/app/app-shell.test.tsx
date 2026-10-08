@@ -38,12 +38,23 @@ describe('AppShell', () => {
     }
   });
 
-  it('keeps settings in the account menu at the top, not in the tabs', () => {
+  it('keeps settings out of the tabs, and leaves the account menu to each screen panel', () => {
     renderShell();
     expect(screen.queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('banner')).toContainElement(
-      screen.getByRole('button', { name: 'Account and settings' }),
-    );
+    // The phone header is gone: the panel at the top of every screen carries the menu.
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
+  it('makes the desktop rail the deep panel, with the active tab a light pill', () => {
+    renderShell();
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    const active = screen.getByRole('link', { name: /Feed/ });
+
+    expect(nav).toHaveClass('lg:bg-brand-deep', 'lg:text-brand-deep-foreground');
+    expect(nav.querySelector('svg.engraving')).not.toBeNull();
+    expect(active).toHaveClass('text-primary', 'lg:bg-white/15');
+    // On a phone the active icon sits on the soft accent pill.
+    expect(active.querySelector('[data-slot="tab-pill"]')).toHaveClass('bg-accent');
   });
 
   it('exposes a main landmark and a skip link', () => {
