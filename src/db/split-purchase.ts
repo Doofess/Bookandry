@@ -1,8 +1,9 @@
 import type { SeriesEditPlan } from '@/domain/series-edit';
 import { splitRecurrence, type SplitTiming } from '@/domain/split-purchase';
+import { compareLocal } from '@/lib/dates';
 import { moneyForAmount } from '@/lib/money';
 import type { Override, Transaction } from '@/types/domain';
-import type { IsoInstant, Minor } from '@/types/money';
+import type { IsoInstant, LocalDate, Minor } from '@/types/money';
 
 import type { BookandryDB } from './db';
 import { materialize } from './materialize';
@@ -10,7 +11,7 @@ import { applySeriesEdit, planInstallments } from './series-edit';
 
 export class NotSplittableError extends Error {
   constructor() {
-    super('Only a saved one-time purchase can be split');
+    super('Only a saved one-time purchase can be split, into payments not yet billed');
     this.name = 'NotSplittableError';
   }
 }
@@ -23,9 +24,13 @@ export type SplitPurchaseInput = {
   /** What the plan charges in all, in the purchase's own currency (`splitSchedule`). */
   readonly totalMinor: Minor;
   readonly timing: SplitTiming;
+  /** The principal the plan is priced on (`SplitSchedule.principalMinor`), kept for its reset. */
+  readonly principalMinor?: Minor | undefined;
   /** Where the deal re-prices with prime, and prime today. */
   readonly resetAt?: number | undefined;
   readonly primeRate: string;
+  /** No split's first payment is billed on or before it. */
+  readonly today: LocalDate;
   readonly now: IsoInstant;
   readonly newId: () => string;
 };
@@ -68,6 +73,7 @@ export function planSplitPurchase(
         rate: input.rate,
         resetAt: input.resetAt,
         primeRate: input.primeRate,
+        principalMinor: input.principalMinor,
       }),
       updatedAt: input.now,
     },
@@ -116,6 +122,8 @@ export async function splitPurchase(db: BookandryDB, input: SplitPurchaseInput):
     const tx = await db.transactions.get(input.transactionId);
     if (tx === undefined || tx.isDeleted === 1 || tx.recurrence.type !== 'one_time')
       throw new NotSplittableError();
+    // A payment billed in the past is not a split, it is a history rewritten.
+    if (compareLocal(input.timing.firstCharge, input.today) <= 0) throw new NotSplittableError();
     const overrides = await db.overrides.where('transactionId').equals(tx.id).toArray();
     const plan = planSplitPurchase(tx, overrides, input);
     await applySeriesEdit(db, plan);

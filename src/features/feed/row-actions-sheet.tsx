@@ -30,14 +30,17 @@ export type RowAction = 'edit' | 'split' | 'skip' | 'restore' | 'delete';
  */
 export function RowActionsSheet({
   occurrence,
-  canSplit = false,
+  split,
   onOpenChange,
   onAction,
 }: {
   /** The row whose menu is open, or undefined when closed. */
   readonly occurrence: Occurrence | undefined;
-  /** A purchase its card can split into payments (`useSplitOffer`). */
-  readonly canSplit?: boolean;
+  /**
+   * A purchase its card can split into payments (`useSplitOffer`), or one
+   * that could be once the card has a billing day: then the menu says so.
+   */
+  readonly split?: 'offer' | 'needs_billing_day' | undefined;
   readonly onOpenChange: (open: boolean) => void;
   readonly onAction: (action: RowAction, occurrence: Occurrence) => void;
 }) {
@@ -64,7 +67,14 @@ export function RowActionsSheet({
               }}
             />
 
-            {canSplit ? (
+            {split === 'needs_billing_day' ? (
+              <p className="flex min-h-11 items-center gap-3 px-3 text-xs text-muted-foreground">
+                <Split className="size-4 shrink-0" aria-hidden />
+                <span>{t('split.needsBillingDay')}</span>
+              </p>
+            ) : null}
+
+            {split === 'offer' ? (
               <ActionRow
                 icon={Split}
                 label={t('split.action')}

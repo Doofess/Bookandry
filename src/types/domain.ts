@@ -366,10 +366,14 @@ export type Recurrence =
        *
        * `rate`, `paymentMinor` and `frozen` are for once the reset payment's
        * date has passed: its rate and payment are then saved and never move.
+       * `principalMinor` is what the plan borrowed, in its own currency, as the
+       * schedule shown at saving priced it; absent on rows saved before it was
+       * kept, which re-price from what their payments are worth.
        */
       readonly reset?: {
         readonly atPayment: number;
         readonly primeAtPurchase: string;
+        readonly principalMinor?: number;
         readonly rate?: string;
         readonly paymentMinor?: number;
         readonly frozen?: true;

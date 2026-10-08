@@ -21,10 +21,11 @@ type Reset = NonNullable<Extract<Recurrence, { type: 'monthly' }>['reset']>;
  * to write: not a long קרדיט still following prime (no reset, frozen, deleted,
  * unreadable), or nothing changed.
  *
- * The balance at the reset is re-amortized from what the plan borrowed, which
- * is not stored: only what it charges is. The present value of its payments at
- * its own rate is that principal, to within an agora or so of rounding - and,
- * being worked out of the row alone, the same on every device.
+ * The balance at the reset is re-amortized from what the plan borrowed, as it
+ * was saved (reset.principalMinor), so payment 19 is the one the schedule
+ * showed. A row saved before that was kept falls back to the present value of
+ * its payments at its own rate: the principal to within an agora or two of
+ * rounding, and - worked out of the row alone - the same on every device.
  */
 export function nextReset(tx: Transaction, primePercent: string, today: LocalDate): Reset | undefined {
   const recurrence = tx.recurrence;
@@ -40,7 +41,11 @@ export function nextReset(tx: Transaction, primePercent: string, today: LocalDat
   if (prime === undefined || was === undefined) return undefined;
 
   const newRate = resetRate(rate, was, prime);
-  const principal = presentValueMinor(Array<number>(count).fill(tx.money.amountMinor), rate);
+  const saved = reset.principalMinor;
+  const principal =
+    saved !== undefined && Number.isSafeInteger(saved) && saved > 0
+      ? saved
+      : presentValueMinor(Array<number>(count).fill(tx.money.amountMinor), rate);
   const paymentMinor = longCreditPayments(principal, rate, count, {
     atPayment: reset.atPayment,
     rate: newRate,
@@ -54,6 +59,7 @@ export function nextReset(tx: Transaction, primePercent: string, today: LocalDat
   return {
     atPayment: reset.atPayment,
     primeAtPurchase: reset.primeAtPurchase,
+    ...(reset.principalMinor === undefined ? {} : { principalMinor: reset.principalMinor }),
     rate: newRate,
     paymentMinor,
     ...(frozen ? { frozen: true as const } : {}),

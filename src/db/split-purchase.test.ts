@@ -45,6 +45,7 @@ const input = (over: Partial<SplitPurchaseInput>): SplitPurchaseInput => ({
   totalMinor: 122_412,
   timing: splitTiming(d('2026-10-02'), 10, d('2026-10-08')),
   primeRate: '4.75',
+  today: d('2026-10-08'),
   now: NOW,
   newId: counterIdFactory('ov'),
   ...over,
@@ -80,7 +81,7 @@ describe('splitPurchase', () => {
   it('already billed: the first payment is the bill after next', async () => {
     await handle.db.transactions.put(purchase('2026-09-02'));
     const timing = splitTiming(d('2026-09-02'), 10, d('2026-10-12'));
-    await splitPurchase(handle.db, input({ timing, totalMinor: 122_413 }));
+    await splitPurchase(handle.db, input({ timing, today: d('2026-10-12'), totalMinor: 122_413 }));
 
     const row = (await handle.db.transactions.get('tv'))!;
     expect(row).toMatchObject({ id: 'tv', date: '2026-11-02', recurrence: { dayOfMonth: 2 } });
@@ -108,14 +109,28 @@ describe('splitPurchase', () => {
 
   it('records prime today where the deal re-prices with it', async () => {
     await handle.db.transactions.put(purchase('2026-10-02'));
-    await splitPurchase(handle.db, input({ count: 24, resetAt: 19, totalMinor: 135_576 }));
+    await splitPurchase(
+      handle.db,
+      input({ count: 24, resetAt: 19, totalMinor: 135_576, principalMinor: 119_000 }),
+    );
     const row = await handle.db.transactions.get('tv');
-    expect(row?.recurrence).toMatchObject({ reset: { atPayment: 19, primeAtPurchase: '4.75' } });
+    expect(row?.recurrence).toMatchObject({
+      reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 119_000 },
+    });
   });
 
   it('refuses a row that is no longer a one-off purchase', async () => {
     await expect(splitPurchase(handle.db, input({}))).rejects.toBeInstanceOf(NotSplittableError);
     await handle.db.transactions.put(purchase('2026-10-02', { isDeleted: 1 }));
     await expect(splitPurchase(handle.db, input({}))).rejects.toBeInstanceOf(NotSplittableError);
+  });
+
+  it('refuses a first payment billed today or before, and leaves the purchase as it was', async () => {
+    const row = purchase('2026-10-02');
+    await handle.db.transactions.put(row);
+    // Worked out on 8 October, saved on 10 November: the 10 October bill is gone.
+    const stale = input({ today: d('2026-11-10') });
+    await expect(splitPurchase(handle.db, stale)).rejects.toBeInstanceOf(NotSplittableError);
+    expect(await handle.db.transactions.get('tv')).toEqual(row);
   });
 });

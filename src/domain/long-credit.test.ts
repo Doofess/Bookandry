@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { longCreditPayments, presentValueMinor, spitzerPayment } from '@/lib/money';
 import type { Recurrence, Transaction } from '@/types/domain';
 
+import { dealSchedule } from './deal-rules';
 import { followsPrimeFrom, nextReset } from './long-credit';
 import { d, makeTx, MONEY } from './test-factories';
 
@@ -42,6 +43,9 @@ const after = (rate: string) => longCreditPayments(principal, '15.5', 24, { atPa
 describe('nextReset', () => {
   it('works from what the plan charges, which is what it borrowed to the agora or so', () => {
     expect(Math.abs(principal - 300_000)).toBeLessThan(15);
+    // Pinned: ₪146.38 from payment 19 at 16%, against 18 × ₪146.17.
+    expect(payment).toBe(14_617);
+    expect(after('16')).toBe(14_638);
   });
 
   it('before payment 19 is due, re-prices it at prime today', () => {
@@ -91,6 +95,47 @@ describe('nextReset', () => {
     expect(nextReset(makeTx({ date: d('2026-01-05'), recurrence: { type: 'one_time' } }), '6.5', today)).toBe(
       undefined,
     );
+  });
+});
+
+describe('nextReset, from the principal kept at saving', () => {
+  // ₪732.99 over 19 at 15.5%: what its payments are worth comes to ₪732.94,
+  // and that is enough to move payment 19 by an agora or two.
+  const small = (reset: Monthly['reset']) => {
+    const p = spitzerPayment(73_299, '15.5', 19);
+    return plan(reset, { installments: 19 }, { money: { ...money, amountMinor: p, baseAmountMinor: p } });
+  };
+  const kept = { ...fresh, principalMinor: 73_299 };
+  const today = d('2026-12-01');
+
+  it('is payment 19 as the purchase form showed it', () => {
+    const shown = dealSchedule({
+      principalMinor: 73_299,
+      rate: '15.5',
+      count: 19,
+      maxCount: 36,
+      compounding: 12,
+      reset: { atPayment: 19 },
+      primeRate: '6',
+    });
+    expect(shown?.reset?.afterMinor).toBe(4_376);
+    expect(nextReset(small(kept), '6', today)).toEqual({ ...kept, rate: '15.5', paymentMinor: 4_376 });
+    // Prime up three quarters of a point.
+    expect(nextReset(small(kept), '6.75', today)).toMatchObject({ rate: '16.25', paymentMinor: 4_379 });
+  });
+
+  it('falls back to what the payments are worth on a row saved before it was kept', () => {
+    expect(nextReset(small(fresh), '6', today)?.paymentMinor).toBe(4_375);
+    expect(nextReset(small(fresh), '6.75', today)?.paymentMinor).toBe(4_377);
+  });
+
+  it('keeps the principal through a freeze', () => {
+    expect(nextReset(small(kept), '6', d('2027-07-05'))).toEqual({
+      ...kept,
+      rate: '15.5',
+      paymentMinor: 4_376,
+      frozen: true,
+    });
   });
 });
 
