@@ -386,6 +386,25 @@ test.describe('@cards bank accounts', () => {
     await expect(account).toContainText('Visa');
   });
 
+  test('highlights one bank at a time in the picker', async ({ page }) => {
+    await completeFirstRun(page, 'he', { demo: false });
+    await openAccounts(page);
+    await page.getByRole('button', { name: 'הוספת חשבון בנק' }).click();
+    await page.getByRole('combobox', { name: /בנק/ }).click();
+    const options = page.getByRole('option');
+    await expect(options.first()).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    // Only the row the keyboard is on carries the highlight; every other row stays transparent.
+    // Polled: the rows carry a (near-zero) colour transition, so the computed colour lags the attribute by a tick.
+    await expect
+      .poll(() =>
+        options.evaluateAll(
+          (rows) => rows.filter((row) => getComputedStyle(row).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
+        ),
+      )
+      .toBe(1);
+  });
+
   test('finds the Arab banks by their Arabic name', async ({ page }) => {
     await completeFirstRun(page, 'he', { demo: false });
     await openAccounts(page);
