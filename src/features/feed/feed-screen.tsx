@@ -416,6 +416,7 @@ export function FeedScreen() {
       <ProjectedPopout
         target={projectedFor}
         today={today}
+        {...(lookups === undefined ? {} : { methods: lookups.paymentMethods })}
         onClose={() => {
           setProjectedFor(undefined);
         }}

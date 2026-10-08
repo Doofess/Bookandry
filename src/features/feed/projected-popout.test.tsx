@@ -10,7 +10,7 @@ import { d, makeTx, MONEY } from '@/domain/test-factories';
 import { counterIdFactory } from '@/lib/id';
 import { freshDb } from '@/test/db-harness';
 import { initTestI18n, renderWithProviders } from '@/test/render';
-import type { Occurrence, Recurrence } from '@/types/domain';
+import type { Occurrence, PaymentMethod, Recurrence } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { ProjectedPopout, type ProjectedTarget } from './projected-popout';
@@ -88,6 +88,50 @@ describe('ProjectedPopout', () => {
 
     await user.click(await screen.findByRole('button', { name: /Charged today/ }));
     expect(onMove).toHaveBeenCalledWith(target, '2026-09-15');
+  });
+
+  it('says "Charged today" counts it in the balance now, for a payment not on a card', async () => {
+    renderPopout(projected({ type: 'monthly', dayOfMonth: 10 }));
+
+    expect(await screen.findByRole('button', { name: /Charged today/ })).toHaveAccessibleName(
+      /Count it in the balance now/,
+    );
+  });
+
+  it('says "Charged today" goes on the card’s next bill, for a payment on a card with a billing day', async () => {
+    const card: PaymentMethod = {
+      id: 'pm.card',
+      profileId: 'p1',
+      type: 'credit_card',
+      label: 'Max',
+      card: { billingDay: 10 },
+      isArchived: 0,
+      createdAt: '2026-01-01T00:00:00.000Z' as IsoInstant,
+      updatedAt: '2026-01-01T00:00:00.000Z' as IsoInstant,
+    };
+    const tx = makeTx({
+      id: 'gym',
+      date: d('2026-09-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10 },
+      money: MONEY,
+      paymentMethodId: card.id,
+    });
+    const target = expandOccurrences(tx, [], d('2026-10-10'), d('2026-10-10'), { today: TODAY })[0];
+    if (target === undefined) throw new Error('no occurrence');
+    renderWithProviders(
+      <ProjectedPopout
+        target={{ occurrence: target, anchor: chip() }}
+        today={TODAY}
+        methods={new Map([[card.id, card]])}
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        onAmount={vi.fn()}
+      />,
+    );
+
+    const today = await screen.findByRole('button', { name: /Charged today/ });
+    expect(today).toHaveAccessibleName(/Moves to this card’s next bill/);
+    expect(today).not.toHaveAccessibleName(/balance/);
   });
 
   it('"Charged today", wired as the feed wires it, writes a modify override dated today', async () => {
