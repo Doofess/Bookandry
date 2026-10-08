@@ -1,6 +1,16 @@
+import type { ResolvedCard } from '@/data/card-catalog/resolve';
 import { normalizeAnnualRate, normalizeRateMargin, toDecimalString, toMinor } from '@/lib/money';
-import type { CardDetails, CardIssuer, CardKind, CardNetwork, PaymentMethod, RateTerm } from '@/types/domain';
+import type {
+  CardCatalogLink,
+  CardDetails,
+  CardIssuer,
+  CardKind,
+  CardNetwork,
+  PaymentMethod,
+  RateTerm,
+} from '@/types/domain';
 
+import { linkCard } from './card-catalog-link';
 import { CARD_CURRENCY, isExpiresMonth } from './cards';
 
 /** A rate as the editor holds it: which kind, and the text typed for it. */
@@ -32,6 +42,10 @@ export type CardDraft = {
   readonly fxFee: string;
   readonly credit: RateDraft;
   readonly late: RateDraft;
+  /** The card's place in the card catalog; the editor only changes it by linking or unlinking. */
+  readonly catalog?: CardCatalogLink | undefined;
+  /** The rates the person set over the catalog's; carried through untouched. */
+  readonly overrides?: CardDetails['overrides'] | undefined;
 };
 
 export type CardDraftField =
@@ -74,8 +88,12 @@ function money(minor: number | undefined): string {
 
 /** The editor's starting fields for a method that may already have card details. */
 export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
-  const card = method?.card;
   if (method === undefined) return EMPTY_CARD_DRAFT;
+  return cardDraftFromDetails(method.card, method.creditAnnualRate);
+}
+
+/** The editor's fields for card details and the card's fixed קרדיט rate. */
+export function cardDraftFromDetails(card: CardDetails | undefined, creditAnnualRate?: string): CardDraft {
   const expires =
     card?.expiresMonth === undefined
       ? ''
@@ -100,8 +118,8 @@ export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
     credit:
       card?.creditPrimeMargin !== undefined
         ? { basis: 'prime', value: card.creditPrimeMargin }
-        : method.creditAnnualRate !== undefined
-          ? { basis: 'fixed', value: method.creditAnnualRate }
+        : creditAnnualRate !== undefined
+          ? { basis: 'fixed', value: creditAnnualRate }
           : { basis: 'prime', value: '' },
     late:
       card?.lateRate === undefined
@@ -109,6 +127,8 @@ export function cardDraftOf(method: PaymentMethod | undefined): CardDraft {
         : card.lateRate.basis === 'prime'
           ? { basis: 'prime', value: card.lateRate.margin }
           : { basis: 'fixed', value: card.lateRate.rate },
+    ...(card?.catalog === undefined ? {} : { catalog: card.catalog }),
+    ...(card?.overrides === undefined ? {} : { overrides: card.overrides }),
   };
 }
 
@@ -175,6 +195,8 @@ const DRAFT_KEYS: ReadonlySet<string> = new Set([
   'fxFeeRate',
   'creditPrimeMargin',
   'lateRate',
+  'catalog',
+  'overrides',
 ] satisfies readonly (keyof CardDetails)[]);
 
 export type CardDraftResult =
@@ -268,11 +290,68 @@ export function cardFromDraft(
     ...(fxFeeRate === undefined ? {} : { fxFeeRate }),
     ...(credit?.basis === 'prime' ? { creditPrimeMargin: credit.margin } : {}),
     ...(late === undefined || late === null ? {} : { lateRate: late }),
+    ...(draft.catalog === undefined ? {} : { catalog: draft.catalog }),
+    ...(draft.overrides === undefined ? {} : { overrides: draft.overrides }),
   };
 
   return {
     ok: true,
     card: Object.keys(card).length === 0 ? undefined : card,
     creditAnnualRate: credit?.basis === 'fixed' ? credit.rate : null,
+  };
+}
+
+/** The draft with the fields that cannot be read set empty, so a link can still be written over it. */
+function readable(
+  draft: CardDraft,
+  month: string,
+): { draft: CardDraft; result: CardDraftResult & { ok: true } } {
+  let current = draft;
+  for (;;) {
+    const result = cardFromDraft(current, { month });
+    if (result.ok) return { draft: current, result };
+    const blank: Record<string, unknown> = {};
+    for (const field of result.invalid) blank[field] = EMPTY_CARD_DRAFT[field];
+    current = { ...current, ...blank };
+  }
+}
+
+/** Whether the person has set any rate over the catalog's. */
+export function hasOverrides(draft: CardDraft): boolean {
+  return draft.overrides !== undefined && Object.keys(draft.overrides).length > 0;
+}
+
+/**
+ * The draft after the person links the card to a catalog entry: the catalog's
+ * figures replace the card's own (`linkCard`), and the card company, bank,
+ * type and club fields name the entry. Only the fields a link touches change;
+ * everything else the person typed stays as typed.
+ */
+export function linkedDraft(
+  draft: CardDraft,
+  resolved: ResolvedCard,
+  link: Omit<CardCatalogLink, 'version' | 'updatedOn' | 'filled'>,
+  opts: { readonly keepOverrides: boolean; /** YYYY-MM */ readonly month: string; readonly language: string },
+): CardDraft {
+  const { draft: base, result } = readable(draft, opts.month);
+  const linked = linkCard(result.card ?? {}, resolved, link, opts);
+  const lang = opts.language.startsWith('he') ? 'he' : 'en';
+  const club = link.club === undefined ? undefined : resolved.issuer.clubs.find((c) => c.id === link.club);
+  const next = cardDraftFromDetails(linked, result.creditAnnualRate ?? undefined);
+  return {
+    ...draft,
+    issuer: resolved.issuer.id,
+    kind: resolved.bank === undefined ? 'non_bank' : 'bank',
+    // For a card not through a bank this is the account's bank: the person's own entry.
+    bank: resolved.bank === undefined ? draft.bank : resolved.bank.name[lang],
+    tier: resolved.issuer.tiers.find((t) => t.id === link.tier)?.name[lang] ?? base.tier,
+    club: club?.name ?? '',
+    billingDay: next.billingDay,
+    monthlyFee: next.monthlyFee,
+    fxFee: next.fxFee,
+    credit: next.credit,
+    late: next.late,
+    catalog: next.catalog,
+    overrides: next.overrides,
   };
 }

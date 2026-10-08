@@ -205,5 +205,23 @@
     "red": "Red",
     "rose": "Rose",
     "purple": "Purple"
+  },
+  "catalog": {
+    "title": "Who issues this card",
+    "bank": "Bank",
+    "noBank": "Not through a bank",
+    "issuer": "Card company",
+    "tier": "Card type",
+    "club": "Club",
+    "noClub": "No club",
+    "notListed": "Not in the list",
+    "loading": "Loading the card list…",
+    "loadFailed": "Couldn't load the card list. You can still fill the card in yourself.",
+    "suggest": "This looks like a {{issuer}} card through {{bank}}. Link it to fill in its real rates?",
+    "link": "Link",
+    "notNow": "Not now",
+    "keepTitle": "Keep the rates you entered?",
+    "keepMine": "Keep mine",
+    "useNew": "Use the new card's rates"
   }
 }

@@ -1,14 +1,23 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useToday } from '@/app/app-context';
 import { Segmented } from '@/components/segmented';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { accountTail, bankByCode, bankName } from '@/domain/banks';
-import type { CardDraft, CardDraftField, RateDraft } from '@/domain/card-draft';
+import {
+  hasOverrides,
+  linkedDraft,
+  type CardDraft,
+  type CardDraftField,
+  type RateDraft,
+} from '@/domain/card-draft';
 import { COMMON_BILLING_DAYS } from '@/domain/cards';
 import { ordinalDay } from '@/i18n/ordinal';
 import type { CardIssuer, CardKind, CardNetwork, PaymentMethod } from '@/types/domain';
+
+import { IssuerChooser } from './issuer-chooser';
 
 const ISSUERS: readonly CardIssuer[] = ['isracard', 'cal', 'max', 'amex', 'diners', 'other'];
 const NETWORKS: readonly CardNetwork[] = ['visa', 'mastercard', 'amex', 'diners', 'isracard'];
@@ -39,6 +48,7 @@ export function CardFields({
   readonly accounts?: readonly PaymentMethod[];
 }) {
   const { t, i18n } = useTranslation('cards');
+  const month = useToday().slice(0, 7);
   // Archived accounts are not offered, unless this card is already paid from one.
   const payers = accounts.filter((a) => a.isArchived === 0 || a.id === draft.accountId);
   // Nothing picked yet, an account, or "another account" once the bank is typed.
@@ -72,6 +82,18 @@ export function CardFields({
 
   return (
     <div className="space-y-5 rounded-xl border border-border p-3">
+      <IssuerChooser
+        value={draft.catalog}
+        hasOverrides={hasOverrides(draft)}
+        stored={{ issuer: draft.issuer, bank: draft.bank, tier: draft.tier, club: draft.club }}
+        onLink={(link, resolved, keepOverrides) => {
+          onChange(linkedDraft(draft, resolved, link, { keepOverrides, month, language: i18n.language }));
+        }}
+        onUnlink={() => {
+          onChange({ catalog: undefined });
+        }}
+      />
+
       <fieldset className="space-y-3">
         <legend className="text-sm font-semibold">{t('edit.theCard')}</legend>
 
