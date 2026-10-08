@@ -265,5 +265,5 @@ function relative(days: number, locale: string): string {
   const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   if (days < 1) return format.format(0, 'day');
   if (days < 30) return format.format(-days, 'day');
-  return format.format(-Math.round(days / 30), 'month');
+  return format.format(-Math.round(days / 30), 'month'); // money-allow: months for a relative date
 }

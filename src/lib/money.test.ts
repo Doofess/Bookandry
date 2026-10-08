@@ -1,11 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import type { Minor } from '@/types/money';
+import type { LocalDate, Minor, MoneySnapshot } from '@/types/money';
 
 import { CURRENCY_EXPONENTS, exponentOf } from './currency-meta';
 import {
   add,
+  annualEffectiveRate,
+  longCreditPayments,
+  resetRate,
+  withMonthOfInterest,
+  moneyForAmount,
+  requestDatePrincipal,
   AmountOverflowError,
   convertMinor,
   creditSchedule,
@@ -835,5 +841,139 @@ describe('addPercentFee', () => {
     [12_345, '2.75', 12_684],
   ])('%i + %s%% = %i', (minor, percent, expected) => {
     expect(addPercentFee(minor, percent)).toBe(expected);
+  });
+});
+
+describe('annualEffectiveRate', () => {
+  it('matches the published pairs', () => {
+    expect(annualEffectiveRate('15.25', 12)).toBe('16.36');
+    expect(annualEffectiveRate('14.15', 12)).toBe('15.10');
+    expect(annualEffectiveRate('8.75', 12)).toBe('9.11');
+    expect(annualEffectiveRate('20.90', 4)).toBe('22.60'); // Isracard late interest, quarterly
+    expect(annualEffectiveRate('0', 12)).toBe('0.00');
+  });
+});
+describe('resetRate', () => {
+  it('moves by the change in prime', () => {
+    expect(resetRate('15.5', '4.75', '5.25')).toBe('16');
+    expect(resetRate('15.5', '4.75', '4.25')).toBe('15');
+  });
+  it('never goes below zero', () => {
+    expect(resetRate('1', '5', '3')).toBe('0');
+    expect(resetRate('1', '-2', '-3')).toBe('0');
+    expect(resetRate('1', '-2', '-1')).toBe('2');
+    expect(resetRate('15.5', '0', '0.75')).toBe('16.25');
+  });
+});
+describe('longCreditPayments', () => {
+  it('is plain Spitzer with no reset, and re-amortizes the balance at payment 19', () => {
+    const plain = longCreditPayments(300_000, '15.5', 24, undefined);
+    expect(plain.first).toBe(spitzerPayment(300_000, '15.5', 24));
+    const same = longCreditPayments(300_000, '15.5', 24, { atPayment: 19, rate: '15.5' });
+    expect(Math.abs(same.afterReset! - same.first)).toBeLessThanOrEqual(1); // unchanged rate, same payment within an agora
+    const up = longCreditPayments(300_000, '15.5', 24, { atPayment: 19, rate: '16.5' });
+    expect(up.afterReset!).toBeGreaterThan(up.first);
+  });
+  it('handles an interest-free plan, a reset on the first payment, and bad input', () => {
+    const free = longCreditPayments(120_000, '0', 12, { atPayment: 7, rate: '12' });
+    expect(free.first).toBe(10_000);
+    expect(free.afterReset).toBe(spitzerPayment(60_000, '12', 6));
+    // The balance is the exact share P*(months-k)/months = 5/8 -> 1, not P minus rounded-up payments.
+    expect(longCreditPayments(5, '0', 8, { atPayment: 8, rate: '10' }).afterReset).toBe(1);
+    const atOnce = longCreditPayments(300_000, '15.5', 24, { atPayment: 1, rate: '10' });
+    expect(atOnce.afterReset).toBe(spitzerPayment(300_000, '10', 24));
+    expect(() => longCreditPayments(1000, '10', 12, { atPayment: 0, rate: '10' })).toThrow(RangeError);
+    expect(() => longCreditPayments(1000, '10', 12, { atPayment: 13, rate: '10' })).toThrow(RangeError);
+  });
+});
+describe('longCreditPayments balance', () => {
+  it('matches a month-by-month amortization in exact rationals', () => {
+    const P = 300_000n;
+    const i = { n: 155n, d: 12000n }; // 15.5% / 12
+    const n = 24;
+    // Exact level payment p = P·i / (1 − (1+i)^−n), as a fraction N/D.
+    const g = i.d + i.n;
+    const gn = g ** BigInt(n);
+    const dn = i.d ** BigInt(n);
+    const pN = P * i.n * gn;
+    const pD = i.d * (gn - dn);
+    // Walk 18 payments, B <- B(1+i) − p, keeping B exactly as num/(den·pD).
+    let num = P * pD;
+    let den = 1n;
+    for (let m = 0; m < 18; m++) {
+      num = num * g - pN * den * i.d;
+      den = den * i.d;
+    }
+    const balance = Number((2n * num + den * pD) / (2n * den * pD));
+    const out = longCreditPayments(300_000, '15.5', 24, { atPayment: 19, rate: '16.5' });
+    expect(out.afterReset).toBe(spitzerPayment(balance, '16.5', 6));
+  });
+});
+describe('annualEffectiveRate guards', () => {
+  it('rejects a negative rate', () => {
+    expect(() => annualEffectiveRate('-1', 12)).toThrow(RangeError);
+  });
+});
+
+describe('withMonthOfInterest', () => {
+  it('adds one month of interest at the annual rate, rounded once', () => {
+    // ₪1,000 × (1 + 15.5% / 12) = ₪1,012.91666…
+    expect(withMonthOfInterest(100_000, '15.5')).toBe(101_292);
+    // ₪100 × (1 + 6% / 12) = ₪100.50 exactly.
+    expect(withMonthOfInterest(10_000, '6')).toBe(10_050);
+    expect(withMonthOfInterest(100_000, '0')).toBe(100_000);
+  });
+
+  it('rejects a negative rate', () => {
+    expect(() => withMonthOfInterest(100, '-1')).toThrow(RangeError);
+  });
+});
+
+describe('moneyForAmount', () => {
+  const ils: MoneySnapshot = {
+    amountMinor: 10_000,
+    currency: 'ILS',
+    baseCurrency: 'ILS',
+    baseAmountMinor: 10_000,
+    rateUsed: '1',
+    rateDate: '2026-10-08' as LocalDate,
+    rateSource: 'manual',
+  };
+
+  it('in the base currency, is the amount itself', () => {
+    expect(moneyForAmount(ils, 12_345)).toEqual({ ...ils, amountMinor: 12_345, baseAmountMinor: 12_345 });
+  });
+
+  it('abroad, converts at the snapshot’s own rate and adds its card fee again', () => {
+    const usd: MoneySnapshot = {
+      ...ils,
+      currency: 'USD',
+      baseAmountMinor: 37_925,
+      rateUsed: '3.7',
+      feeRate: '2.5',
+    };
+    // $100.00 × 3.7 = ₪370.00, and 2.5% on top.
+    expect(moneyForAmount(usd, 10_000)).toEqual({ ...usd, amountMinor: 10_000, baseAmountMinor: 37_925 });
+    const { feeRate: _fee, ...noFee } = usd;
+    expect(moneyForAmount(noFee, 10_000).baseAmountMinor).toBe(37_000);
+  });
+});
+
+describe('requestDatePrincipal', () => {
+  it('is the principal itself when the first payment is a regular month away', () => {
+    expect(requestDatePrincipal(300_000, '12', 30, 360)).toBe(300_000);
+    expect(requestDatePrincipal(300_000, '0', 75, 365)).toBe(300_000);
+  });
+
+  it('owes, a month before the first payment, what the days from the request accrue', () => {
+    // Half a month at 12%: (1 + 0.005) / (1 + 0.01) = 201/202 of it, rounded once.
+    expect(requestDatePrincipal(300_000, '12', 15, 360)).toBe(298_515);
+    // Two months: (1 + 0.02) / (1 + 0.01) = 102/101.
+    expect(requestDatePrincipal(101_000, '12', 60, 360)).toBe(102_000);
+  });
+
+  it('rejects a negative rate or days', () => {
+    expect(() => requestDatePrincipal(100, '-1', 30, 360)).toThrow(RangeError);
+    expect(() => requestDatePrincipal(100, '1', -1, 360)).toThrow(RangeError);
   });
 });

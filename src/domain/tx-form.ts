@@ -16,6 +16,7 @@ import {
   normalizeRateMargin,
   prorateMinor,
   toMinor,
+  withMonthOfInterest,
 } from '@/lib/money';
 import type { Recurrence } from '@/types/domain';
 import type { Kind, LocalDate, Minor } from '@/types/money';
@@ -58,6 +59,13 @@ export const MIN_INSTALLMENTS = 2;
 export const MAX_INSTALLMENTS = 60;
 /** A 30-year mortgage. */
 export const MAX_LOAN_PAYMENTS = 360;
+/**
+ * קרדיט פלוס: long קרדיט runs 19 to 36 payments at every card company. The
+ * card's own rule is checked as a warning (`dealWarnings`); 36 is the hard
+ * ceiling, and 19 is where the form starts one.
+ */
+export const LONG_CREDIT_MIN = 19;
+export const LONG_CREDIT_MAX = 36;
 
 /** The sentinel day that means "the last day of whatever month this is". */
 export const LAST_DAY_OF_MONTH = 31;
@@ -86,17 +94,30 @@ export const LAST_DAY_OF_MONTH = 31;
  * INCOME keeps the plain repeat vocabulary: a salary is monthly, and it is not
  * a standing order, which is a thing you set up to pay someone else.
  */
+/*
+ * A card linked to the catalog adds its own deals: `long_credit` (קרדיט
+ * פלוס, 19-36 payments, stored as a קרדיט plan) and `deferred` (30+: one
+ * charge on the billing date after next, with a month's interest).
+ */
 export type RecurrenceMode =
-  'one_time' | 'monthly' | 'installments' | 'credit' | 'loan' | 'standing_order' | 'yearly';
+  | 'one_time'
+  | 'monthly'
+  | 'installments'
+  | 'credit'
+  | 'long_credit'
+  | 'deferred'
+  | 'loan'
+  | 'standing_order'
+  | 'yearly';
 
 /** The plans and a loan split an amount the same way; only the interest differs. */
 export function isInstallmentMode(mode: RecurrenceMode): boolean {
-  return mode === 'installments' || mode === 'credit' || mode === 'loan';
+  return mode === 'installments' || mode === 'credit' || mode === 'long_credit' || mode === 'loan';
 }
 
-/** The modes priced with a rate: a קרדיט plan, and a loan. */
+/** The modes priced with a rate: the card's credit deals, and a loan. */
 export function chargesInterest(mode: RecurrenceMode): boolean {
-  return mode === 'credit' || mode === 'loan';
+  return mode === 'credit' || mode === 'long_credit' || mode === 'deferred' || mode === 'loan';
 }
 
 /** What a loan's interest follows: prime plus a margin, or a fixed rate. */
@@ -140,6 +161,7 @@ export function effectiveRate(values: RateInputs): string | undefined {
 
 /** How many payments a plan may have: a card's plans stop at 60, a mortgage does not. */
 export function maxPaymentsFor(mode: RecurrenceMode): number {
+  if (mode === 'long_credit') return LONG_CREDIT_MAX;
   return mode === 'loan' ? MAX_LOAN_PAYMENTS : MAX_INSTALLMENTS;
 }
 
@@ -167,7 +189,17 @@ export const txFormSchema = z
     date: localDate,
     note: z.string(),
 
-    mode: z.enum(['one_time', 'monthly', 'installments', 'credit', 'loan', 'standing_order', 'yearly']),
+    mode: z.enum([
+      'one_time',
+      'monthly',
+      'installments',
+      'credit',
+      'long_credit',
+      'deferred',
+      'loan',
+      'standing_order',
+      'yearly',
+    ]),
     /** Only read in the monthly, standing-order and instalment modes. */
     dayOfMonth: digits('day_invalid'),
     /** '' means open-ended. */
@@ -211,6 +243,12 @@ export const txFormSchema = z
      * dates actually leave a part-month.
      */
     partialFirst: z.boolean().default(false),
+    /**
+     * A long קרדיט whose card resets its rate with prime: the payment it
+     * resets at (Max: 19). Set by the sheet from the card's rule, never typed;
+     * saved with `primeRate` as prime at purchase.
+     */
+    resetAt: z.number().int().positive().optional(),
   })
   .superRefine((values, ctx) => {
     const amountMinor = parseAmount(values.amount, values.currency);
@@ -317,7 +355,8 @@ export const txFormSchema = z
       // split into payments and converted to the base currency, so pricing the
       // plan anywhere later would leave the base amount denominated in the
       // purchase price while the payments were not.
-      amountMinor: planTotal(values) ?? parseAmount(values.amount, values.currency) ?? 0,
+      amountMinor:
+        planTotal(values) ?? deferredTotal(values) ?? parseAmount(values.amount, values.currency) ?? 0,
       currency: values.currency,
       date,
       note: values.note.trim() === '' ? undefined : values.note.trim(),
@@ -339,6 +378,8 @@ export const txFormSchema = z
       installmentTotalMinor: isInstallmentMode(values.mode) ? planTotal(values) : undefined,
       /** The one-off charge for the part-month before the first full payment, when there is one. */
       partialFirst: partialFirstOf(values),
+      /** A 30+ purchase's rate, snapshotted: '0' when none was entered. */
+      deferral: values.mode === 'deferred' ? { rate: deferralRate(values) } : undefined,
     };
   });
 
@@ -352,13 +393,17 @@ function toRecurrence(
     endDate: string;
     installmentCount: string;
     frequency: StandingOrderFrequency;
-  } & RateInputs,
+    amount: string;
+    currency: string;
+  } & RateInputs & { resetAt?: number | undefined },
   date: LocalDate,
 ): Recurrence {
   const endDate = isLocalDate(values.endDate) ? values.endDate : undefined;
 
   switch (values.mode) {
     case 'one_time':
+    case 'deferred':
+      // 30+ is one charge; when it is debited is the card's to say (`settleDate`).
       return { type: 'one_time' };
 
     case 'monthly':
@@ -409,6 +454,40 @@ function toRecurrence(
         ...rateFields(values),
       };
 
+    case 'long_credit': {
+      /*
+       * Stored as a קרדיט plan: an older app reads it as an ordinary fixed
+       * קרדיט, which is right for every payment before the reset and close to
+       * right after it. The reset, where the card has one, is what this
+       * version adds - prime on the day, so payment 19 can be re-priced by how
+       * far it has moved.
+       */
+      const count = Number(values.installmentCount);
+      const priced = rateFields(values);
+      const prime = normalizeAnnualRate(values.primeRate ?? '');
+      const at = values.resetAt;
+      const resets =
+        at !== undefined && at <= count && priced.creditAnnualRate !== undefined && prime !== undefined;
+      // What it borrowed, as the schedule shown priced it: payment 19 is re-priced from it.
+      const principal = parseAmount(values.amount, values.currency);
+      return {
+        type: 'monthly',
+        dayOfMonth: parseLocalDate(date).day,
+        installments: count,
+        plan: 'credit',
+        ...priced,
+        ...(resets
+          ? {
+              reset: {
+                atPayment: at,
+                primeAtPurchase: prime,
+                ...(principal === undefined || principal <= 0 ? {} : { principalMinor: principal }),
+              },
+            }
+          : {}),
+      };
+    }
+
     case 'yearly': {
       const { month, day } = parseLocalDate(date);
       return { type: 'yearly', month, day, ...(endDate === undefined ? {} : { endDate }) };
@@ -446,6 +525,25 @@ export function planTotal(
   if (rate === '') return principal;
 
   return creditSchedule(principal, rate, count).totalMinor;
+}
+
+/** A 30+ purchase's rate as it is snapshotted: '0' for none entered. */
+function deferralRate(values: RateInputs): string {
+  const rate = effectiveRate(values);
+  return rate === undefined || rate === '' ? '0' : rate;
+}
+
+/**
+ * What a 30+ purchase is charged: the purchase and a month of interest,
+ * rounded once. Undefined for anything else, or while it cannot be priced.
+ */
+function deferredTotal(values: { amount: string; currency: string } & RateInputs): Minor | undefined {
+  if (values.mode !== 'deferred') return undefined;
+  const principal = parseAmount(values.amount, values.currency);
+  if (principal === undefined || principal <= 0) return undefined;
+  const rate = effectiveRate(values);
+  if (rate === undefined) return undefined;
+  return rate === '' ? principal : withMonthOfInterest(principal, rate);
 }
 
 /**
@@ -725,6 +823,22 @@ export function recurrenceDefaults(mode: RecurrenceMode, values: TxFormValues): 
         frequency: '',
         annualRate: '',
       };
+
+    case 'deferred':
+      // A one-off with a rate: the sheet fills in the card's.
+      return { mode, dayOfMonth: dayOfDate, endDate: '', installmentCount: '', frequency: '' };
+
+    case 'long_credit': {
+      // Into the deal's range: a קרדיט's 12 is not one, and 48 is past it.
+      const count = Number(values.installmentCount);
+      const installmentCount =
+        values.installmentCount === '' || !(count >= LONG_CREDIT_MIN)
+          ? String(LONG_CREDIT_MIN)
+          : count > LONG_CREDIT_MAX
+            ? String(LONG_CREDIT_MAX)
+            : values.installmentCount;
+      return { mode, dayOfMonth: dayOfDate, endDate: '', installmentCount, frequency: '' };
+    }
 
     case 'monthly':
       return {

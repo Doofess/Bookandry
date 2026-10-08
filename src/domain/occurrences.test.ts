@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Override, Recurrence, Transaction } from '@/types/domain';
+
 import { estimateOccurrenceCount, expandOccurrences, isValidSlot, seriesEndDate } from './occurrences';
-import { d, makeTx, modify, skip } from './test-factories';
+import { d, makeTx, modify, MONEY, skip } from './test-factories';
 
 const TODAY = d('2026-09-15');
 const opts = { today: TODAY };
@@ -437,5 +439,78 @@ describe('final slot guards', () => {
     const ov = [modify('tx1', d('2026-02-20'), { date: d('2026-04-15') })];
     const tx = makeTx({ date: d('2026-01-01'), recurrence: { type: 'monthly', dayOfMonth: 1 } }, ov);
     expect(dates(tx, ov, d('2026-04-01'), d('2026-04-30'), opts)).toEqual(['2026-04-01']);
+  });
+});
+
+describe('a long credit that follows prime', () => {
+  type Reset = NonNullable<Extract<Recurrence, { type: 'monthly' }>['reset']>;
+  const money = {
+    ...MONEY,
+    currency: 'ILS',
+    baseCurrency: 'ILS',
+    amountMinor: 14_620,
+    baseAmountMinor: 14_620,
+  };
+  const plan = (reset?: Reset) =>
+    makeTx({
+      id: 'sofa',
+      date: d('2026-01-05'),
+      money,
+      recurrence: {
+        type: 'monthly',
+        dayOfMonth: 5,
+        installments: 24,
+        plan: 'credit',
+        creditAnnualRate: '15.5',
+        ...(reset === undefined ? {} : { reset }),
+      },
+    });
+  const all = (tx: Transaction, overrides: Override[] = []) =>
+    expandOccurrences(tx, overrides, d('2026-01-01'), d('2027-12-31'), opts);
+  const priced: Reset = { atPayment: 19, primeAtPurchase: '6', rate: '16', paymentMinor: 14_700 };
+
+  it('charges the plan’s payment before the reset and the re-priced one from it', () => {
+    const payments = all(plan(priced));
+    expect(payments).toHaveLength(24);
+    expect(payments.slice(0, 18).map((o) => o.money.amountMinor)).toEqual(Array(18).fill(14_620));
+    expect(payments.slice(18).map((o) => o.money.amountMinor)).toEqual(Array(6).fill(14_700));
+    expect(payments.slice(18).map((o) => o.money.baseAmountMinor)).toEqual(Array(6).fill(14_700));
+    // Payment 19 is the 19th slot: 5 July 2027.
+    expect(payments[18]?.date).toBe('2027-07-05');
+    expect(payments[17]?.money).toBe(money);
+  });
+
+  it('adds up exactly: the first absorbing its remainder, then the plan’s, then the reset’s', () => {
+    const tx = plan(priced);
+    const first = modify('sofa', d('2026-01-05'), {
+      money: { ...money, amountMinor: 14_623, baseAmountMinor: 14_623 },
+    });
+    const total = all(tx, [first]).reduce((sum, o) => sum + o.money.amountMinor, 0);
+    expect(total).toBe(14_623 + 17 * 14_620 + 6 * 14_700);
+  });
+
+  it('keeps a payment the person changed', () => {
+    const edited = modify('sofa', d('2027-08-05'), {
+      money: { ...money, amountMinor: 1, baseAmountMinor: 1 },
+    });
+    expect(all(plan(priced), [edited])[19]?.money.amountMinor).toBe(1);
+  });
+
+  it('charges every payment the same without a re-priced payment, and on rows from before resets', () => {
+    for (const tx of [plan(), plan({ atPayment: 19, primeAtPurchase: '6' })]) {
+      const payments = all(tx);
+      expect(payments).toHaveLength(24);
+      // By reference, exactly as before: nothing new is made for these rows.
+      expect(payments.every((o) => o.money === money)).toBe(true);
+    }
+  });
+
+  it('converts a foreign plan’s re-priced payment at its own rate, with its card fee', () => {
+    const usd = { ...money, currency: 'USD', rateUsed: '3.7', feeRate: '2.5' } as const;
+    const tx = { ...plan({ ...priced, paymentMinor: 10_000 }), money: usd };
+    const later = all(tx)[18];
+    expect(later?.money).toMatchObject({ amountMinor: 10_000, currency: 'USD', baseAmountMinor: 37_925 });
+    // One snapshot per plan, not one per payment.
+    expect(all(tx)[19]?.money).toBe(later?.money);
   });
 });

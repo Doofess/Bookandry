@@ -2,13 +2,14 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '@/db/db';
+import { d, makeTx, MONEY } from '@/domain/test-factories';
 
 const relay = vi.hoisted(() => ({
   fetchBoiRate: vi.fn<() => Promise<{ boiRate: string; nextDecision?: string }>>(),
 }));
 vi.mock('@/services/prime/prime-rate', () => relay);
 
-const { refreshPrime, startPrimeWatcher, usePrime } = await import('./prime');
+const { allowLongCreditSweep, refreshPrime, startPrimeWatcher, usePrime } = await import('./prime');
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
@@ -97,5 +98,112 @@ describe('keeping prime current', () => {
     vi.advanceTimersByTime(60 * 60_000);
     await Promise.resolve();
     expect(relay.fetchBoiRate).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('long credit that follows prime', () => {
+  // A קרדיט פלוס bought at prime 4.75; payment 19 falls due on 5 July 2027.
+  const plan = makeTx({
+    id: 'tv',
+    date: d('2026-01-05'),
+    money: { ...MONEY, currency: 'ILS', baseCurrency: 'ILS', amountMinor: 14_620, baseAmountMinor: 14_620 },
+    recurrence: {
+      type: 'monthly',
+      dayOfMonth: 5,
+      installments: 24,
+      plan: 'credit',
+      creditAnnualRate: '15.5',
+      reset: { atPayment: 19, primeAtPurchase: '4.75' },
+    },
+  });
+  const resetOf = async () => {
+    const row = await db.transactions.get('tv');
+    return row?.recurrence.type === 'monthly' ? row.recurrence.reset : undefined;
+  };
+
+  beforeEach(async () => {
+    await db.transactions.clear();
+    await db.transactions.put(plan);
+  });
+
+  it('waits for this start’s data to settle, then re-prices at once and whenever prime moves', async () => {
+    // Prime moves to 5.25 before the first sync has pulled: nothing yet.
+    relay.fetchBoiRate.mockResolvedValue({ boiRate: '3.75' });
+    await refreshPrime();
+    expect(await resetOf()).toEqual({ atPayment: 19, primeAtPurchase: '4.75' });
+
+    // Settled: re-priced at prime as it stands, half a point up.
+    await allowLongCreditSweep();
+    expect(await resetOf()).toMatchObject({ rate: '16', paymentMinor: expect.any(Number) });
+
+    // Prime comes back down an hour later: re-priced again.
+    relay.fetchBoiRate.mockResolvedValue({ boiRate: '3.25' });
+    vi.setSystemTime(new Date('2026-10-04T09:00:00.000Z'));
+    await refreshPrime();
+    expect(await resetOf()).toMatchObject({ rate: '15.5' });
+
+    // Asked again, and prime has not moved: nothing is written.
+    await db.outbox.clear();
+    vi.setSystemTime(new Date('2026-10-04T10:00:00.000Z'));
+    await refreshPrime();
+    expect(await db.outbox.count()).toBe(0);
+    expect(relay.fetchBoiRate).toHaveBeenCalledTimes(3);
+
+    // Allowing it again changes nothing either.
+    await allowLongCreditSweep();
+    expect(await db.outbox.count()).toBe(0);
+  });
+});
+
+describe('freezing a payment due, after a long time away', () => {
+  it('re-prices on the stale prime but freezes only once the fetch has answered', async () => {
+    // A fresh start of the module: nothing allowed yet, nothing held.
+    vi.resetModules();
+    const fresh = await import('./prime');
+    const { db: here } = await import('@/db/db');
+    await here.open();
+    await here.meta.clear();
+    await here.transactions.clear();
+    // Bought at prime 4.75; payment 19 fell due on 5 July 2026, while this device was away.
+    await here.transactions.put(
+      makeTx({
+        id: 'away',
+        date: d('2025-01-05'),
+        money: {
+          ...MONEY,
+          currency: 'ILS',
+          baseCurrency: 'ILS',
+          amountMinor: 14_620,
+          baseAmountMinor: 14_620,
+        },
+        recurrence: {
+          type: 'monthly',
+          dayOfMonth: 5,
+          installments: 24,
+          plan: 'credit',
+          creditAnnualRate: '15.5',
+          reset: { atPayment: 19, primeAtPurchase: '4.75', principalMinor: 300_000 },
+        },
+      }),
+    );
+    // The prime this device last fetched, weeks ago: 5.25.
+    await here.meta.put({
+      key: 'primeRate',
+      value: { boiRate: '3.75', checkedAt: '2026-09-01T08:00:00.000Z' },
+    });
+    const resetOf = async () => {
+      const row = await here.transactions.get('away');
+      return row?.recurrence.type === 'monthly' ? row.recurrence.reset : undefined;
+    };
+
+    await fresh.allowLongCreditSweep();
+    const held = await resetOf();
+    expect(held).toMatchObject({ rate: '16' });
+    expect(held?.frozen).toBeUndefined();
+
+    // The fetch answers: prime is 4.75 today, and the payment freezes on it.
+    relay.fetchBoiRate.mockResolvedValue({ boiRate: '3.25' });
+    await fresh.refreshPrime();
+    expect(await resetOf()).toMatchObject({ rate: '15.5', frozen: true });
   });
 });

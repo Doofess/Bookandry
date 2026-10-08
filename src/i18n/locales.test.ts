@@ -250,3 +250,26 @@ describe('interpolations survive translation', () => {
     expect(broken).toEqual([]);
   });
 });
+
+describe('the cards copy in Hebrew', () => {
+  it('speaks to the household in the plural, never to one person', () => {
+    // "שלך", "ידך", "הזנת" (without ם): the singular "you". Every string in the
+    // cards namespace addresses the people using the app in the plural.
+    const singular = /(^|[\s"(])(שלך|ידך|לך|אותך|הזנת|שינית|בחרת)(?=[\s.,?!:;)"]|$)/;
+    const found = Object.entries(FLAT.he.cards).filter(([, text]) => singular.test(text));
+    expect(found).toEqual([]);
+  });
+
+  it('names the card company one way', () => {
+    const found = Object.entries(FLAT.he.cards).filter(([, text]) => text.includes('חברת כרטיסי'));
+    expect(found).toEqual([]);
+  });
+});
+
+describe('the deal rules in Hebrew', () => {
+  it('say them impersonally, so they read right for a deal of either gender', () => {
+    // "חלוקת עסקה" is feminine, "קרדיט" masculine: a verb agreeing with {{deal}} is wrong for one of them.
+    const rules = ['deal.minDeal', 'deal.payments', 'deal.abroad'].map((key) => FLAT.he.common[key] ?? '');
+    for (const text of rules) expect(text).not.toMatch(/דורש|דורשת|\sהוא\s|\sהיא\s|לא ניתן/);
+  });
+});

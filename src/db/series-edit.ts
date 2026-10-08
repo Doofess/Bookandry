@@ -102,7 +102,7 @@ export async function createTransaction(
   return { transaction, firstPaymentOverride: override };
 }
 
-function planInstallments(
+export function planInstallments(
   draft: TransactionDraft,
   totalMinor: Minor | undefined,
 ): { draft: TransactionDraft; firstMinor?: Minor; firstBaseMinor?: Minor } {

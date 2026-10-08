@@ -1,4 +1,4 @@
-import type { Currency, Minor, RateString } from '@/types/money';
+import type { Currency, Minor, MoneySnapshot, RateString } from '@/types/money';
 
 import { exponentOf } from './currency-meta';
 
@@ -641,4 +641,134 @@ export function addPercentFee(minor: Minor, percent: string): Minor {
 export function percentOf(minor: Minor, percent: string): Minor {
   const rate = decimalToRational(percent);
   return toSafeNumber(divRound(BigInt(minor) * rate.n, rate.d * 100n));
+}
+
+/**
+ * The מתואמת rate: what a nominal annual rate really costs once the interest
+ * compounds `periodsPerYear` times a year - (1 + nominal/m)^m − 1, as a percent
+ * rounded half-up to two places ("15.25" monthly is "16.36").
+ *
+ * Exact, like the rest of this file: with r = a/b the power is
+ * ((b+a)^m − b^m) / b^m, so the whole thing is one integer division.
+ */
+export function annualEffectiveRate(nominalPercent: string, periodsPerYear: 12 | 4): string {
+  const rate = decimalToRational(nominalPercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  const m = BigInt(periodsPerYear);
+  const a = rate.n;
+  const b = rate.d * 100n * m;
+  const bPower = b ** m;
+  // Percent with two places: ×100 for percent, ×100 for the places.
+  const hundredths = divRound(10000n * ((b + a) ** m - bPower), bPower);
+  const digits = hundredths.toString().padStart(3, '0');
+  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+/**
+ * An amount with one month's interest at an annual nominal rate added - a 30+
+ * purchase, charged a month late: P × (1 + rate/12), exact and rounded once.
+ */
+export function withMonthOfInterest(principalMinor: Minor, annualRatePercent: string): Minor {
+  const rate = decimalToRational(annualRatePercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  const b = rate.d * 1200n;
+  return toSafeNumber(divRound(BigInt(principalMinor) * (b + rate.n), b));
+}
+
+/**
+ * A קרדיט פלוס rate after prime moves: the rate at purchase plus however far
+ * prime has travelled since, never below zero. Exact decimal strings in and out.
+ */
+export function resetRate(rateAtPurchase: string, primeAtPurchase: string, primeNow: string): string {
+  const was = primeAtPurchase.trim();
+  const change = addRates(primeNow, was.startsWith('-') ? was.slice(1) : `-${was}`);
+  const next = addRates(rateAtPurchase, change);
+  return next.startsWith('-') ? '0' : next;
+}
+
+/**
+ * The payments of a long קרדיט plan whose rate follows prime. Payments before
+ * `reset.atPayment` are the level Spitzer payment over all the months; at the
+ * reset the balance still owed is re-amortized at the new rate over the
+ * payments left.
+ *
+ *   B_k = P(1+i)^k − p((1+i)^k − 1)/i,  i = rate/1200,  k = atPayment − 1
+ *
+ * With i = a/b that is (P·a·G − p·b·(G − b^k)) / (a·b^k), G = (b+a)^k, and p
+ * the exact (unrounded) level payment: exact, rounded once.
+ */
+export function longCreditPayments(
+  principalMinor: Minor,
+  ratePercent: string,
+  months: number,
+  reset: { atPayment: number; rate: string } | undefined,
+): { first: Minor; afterReset?: Minor } {
+  const first = spitzerPayment(principalMinor, ratePercent, months);
+  if (reset === undefined) return { first };
+  const k = reset.atPayment - 1;
+  if (!Number.isSafeInteger(k) || k < 0 || k >= months) {
+    throw new RangeError(`the reset must fall on a payment from 1 to ${String(months)}`);
+  }
+
+  const rate = decimalToRational(ratePercent);
+  let balance: bigint;
+  if (rate.n === 0n) {
+    // P·(months−k)/months: the exact share still owed, rounded once.
+    balance = divRound(BigInt(principalMinor) * BigInt(months - k), BigInt(months));
+  } else {
+    const a = rate.n;
+    const b = rate.d * 1200n;
+    const bPower = b ** BigInt(k);
+    const grown = (b + a) ** BigInt(k);
+    // The exact level payment N/D, not the agora-rounded one: rounding it
+    // would compound through k months into the balance.
+    const grownAll = (b + a) ** BigInt(months);
+    const level = { n: BigInt(principalMinor) * a * grownAll, d: b * (grownAll - b ** BigInt(months)) };
+    balance = divRound(
+      BigInt(principalMinor) * a * grown * level.d - level.n * b * (grown - bPower),
+      level.d * a * bPower,
+    );
+  }
+  return { first, afterReset: spitzerPayment(toSafeNumber(balance), reset.rate, months - k) };
+}
+
+/**
+ * The same snapshot for another amount in its own currency: converted to the
+ * base at the snapshot's own rate, with its card fee on top again where one
+ * was charged - exactly as a save and a reconversion build it.
+ */
+export function moneyForAmount(money: MoneySnapshot, amountMinor: Minor): MoneySnapshot {
+  const converted = convertMinor(amountMinor, money.currency, money.baseCurrency, money.rateUsed);
+  const baseAmountMinor = money.feeRate === undefined ? converted : addPercentFee(converted, money.feeRate);
+  return { ...money, amountMinor, baseAmountMinor };
+}
+
+/**
+ * A split asked for today and first paid `days` from now (in a year of
+ * `yearDays`): the principal a regular month before the first payment that
+ * owes what the real one does by then, so the plan is an ordinary Spitzer
+ * schedule on it. Interest runs from the day of the request, not from the
+ * purchase, and not for a whole month when the bill is two days away.
+ *
+ *   P' = P · (1 + r·days/yearDays) / (1 + r/12)
+ *
+ * With r = a/(100·d): P · 12·(100·d·Y + a·days) / (Y·(1200·d + a)), exact and
+ * rounded once.
+ */
+export function requestDatePrincipal(
+  principalMinor: Minor,
+  annualRatePercent: string,
+  days: number,
+  yearDays: 360 | 365,
+): Minor {
+  const rate = decimalToRational(annualRatePercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  if (!Number.isSafeInteger(days) || days < 0) throw new RangeError('days must be a non-negative integer');
+  const y = BigInt(yearDays);
+  return toSafeNumber(
+    divRound(
+      BigInt(principalMinor) * 12n * (100n * rate.d * y + rate.n * BigInt(days)),
+      y * (1200n * rate.d + rate.n),
+    ),
+  );
 }

@@ -112,3 +112,52 @@ describe('choosing an action', () => {
     expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
   });
 });
+
+describe('splitting a purchase from its menu', () => {
+  it('is offered only when the row’s card can split it', async () => {
+    const target = occurrence({ type: 'one_time' });
+    const { onAction, unmount } = render(target);
+    expect(screen.queryByRole('button', { name: 'Split into payments' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(
+      <RowActionsSheet occurrence={target} split="offer" onOpenChange={vi.fn()} onAction={onAction} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Split into payments' }));
+    expect(onAction).toHaveBeenCalledWith('split', target);
+  });
+
+  it('on a card without a billing day, says to set it instead of offering the split', () => {
+    renderWithProviders(
+      <RowActionsSheet
+        occurrence={occurrence({ type: 'one_time' })}
+        split="needs_billing_day"
+        onOpenChange={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Split into payments' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("To split this purchase into payments, set the card's billing day first."),
+    ).toBeInTheDocument();
+  });
+
+  it('says so in Hebrew', async () => {
+    await initTestI18n('he');
+    try {
+      renderWithProviders(
+        <RowActionsSheet
+          occurrence={occurrence({ type: 'one_time' })}
+          split="needs_billing_day"
+          onOpenChange={vi.fn()}
+          onAction={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByText('כדי לפרוס את העסקה לתשלומים, הגדירו קודם את מועד החיוב של הכרטיס.'),
+      ).toBeInTheDocument();
+    } finally {
+      await initTestI18n('en');
+    }
+  });
+});

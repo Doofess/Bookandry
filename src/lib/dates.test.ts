@@ -9,6 +9,7 @@ import {
   clampDay,
   compareLocal,
   daysBetween,
+  days360,
   daysInMonth,
   dateOrderFor,
   formatTypedDate,
@@ -460,5 +461,15 @@ describe('dateFromExcelSerial', () => {
     expect(dateFromExcelSerial(3_000_000, false)).toBeUndefined();
     expect(dateFromExcelSerial(3_000_000, true)).toBeUndefined();
     expect(dateFromExcelSerial(Number.NaN, false)).toBeUndefined();
+  });
+});
+
+describe('days360', () => {
+  it('counts every month as thirty days', () => {
+    expect(days360(assertLocalDate('2026-10-08'), assertLocalDate('2026-11-10'))).toBe(32);
+    expect(days360(assertLocalDate('2026-10-08'), assertLocalDate('2026-12-10'))).toBe(62);
+    expect(days360(assertLocalDate('2026-01-31'), assertLocalDate('2026-02-28'))).toBe(28);
+    expect(days360(assertLocalDate('2026-12-15'), assertLocalDate('2027-01-15'))).toBe(30);
+    expect(days360(assertLocalDate('2026-10-08'), assertLocalDate('2026-10-08'))).toBe(0);
   });
 });

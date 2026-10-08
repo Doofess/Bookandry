@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { TriangleAlert, X } from 'lucide-react';
 import { useId } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -8,7 +8,16 @@ import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { ResolvedCard } from '@/data/card-catalog/resolve';
 import { splitInstallments } from '@/domain/calculators';
+import {
+  availableModes,
+  dealRuleFor,
+  dealSchedule,
+  dealWarnings,
+  type DealSchedule,
+  type DealWarning,
+} from '@/domain/deal-rules';
 import type { PrimeView } from '@/domain/prime';
 import {
   chargesInterest,
@@ -26,6 +35,7 @@ import {
   type StandingOrderFrequency,
   type TxFormValues,
 } from '@/domain/tx-form';
+import { formatMoney } from '@/i18n/money-format';
 import { formatLocalDate, isLocalDate, parseLocalDate } from '@/lib/dates';
 import { creditSchedule, normalizeAnnualRate } from '@/lib/money';
 import type { Recurrence } from '@/types/domain';
@@ -65,6 +75,7 @@ export function RecurrenceFields({
   amountMinor,
   errors,
   prime,
+  card,
 }: {
   readonly values: TxFormValues;
   readonly onChange: (patch: Partial<TxFormValues>) => void;
@@ -86,6 +97,13 @@ export function RecurrenceFields({
   readonly errors: Readonly<Partial<Record<keyof TxFormValues, string>>>;
   /** Prime from the Bank of Israel, for a loan priced on it. */
   readonly prime: PrimeView;
+  /**
+   * The paying card, when it is linked to the catalog and its entry has
+   * loaded: its own deals, their rules and their schedules. Absent - no card,
+   * a card not linked, the catalog still loading or failed - the form is
+   * exactly what it always was.
+   */
+  readonly card?: CardDeals;
 }) {
   const { t, i18n } = useTranslation();
   const modeLabelId = useId();
@@ -114,6 +132,59 @@ export function RecurrenceFields({
   const monthlyShaped = mode === 'monthly' || (mode === 'standing_order' && values.frequency === 'monthly');
   const yearlyShaped = mode === 'yearly' || (mode === 'standing_order' && values.frequency === 'yearly');
 
+  /*
+   * The choices: today's, or a linked card's own deals under the card
+   * company's own names. One the card does not offer stays listed while it is
+   * the one chosen, so the control never shows nothing selected.
+   */
+  const lang = i18n.language.startsWith('he') ? 'he' : 'en';
+  const resolved = isExpense ? card?.resolved : undefined;
+  const offered = availableModes(resolved, isExpense ? 'expense' : 'income').filter(
+    (m) => m !== 'deferred' || card?.offerDeferred !== false,
+  );
+  const modes = offered.includes(mode) ? offered : [...offered, mode];
+  const fallbackLabel: Record<RecurrenceMode, string> = {
+    one_time: isExpense ? t('tx.typeRegular') : t('tx.repeatOnce'),
+    installments: t('tx.typeInstallments'),
+    credit: t('tx.typeCredit'),
+    long_credit: t('tx.typeLongCredit'),
+    deferred: t('tx.typeDeferred'),
+    standing_order: t('tx.typeStandingOrder'),
+    loan: t('tx.typeLoan'),
+    monthly: t('tx.repeatMonthly'),
+    yearly: t('tx.repeatYearly'),
+  };
+  const labelOf = (m: RecurrenceMode) => dealRuleFor(resolved, m)?.label[lang] ?? fallbackLabel[m];
+  const deal = dealRuleFor(resolved, mode);
+
+  // The deal's rules, as warnings: never a refusal.
+  const count = isInstallmentMode(mode) ? Number(values.installmentCount) : 1;
+  const warnings: readonly DealWarning[] =
+    deal === undefined || card === undefined || !Number.isInteger(count) || count < 1
+      ? []
+      : dealWarnings(deal, {
+          // The minimums are in shekels: unchecked while the amount is not known in them.
+          amountMinor: card.shekelsMinor ?? Number.MAX_SAFE_INTEGER,
+          payments: count,
+          abroad: card.abroad,
+        }).filter(
+          (w) => card.shekelsMinor !== undefined || (w.code !== 'min_deal' && w.code !== 'min_payment'),
+        );
+
+  const rate = effectiveRate(values);
+  const schedule =
+    deal === undefined || (mode !== 'credit' && mode !== 'long_credit') || rate === undefined || rate === ''
+      ? undefined
+      : dealSchedule({
+          principalMinor: amountMinor,
+          rate,
+          count,
+          maxCount: maxPaymentsFor(mode),
+          compounding: deal.rate?.compounding ?? 12,
+          reset: mode === 'long_credit' ? deal.rate?.reset : undefined,
+          primeRate: prime.primeRate,
+        });
+
   return (
     <div className="space-y-3">
       <Label id={modeLabelId}>{isExpense ? t('tx.type') : t('tx.repeat')}</Label>
@@ -123,23 +194,22 @@ export function RecurrenceFields({
         onChange={(next) => {
           onChange(recurrenceDefaults(next, values));
         }}
-        options={
-          isExpense
-            ? [
-                { value: 'one_time', label: t('tx.typeRegular') },
-                { value: 'installments', label: t('tx.typeInstallments') },
-                { value: 'credit', label: t('tx.typeCredit') },
-                { value: 'standing_order', label: t('tx.typeStandingOrder') },
-                { value: 'loan', label: t('tx.typeLoan') },
-              ]
-            : [
-                { value: 'one_time', label: t('tx.repeatOnce') },
-                { value: 'monthly', label: t('tx.repeatMonthly') },
-                { value: 'yearly', label: t('tx.repeatYearly') },
-              ]
-        }
-        size="sm"
+        options={modes.map((value) => ({ value, label: labelOf(value) }))}
+        // The full 44px: a linked card puts up to seven choices here, a phone's thumb on each.
+        // Whole choices wrap to the next row; a name ("Credit Plus", "30 פלוס") never breaks inside one.
+        className="*:whitespace-nowrap"
       />
+
+      {mode === 'deferred' ? (
+        <AnnualRateField
+          value={values.annualRate}
+          onChange={(annualRate) => {
+            onChange({ annualRate });
+          }}
+          hint={t('tx.annualRateHint')}
+          error={errors.annualRate}
+        />
+      ) : null}
 
       {mode === 'standing_order' ? (
         <div className="space-y-1.5">
@@ -265,11 +335,23 @@ export function RecurrenceFields({
               annualRate={effectiveRate(values) ?? ''}
               maxCount={maxPaymentsFor(mode)}
               currency={currency}
+              // The card's own schedule line says the interest, and the מתואמת rate with it.
+              showInterest={schedule === undefined}
             />
           ) : (
             <p className="text-xs text-destructive">{errors.installmentCount}</p>
           )}
+          {schedule === undefined ? null : <ScheduleLines schedule={schedule} currency={currency} />}
         </div>
+      ) : null}
+
+      {card !== undefined && deal !== undefined ? (
+        <DealNotes
+          dealName={deal.label[lang]}
+          warnings={warnings}
+          needRate={card.needRate && chargesInterest(mode)}
+          onOpenCard={card.onOpenCard}
+        />
       ) : null}
 
       {yearlyShaped && date !== undefined ? (
@@ -311,6 +393,7 @@ function InstallmentPreview({
   annualRate,
   maxCount,
   currency,
+  showInterest,
 }: {
   readonly date: LocalDate;
   readonly count: number;
@@ -323,6 +406,8 @@ function InstallmentPreview({
   /** 60 for a card's plan, 360 for a loan. */
   readonly maxCount: number;
   readonly currency: Currency;
+  /** Off where the card's own schedule line already says the interest. */
+  readonly showInterest: boolean;
 }) {
   const { t, i18n } = useTranslation();
 
@@ -405,7 +490,7 @@ function InstallmentPreview({
         purchase is ₪42.36, and seeing the shekels is the difference between
         agreeing to a plan and noticing it.
       */}
-      {interest === undefined ? null : (
+      {interest === undefined || !showInterest ? null : (
         <>
           <br />
           <Trans
@@ -421,8 +506,124 @@ function InstallmentPreview({
   );
 }
 
+/** What the purchase form knows of a card linked to the catalog. */
+export type CardDeals = {
+  readonly resolved: ResolvedCard;
+  /** The deal's rate is neither published nor entered: saving waits for it. */
+  readonly needRate: boolean;
+  /** Open the card's editor, where its rate table is. */
+  readonly onOpenCard: () => void;
+  /** Bought abroad (in a foreign currency): some deals are not offered then. */
+  readonly abroad: boolean;
+  /** The amount in shekels, for the deal's minimums; undefined while it is not known in them. */
+  readonly shekelsMinor: Minor | undefined;
+  /** 30+ is a new purchase only: an edit has no way to make one. */
+  readonly offerDeferred: boolean;
+};
+
+/** An amount inside a sentence: one left-to-right island, so Hebrew does not reorder it. */
+function moneyText(minor: Minor, currency: Currency, locale: string): string {
+  return `⁦${formatMoney(minor, currency, { locale }).text}⁩`;
+}
+
+/**
+ * A linked card's schedule for קרדיט and קרדיט פלוס: each payment, the
+ * interest, and the מתואמת rate; and where the deal follows prime from a
+ * payment on, the payments after it at today's prime, said as an estimate.
+ */
+export function ScheduleLines({
+  schedule,
+  currency,
+}: {
+  readonly schedule: DealSchedule;
+  readonly currency: Currency;
+}) {
+  const { t, i18n } = useTranslation();
+  const money = (minor: Minor) => moneyText(minor, currency, i18n.language);
+  return (
+    <div className="space-y-1 text-xs text-muted-foreground" data-testid="deal-schedule">
+      <p>
+        {t('deal.schedule', {
+          n: schedule.count,
+          payment: money(schedule.paymentMinor),
+          interest: money(schedule.interestMinor),
+          eff: schedule.effective,
+        })}
+      </p>
+      {schedule.reset === undefined ? null : (
+        <p>
+          {t('deal.resetSchedule', {
+            last: schedule.reset.atPayment - 1,
+            first: money(schedule.reset.firstMinor),
+            at: schedule.reset.atPayment,
+            after: money(schedule.reset.afterMinor),
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The card's rules a purchase breaks, said as warnings - the store or the
+ * card company may know better - and the one thing that does hold a save
+ * back: a deal whose rate nobody has given, with the way to give it.
+ */
+export function DealNotes({
+  dealName,
+  warnings,
+  needRate,
+  onOpenCard,
+}: {
+  readonly dealName: string;
+  readonly warnings: readonly DealWarning[];
+  readonly needRate: boolean;
+  readonly onOpenCard: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const money = (minor: string | number | undefined) =>
+    typeof minor === 'number' ? moneyText(minor, 'ILS', i18n.language) : '';
+  const sentence = (w: DealWarning): string => {
+    switch (w.code) {
+      case 'min_deal':
+        return t('deal.minDeal', { deal: dealName, min: money(w.values.min) });
+      case 'min_payment':
+        return t('deal.minPayment', { min: money(w.values.min) });
+      case 'payments':
+        return t('deal.payments', { deal: dealName, min: w.values.min, max: w.values.max });
+      case 'abroad':
+        return t('deal.abroad', { deal: dealName });
+    }
+  };
+  if (warnings.length === 0 && !needRate) return null;
+  return (
+    <div className="space-y-1.5">
+      {warnings.length === 0 ? null : (
+        <ul className="space-y-1" aria-live="polite">
+          {warnings.map((w) => (
+            <li key={w.code} className="flex items-start gap-1.5 text-xs text-amber-800 dark:text-amber-300">
+              <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+              <span>{sentence(w)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {needRate ? (
+        <div className="flex flex-wrap items-center gap-x-2">
+          <p role="alert" className="text-xs text-destructive">
+            {t('deal.needRate', { deal: dealName })}
+          </p>
+          <Button type="button" variant="link" className="min-h-11 px-0" onClick={onOpenCard}>
+            {t('deal.openCard')}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** A rate typed as it is: a card's, or a fixed-rate loan's. */
-function AnnualRateField({
+export function AnnualRateField({
   value,
   onChange,
   hint,

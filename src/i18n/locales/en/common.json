@@ -211,6 +211,8 @@
     "typeRegular": "Regular transaction",
     "typeInstallments": "Installment transaction",
     "typeCredit": "Credit installment",
+    "typeLongCredit": "Long credit",
+    "typeDeferred": "Deferred (30+)",
     "typeLoan": "Loan",
     "loanCount": "Number of monthly payments",
     "loanTotalHint": "Enter the amount you borrowed. Bookandry works out the monthly repayment.",
@@ -336,6 +338,22 @@
     "errMarginInvalid": "Enter a number, like 1.5 or -0.5.",
     "cardCharged": "Charged to the bank with this card's bill on {{date}}.",
     "cardFxFee": "In a foreign currency, the card adds <rate></rate>."
+  },
+  "deal": {
+    "minDeal": "{{deal}} on this card needs at least {{min}}.",
+    "minPayment": "Each payment must be at least {{min}}.",
+    "payments": "{{deal}} on this card is {{min}} to {{max}} payments.",
+    "abroad": "{{deal}} isn't offered for purchases abroad on this card.",
+    "needRate": "Enter this card's {{deal}} rate first.",
+    "openCard": "Open the card",
+    "schedule": "{{n}} payments of {{payment}} · interest {{interest}} · {{eff}}% effective",
+    "resetSchedule": "Payments 1–{{last}}: {{first}}. From payment {{at}}: about {{after}} at today's prime. It moves with any change in prime."
+  },
+  "split": {
+    "action": "Split into payments",
+    "title": "Split this purchase",
+    "save": "Split it",
+    "needsBillingDay": "To split this purchase into payments, set the card's billing day first."
   },
   "commitments": {
     "title": "Recurring commitments",

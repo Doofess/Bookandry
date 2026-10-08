@@ -111,7 +111,7 @@ export function daysBetween(from: LocalDate, to: LocalDate): number {
   const a = parseLocalDate(from);
   const b = parseLocalDate(to);
   const ms = Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day);
-  return Math.round(ms / 86_400_000);
+  return Math.round(ms / 86_400_000); // money-allow: whole days between dates
 }
 
 /** Clamp a day-of-month to a month that may be shorter. */
@@ -426,4 +426,14 @@ export function dateFromExcelSerial(serial: number, date1904: boolean): LocalDat
   if (date1904) return days < 0 || days > 2_957_003 ? undefined : addDays(EXCEL_1904_EPOCH, days);
   if (days < 1 || days === 60 || days > 2_958_465) return undefined;
   return addDays(EXCEL_1900_EPOCH, days < 60 ? days + 1 : days);
+}
+
+/**
+ * Days between two dates the way a 30/360 rate counts them: every month
+ * thirty days, a 31st as the 30th.
+ */
+export function days360(from: LocalDate, to: LocalDate): number {
+  const a = parseLocalDate(from);
+  const b = parseLocalDate(to);
+  return (b.year - a.year) * 360 + (b.month - a.month) * 30 + (Math.min(b.day, 30) - Math.min(a.day, 30));
 }

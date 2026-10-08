@@ -17,10 +17,11 @@ import { AppShell } from '@/app/app-shell';
 import { BootGate } from '@/app/boot-gate';
 import { capturePendingLinks } from '@/app/capture-pending';
 import { AppDirection } from '@/app/direction-provider';
-import { startPrimeWatcher } from '@/app/prime';
+import { allowLongCreditSweep, startPrimeWatcher } from '@/app/prime';
 import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
+import { refreshCatalogCards } from '@/db/catalog-refresh';
 import { db } from '@/db/db';
 import { ensureBuiltinCategories } from '@/db/repos/categories';
 import { ensureBuiltinPaymentMethods } from '@/db/repos/payment-methods';
@@ -129,6 +130,10 @@ async function bootstrap(): Promise<void> {
    */
   startSweeper(db, () => systemClock.nowMs());
 
+  // Cards linked to an older card catalog follow the new one, unawaited. The
+  // catalog's own chunk is fetched only when some card is behind it.
+  void refreshCatalogCards(db, systemClock.today(), systemClock.nowIso()).catch(() => undefined);
+
   // Israeli prime, kept current from the Bank of Israel. Unawaited: the app
   // has a figure to show from the first paint, and a fresher one replaces it.
   startPrimeWatcher();
@@ -138,7 +143,18 @@ async function bootstrap(): Promise<void> {
    * resume or a sign-in redirect to finish; signed-out people never download
    * the Supabase client at all.
    */
-  initAccount(db).start();
+  const account = initAccount(db);
+
+  /*
+   * Long קרדיט plans that follow prime are re-priced (and frozen once their
+   * reset payment is due) when this start's data is settled: at once without
+   * an account, after the first sync has pulled with one - so values another
+   * device froze arrive before this one works out its own.
+   */
+  account.onDataReady(() => {
+    void allowLongCreditSweep();
+  });
+  account.start();
 
   await initI18n();
 
