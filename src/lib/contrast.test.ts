@@ -171,6 +171,25 @@ describe('the brand', () => {
     expect(get(DARK, '--primary')).toEqual({ l: 0.779, c: 0.113, h: 259.7 });
   });
 
+  it('pins the remaining sapphire tokens, so a floor-passing drift still fails', () => {
+    expect(get(LIGHT, '--primary-hover')).toEqual({ l: 0.374, c: 0.142, h: 261.5 });
+    expect(get(DARK, '--primary-hover')).toEqual({ l: 0.836, c: 0.082, h: 258.8 });
+    expect(get(LIGHT, '--ring')).toEqual({ l: 0.546, c: 0.215, h: 262.9 });
+    expect(get(DARK, '--ring')).toEqual({ l: 0.779, c: 0.113, h: 259.7 });
+    expect(get(LIGHT, '--accent')).toEqual({ l: 0.959, c: 0.019, h: 260.2 });
+    expect(get(DARK, '--accent')).toEqual({ l: 0.314, c: 0.085, h: 263.5 });
+    expect(get(LIGHT, '--accent-foreground')).toEqual({ l: 0.374, c: 0.142, h: 261.5 });
+    expect(get(DARK, '--accent-foreground')).toEqual({ l: 0.779, c: 0.113, h: 259.7 });
+    expect(get(LIGHT, '--primary-foreground')).toEqual({ l: 1, c: 0, h: 0 });
+    expect(get(DARK, '--primary-foreground')).toEqual({ l: 0.253, c: 0.084, h: 263 });
+    expect(get(LIGHT, '--brand-vivid')).toEqual({ l: 0.702, c: 0.158, h: 255.6 });
+    expect(get(DARK, '--brand-vivid')).toEqual({ l: 0.702, c: 0.158, h: 255.6 });
+  });
+
+  it('keeps the dark front-door links readable: brand-vivid text on the page is 7:1', () => {
+    expect(contrastRatio(get(DARK, '--background'), get(DARK, '--brand-vivid'))).toBeGreaterThanOrEqual(7);
+  });
+
   it('keeps income green', () => {
     expect(get(LIGHT, '--income').h).toBeCloseTo(156.1, 1);
     expect(get(DARK, '--chart-income').h).toBeCloseTo(159.7, 1);

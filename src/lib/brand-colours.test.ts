@@ -30,4 +30,12 @@ describe('brand colours outside the token file', () => {
     expect(read('public/favicon.svg')).not.toContain('#16794a');
     expect(read('pwa-assets.config.ts').match(/#0F3A8A/g)).toHaveLength(2);
   });
+
+  it('the privacy and terms pages link in the app sapphire, not the old green', () => {
+    const css = read('public/legal.css');
+
+    expect(css).toContain('--primary: oklch(0.462 0.175 262.6)');
+    expect(css).toContain('--primary: oklch(0.779 0.113 259.7)');
+    expect(css).not.toMatch(/oklch\([^)]* 15[5-9]\.\d\)/);
+  });
 });
