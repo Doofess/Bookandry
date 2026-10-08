@@ -55,6 +55,16 @@ function sound(): Catalog {
         id: 'b1',
         name: { he: 'בנק', en: 'Bank' },
         issuers: ['cal'],
+        fxFee: { cal: '3' },
+        fxFeeTiers: [{ issuer: 'cal', tier: 'gold', fee: '2', source: { ...src } }],
+        billingDays: [2, 10],
+        foreignPosting: 'immediate',
+        sources: {
+          issuers: { ...src },
+          billingDays: { ...src },
+          foreignPosting: { ...src },
+          fxFee: { cal: { ...src } },
+        },
         rates: [{ issuer: 'cal', tier: 'gold', deal: 'credit', rate: fixedRate('10') }],
         dealOverrides: [{ issuer: 'cal', deal: { kind: 'credit', source: { ...src } } }],
       },
@@ -272,6 +282,50 @@ describe('the data checks catch what they are for', () => {
         set(c, 19, 5_000);
       }),
     ).toEqual([]);
+  });
+
+  it('flags a bank rates row naming an unknown club, or naming neither tier nor club', () => {
+    const row = (c: Catalog) => c.banks[0]!.rates![0]!;
+    expect(
+      broken((c) => {
+        row(c).club = 'nope';
+      }).join(),
+    ).toContain('unknown club');
+    expect(
+      broken((c) => {
+        delete row(c).tier;
+      }).join(),
+    ).toContain('names neither a tier nor a club');
+    expect(
+      broken((c) => {
+        delete row(c).tier;
+        row(c).club = 'a';
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags a bank FX fee that is not a decimal, or a card-type fee the bank cannot apply', () => {
+    expect(broken((c) => (c.banks[0]!.fxFee = { cal: '3%' })).join()).toContain('FX fee is not a decimal');
+    const tier = (c: Catalog) => c.banks[0]!.fxFeeTiers![0]!;
+    expect(broken((c) => (tier(c).fee = 'two')).join()).toContain('FX fee is not a decimal');
+    expect(broken((c) => (tier(c).tier = 'nope')).join()).toContain('FX fee for unknown tier');
+    expect(broken((c) => (tier(c).issuer = 'max')).join()).toContain('FX fee for undistributed max');
+  });
+
+  it('flags a bank figure with no source, and an unsound bank source', () => {
+    const p = broken((c) => {
+      c.banks[0]!.sources = {};
+    });
+    for (const k of ['issuers', 'billingDays', 'foreignPosting', 'fxFee.cal'])
+      expect(p.join(), k).toContain(`b1.sources.${k}: no source`);
+    const bad = { url: 'http://x.com', seen: '2026-13-01' as LocalDate };
+    const q = broken((c) => {
+      const b = c.banks[0]!;
+      b.sources = { issuers: bad, billingDays: bad, foreignPosting: bad, fxFee: { cal: bad } };
+      b.fxFeeTiers![0]!.source = bad;
+    });
+    expect(q.filter((x) => x.includes('not https'))).toHaveLength(5);
+    expect(q.filter((x) => x.includes('not a valid date'))).toHaveLength(5);
   });
 
   it('flags a late rate given twice', () => {

@@ -281,6 +281,43 @@ describe('referential integrity', () => {
     }
   });
 
+  it('keeps a card’s catalog link and the rates the person changed, and refuses ones that do not read', () => {
+    const doc = envelope() as ExportEnvelope;
+    const [first] = doc.data.paymentMethods;
+    const withCard = (card: unknown) =>
+      validateEnvelope({ ...doc, data: { ...doc.data, paymentMethods: [{ ...first, card }] } });
+    const card = {
+      billingDay: 10,
+      catalog: {
+        issuer: 'max',
+        bank: '20',
+        tier: 'international',
+        club: 'skymax',
+        version: 1,
+        updatedOn: '2026-10-08',
+      },
+      overrides: {
+        credit: { basis: 'prime', margin: '9' },
+        long_credit: { basis: 'fixed', rate: '14.5' },
+        late: { basis: 'boi', margin: '16.40' },
+      },
+    };
+    const result = withCard(card);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.doc.data.paymentMethods[0]?.card).toEqual(card);
+    for (const bad of [
+      { catalog: { issuer: 'max', bank: '20', tier: 'international', version: 0 } },
+      { catalog: { issuer: 'max', bank: '20', tier: 'international', version: 1.5 } },
+      { catalog: { issuer: 'max', bank: '20', version: 1 } },
+      { catalog: { issuer: 'max', bank: '20', tier: 'gold', version: 1, updatedOn: '2026-02-30' } },
+      { overrides: { surcharge: { basis: 'prime', margin: '1' } } },
+      { overrides: { late: { basis: 'boi', margin: '+1' } } },
+      { overrides: { credit: { basis: 'fixed', rate: '-1' } } },
+    ]) {
+      expect(withCard(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
   it('rejects an impossible calendar date', () => {
     // A regex alone would wave 2026-02-30 through, and it would only surface
     // much later inside occurrence expansion.

@@ -21,6 +21,7 @@ import { startPrimeWatcher } from '@/app/prime';
 import { LINKED_ROUTES, ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { keepUpToDate } from '@/app/sw-update';
 import { TodayProvider } from '@/app/today-provider';
+import { refreshCatalogCards } from '@/db/catalog-refresh';
 import { db } from '@/db/db';
 import { ensureBuiltinCategories } from '@/db/repos/categories';
 import { ensureBuiltinPaymentMethods } from '@/db/repos/payment-methods';
@@ -128,6 +129,10 @@ async function bootstrap(): Promise<void> {
    * first paint.
    */
   startSweeper(db, () => systemClock.nowMs());
+
+  // Cards linked to an older card catalog follow the new one, unawaited. The
+  // catalog's own chunk is fetched only when some card is behind it.
+  void refreshCatalogCards(db, systemClock.today(), systemClock.nowIso()).catch(() => undefined);
 
   // Israeli prime, kept current from the Bank of Israel. Unawaited: the app
   // has a figure to show from the first paint, and a fresher one replaces it.

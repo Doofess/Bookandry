@@ -28,7 +28,8 @@ function allRates(catalog: Catalog): Located[] {
     add(`${b.id}.lateRate`, b.lateRate);
     for (const [k, r] of Object.entries(b.extraRates ?? {})) add(`${b.id}.extra.${k}`, r);
     for (const o of b.dealOverrides ?? []) add(`${b.id}.override.${o.deal.kind}`, o.deal.rate);
-    for (const r of b.rates ?? []) add(`${b.id}.rates.${r.issuer}.${r.tier}.${r.deal}`, r.rate);
+    for (const r of b.rates ?? [])
+      add(`${b.id}.rates.${r.issuer}.${r.tier ?? '*'}.${r.club ?? '*'}.${r.deal}`, r.rate);
   }
   return out;
 }
@@ -59,9 +60,24 @@ export function catalogProblems(catalog: Catalog): string[] {
     for (const c of i.clubs) if (c.source) checkSource(`${i.id}.club.${c.id}`, c.source);
     for (const f of i.cardFees ?? []) if (f.source) checkSource(`${i.id}.fee.${f.tier}`, f.source);
   }
-  for (const b of catalog.banks)
+  for (const b of catalog.banks) {
     for (const o of b.dealOverrides ?? [])
       if (o.deal.source) checkSource(`${b.id}.override.${o.deal.kind}`, o.deal.source);
+    for (const f of b.fxFeeTiers ?? []) checkSource(`${b.id}.fxFeeTiers.${f.issuer}.${f.tier}`, f.source);
+
+    // Every bank-level figure names its source.
+    const s = b.sources ?? {};
+    const need = (key: string, present: boolean, source: { url: string; seen: string } | undefined) => {
+      if (!present) return;
+      if (source) checkSource(`${b.id}.sources.${key}`, source);
+      else p.push(`${b.id}.sources.${key}: no source`);
+    };
+    need('issuers', true, s.issuers);
+    need('billingDays', b.billingDays !== undefined, s.billingDays);
+    need('foreignPosting', b.foreignPosting !== undefined, s.foreignPosting);
+    for (const id of Object.keys(b.fxFee ?? {}) as (keyof NonNullable<typeof s.fxFee>)[])
+      need(`fxFee.${id}`, true, s.fxFee?.[id]);
+  }
 
   // Duplicate ids.
   for (const id of duplicates(catalog.issuers.map((i) => i.id))) p.push(`duplicate issuer ${id}`);
@@ -115,15 +131,29 @@ export function catalogProblems(catalog: Catalog): string[] {
   // Banks: references that must resolve and be reachable.
   for (const b of catalog.banks) {
     for (const id of b.issuers) if (!issuerIds.has(id)) p.push(`${b.id}: unknown card company ${id}`);
-    for (const id of Object.keys(b.fxFee ?? {}))
+    for (const [id, fee] of Object.entries(b.fxFee ?? {})) {
       if (!b.issuers.includes(id as never)) p.push(`${b.id}: fxFee for undistributed ${id}`);
+      if (!DECIMAL_RE.test(fee)) p.push(`${b.id}.fxFee.${id}: FX fee is not a decimal (${fee})`);
+    }
+    for (const f of b.fxFeeTiers ?? []) {
+      const where = `${b.id}.fxFeeTiers.${f.issuer}.${f.tier}`;
+      if (!DECIMAL_RE.test(f.fee)) p.push(`${where}: FX fee is not a decimal (${f.fee})`);
+      if (!b.issuers.includes(f.issuer)) p.push(`${where}: FX fee for undistributed ${f.issuer}`);
+      const issuer = catalog.issuers.find((i) => i.id === f.issuer);
+      if (issuer && !issuer.tiers.some((t) => t.id === f.tier)) p.push(`${where}: FX fee for unknown tier`);
+    }
     if (b.lateRate && b.extraRates?.late) p.push(`${b.id}: late rate given twice`);
     for (const row of b.rates ?? []) {
-      const where = `${b.id}.rates.${row.issuer}.${row.tier}.${row.deal}`;
+      const where = `${b.id}.rates.${row.issuer}.${row.tier ?? '*'}.${row.club ?? '*'}.${row.deal}`;
       const issuer = catalog.issuers.find((i) => i.id === row.issuer);
+      if (row.tier === undefined && row.club === undefined)
+        p.push(`${where}: names neither a tier nor a club`);
       if (!issuer) p.push(`${where}: unknown card company`);
       else {
-        if (!issuer.tiers.some((t) => t.id === row.tier)) p.push(`${where}: unknown tier`);
+        if (row.tier !== undefined && !issuer.tiers.some((t) => t.id === row.tier))
+          p.push(`${where}: unknown tier`);
+        if (row.club !== undefined && !issuer.clubs.some((c) => c.id === row.club))
+          p.push(`${where}: unknown club`);
         if (!issuer.deals.some((d) => d.kind === row.deal)) p.push(`${where}: unknown deal`);
       }
       if (!b.issuers.includes(row.issuer)) p.push(`${where}: bank does not distribute it`);

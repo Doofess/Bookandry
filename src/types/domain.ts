@@ -187,7 +187,30 @@ export type CardDetails = {
   readonly creditPrimeMargin?: string;
   /** ריבית פיגורים: charged on a bill not paid in time. */
   readonly lateRate?: RateTerm;
+  /**
+   * The card's place in the built-in card catalog: card company, bank (Masav
+   * code, or 'none' for a card not through a bank), tier and club, and the
+   * catalog version it was last filled from. Linked cards follow the catalog
+   * in every field the person has not changed (`overrides`).
+   */
+  readonly catalog?: CardCatalogLink;
+  /** Only the rates the person changed from the catalog's. */
+  readonly overrides?: Partial<Record<DealKind | ExtraRateKind, CardRateTerm>>;
 };
+
+export type CardCatalogLink = {
+  readonly issuer: string;
+  /** Masav code, or 'none': not through a bank. */
+  readonly bank: string;
+  readonly tier: string;
+  readonly club?: string;
+  readonly version: number;
+  /** When a catalog update last changed this card. */
+  readonly updatedOn?: LocalDate;
+};
+
+/** A card's rate: a `RateTerm`, or the Bank of Israel rate plus a margin (fair-credit late interest). */
+export type CardRateTerm = RateTerm | { readonly basis: 'boi'; readonly margin: string };
 
 /**
  * Whose an account is: one person's, a joint account (a couple's, a family's),
