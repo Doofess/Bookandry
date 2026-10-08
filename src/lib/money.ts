@@ -1,4 +1,4 @@
-import type { Currency, Minor, RateString } from '@/types/money';
+import type { Currency, Minor, MoneySnapshot, RateString } from '@/types/money';
 
 import { exponentOf } from './currency-meta';
 
@@ -730,4 +730,45 @@ export function longCreditPayments(
     );
   }
   return { first, afterReset: spitzerPayment(toSafeNumber(balance), reset.rate, months - k) };
+}
+
+/**
+ * The same snapshot for another amount in its own currency: converted to the
+ * base at the snapshot's own rate, with its card fee on top again where one
+ * was charged - exactly as a save and a reconversion build it.
+ */
+export function moneyForAmount(money: MoneySnapshot, amountMinor: Minor): MoneySnapshot {
+  const converted = convertMinor(amountMinor, money.currency, money.baseCurrency, money.rateUsed);
+  const baseAmountMinor = money.feeRate === undefined ? converted : addPercentFee(converted, money.feeRate);
+  return { ...money, amountMinor, baseAmountMinor };
+}
+
+/**
+ * A split asked for today and first paid `days` from now (in a year of
+ * `yearDays`): the principal a regular month before the first payment that
+ * owes what the real one does by then, so the plan is an ordinary Spitzer
+ * schedule on it. Interest runs from the day of the request, not from the
+ * purchase, and not for a whole month when the bill is two days away.
+ *
+ *   P' = P · (1 + r·days/yearDays) / (1 + r/12)
+ *
+ * With r = a/(100·d): P · 12·(100·d·Y + a·days) / (Y·(1200·d + a)), exact and
+ * rounded once.
+ */
+export function requestDatePrincipal(
+  principalMinor: Minor,
+  annualRatePercent: string,
+  days: number,
+  yearDays: 360 | 365,
+): Minor {
+  const rate = decimalToRational(annualRatePercent);
+  if (rate.n < 0n) throw new RangeError('interest rate cannot be negative');
+  if (!Number.isSafeInteger(days) || days < 0) throw new RangeError('days must be a non-negative integer');
+  const y = BigInt(yearDays);
+  return toSafeNumber(
+    divRound(
+      BigInt(principalMinor) * 12n * (100n * rate.d * y + rate.n * BigInt(days)),
+      y * (1200n * rate.d + rate.n),
+    ),
+  );
 }

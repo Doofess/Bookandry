@@ -531,7 +531,7 @@ function moneyText(minor: Minor, currency: Currency, locale: string): string {
  * interest, and the מתואמת rate; and where the deal follows prime from a
  * payment on, the payments after it at today's prime, said as an estimate.
  */
-function ScheduleLines({
+export function ScheduleLines({
   schedule,
   currency,
 }: {
@@ -569,7 +569,7 @@ function ScheduleLines({
  * card company may know better - and the one thing that does hold a save
  * back: a deal whose rate nobody has given, with the way to give it.
  */
-function DealNotes({
+export function DealNotes({
   dealName,
   warnings,
   needRate,
@@ -623,7 +623,7 @@ function DealNotes({
 }
 
 /** A rate typed as it is: a card's, or a fixed-rate loan's. */
-function AnnualRateField({
+export function AnnualRateField({
   value,
   onChange,
   hint,

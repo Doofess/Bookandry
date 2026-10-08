@@ -64,7 +64,8 @@ export function useRowActions(): (action: RowAction, occurrence: Occurrence) => 
           }
 
           case 'edit':
-            // Handled by the caller, which owns the sheet's URL state.
+          case 'split':
+            // Handled by the caller, which owns the sheets.
             return;
         }
       } catch {

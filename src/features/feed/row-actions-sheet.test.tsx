@@ -112,3 +112,18 @@ describe('choosing an action', () => {
     expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
   });
 });
+
+describe('splitting a purchase from its menu', () => {
+  it('is offered only when the row’s card can split it', async () => {
+    const target = occurrence({ type: 'one_time' });
+    const { onAction, unmount } = render(target);
+    expect(screen.queryByRole('button', { name: 'Split into payments' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(
+      <RowActionsSheet occurrence={target} canSplit onOpenChange={vi.fn()} onAction={onAction} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Split into payments' }));
+    expect(onAction).toHaveBeenCalledWith('split', target);
+  });
+});

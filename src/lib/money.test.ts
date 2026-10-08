@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import type { Minor } from '@/types/money';
+import type { LocalDate, Minor, MoneySnapshot } from '@/types/money';
 
 import { CURRENCY_EXPONENTS, exponentOf } from './currency-meta';
 import {
@@ -10,6 +10,8 @@ import {
   longCreditPayments,
   resetRate,
   withMonthOfInterest,
+  moneyForAmount,
+  requestDatePrincipal,
   AmountOverflowError,
   convertMinor,
   creditSchedule,
@@ -924,5 +926,54 @@ describe('withMonthOfInterest', () => {
 
   it('rejects a negative rate', () => {
     expect(() => withMonthOfInterest(100, '-1')).toThrow(RangeError);
+  });
+});
+
+describe('moneyForAmount', () => {
+  const ils: MoneySnapshot = {
+    amountMinor: 10_000,
+    currency: 'ILS',
+    baseCurrency: 'ILS',
+    baseAmountMinor: 10_000,
+    rateUsed: '1',
+    rateDate: '2026-10-08' as LocalDate,
+    rateSource: 'manual',
+  };
+
+  it('in the base currency, is the amount itself', () => {
+    expect(moneyForAmount(ils, 12_345)).toEqual({ ...ils, amountMinor: 12_345, baseAmountMinor: 12_345 });
+  });
+
+  it('abroad, converts at the snapshot’s own rate and adds its card fee again', () => {
+    const usd: MoneySnapshot = {
+      ...ils,
+      currency: 'USD',
+      baseAmountMinor: 37_925,
+      rateUsed: '3.7',
+      feeRate: '2.5',
+    };
+    // $100.00 × 3.7 = ₪370.00, and 2.5% on top.
+    expect(moneyForAmount(usd, 10_000)).toEqual({ ...usd, amountMinor: 10_000, baseAmountMinor: 37_925 });
+    const { feeRate: _fee, ...noFee } = usd;
+    expect(moneyForAmount(noFee, 10_000).baseAmountMinor).toBe(37_000);
+  });
+});
+
+describe('requestDatePrincipal', () => {
+  it('is the principal itself when the first payment is a regular month away', () => {
+    expect(requestDatePrincipal(300_000, '12', 30, 360)).toBe(300_000);
+    expect(requestDatePrincipal(300_000, '0', 75, 365)).toBe(300_000);
+  });
+
+  it('owes, a month before the first payment, what the days from the request accrue', () => {
+    // Half a month at 12%: (1 + 0.005) / (1 + 0.01) = 201/202 of it, rounded once.
+    expect(requestDatePrincipal(300_000, '12', 15, 360)).toBe(298_515);
+    // Two months: (1 + 0.02) / (1 + 0.01) = 102/101.
+    expect(requestDatePrincipal(101_000, '12', 60, 360)).toBe(102_000);
+  });
+
+  it('rejects a negative rate or days', () => {
+    expect(() => requestDatePrincipal(100, '-1', 30, 360)).toThrow(RangeError);
+    expect(() => requestDatePrincipal(100, '1', -1, 360)).toThrow(RangeError);
   });
 });

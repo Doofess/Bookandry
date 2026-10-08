@@ -99,7 +99,10 @@ export function availableModes(resolved: ResolvedCard | undefined, kind: Kind): 
 }
 
 /** A card's rate term as an annual nominal rate today; undefined while it does not read as one. */
-function rateOfTerm(term: CardRateTerm, prime: { readonly primeRate: string; readonly boiRate: string }) {
+export function rateOfTerm(
+  term: CardRateTerm,
+  prime: { readonly primeRate: string; readonly boiRate: string },
+) {
   if (term.basis !== 'boi') return rateOf(term, prime.primeRate);
   return normalizeAnnualRate(addRates(prime.boiRate, term.margin));
 }

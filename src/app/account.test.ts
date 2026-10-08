@@ -722,3 +722,50 @@ describe('being told the data was deleted', () => {
     expect(view.status === 'signed_in' && typeof view.wipeNotice?.at).toBe('number');
   });
 });
+
+describe('when this start’s data is settled', () => {
+  it('is at once on a device without an account', async () => {
+    fake.session = null;
+    const c = make();
+    const ready = vi.fn();
+    c.onDataReady(ready);
+    c.start();
+    await vi.waitFor(() => {
+      expect(ready).toHaveBeenCalledTimes(1);
+    });
+    // Asked later, it is settled already.
+    const later = vi.fn();
+    c.onDataReady(later);
+    expect(later).toHaveBeenCalledTimes(1);
+  });
+
+  it('is after the first sync has pulled, on a signed-in account', async () => {
+    const c = make();
+    const seen: (string | undefined)[] = [];
+    c.onDataReady(() => {
+      const view = c.getView();
+      seen.push(view.status === 'signed_in' ? view.sync?.kind : view.status);
+    });
+    await c.connect();
+    await vi.waitFor(
+      () => {
+        expect(seen).toHaveLength(1);
+      },
+      { timeout: 10_000 },
+    );
+    expect(['idle', 'rebasing']).toContain(seen[0]);
+  });
+
+  it('never is on a locked device', async () => {
+    await ownedBy(USER);
+    fake.session = null;
+    const c = make();
+    const ready = vi.fn();
+    c.onDataReady(ready);
+    c.start();
+    await vi.waitFor(() => {
+      expect(c.getView().status).toBe('locked');
+    });
+    expect(ready).not.toHaveBeenCalled();
+  });
+});

@@ -8,8 +8,9 @@ import {
   parseLocalDate,
   SERIES_MAX,
 } from '@/lib/dates';
+import { moneyForAmount } from '@/lib/money';
 import type { Occurrence, Override, Recurrence, Transaction } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import type { LocalDate, MoneySnapshot } from '@/types/money';
 
 /**
  * Expand a stored transaction into its occurrences over [from, to].
@@ -132,6 +133,28 @@ function generateSlots(tx: Transaction, from: LocalDate, to: LocalDate): LocalDa
   }
 }
 
+/** One snapshot per plan for its re-priced payments, so every one of them is the same object. */
+const resetMoney = new WeakMap<Transaction, MoneySnapshot>();
+
+/**
+ * What a slot charges before any override: the series' amount, or, for a long
+ * קרדיט re-priced with prime, the re-priced payment from `reset.atPayment` on
+ * (the slot's payment number, 1-based). A plan whose reset is not priced yet,
+ * and every row from before resets existed, charges its one amount throughout.
+ */
+function scheduledMoney(tx: Transaction, slot: LocalDate): MoneySnapshot {
+  const reset = tx.recurrence.type === 'monthly' ? tx.recurrence.reset : undefined;
+  const payment = reset?.paymentMinor;
+  if (reset === undefined || payment === undefined) return tx.money;
+  if (monthsBetween(tx.date, slot) + 1 < reset.atPayment) return tx.money;
+  let money = resetMoney.get(tx);
+  if (money?.amountMinor !== payment) {
+    money = moneyForAmount(tx.money, payment);
+    resetMoney.set(tx, money);
+  }
+  return money;
+}
+
 function effectiveOccurrence(
   tx: Transaction,
   slot: LocalDate,
@@ -163,7 +186,7 @@ function effectiveOccurrence(
     date,
     originalDate: slot,
     key: `${tx.id}#${slot}`,
-    money: patch?.money ?? tx.money,
+    money: patch?.money ?? scheduledMoney(tx, slot),
     categoryId: patch?.categoryId ?? tx.categoryId,
     ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
     ...(note === undefined ? {} : { note }),

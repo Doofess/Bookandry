@@ -427,3 +427,13 @@ export function dateFromExcelSerial(serial: number, date1904: boolean): LocalDat
   if (days < 1 || days === 60 || days > 2_958_465) return undefined;
   return addDays(EXCEL_1900_EPOCH, days < 60 ? days + 1 : days);
 }
+
+/**
+ * Days between two dates the way a 30/360 rate counts them: every month
+ * thirty days, a 31st as the 30th.
+ */
+export function days360(from: LocalDate, to: LocalDate): number {
+  const a = parseLocalDate(from);
+  const b = parseLocalDate(to);
+  return (b.year - a.year) * 360 + (b.month - a.month) * 30 + (Math.min(b.day, 30) - Math.min(a.day, 30));
+}
