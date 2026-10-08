@@ -8,7 +8,7 @@ import { db } from '@/db/db';
 import { expandOccurrences } from '@/domain/occurrences';
 import { isLocalDate, maxDate, minDate } from '@/lib/dates';
 import type { CardCatalogLink, Occurrence, Override, PaymentMethod, Transaction } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import type { Kind, LocalDate } from '@/types/money';
 
 /**
  * Which transaction sheet is open, held in the URL.
@@ -28,6 +28,7 @@ import type { LocalDate } from '@/types/money';
  * Deliberately different from the filters, which use `replace: true`: a filter
  * chip is not somewhere you navigated to, but an open sheet is.
  */
+/** The add form: `expense` or `income`. `1` (older links) and anything unknown mean an expense. */
 const ADD = 'add';
 const EDIT = 'edit';
 /** The ORIGINAL slot date - the Override key, not the moved date. */
@@ -43,7 +44,7 @@ const CARD = 'card';
 
 export type SheetTarget =
   | { readonly mode: 'closed' }
-  | { readonly mode: 'add' }
+  | { readonly mode: 'add'; readonly kind: Kind }
   | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate }
   | {
       readonly mode: 'import';
@@ -57,7 +58,7 @@ export type SheetTarget =
 
 export type TransactionSheetApi = {
   readonly target: SheetTarget;
-  readonly openAdd: () => void;
+  readonly openAdd: (kind?: Kind) => void;
   readonly openEdit: (occurrence: Occurrence) => void;
   readonly openImport: (sharedId?: string) => void;
   /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
@@ -73,7 +74,8 @@ export function useTransactionSheet(): TransactionSheetApi {
   const [params, setParams] = useSearchParams();
 
   const target = useMemo<SheetTarget>(() => {
-    if (params.get(ADD) === '1') return { mode: 'add' };
+    const adding = params.get(ADD);
+    if (adding !== null) return { mode: 'add', kind: adding === 'income' ? 'income' : 'expense' };
     const importing = params.get(IMPORT);
     if (importing === '1' || importing === 'shared') {
       const sharedId = importing === 'shared' ? (params.get(SHARED_ID) ?? undefined) : undefined;
@@ -107,7 +109,7 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(ROW);
       updated.delete(CARD);
 
-      if (next.mode === 'add') updated.set(ADD, '1');
+      if (next.mode === 'add') updated.set(ADD, next.kind);
       if (next.mode === 'import') {
         updated.set(IMPORT, next.sharedId === undefined ? '1' : 'shared');
         if (next.sharedId !== undefined) updated.set(SHARED_ID, next.sharedId);
@@ -140,8 +142,8 @@ export function useTransactionSheet(): TransactionSheetApi {
   return useMemo(
     () => ({
       target,
-      openAdd: () => {
-        write({ mode: 'add' });
+      openAdd: (kind: Kind = 'expense') => {
+        write({ mode: 'add', kind });
       },
       openEdit: (occurrence: Occurrence) => {
         // Keyed on the ORIGINAL slot, not the visible date: that is what the

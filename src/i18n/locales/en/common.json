@@ -24,13 +24,16 @@
     "edit": "Edit",
     "undo": "Undo",
     "close": "Close",
-    "retry": "Try again",
-    "addTransaction": "Add transaction"
+    "retry": "Try again"
   },
   "addMenu": {
-    "manual": "Add manually",
+    "add": "Add",
+    "expense": "Expense",
+    "expenseHint": "Purchase, bill, payment",
+    "income": "Income",
+    "incomeHint": "Salary, refund, gift",
     "ai": "Smart import",
-    "aiHint": "Photos, PDF, Excel, screenshots",
+    "aiHint": "From a file or a photo of a statement",
     "aiUnavailable": "Needs a Bookandry account"
   },
   "theme": {

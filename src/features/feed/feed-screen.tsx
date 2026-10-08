@@ -155,9 +155,9 @@ export function FeedScreen() {
   const reason = isLoading ? undefined : emptyReason(windowCount, rows.length, hasAnyTransactions);
 
   return (
-    // The FAB floats above the tab bar, so the list needs clearance for BOTH or
+    // The Add pill floats above the tab bar, so the list needs clearance for BOTH or
     // the last row of every month sits under a button. The shell already pads
-    // for the tab bar; this is the FAB's share.
+    // for the tab bar; this is the Add pill's share.
     <section
       className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8"
       /*
@@ -178,7 +178,7 @@ export function FeedScreen() {
       {/*
         FIRST in the DOM, and deliberately so.
 
-        The FAB is `position: fixed`, so where it sits in the markup does not
+        The Add pill is `position: fixed`, so where it sits in the markup does not
         move it on screen - but it does decide where it sits in the TAB ORDER,
         and rendered last it came after every transaction row. With sixty rows,
         each carrying its own actions menu, reaching the app's primary action by
@@ -193,7 +193,7 @@ export function FeedScreen() {
       <AddMenu
         disabled={(lookups?.profiles.length ?? 0) === 0}
         aiAvailable={account.status !== 'unavailable'}
-        onAddManually={sheet.openAdd}
+        onAdd={sheet.openAdd}
         onAddWithAi={() => {
           sheet.openImport();
         }}

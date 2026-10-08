@@ -312,22 +312,21 @@ test.describe('@hermetic', () => {
   });
 });
 
-test.describe('@fab add button', () => {
+test.describe('@fab the Add pill', () => {
   // The FAB lives on the feed, which only exists once a profile does.
   test.beforeEach(async ({ page }) => {
     await completeFirstRun(page, 'en', { demo: false });
   });
 
-  test('renders as a circle with the plus centred', async ({ page }) => {
-    const fab = page.getByTestId('fab');
-    await expect(fab).toBeVisible();
+  test('renders as a labelled pill, at least 44px high', async ({ page }) => {
+    const pill = page.getByTestId('add-button');
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveText(/Add|הוספה/);
 
-    const box = await fab.boundingBox();
+    const box = await pill.boundingBox();
     expect(box).not.toBeNull();
-    // A squashed oval shipped once because a width utility overrode size-14.
-    // Assert the real rendered geometry, not the class list.
-    expect(Math.abs(box!.width - box!.height)).toBeLessThanOrEqual(1);
-    expect(box!.width).toBeGreaterThanOrEqual(44); // WCAG 2.2 target size
+    expect(box!.height).toBeGreaterThanOrEqual(44); // WCAG 2.2 target size
+    expect(box!.width).toBeGreaterThan(box!.height); // a pill, not a disc
   });
 
   test('is centred on mobile, inline-end from lg, and mirrors only where it can', async ({ page }) => {
@@ -347,7 +346,7 @@ test.describe('@fab add button', () => {
     const centre = viewport.width / 2;
     const isDesktop = viewport.width >= 1024;
 
-    const ltr = (await page.getByTestId('fab').boundingBox())!;
+    const ltr = (await page.getByTestId('add-button').boundingBox())!;
     if (isDesktop) expect(ltr.x).toBeGreaterThan(centre);
     else expect(ltr.x + ltr.width / 2).toBeCloseTo(centre, 0);
 
@@ -356,7 +355,7 @@ test.describe('@fab add button', () => {
     });
     await page.reload();
 
-    const rtl = (await page.getByTestId('fab').boundingBox())!;
+    const rtl = (await page.getByTestId('add-button').boundingBox())!;
     if (isDesktop) expect(rtl.x).toBeLessThan(centre);
     else expect(rtl.x + rtl.width / 2).toBeCloseTo(centre, 0);
   });
@@ -367,19 +366,21 @@ test.describe('@fab add button', () => {
      * real FAB replaced three phases ago. A test pinned to scaffolding that no
      * longer exists proves nothing about the button it is named after.
      */
-    await expect(page.getByRole('button', { name: /add transaction/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(Add|הוספה)$/ })).toBeVisible();
 
     await openAddSheet(page);
 
     await expect(page.getByRole('dialog')).toBeVisible();
   });
 
-  test('offers adding by hand or by Smart import, and says why it is unavailable here', async ({ page }) => {
+  test('offers an expense, income or Smart import, and says why import is unavailable here', async ({
+    page,
+  }) => {
     // This build has no account server, so the AI cannot be reached: the item
     // is there, disabled, with the reason in words rather than only greyed out.
-    await page.getByTestId('fab').click();
+    await page.getByTestId('add-button').click();
     const menu = page.getByRole('menu');
-    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    await expect(menu.getByRole('menuitem')).toHaveCount(3);
     const ai = menu.getByRole('menuitem', { name: /Smart import|ייבוא חכם/ });
     await expect(ai).toHaveAttribute('aria-disabled', 'true');
     await expect(ai).toContainText(/Needs a Bookandry account|דורש חשבון Bookandry/);
