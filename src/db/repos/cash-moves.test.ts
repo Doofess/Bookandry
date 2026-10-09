@@ -116,6 +116,17 @@ describe('adding a move', () => {
     }
     expect(await handle.db.cashMoves.count()).toBe(0);
   });
+
+  it('stores a note of only spaces as no note', async () => {
+    await addCashMove(handle.db, 'm1', draft({ note: '   \n\t ' }), NOW);
+    expect(await handle.db.cashMoves.get('m1')).not.toHaveProperty('note');
+  });
+
+  it('takes a note of exactly 2000 characters, once trimmed', async () => {
+    const note = 'x'.repeat(2000);
+    await addCashMove(handle.db, 'm1', draft({ note: `  ${note}  ` }), NOW);
+    expect((await handle.db.cashMoves.get('m1'))?.note).toBe(note);
+  });
 });
 
 describe('editing a move', () => {
@@ -248,6 +259,42 @@ describe('setting up, when the person already has a start', () => {
     await expect(editCashMove(handle.db, 'm1', start(1_000), LATER)).rejects.toThrow('start_exists');
     expect((await handle.db.cashMoves.get('m1'))?.kind).toBe('withdraw');
   });
+
+  it('refuses moving a start to someone who already has one', async () => {
+    await addCashMove(handle.db, 's1', start(50_000), NOW);
+    await addCashMove(handle.db, 's2', { ...start(30_000), profileId: 'p2' }, NOW);
+    await expect(editCashMove(handle.db, 's1', { ...start(50_000), profileId: 'p2' }, LATER)).rejects.toThrow(
+      'start_exists',
+    );
+    expect((await handle.db.cashMoves.get('s1'))?.profileId).toBe('p1');
+  });
+
+  it('still edits a start when a sync has brought in a second one for the same person', async () => {
+    await addCashMove(handle.db, 's1', start(50_000), NOW);
+    // Another device's start, written while offline: the repo would never add it.
+    await handle.db.cashMoves.put({
+      id: 's2',
+      profileId: 'p1',
+      kind: 'start',
+      amountMinor: 40_000,
+      date: d('2026-10-05'),
+      isDeleted: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    await editCashMove(handle.db, 's2', start(45_000, '2026-10-06'), LATER);
+    expect(await handle.db.cashMoves.get('s2')).toMatchObject({ amountMinor: 45_000, date: '2026-10-06' });
+  });
+
+  it('writes one start when two are saved at once', async () => {
+    await Promise.all([
+      addCashMove(handle.db, 'a', start(10_000), NOW),
+      addCashMove(handle.db, 'b', start(20_000), NOW),
+    ]);
+    const starts = (await listCashMoves(handle.db)).filter((m) => m.kind === 'start');
+    expect(starts).toHaveLength(1);
+  });
 });
 
 describe('an Undo offered before a later change', () => {
@@ -351,6 +398,12 @@ describe('counting the cash', () => {
     await handle.db.cashMoves.clear();
     await expect(count(1_000)).rejects.toThrow('not_set_up');
   });
+
+  it('refuses a count below nothing, and writes nothing', async () => {
+    await expect(count(-1)).rejects.toMatchObject({ name: 'InvalidCashMoveError', reason: 'amount' });
+    expect(await handle.db.transactions.count()).toBe(0);
+    expect(await handle.db.cashMoves.count()).toBe(1);
+  });
 });
 
 describe('loading what the cash figure needs', () => {
@@ -408,5 +461,56 @@ describe('loading what the cash figure needs', () => {
     const input = await loadCashInput(handle.db, { profileId: 'p1', today: TODAY });
     expect(input.occurrences).toEqual([]);
     expect(input.profileIds).toEqual(['p1']);
+  });
+
+  const cashExpense = (id: string, profileId: string, date: string) =>
+    materialize({
+      id,
+      profileId,
+      kind: 'expense',
+      categoryId: 'cat.groceries',
+      paymentMethodId: CASH_METHOD_ID,
+      money: MONEY,
+      recurrence: { type: 'one_time' },
+      date: d(date),
+      seriesRootId: id,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+  it('loads the cash still to come this month, for its "expected" line', async () => {
+    await addCashMove(
+      handle.db,
+      's1',
+      draft({ kind: 'start', amountMinor: 10_000, date: d('2026-10-01') }),
+      NOW,
+    );
+    await handle.db.transactions.put(cashExpense('later', 'p1', '2026-10-20'));
+
+    const input = await loadCashInput(handle.db, { profileId: 'p1', today: TODAY });
+    expect(cashSummary(input).expected).toEqual({ inMinor: 0, outMinor: MONEY.baseAmountMinor });
+    expect(await onHand()).toBe(10_000);
+  });
+
+  it('loads everyone from the earliest start in view', async () => {
+    await addCashMove(
+      handle.db,
+      's1',
+      draft({ kind: 'start', amountMinor: 10_000, date: d('2026-08-01') }),
+      NOW,
+    );
+    await addCashMove(
+      handle.db,
+      's2',
+      draft({ profileId: 'p2', kind: 'start', amountMinor: 30_000, date: d('2026-10-01') }),
+      NOW,
+    );
+    await handle.db.transactions.put(cashExpense('sept', 'p1', '2026-09-10'));
+
+    const input = await loadCashInput(handle.db, { profileId: ALL_PROFILES, today: TODAY });
+    expect(input.profileIds).toEqual(['p1', 'p2']);
+    expect(input.occurrences.map((o) => o.transaction.id)).toEqual(['sept']);
+    expect(await onHand('p1')).toBe(10_000 - MONEY.baseAmountMinor);
+    expect(await onHand('p2')).toBe(30_000);
   });
 });
