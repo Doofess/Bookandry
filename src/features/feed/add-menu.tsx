@@ -72,7 +72,8 @@ export function AddMenu({
   );
 }
 
-function AddItem({
+/** One item of an Add menu: an icon on the sapphire tint, a title and a hint. Also the cash tab's. */
+export function AddItem({
   icon: Icon,
   title,
   hint,

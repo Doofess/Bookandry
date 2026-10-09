@@ -57,7 +57,8 @@ export class InvalidCashMoveError extends Error {
 }
 
 const KINDS: ReadonlySet<string> = new Set(CASH_MOVE_KINDS);
-const NOTE_MAX = 2000;
+/** The longest a move's note can be, once trimmed. */
+export const CASH_NOTE_MAX = 2000;
 
 /** The draft, held to what a move can be. Throws rather than writing half of one. */
 function checked(draft: CashMoveDraft): {
@@ -73,7 +74,7 @@ function checked(draft: CashMoveDraft): {
   if (!fits) throw new InvalidCashMoveError('amount');
   if (!isLocalDate(draft.date)) throw new InvalidCashMoveError('date');
   const note = draft.note?.trim();
-  if (note !== undefined && note.length > NOTE_MAX) throw new InvalidCashMoveError('note');
+  if (note !== undefined && note.length > CASH_NOTE_MAX) throw new InvalidCashMoveError('note');
   return {
     fields: { profileId: draft.profileId, kind: draft.kind, amountMinor: amount, date: draft.date },
     optional: {
