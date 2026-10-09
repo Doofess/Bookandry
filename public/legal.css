@@ -8,7 +8,7 @@
   --background: oklch(1 0 0);
   --foreground: oklch(0.141 0.004 285.8);
   --muted-foreground: oklch(0.516 0.013 285.9);
-  --primary: oklch(0.523 0.121 156.1);
+  --primary: oklch(0.462 0.175 262.6);
   --border: oklch(0.92 0.004 286.3);
 }
 @media (prefers-color-scheme: dark) {
@@ -16,7 +16,7 @@
     --background: oklch(0.141 0.004 285.8);
     --foreground: oklch(0.985 0 0);
     --muted-foreground: oklch(0.755 0.011 286.1);
-    --primary: oklch(0.773 0.167 157.5);
+    --primary: oklch(0.779 0.113 259.7);
     --border: oklch(0.315 0.007 286);
   }
 }

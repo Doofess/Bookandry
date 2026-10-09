@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Occurrence, Override, Transaction } from '@/types/domain';
-import type { MoneySnapshot } from '@/types/money';
+import {
+  SHARED_OWNER,
+  type Occurrence,
+  type Override,
+  type PaymentMethod,
+  type Transaction,
+} from '@/types/domain';
+import type { IsoInstant, MoneySnapshot } from '@/types/money';
 
 import { expandOccurrences } from './occurrences';
 import { d, makeTx, modify, MONEY } from './test-factories';
 import {
   buildPatch,
+  duplicateFormValues,
   isEmptyPatch,
   isInstallmentPlan,
   frequencyOf,
@@ -15,7 +22,7 @@ import {
   scopeAllowsMove,
   scopeAllowsRecurrence,
 } from './tx-edit';
-import { txFormSchema, type TxFormValues } from './tx-form';
+import { defaultFormValues, txFormSchema, type TxFormValues } from './tx-form';
 
 const TODAY = d('2026-09-15');
 
@@ -427,5 +434,102 @@ describe('long credit and 30+ rows, and rows from before them', () => {
       // Only the note: nothing that would drop, or add, a deferral.
       expect(patch).toEqual({ note: 'tv' });
     }
+  });
+});
+
+describe('duplicateFormValues', () => {
+  const NOW = '2026-01-01T00:00:00.000Z' as IsoInstant;
+  const card = (id: string, profileId: string): PaymentMethod => ({
+    id,
+    profileId,
+    type: 'credit_card',
+    label: id,
+    isArchived: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  const profiles = [{ id: 'p1' }, { id: 'p2' }];
+  const base = (profileId = 'p1') =>
+    defaultFormValues({ profileId, currency: 'ILS', today: d('2026-10-08') });
+
+  it('copies what the row says, dated today and one-time, whatever the source was', () => {
+    const plan = makeTx({
+      id: 'sofa',
+      date: d('2026-03-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10, installments: 12 },
+      note: 'Sofa',
+      paymentMethodId: 'card-1',
+    });
+    const occurrence = occurrenceOf(plan, [], '2026-09-10');
+
+    expect(
+      duplicateFormValues(occurrence, plan, base('p2'), d('2026-10-08'), {
+        profiles,
+        methods: [card('card-1', 'p1')],
+      }),
+    ).toMatchObject({
+      profileId: 'p1',
+      kind: plan.kind,
+      categoryId: occurrence.categoryId,
+      amount: occurrenceToFormValues(occurrence, plan).amount,
+      currency: occurrence.money.currency,
+      paymentMethodId: 'card-1',
+      note: 'Sofa',
+      date: '2026-10-08',
+      mode: 'one_time',
+      installmentCount: '',
+    });
+  });
+
+  it('copies an occurrence’s own edits, not the series’', () => {
+    const patched: MoneySnapshot = { ...MONEY, amountMinor: 9900, currency: 'ILS', baseCurrency: 'ILS' };
+    const override = modify('rent', d('2026-09-10'), { money: patched, note: 'with the fee' });
+    const tx = rent({}, [override]);
+
+    expect(
+      duplicateFormValues(occurrenceOf(tx, [override], '2026-09-10'), tx, base(), d('2026-10-08'), {
+        profiles,
+        methods: [],
+      }),
+    ).toMatchObject({ amount: '99.00', note: 'with the fee', date: '2026-10-08', mode: 'one_time' });
+  });
+
+  it('keeps the row’s person, and so their own card, whoever the form would have started on', () => {
+    // Viewing p1 (or everyone, where the form starts on the person signed in).
+    const tx = rent({ profileId: 'p2', paymentMethodId: 'dana-card' });
+
+    expect(
+      duplicateFormValues(occurrenceOf(tx, [], '2026-09-10'), tx, base('p1'), d('2026-10-08'), {
+        profiles,
+        methods: [card('dana-card', 'p2')],
+      }),
+    ).toMatchObject({ profileId: 'p2', paymentMethodId: 'dana-card' });
+  });
+
+  it('drops a card the person it starts on cannot pay with, never keeping one the picker cannot show', () => {
+    // p2 has since been removed: the form starts on p1, and p2's card is not p1's.
+    const tx = rent({ profileId: 'p2', paymentMethodId: 'dana-card' });
+
+    expect(
+      duplicateFormValues(occurrenceOf(tx, [], '2026-09-10'), tx, base('p1'), d('2026-10-08'), {
+        profiles: [{ id: 'p1' }],
+        methods: [card('dana-card', 'p2')],
+      }),
+    ).toMatchObject({ profileId: 'p1', paymentMethodId: '' });
+  });
+
+  it('keeps a household card for anyone, and drops one that no longer exists', () => {
+    const shared = rent({ profileId: 'p2', paymentMethodId: 'house' });
+    const gone = rent({ profileId: 'p2', paymentMethodId: 'deleted' });
+    const owners = { profiles: [{ id: 'p1' }], methods: [card('house', SHARED_OWNER)] };
+
+    expect(
+      duplicateFormValues(occurrenceOf(shared, [], '2026-09-10'), shared, base('p1'), d('2026-10-08'), owners)
+        .paymentMethodId,
+    ).toBe('house');
+    expect(
+      duplicateFormValues(occurrenceOf(gone, [], '2026-09-10'), gone, base('p1'), d('2026-10-08'), owners)
+        .paymentMethodId,
+    ).toBe('');
   });
 });

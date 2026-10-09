@@ -1,5 +1,7 @@
 import type { MethodReviewItem } from '@/domain/import-cards';
 import type { Reconciliation } from '@/domain/import-check';
+import { methodOwnedBy } from '@/domain/tx-options';
+import { ALL_PROFILES, isActiveMethod, type PaymentMethod } from '@/types/domain';
 
 import type { ReviewItem } from './review-items';
 import type { FileState } from './run-import';
@@ -32,4 +34,36 @@ export const readSession = (): ImportSession | undefined => current;
 
 export function writeSession(next: ImportSession | undefined): void {
   current = next;
+}
+
+/**
+ * The card a statement import was opened for, if it can still take one: a
+ * method the household has, not archived, that the person being looked at
+ * can pay with. A link from history, or a card archived or deleted on another
+ * device since, starts the import without a preset instead.
+ */
+export function usableVia(
+  via: string | undefined,
+  methods: readonly PaymentMethod[],
+  profileId: string,
+): string | undefined {
+  const method = via === undefined ? undefined : methods.find((m) => m.id === via);
+  if (method === undefined || !isActiveMethod(method)) return undefined;
+  return profileId === ALL_PROFILES || methodOwnedBy(method, profileId) ? method.id : undefined;
+}
+
+/**
+ * The session the import sheet opens on. Opened for one card ("Import a
+ * statement" on the Cards screen), a new session, or one still at picking
+ * files, takes that card as its batch method. A session already reading or
+ * in review keeps its own: it belongs to files already chosen.
+ */
+export function startSession(
+  existing: ImportSession | undefined,
+  empty: ImportSession,
+  via: string | undefined,
+): ImportSession {
+  const base = existing ?? empty;
+  if (via === undefined || base.stage !== 'pick') return base;
+  return { ...base, batch: { ...base.batch, methodId: via } };
 }

@@ -1,10 +1,11 @@
 import { parseLocalDate } from '@/lib/dates';
 import { toDecimalString } from '@/lib/money';
-import type { Occurrence, Recurrence, Transaction } from '@/types/domain';
+import type { Occurrence, PaymentMethod, Recurrence, Transaction } from '@/types/domain';
 import type { Kind, LocalDate, MoneySnapshot } from '@/types/money';
 
 import type { EditScope, TransactionPatch } from './series-edit';
 import type { RecurrenceMode, StandingOrderFrequency, TxFormParsed, TxFormValues } from './tx-form';
+import { methodOwnedBy } from './tx-options';
 
 /**
  * The bridge between a stored occurrence and the form.
@@ -129,6 +130,48 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
     primeRate: '',
     // A saved rule's first month is behind it: nothing to split.
     partialFirst: false,
+  };
+}
+
+/**
+ * The add form, prefilled from a row: what it was, how much, in what currency,
+ * on which card, under what name. It is dated today and one-time, whatever the
+ * source's recurrence was, because a duplicate is a new purchase, not a second
+ * copy of a plan. The amount is the row's own (one payment, for a plan), as
+ * the row shows it. Everything else is the add form's own default (`base`).
+ *
+ * WHOSE it is comes from the row too, while that person is still in the
+ * household: a duplicate of Dana's purchase is Dana's, whoever is being looked
+ * at. And the card goes only where that person can pay with it. A card the
+ * form's person does not own or share is dropped, never kept: the picker
+ * cannot show it, so it would sit behind "Not specified" and be saved anyway.
+ */
+export function duplicateFormValues(
+  occurrence: Occurrence,
+  transaction: Transaction,
+  base: TxFormValues,
+  today: LocalDate,
+  owners: {
+    readonly profiles: readonly { readonly id: string }[];
+    readonly methods: readonly PaymentMethod[];
+  },
+): TxFormValues {
+  const from = occurrenceToFormValues(occurrence, transaction);
+  const profileId = owners.profiles.some((profile) => profile.id === from.profileId)
+    ? from.profileId
+    : base.profileId;
+  const method = owners.methods.find((m) => m.id === from.paymentMethodId);
+  return {
+    ...base,
+    profileId,
+    kind: from.kind,
+    categoryId: from.categoryId,
+    amount: from.amount,
+    currency: from.currency,
+    paymentMethodId: method !== undefined && methodOwnedBy(method, profileId) ? method.id : '',
+    note: from.note,
+    date: today,
+    mode: 'one_time',
   };
 }
 

@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '@/db/db';
+import { materialize } from '@/db/materialize';
+import { findCandidates } from '@/db/repos/transactions';
 import { makeTx, MONEY } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
-import type { Category, PaymentMethod, Profile } from '@/types/domain';
+import { SHARED_OWNER, type Category, type PaymentMethod, type Profile } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
 import { TransactionSheet } from './transaction-sheet';
@@ -82,7 +84,7 @@ function open(methods: readonly PaymentMethod[] = [maxCard, plainCard]) {
   const onSaved = vi.fn();
   renderWithProviders(
     <TransactionSheet
-      target={{ mode: 'add' }}
+      target={{ mode: 'add', kind: 'expense' }}
       onOpenChange={() => undefined}
       profiles={[profile]}
       categories={[groceries]}
@@ -279,6 +281,41 @@ describe('editing a payment of a plan', () => {
     expect(screen.queryByRole('radio', { name: 'This and future' })).not.toBeInTheDocument();
   });
 
+  it('moves one payment past the series’ end and still counts it, in its new month', async () => {
+    await db.transactions.put(
+      materialize(
+        makeTx({
+          id: 'rent',
+          profileId: 'p1',
+          date: '2026-06-08' as LocalDate,
+          recurrence: { type: 'monthly', dayOfMonth: 8, endDate: '2026-10-08' as LocalDate },
+          // In the base currency: no rate to look up, here or over the network.
+          money: {
+            ...MONEY,
+            currency: 'ILS',
+            baseCurrency: 'ILS',
+            amountMinor: 4_500,
+            baseAmountMinor: 4_500,
+          },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    edit('rent', '2026-10-08');
+    await user.click(await screen.findByRole('radio', { name: 'Only this one' }));
+    const date = screen.getByPlaceholderText(/YYYY/);
+    await user.clear(date);
+    await user.type(date, date.getAttribute('placeholder') === 'MM/DD/YYYY' ? '11/05/2026' : '05/11/2026');
+    await user.tab();
+    await user.click(save());
+
+    const november = { profileId: 'p1', from: '2026-11-01' as LocalDate, to: '2026-11-30' as LocalDate };
+    await waitFor(async () => {
+      expect(await db.overrides.count()).toBe(1);
+    });
+    expect((await findCandidates(db, november)).map((t) => t.id)).toEqual(['rent']);
+  });
+
   it('still offers "this and future" on a series that is not a plan', async () => {
     await db.transactions.put(
       makeTx({
@@ -289,5 +326,232 @@ describe('editing a payment of a plan', () => {
     );
     edit('rent', '2026-10-08');
     expect(await screen.findByRole('radio', { name: 'This and future' })).toBeInTheDocument();
+  });
+});
+
+describe('adding', () => {
+  const salary: Category = {
+    ...groceries,
+    id: 'cat.salary',
+    kind: 'income',
+    nameKey: 'categories:builtin.salary',
+  };
+
+  const yossi = { ...profile, id: 'p2', name: 'Yossi' } as Profile;
+  /** Yossi's own card: not Dana's to pay with. */
+  const yossiCard: PaymentMethod = { ...plainCard, id: 'pm.yossi', profileId: 'p2', label: 'Yossi Visa' };
+
+  function add(
+    target: Parameters<typeof TransactionSheet>[0]['target'],
+    { profiles = [profile], methods = [maxCard] }: { profiles?: Profile[]; methods?: PaymentMethod[] } = {},
+  ) {
+    const onSaved = vi.fn();
+    renderWithProviders(
+      <TransactionSheet
+        target={target}
+        onOpenChange={() => undefined}
+        profiles={profiles}
+        categories={[groceries, salary]}
+        paymentMethods={methods}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={onSaved}
+      />,
+    );
+    return { onSaved, user: userEvent.setup() };
+  }
+
+  const yossisPurchase = () =>
+    makeTx({
+      id: 'bike',
+      profileId: 'p2',
+      date: '2026-09-10' as LocalDate,
+      recurrence: { type: 'one_time' },
+      paymentMethodId: 'pm.yossi',
+      note: 'Bike',
+      money: { ...MONEY, amountMinor: 90_000, baseAmountMinor: 90_000, currency: 'ILS', baseCurrency: 'ILS' },
+    });
+  const duplicateBike = {
+    mode: 'add',
+    kind: 'expense',
+    from: { transactionId: 'bike', at: '2026-09-10' as LocalDate },
+  } as const;
+
+  it('starts on income, in an income category, when the Add menu chose income', () => {
+    add({ mode: 'add', kind: 'income' });
+
+    expect(screen.getByRole('radio', { name: 'Income' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: /Category/ })).toHaveAccessibleName(/Salary/);
+  });
+
+  it('duplicates a row: its amount, card and name, dated today and one-time', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'sofa',
+        date: '2026-03-10' as LocalDate,
+        recurrence: { type: 'monthly', dayOfMonth: 10, installments: 12 },
+        paymentMethodId: 'pm.max',
+        note: 'Sofa',
+        money: {
+          ...MONEY,
+          amountMinor: 45_000,
+          baseAmountMinor: 45_000,
+          currency: 'ILS',
+          baseCurrency: 'ILS',
+        },
+      }),
+    );
+    add({ mode: 'add', kind: 'expense', from: { transactionId: 'sofa', at: '2026-09-10' as LocalDate } });
+
+    expect(await screen.findByDisplayValue('Sofa')).toBeInTheDocument();
+    expect(screen.getByLabelText('Amount')).toHaveValue('450.00');
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Max/);
+    // "Regular transaction", or "Regular" once the card's catalog deals have loaded.
+    expect(screen.getByRole('radio', { name: /^Regular/ })).toBeChecked();
+  });
+
+  it('falls back to a plain add form when the row it names is gone', async () => {
+    add({ mode: 'add', kind: 'expense', from: { transactionId: 'nowhere', at: '2026-09-10' as LocalDate } });
+
+    expect(await screen.findByLabelText('Amount')).toHaveValue('');
+    expect(screen.getByRole('radio', { name: 'Expense' })).toBeChecked();
+  });
+
+  it('duplicates a row for the person it was, on their own card, whoever is being looked at', async () => {
+    await db.transactions.put(yossisPurchase());
+    add(duplicateBike, { profiles: [profile, yossi], methods: [maxCard, yossiCard] });
+
+    expect(await screen.findByDisplayValue('Bike')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Yossi' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Yossi Visa/);
+  });
+
+  it('cannot save a card the person it starts on does not own, when the row’s person is gone', async () => {
+    await db.transactions.put(yossisPurchase());
+    // Yossi was removed from the household; his card is still in the list.
+    const { onSaved, user } = add(duplicateBike, { methods: [maxCard, yossiCard] });
+
+    expect(await screen.findByDisplayValue('Bike')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).not.toHaveAccessibleName(/Yossi Visa/);
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    const saved = (await db.transactions.toArray()).filter((tx) => tx.id !== 'bike');
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ profileId: 'p1', note: 'Bike' });
+    expect(saved[0]?.paymentMethodId).toBeUndefined();
+  });
+
+  it('lets go of a card when Whose? moves to someone who cannot pay with it', async () => {
+    const { onSaved, user } = add(
+      { mode: 'add', kind: 'expense' },
+      { profiles: [profile, yossi], methods: [maxCard, yossiCard] },
+    );
+    await user.click(await screen.findByRole('radio', { name: 'Yossi' }));
+    await fill(user, '120', 'Yossi Visa');
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Yossi Visa/);
+
+    await user.click(screen.getByRole('radio', { name: 'Dana' }));
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).not.toHaveAccessibleName(/Yossi Visa/);
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ profileId: 'p1' });
+    expect(saved?.paymentMethodId).toBeUndefined();
+  });
+
+  it('keeps a card both people can pay with when Whose? moves', async () => {
+    const joint: PaymentMethod = {
+      ...plainCard,
+      id: 'pm.joint',
+      profileId: SHARED_OWNER,
+      label: 'Joint Visa',
+    };
+    const { onSaved, user } = add(
+      { mode: 'add', kind: 'expense' },
+      { profiles: [profile, yossi], methods: [maxCard, joint] },
+    );
+    await fill(user, '120', 'Joint Visa');
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ profileId: 'p2', paymentMethodId: 'pm.joint' });
+  });
+});
+
+describe('what an edit hands back', () => {
+  const lunch = () =>
+    makeTx({
+      id: 'lunch',
+      date: '2026-10-20' as LocalDate,
+      recurrence: { type: 'one_time' },
+      categoryId: 'cat.groceries',
+      money: MONEY,
+      note: 'Lunch',
+    });
+
+  function edit() {
+    const onSaved = vi.fn();
+    renderWithProviders(
+      <TransactionSheet
+        target={{ mode: 'edit', transactionId: 'lunch', at: '2026-10-20' as LocalDate }}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries]}
+        paymentMethods={[]}
+        activeProfileId="p1"
+        baseCurrency="USD"
+        today={TODAY}
+        onSaved={onSaved}
+      />,
+    );
+    return { onSaved, user: userEvent.setup() };
+  }
+
+  it('its undo, and that only the amount changed, when only the amount did', async () => {
+    await db.transactions.put(lunch());
+    const { onSaved, user } = edit();
+    const amount = await screen.findByLabelText('Amount');
+
+    await user.clear(amount);
+    await user.type(amount, '60');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(
+        '2026-10-20',
+        expect.objectContaining({ undo: expect.any(Function) }),
+        true,
+      );
+    });
+  });
+
+  it('that more than the amount changed, when the name did too', async () => {
+    await db.transactions.put(lunch());
+    const { onSaved, user } = edit();
+    const amount = await screen.findByLabelText('Amount');
+
+    await user.clear(amount);
+    await user.type(amount, '60');
+    const name = screen.getByLabelText('What was it?');
+    await user.clear(name);
+    await user.type(name, 'Dinner');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(
+        '2026-10-20',
+        expect.objectContaining({ undo: expect.any(Function) }),
+        false,
+      );
+    });
   });
 });

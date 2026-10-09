@@ -146,6 +146,32 @@ describe('rows the household already has', () => {
     const plain = at(0, null, 'p', '14.90');
     expect(flagCardFees([plain], () => card(1_490), [])[0]).toBe(plain);
   });
+
+  it('counts an archived card’s fee only up to the month it was archived', () => {
+    // The fee line is dated 3 October 2026.
+    const fee = readRow(wire({ a: '14.90', m: 'דמי כרטיס', fee: true }), 'f', ctx);
+    const archivedOn = (at: string): PaymentMethod => ({
+      id: 'closed',
+      profileId: 'p1',
+      type: 'credit_card',
+      label: 'Closed',
+      isArchived: 1,
+      archivedAt: at as IsoInstant,
+      createdAt: NOW,
+      updatedAt: NOW,
+      card: { monthlyFeeMinor: 1_490 },
+    });
+    const august = archivedOn('2026-08-15T09:00:00.000Z');
+    const october = archivedOn('2026-10-02T09:00:00.000Z');
+
+    // A fee line nothing names, in a household whose only fee card closed before it: a new expense.
+    expect(flagCardFees([fee], () => undefined, [august])[0]?.flags).toEqual([]);
+    // On the archived card itself, after it closed: the app charges nothing that month.
+    expect(flagCardFees([fee], () => august, [august])[0]?.flags).toEqual([]);
+    // Within its last month: already charged.
+    expect(flagCardFees([fee], () => october, [october])[0]?.flags).toEqual(['card_fee_counted']);
+    expect(flagCardFees([fee], () => undefined, [october])[0]?.flags).toEqual(['card_fee_counted']);
+  });
 });
 
 describe('a found row as form values', () => {

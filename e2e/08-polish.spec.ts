@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { ADD_MANUALLY } from './support/add';
+import { ADD_EXPENSE, openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -21,7 +21,7 @@ test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'en', 'Viewport is set explicitly.');
 });
 
-const ROUTES = ['/', '/chart', '/cards', '/household', '/settings'] as const;
+const ROUTES = ['/', '/chart', '/cards', '/settings'] as const;
 
 /** The two widths the plan names: a common phone, and the narrowest still sold. */
 const WIDTHS = [
@@ -50,6 +50,32 @@ for (const size of WIDTHS) {
       }
     });
 
+    test('the panel wraps its pills and steps the balance down, in Hebrew too', async ({ page }) => {
+      await completeFirstRun(page, 'he');
+      await page.goto('/');
+      await expect(page.getByTestId('feed-header')).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+
+      // Nothing sideways, with the longest copy the panel carries.
+      const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
+      expect(overflow).toBeLessThanOrEqual(1);
+
+      // Every pill on the panel sits inside the viewport: they wrap rather than overflow.
+      const outside = await page.evaluate(
+        () =>
+          [...document.querySelectorAll('[data-slot="brand-panel"] button')]
+            .map((el) => el.getBoundingClientRect())
+            .filter((box) => box.width > 0 && (box.left < 0 || box.right > window.innerWidth + 0.5)).length,
+      );
+      expect(outside).toBe(0);
+
+      // 2.75rem (44px) on a phone, a step down (2.25rem, 36px) below 360px.
+      const size = await page
+        .getByTestId('balance-amount')
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(size).toBe(page.viewportSize()!.width < 360 ? 36 : 44);
+    });
+
     test('keeps every tap target at 44px', async ({ page }) => {
       // WCAG 2.2 target size. Narrow is where buttons get squeezed.
       await completeFirstRun(page, 'en');
@@ -74,6 +100,90 @@ for (const size of WIDTHS) {
 
       expect(small).toEqual([]);
     });
+
+    for (const lang of ['en', 'he'] as const) {
+      test(`keeps the panel's pills to two lines at most, in ${lang}`, async ({ page }) => {
+        /*
+         * Month, people and prime each on a line of their own made the panel
+         * half an iPhone SE, with a row and a half of the list above the fold.
+         * Measured by CENTRE, because the pills share `items-center` but are
+         * not all the same height (the month pill carries a border).
+         */
+        await completeFirstRun(page, lang);
+
+        const pills = page.getByTestId('panel-pills').locator(':scope > *');
+        await expect(pills).toHaveCount(3);
+
+        const centres: number[] = [];
+        for (const pill of await pills.all()) {
+          const box = await pill.boundingBox();
+          expect(box).not.toBeNull();
+          if (box !== null) centres.push(box.y + box.height / 2);
+        }
+        // A new line wherever the next centre is clearly lower than the last.
+        centres.sort((a, b) => a - b);
+        const lines = centres.filter((c, i) => i === 0 || c - (centres[i - 1] ?? c) > 12).length;
+
+        expect(lines, `${lang} at ${String(size.width)}px`).toBeLessThanOrEqual(2);
+      });
+
+      test(`keeps a feed row's parts apart, in ${lang}`, async ({ page }) => {
+        /*
+         * A projected row carries a type chip and "not counted yet" beside the
+         * category, an avatar and the amount. At 320px the chips kept their
+         * width while the text column shrank under them, and drew on top of the
+         * avatar and the amount. Every part of every row must own its box.
+         */
+        await completeFirstRun(page, lang);
+        await expect(page.getByTestId('row-not-counted').first()).toBeVisible();
+
+        const clashes = await page.evaluate(() => {
+          const bad: string[] = [];
+          const parts: [string, string][] = [
+            ['category chip', '[data-slot="category-chip"]'],
+            ['text', '[data-testid="row-text"]'],
+            ['avatar', '[data-person]'],
+            ['amount', '[data-testid="row-amount"]'],
+            ['more', '[data-testid="row-more"]'],
+          ];
+          for (const row of document.querySelectorAll('[role="listitem"]')) {
+            const boxes: [string, DOMRect][] = [];
+            for (const [name, selector] of parts) {
+              const el = row.querySelector(selector);
+              if (el !== null) boxes.push([name, el.getBoundingClientRect()]);
+            }
+            for (const [a, boxA] of boxes) {
+              for (const [b, boxB] of boxes) {
+                if (a >= b) continue;
+                const across = Math.min(boxA.right, boxB.right) - Math.max(boxA.left, boxB.left);
+                const down = Math.min(boxA.bottom, boxB.bottom) - Math.max(boxA.top, boxB.top);
+                if (across > 0.5 && down > 0.5) bad.push(`${a} overlaps ${b}`);
+              }
+            }
+
+            const column = row.querySelector<HTMLElement>('[data-testid="row-text"]');
+            if (column !== null && column.scrollWidth > column.clientWidth + 1)
+              bad.push('text content spills out of its column');
+
+            // Never cut short: "Not c..." reads as nothing.
+            const flagEl = row.querySelector<HTMLElement>('[data-testid="row-not-counted"]');
+            if (flagEl !== null && flagEl.scrollWidth > flagEl.clientWidth)
+              bad.push('not counted is truncated');
+
+            // The flag lives INSIDE the text column: it must not spill out of it.
+            const flag = row.querySelector('[data-testid="row-not-counted"]')?.getBoundingClientRect();
+            const text = row.querySelector('[data-testid="row-text"]')?.getBoundingClientRect();
+            if (flag !== undefined && text !== undefined) {
+              if (flag.left < text.left - 0.5 || flag.right > text.right + 0.5)
+                bad.push('not counted spills out of the text column');
+            }
+          }
+          return [...new Set(bad)];
+        });
+
+        expect(clashes, `${lang} at ${String(size.width)}px`).toEqual([]);
+      });
+    }
   });
 }
 
@@ -187,6 +297,118 @@ test.describe('@collapse the summary header', () => {
     expect(measured?.top).toBe('48px');
     expect(measured?.barHeight).toBe(48);
   });
+
+  test('pins the day of the rows under it, from the first rows on and at every day boundary', async ({
+    page,
+  }) => {
+    /*
+     * Two bugs, one test.
+     *
+     * The pinned header was taken from the first RENDERED item, which counts
+     * the overscan: for the first eight or so rows of scrolling it kept the
+     * first day pinned over later days' rows.
+     *
+     * Then it was taken from the row at the top of the VIEWPORT, which is
+     * behind the 48px collapsed bar: for 48px at every day boundary the
+     * previous day's date and total sat on the next day's row. Hence the
+     * second walk, which puts each day's header 24px up behind the bar - the
+     * middle of that band.
+     *
+     * And directly under the pinned header there must be a row at all - a list
+     * whose scroll margin is measured from the wrong parent draws rows where
+     * the reader is not.
+     */
+    await completeFirstRun(page, 'en');
+
+    const start = await page.evaluate(() => {
+      const list = document.querySelector('[role="list"]');
+      return list === null ? 0 : list.getBoundingClientRect().top + window.scrollY;
+    });
+    expect(start).toBeGreaterThan(0);
+
+    // The virtualizer's reference line sits at the pinned slot, not at the
+    // list: the rows themselves must not move for it. The first day starts
+    // exactly where the list does, and its first row one header (36px) below.
+    // Item 0 is the pinned header and never shifts; it is the SECOND item that
+    // would be dragged by a misplaced reference line.
+    const offsets = await page.evaluate(() => {
+      const list = document.querySelector('[role="list"]');
+      const top = (index: number): number | undefined => {
+        const item = document.querySelector(`[data-index="${String(index)}"]`);
+        return list === null || item === null
+          ? undefined
+          : item.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      };
+      return { first: top(0), second: top(1) };
+    });
+    expect(offsets.first).toBe(0);
+    expect(offsets.second).toBe(36);
+
+    const probe = async (y: number) => {
+      await scrollTo(page, y);
+      return page.evaluate(() => {
+        const items = [...document.querySelectorAll<HTMLElement>('[data-index]')];
+        // A day header is the item whose content is neither a row nor the horizon line.
+        const isHeader = (el: HTMLElement): boolean =>
+          el.querySelector('[role="listitem"]') === null && el.querySelector('p') === null;
+        const headers = items.filter(isHeader);
+        const pinned = items.find((el) => el.style.position === 'sticky');
+        const headerTops = headers
+          .filter((el) => el !== pinned)
+          .map((el) => Math.round(el.getBoundingClientRect().top + window.scrollY));
+        if (pinned === undefined)
+          return { pinned: undefined, under: undefined, expected: undefined, headerTops };
+
+        const box = pinned.getBoundingClientRect();
+        // Right at its foot, not a few pixels below: a header 3px into the
+        // slot is still mostly behind the pinned one, and 4px down its own
+        // first row would already show.
+        const hit = document.elementFromPoint(window.innerWidth / 2, box.bottom + 0.5);
+        const under = hit?.closest<HTMLElement>('[data-index]') ?? null;
+        if (under === null)
+          return { pinned: Number(pinned.dataset.index), under: undefined, expected: undefined, headerTops };
+
+        // Under a row: that row's own day. Under a day header still sliding
+        // up: the day before it, whose last row is what the pinned header covers.
+        const underIndex = Number(under.dataset.index);
+        const before = headers
+          .map((el) => Number(el.dataset.index))
+          .filter((i) => (isHeader(under) ? i < underIndex : i <= underIndex));
+
+        return {
+          pinned: Number(pinned.dataset.index),
+          under: underIndex,
+          expected: before.length === 0 ? undefined : Math.max(...before),
+          headerTops,
+        };
+      });
+    };
+
+    // Collapse the bar first: in the frames it first mounts, the pinned slot's
+    // offset is still on its way, and that is not what this measures.
+    await scrollTo(page, start);
+    await expect(page.getByTestId('collapsed-summary')).toBeVisible();
+
+    const tops = new Set<number>();
+    for (let y = start; y <= start + 900; y += 60) {
+      const at = await probe(y);
+      for (const top of at.headerTops) tops.add(top);
+      if (at.pinned === undefined) continue;
+      expect(at.under, `a row under the pinned header at ${String(y)}`).not.toBeUndefined();
+      expect(at.pinned, `the pinned day at ${String(y)}`).toBe(at.expected);
+    }
+
+    const boundaries = [...tops]
+      .filter((top) => top > start + 100 && top <= start + 900)
+      .sort((a, b) => a - b);
+    expect(boundaries.length).toBeGreaterThan(3);
+    for (const top of boundaries) {
+      const at = await probe(top - 24);
+      expect(at.pinned, `a day pinned with its header at ${String(top)} behind the bar`).not.toBeUndefined();
+      expect(at.under, `a row under the pinned header at ${String(top)}`).not.toBeUndefined();
+      expect(at.pinned, `the pinned day with its header at ${String(top)} behind the bar`).toBe(at.expected);
+    }
+  });
 });
 
 test.describe('@collapse on the desktop rail', () => {
@@ -216,6 +438,232 @@ test.describe('@collapse on the desktop rail', () => {
   });
 });
 
+test.describe('@collapse the collapsed bar’s pop-out', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('points its arrow at the balance figure, not at the word Balance', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.evaluate(() => {
+      window.scrollTo(0, 600);
+    });
+    const bar = page.getByTestId('collapsed-summary');
+    await expect(bar).toBeVisible();
+    const figure = await bar.locator('[data-value]').boundingBox();
+    const label = await bar.getByText('Balance', { exact: true }).boundingBox();
+
+    await bar.getByRole('button').click();
+    const pop = page.getByTestId('balance-popout');
+    await expect(pop).toBeVisible();
+    const arrow = await pop.locator('[data-slot="popup-arrow"]').boundingBox();
+    if (figure === null || label === null || arrow === null) throw new Error('nothing to measure');
+
+    const centre = (box: { x: number; width: number }) => box.x + box.width / 2;
+    expect(Math.abs(centre(arrow) - centre(figure))).toBeLessThan(Math.abs(centre(arrow) - centre(label)));
+    // Over the figure itself, not only nearer to it.
+    expect(centre(arrow)).toBeGreaterThanOrEqual(figure.x - 4);
+    expect(centre(arrow)).toBeLessThanOrEqual(figure.x + figure.width + 4);
+  });
+});
+
+test.describe('@narrow the date picker at 320px in Hebrew', () => {
+  test.use({ viewport: { width: 320, height: 568 } });
+
+  test('fits the phone, keeps month and year clear of the arrows, and keeps every day a target', async ({
+    page,
+  }) => {
+    // The caption was narrowed to clear the 44px arrows (px-11): checked where it is tightest.
+    await completeFirstRun(page, 'he');
+    await openAddSheet(page);
+    await page.getByRole('button', { name: 'בחרו תאריך' }).click();
+    const calendar = page.locator('[data-slot="calendar"]');
+    await expect(calendar).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    const measured = await calendar.evaluate((root) => {
+      const box = (el: Element | null) => el?.getBoundingClientRect();
+      const previous = box(root.querySelector('.rdp-button_previous'));
+      const next = box(root.querySelector('.rdp-button_next'));
+      const dropdowns = [...root.querySelectorAll('.rdp-dropdown_root')].map((el) =>
+        el.getBoundingClientRect(),
+      );
+      const days = [...root.querySelectorAll('[data-day] button')].map((el) => el.getBoundingClientRect());
+      const rootBox = root.getBoundingClientRect();
+      return {
+        left: rootBox.left,
+        right: rootBox.right,
+        overflow: root.scrollWidth - root.clientWidth,
+        previous,
+        next,
+        dropdowns,
+        narrowestDay: Math.min(...days.map((d) => d.width)),
+      };
+    });
+
+    expect(measured.left).toBeGreaterThanOrEqual(0);
+    expect(measured.right).toBeLessThanOrEqual(320);
+    expect(measured.overflow).toBeLessThanOrEqual(0);
+    expect(measured.dropdowns).toHaveLength(2);
+    // Month and year sit between the two arrows, overlapping neither.
+    const arrows = [measured.previous, measured.next].filter((b) => b !== undefined);
+    expect(arrows).toHaveLength(2);
+    for (const dropdown of measured.dropdowns) {
+      for (const arrow of arrows) {
+        const apart = dropdown.right <= arrow.left + 0.5 || dropdown.left >= arrow.right - 0.5;
+        expect(apart, 'a caption dropdown under an arrow').toBe(true);
+      }
+    }
+    expect(measured.narrowestDay).toBeGreaterThanOrEqual(28);
+    expect(await page.evaluate(() => document.body.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe('@popouts the row menu', () => {
+  /** Open the ⋯ menu of a row a little way down, so there is page around it. */
+  async function openRowMenu(page: Page) {
+    const more = page.getByRole('button', { name: /^Actions for / }).nth(2);
+    await more.click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    return menu;
+  }
+
+  test('a tap on another row closes the menu, and opens nothing', async ({ page }) => {
+    /*
+     * The menu is not modal, so the page scrolls under it. A tap outside must
+     * still do one thing only: close it. Without the backdrop the same tap
+     * also landed on the row beneath and opened its editor.
+     */
+    await completeFirstRun(page, 'en');
+    const menu = await openRowMenu(page);
+    const menuBox = await menu.boundingBox();
+
+    // The body of a row the menu does not cover.
+    let target: { x: number; y: number } | undefined;
+    for (const row of await page.getByRole('listitem').all()) {
+      const box = await row.boundingBox();
+      if (box === null || menuBox === null || box.y < 0) continue;
+      const centre = { x: box.x + box.width / 3, y: box.y + box.height / 2 };
+      const covered =
+        centre.y >= menuBox.y - 12 &&
+        centre.y <= menuBox.y + menuBox.height + 12 &&
+        centre.x >= menuBox.x &&
+        centre.x <= menuBox.x + menuBox.width;
+      if (!covered && centre.y < (page.viewportSize()?.height ?? 0) - 40) {
+        target = centre;
+        break;
+      }
+    }
+    expect(target, 'a row clear of the menu').toBeDefined();
+    if (target === undefined) return;
+
+    await page.mouse.click(target.x, target.y);
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(new URL(page.url()).search).toBe('');
+  });
+
+  test('a scroll closes it, and the page does scroll', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    const menu = await openRowMenu(page);
+    const box = await menu.boundingBox();
+    // Over the page beside the menu, not the menu itself.
+    await page.mouse.move(40, (box?.y ?? 200) + 10);
+    await page.mouse.wheel(0, 300);
+
+    await expect(menu).toHaveCount(0);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  });
+});
+
+test.describe('@popouts not counted yet', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** Next month, where every row is not counted yet; a chip a little way down, and its row. */
+  async function nextMonthChip(page: Page) {
+    await completeFirstRun(page, 'en');
+    await page.getByRole('button', { name: 'Next month' }).click();
+    const chip = page.getByRole('button', { name: 'Not counted yet. Change it' }).nth(1);
+    await expect(chip).toBeVisible();
+    const row = chip.locator('xpath=ancestor::*[@role="listitem"]');
+    const key = await row.getAttribute('data-key');
+    if (key === null) throw new Error('a row without its key');
+    return { chip, key };
+  }
+
+  test('its chip is a 44px-tall target, and opens a dialog named for it', async ({ page }) => {
+    const { chip } = await nextMonthChip(page);
+    // The chip is drawn small; its ::before is the hit area, 44px tall whatever the row clips.
+    const reach = await chip.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const hits = (y: number) => document.elementFromPoint(x, y)?.closest('button') === el;
+      let top = box.top + box.height / 2;
+      while (hits(top - 1)) top -= 1;
+      let bottom = box.top + box.height / 2;
+      while (hits(bottom + 1)) bottom += 1;
+      return bottom - top + 1;
+    });
+    expect(reach).toBeGreaterThanOrEqual(44);
+
+    await chip.click();
+    await expect(page.getByRole('dialog', { name: 'Not counted yet' })).toBeVisible();
+  });
+
+  test('"Charged today" moves it to today, and the feed follows it there; Undo sends it back', async ({
+    page,
+  }) => {
+    const { chip, key } = await nextMonthChip(page);
+    const row = page.locator(`[data-key="${key}"]`);
+    const thisMonth = new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+
+    await chip.click();
+    await page.getByRole('button', { name: /Charged today/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The feed jumped to this month, where the row now is, counted.
+    await expect(page.getByRole('heading', { level: 2, name: thisMonth })).toBeVisible();
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toHaveAttribute('data-projected', 'true');
+
+    // Back in next month: not here any more.
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(row).toHaveCount(0);
+  });
+
+  test('"A different amount…" opens the form with the caret in the amount, and offers Undo', async ({
+    page,
+  }) => {
+    const { chip, key } = await nextMonthChip(page);
+    const amount = page.locator(`[data-key="${key}"] [data-value]`).first();
+    const before = await amount.getAttribute('data-value');
+
+    await chip.click();
+    await page.getByRole('button', { name: /A different amount/ }).click();
+    const field = page.getByRole('dialog').getByLabel('Amount', { exact: true });
+    await expect(field).toBeFocused();
+    await field.fill('1234.56');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(amount).not.toHaveAttribute('data-value', before ?? '');
+    await expect(page.getByText('Amount changed')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(amount).toHaveAttribute('data-value', before ?? '');
+  });
+
+  test('"A different date…" opens the calendar inside the pop-out', async ({ page }) => {
+    const { chip } = await nextMonthChip(page);
+
+    await chip.click();
+    await page.getByRole('button', { name: /A different date/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Not counted yet' });
+    await expect(dialog.getByRole('grid')).toBeVisible();
+  });
+});
+
 test.describe('@keyboard walkthrough', () => {
   test('reaches the add button by keyboard alone, and shows focus at every stop', async ({ page }) => {
     /*
@@ -227,7 +675,7 @@ test.describe('@keyboard walkthrough', () => {
     await completeFirstRun(page, 'en');
 
     const seen: string[] = [];
-    let reachedFab = false;
+    let reachedAddPill = false;
 
     for (let i = 0; i < 12; i += 1) {
       await page.keyboard.press('Tab');
@@ -249,8 +697,8 @@ test.describe('@keyboard walkthrough', () => {
       seen.push(focused.label);
       expect(focused.hasFocusRing, `no visible focus on "${focused.label}"`).toBe(true);
 
-      if (focused.testid === 'fab') {
-        reachedFab = true;
+      if (focused.testid === 'add-button') {
+        reachedAddPill = true;
         break;
       }
     }
@@ -258,31 +706,31 @@ test.describe('@keyboard walkthrough', () => {
     /*
      * Within twelve stops, not merely 'eventually'.
      *
-     * The FAB is fixed, so its DOM position is invisible on screen and decided
+     * The Add pill is fixed, so its DOM position is invisible on screen and decided
      * the tab order alone. Rendered last it sat after every transaction row -
      * two stops each - so the primary action was past a hundred presses away on
      * a real month of data. 'Reachable' was already true then; it is the wrong
      * bar.
      */
-    expect(reachedFab, `FAB not reached within 12 tabs; order was ${seen.join(' -> ')}`).toBe(true);
+    expect(reachedAddPill, `Add pill not reached within 12 tabs; order was ${seen.join(' -> ')}`).toBe(true);
   });
 
   test('opens and closes the add sheet without a pointer', async ({ page }) => {
     await completeFirstRun(page, 'en');
 
-    // The + opens its menu with focus on the first item, "Add manually".
-    const fab = page.getByTestId('fab');
+    // The + opens its menu with focus on the first item, "Expense".
+    const fab = page.getByTestId('add-button');
     await fab.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: ADD_MANUALLY })).toBeFocused();
+    await expect(page.getByRole('menuitem', { name: ADD_EXPENSE })).toBeFocused();
     // Escape closes the menu and hands focus back to the button.
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(fab).toBeFocused();
 
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('menuitem', { name: ADD_MANUALLY })).toBeFocused();
+    await expect(page.getByRole('menuitem', { name: ADD_EXPENSE })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toBeVisible();
 
@@ -296,9 +744,9 @@ test.describe('@keyboard walkthrough', () => {
     // through the page behind it, with no way to know the sheet is there.
     await completeFirstRun(page, 'en');
 
-    await page.getByTestId('fab').focus();
+    await page.getByTestId('add-button').focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('menuitem', { name: ADD_MANUALLY })).toBeFocused();
+    await expect(page.getByRole('menuitem', { name: ADD_EXPENSE })).toBeFocused();
     await page.keyboard.press('Enter');
 
     const dialog = page.getByRole('dialog');
@@ -406,5 +854,175 @@ test.describe('@motion the count-up', () => {
     // No intermediate frames: the first value read is already the final one.
     expect(first).toBe(second);
     await context.close();
+  });
+});
+
+test.describe('@popouts every item clears 44px on a phone', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  /** Items of whatever pop-out is open now that are shorter than 44px, and how many were measured. */
+  async function shortItems(page: Page): Promise<{ bad: string[]; checked: number }> {
+    return page.evaluate(() => {
+      const bad: string[] = [];
+      let checked = 0;
+      const items = document.querySelectorAll(
+        '[data-slot="dropdown-menu-content"] :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]), [data-slot="popover-content"] button',
+      );
+      for (const el of items) {
+        // Layout size, not the drawn box: a pop-out scales in, and 95% of 44px is 42.
+        const height = (el as HTMLElement).offsetHeight;
+        if (height === 0) continue;
+        checked += 1;
+        /*
+         * A calendar's day cells are the shared Calendar's 28px (the date field
+         * has the same): a 7-column grid at 44px does not fit a 320px phone.
+         * They keep WCAG 2.2's 24px floor; everything else clears 44.
+         */
+        const floor = el.closest('[role="gridcell"], [role="row"]') === null ? 44 : 24;
+        if (height < floor) bad.push(`${el.textContent.trim().slice(0, 30)} ${String(height)}px`);
+      }
+      return { bad, checked };
+    });
+  }
+
+  const ANY_POPOUT = '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]';
+
+  /** `items: 'none'` for a pop-out that is information only; every other one must put items in front of us. */
+  async function check(
+    page: Page,
+    open: () => Promise<void>,
+    what: string,
+    items: 'some' | 'none' = 'some',
+  ): Promise<void> {
+    await open();
+    await expect(page.locator(ANY_POPOUT).first()).toBeVisible();
+    const { bad, checked } = await shortItems(page);
+    // A pop-out with nothing measured would pass for free, so the empty case is declared, never assumed.
+    if (items === 'some') expect(checked, `${what}: no items measured`).toBeGreaterThan(0);
+    else expect(checked, `${what}: has items now; measure them`).toBe(0);
+    expect(bad, what).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
+  }
+
+  test('on the feed and on Cards', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.goto('/');
+    await expect(page.getByTestId('feed-header')).toBeVisible();
+
+    await check(page, () => page.getByTestId('add-button').click(), 'add menu');
+    // The prime pop-out is a title, the rate and a date: nothing to tap.
+    await check(page, () => page.getByTestId('prime-pill').click(), 'prime', 'none');
+    await check(
+      page,
+      () => page.getByRole('heading', { level: 2 }).getByRole('button').first().click(),
+      'month',
+    );
+    await check(
+      page,
+      () => page.getByRole('button', { name: /Show what makes up Balance/ }).click(),
+      'balance',
+    );
+    await check(
+      page,
+      () => page.getByRole('button', { name: /Show what makes up Expected/ }).click(),
+      'forecast',
+    );
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Actions for/ })
+          .first()
+          .click(),
+      'row ⋯',
+    );
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Category: / })
+          .first()
+          .click(),
+      'category',
+    );
+
+    // The scope step, on a row that belongs to a series: pick another category.
+    const chips = page.getByRole('button', { name: /^Category: / });
+    let sawScope = false;
+    for (let i = 0; i < Math.min(await chips.count(), 8) && !sawScope; i++) {
+      await chips.nth(i).click();
+      const grid = page.locator('[data-slot="popover-content"] [role="group"] button');
+      await expect(grid.first()).toBeVisible();
+      await grid.nth(1).click();
+      if (await page.getByText(/^Change it to .* for…$/).isVisible()) {
+        sawScope = true;
+        const scope = await shortItems(page);
+        expect(scope.checked, 'category scope: no items measured').toBeGreaterThan(0);
+        expect(scope.bad, 'category scope').toEqual([]);
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
+    }
+    expect(sawScope, 'a row with a scope step').toBe(true);
+
+    // Next month is all forecast, so its rows are "not counted yet".
+    await page.getByRole('button', { name: 'Next month' }).click();
+    await check(
+      page,
+      () => page.getByRole('button', { name: 'Not counted yet. Change it' }).first().click(),
+      'not counted yet',
+    );
+    // Its calendar, and the way back.
+    await page.getByRole('button', { name: 'Not counted yet. Change it' }).first().click();
+    await page.getByRole('button', { name: /A different date/ }).click();
+    await expect(page.getByRole('dialog').getByRole('grid')).toBeVisible();
+    // The calendar is a dialog, not a pop-out, so no item count is asserted here: only that nothing left open is short.
+    expect((await shortItems(page)).bad, 'not counted calendar and back').toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(ANY_POPOUT)).toHaveCount(0);
+
+    await page.goto('/cards');
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Options for/ })
+          .first()
+          .click(),
+      'card ⋯',
+    );
+
+    // The archived variant: archive a card, then open its menu under "Archived cards".
+    await page
+      .getByRole('button', { name: /^Options for/ })
+      .first()
+      .click();
+    await page.getByRole('menuitem', { name: /^Archive/ }).click();
+    await page.getByRole('button', { name: /^Archived cards/ }).click();
+    await check(
+      page,
+      () =>
+        page
+          .getByRole('button', { name: /^Options for/ })
+          .last()
+          .click(),
+      'archived card ⋯',
+    );
+  });
+
+  test('a scroll closes an open pop-out', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.goto('/');
+    // A popover, not a menu: base-ui menus are modal and lock page scroll while
+    // open, so only a popover can be scrolled away from.
+    await page
+      .getByRole('button', { name: /^Category: / })
+      .first()
+      .click();
+    await expect(page.locator('[data-slot="popover-content"]')).toBeVisible();
+
+    await page.mouse.wheel(0, 600);
+    await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
   });
 });

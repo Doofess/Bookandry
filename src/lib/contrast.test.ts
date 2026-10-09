@@ -67,6 +67,22 @@ const PAIRS = [
   { name: 'muted-foreground on muted', on: 'muted', text: 'muted-foreground', min: TEXT },
   { name: 'accent-foreground on accent', on: 'accent', text: 'accent-foreground', min: TEXT },
   { name: 'secondary-foreground on secondary', on: 'secondary', text: 'secondary-foreground', min: TEXT },
+  // Sapphire. The brand is a TEXT colour now (links, the active tab), not only a fill.
+  { name: 'primary as text on background', on: 'background', text: 'primary', min: TEXT },
+  { name: 'primary as text on card', on: 'card', text: 'primary', min: TEXT },
+  { name: 'primary as text on popover', on: 'popover', text: 'primary', min: TEXT },
+  // The active phone tab: a sapphire icon and label on the soft accent pill.
+  { name: 'primary on accent', on: 'accent', text: 'primary', min: TEXT },
+  // A focused menu item: the popover's own text on the accent highlight.
+  { name: 'popover-foreground on accent', on: 'accent', text: 'popover-foreground', min: TEXT },
+  // The panel: every title, figure and pill label on it.
+  {
+    name: 'brand-deep-foreground on brand-deep',
+    on: 'brand-deep',
+    text: 'brand-deep-foreground',
+    min: TEXT,
+  },
+  { name: 'ring against card', on: 'card', text: 'ring', min: COMPONENT },
   {
     name: 'destructive-foreground on destructive',
     on: 'destructive',
@@ -90,18 +106,6 @@ const PAIRS = [
   // The tightest surface either amount actually lands on.
   { name: 'income on muted', on: 'muted', text: 'income', min: TEXT },
   { name: 'expense on muted', on: 'muted', text: 'expense', min: TEXT },
-
-  /*
-   * The FAB, which is the primary action on every screen.
-   *
-   * Its plus is BLACK on the vivid green, not white: white on that green is
-   * 2.40:1 and fails outright, which is the trap the vivid accent set. The disc
-   * itself is only 2.40:1 against a white page, so its boundary would not be
-   * perceivable - the deeper rim is what carries 1.4.11, and is the reason that
-   * token exists at all.
-   */
-  { name: 'fab-foreground on fab', on: 'fab', text: 'fab-foreground', min: TEXT },
-  { name: 'fab-rim against background', on: 'background', text: 'fab-rim', min: COMPONENT },
 
   // Component boundaries: 1.4.11, not 1.4.3.
   { name: 'input against background', on: 'background', text: 'input', min: COMPONENT },
@@ -130,6 +134,53 @@ describe.each([
     const other = palette === LIGHT ? DARK : LIGHT;
 
     expect(Object.keys(palette).sort()).toEqual(Object.keys(other).sort());
+  });
+});
+
+/*
+ * Dark-only pairs. The Add pill's 1px brand-vivid ring exists only in dark
+ * mode, where the deep pill alone would not show its boundary on the
+ * near-black page. In light mode the pill itself is 10.1:1 against white.
+ */
+describe('dark theme only', () => {
+  it('the Add pill ring is at least 3:1 against the page', () => {
+    expect(contrastRatio(get(DARK, '--background'), get(DARK, '--brand-vivid'))).toBeGreaterThanOrEqual(
+      COMPONENT,
+    );
+  });
+});
+
+describe('the brand', () => {
+  it('is sapphire, not green', () => {
+    // Hue 261.5 is the spec's #0F3A8A. Green sat at 156-158.
+    expect(get(LIGHT, '--brand-deep')).toEqual({ l: 0.374, c: 0.142, h: 261.5 });
+    expect(get(DARK, '--brand-deep')).toEqual({ l: 0.314, c: 0.117, h: 261.7 });
+    expect(get(LIGHT, '--primary')).toEqual({ l: 0.462, c: 0.175, h: 262.6 });
+    expect(get(DARK, '--primary')).toEqual({ l: 0.779, c: 0.113, h: 259.7 });
+  });
+
+  it('pins the remaining sapphire tokens, so a floor-passing drift still fails', () => {
+    expect(get(LIGHT, '--primary-hover')).toEqual({ l: 0.374, c: 0.142, h: 261.5 });
+    expect(get(DARK, '--primary-hover')).toEqual({ l: 0.836, c: 0.082, h: 258.8 });
+    expect(get(LIGHT, '--ring')).toEqual({ l: 0.546, c: 0.215, h: 262.9 });
+    expect(get(DARK, '--ring')).toEqual({ l: 0.779, c: 0.113, h: 259.7 });
+    expect(get(LIGHT, '--accent')).toEqual({ l: 0.959, c: 0.019, h: 260.2 });
+    expect(get(DARK, '--accent')).toEqual({ l: 0.314, c: 0.085, h: 263.5 });
+    expect(get(LIGHT, '--accent-foreground')).toEqual({ l: 0.374, c: 0.142, h: 261.5 });
+    expect(get(DARK, '--accent-foreground')).toEqual({ l: 0.779, c: 0.113, h: 259.7 });
+    expect(get(LIGHT, '--primary-foreground')).toEqual({ l: 1, c: 0, h: 0 });
+    expect(get(DARK, '--primary-foreground')).toEqual({ l: 0.253, c: 0.084, h: 263 });
+    expect(get(LIGHT, '--brand-vivid')).toEqual({ l: 0.702, c: 0.158, h: 255.6 });
+    expect(get(DARK, '--brand-vivid')).toEqual({ l: 0.702, c: 0.158, h: 255.6 });
+  });
+
+  it('keeps the dark front-door links readable: brand-vivid text on the page is 7:1', () => {
+    expect(contrastRatio(get(DARK, '--background'), get(DARK, '--brand-vivid'))).toBeGreaterThanOrEqual(7);
+  });
+
+  it('keeps income green', () => {
+    expect(get(LIGHT, '--income').h).toBeCloseTo(156.1, 1);
+    expect(get(DARK, '--chart-income').h).toBeCloseTo(159.7, 1);
   });
 });
 

@@ -1,14 +1,17 @@
 import { defaultRangeExtractor, useWindowVirtualizer, type Range } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import { activeHeaderIndex, headerIndices, type FeedRow } from '@/domain/feed';
+import { activeHeaderIndex, headerIndices, indexAtOffset, type FeedRow } from '@/domain/feed';
 import { formatLocalDate } from '@/lib/dates';
 import type { Occurrence } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 import { DayHeader, TransactionRow, type RowContext } from './feed-rows';
+import { useDocumentTop } from './use-document-top';
+import { useSafeAreaTop } from './use-safe-area-top';
+import { COLLAPSED_HEIGHT } from '../summary/use-collapsing-header';
 
 /**
  * AUTHORITATIVE heights, not estimates.
@@ -65,29 +68,40 @@ export function VirtualFeed({
   context,
   onOpen,
   onMenu,
+  onCategory,
+  onProjected,
 }: {
   rows: readonly FeedRow[];
   context: RowContext;
   onOpen?: (occurrence: Occurrence) => void;
-  onMenu?: (occurrence: Occurrence) => void;
+  onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  onProjected?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollMargin, setScrollMargin] = useState(0);
   const fontsReady = useFontsReady();
-
-  useLayoutEffect(() => {
-    // The distance from the top of the document to the list. Re-read on resize
-    // because the summary header above it changes height when it wraps.
-    const measure = (): void => {
-      setScrollMargin(containerRef.current?.offsetTop ?? 0);
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => {
-      window.removeEventListener('resize', measure);
-    };
-  }, [rows.length]);
+  // The distance from the top of the document to the list, kept current as the
+  // panel above it settles and wraps. Measured again once the list replaces the
+  // font skeleton.
+  const listTop = useDocumentTop(containerRef, fontsReady);
+  /*
+   * The virtualizer's reference line is the PINNED SLOT, not the viewport's
+   * top edge: under the collapsed bar, 48px plus the status bar's inset down.
+   *
+   * Its "row at the scroll offset" - which decides the pinned day, and whose
+   * change is what makes it re-render - is then the row the pinned header
+   * covers. Measured from the viewport's edge instead, it is a row hidden
+   * behind the bar, and for 48px at every day boundary the previous day's
+   * date and total sat on the next day's row.
+   *
+   * The rows do not move: each is placed at `item.start - scrollMargin`, its
+   * offset within the list, whatever the margin. Only the range's edges shift
+   * 48px down, into the band behind the bar, which the overscan covers. Applied
+   * whether or not the bar shows, because nothing is pinned until it does.
+   */
+  const safeAreaTop = useSafeAreaTop();
+  const scrollMargin = listTop - COLLAPSED_HEIGHT - safeAreaTop;
 
   const headers = useMemo(() => headerIndices(rows), [rows]);
 
@@ -151,11 +165,15 @@ export function VirtualFeed({
    *
    * A ref written inside the extractor and read during render is a render-phase
    * ref access: React can re-render without re-running the extractor, and the
-   * pinned header would then be one scroll position out of date. Because the
-   * extractor PREPENDS the active header, `items[0]` is that header whenever
-   * one is pinned - so the same answer falls out of the range itself.
+   * pinned header would then be one scroll position out of date.
+   *
+   * From the row AT the top of the screen, not `items[0]`: the range opens
+   * with eight rows of overscan above the screen, so the first item drawn
+   * kept the first day pinned over later days' rows for a screenful of scroll.
+   * The scroll offset itself: `scrollMargin` already moved it to the pinned
+   * slot, and the virtualizer re-renders exactly when the row there changes.
    */
-  const stickyIndex = activeHeaderIndex(headers, items[0]?.index ?? 0);
+  const stickyIndex = activeHeaderIndex(headers, indexAtOffset(items, virtualizer.scrollOffset ?? 0) ?? 0);
 
   return (
     <div ref={containerRef} className="relative" style={{ height: virtualizer.getTotalSize() }} role="list">
@@ -197,6 +215,8 @@ export function VirtualFeed({
               context,
               onOpen,
               onMenu,
+              onCategory,
+              onProjected,
               position: positions[item.index] ?? 1,
               setSize: rowCount,
               horizonLabel: (date) =>
@@ -214,7 +234,9 @@ export function VirtualFeed({
 type RenderOptions = {
   readonly context: RowContext;
   readonly onOpen?: (occurrence: Occurrence) => void;
-  readonly onMenu?: (occurrence: Occurrence) => void;
+  readonly onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  readonly onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  readonly onProjected?: (occurrence: Occurrence, anchor: HTMLElement) => void;
   readonly position: number;
   readonly setSize: number;
   readonly horizonLabel: (date: LocalDate) => string;
@@ -248,6 +270,8 @@ function renderRow(row: FeedRow, options: RenderOptions) {
       setSize={options.setSize}
       onOpen={options.onOpen}
       onMenu={options.onMenu}
+      onCategory={options.onCategory}
+      onProjected={options.onProjected}
     />
   );
 }

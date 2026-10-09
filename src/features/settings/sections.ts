@@ -2,6 +2,7 @@ import {
   CreditCard,
   DatabaseBackup,
   Landmark,
+  Link2,
   Repeat,
   ShieldCheck,
   SlidersHorizontal,
@@ -28,7 +29,7 @@ export type SettingsSection = {
 };
 
 export function useSettingsSections(): {
-  /** About the account: only with one signed in. */
+  /** About the account - who it is, who it is linked with, how it is kept safe: only with one signed in. */
   readonly account: readonly SettingsSection[];
   /** About the app and what is in it. */
   readonly app: readonly SettingsSection[];
@@ -44,6 +45,13 @@ export function useSettingsSections(): {
           icon: UserRound,
           label: t('settings.sections.account'),
           hint: t('settings.sections.accountHint'),
+        },
+        {
+          key: 'linking',
+          to: SETTINGS_ROUTES.linking,
+          icon: Link2,
+          label: t('household.title'),
+          hint: t('settings.sections.linkingHint'),
         },
         {
           key: 'security',

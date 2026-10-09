@@ -247,7 +247,7 @@ describe('buildDemoData — fixtures for the two hardest code paths', () => {
 describe('buildDemoData — language', () => {
   it('writes Hebrew names into the rows, not i18n keys', () => {
     const he = buildDemoData({ today: TODAY, baseCurrency: 'ILS', now: NOW, language: 'he' });
-    expect(he.profiles.map((p) => p.name)).toEqual(['דנה', 'יוסי', 'משק בית']);
+    expect(he.profiles.map((p) => p.name)).toEqual(['דנה', 'יוסי', 'משותף']);
     expect(he.paymentMethods.some((m) => m.label === 'הוראת קבע')).toBe(true);
   });
 

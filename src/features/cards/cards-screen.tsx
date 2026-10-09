@@ -1,15 +1,21 @@
 import { cn } from 'cn';
-import { ChevronDown, CreditCard, Pencil, Plus, TriangleAlert } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronDown, CreditCard, MoreHorizontal, Plus, TriangleAlert } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
+import { useAccount } from '@/app/account';
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { usePrime } from '@/app/prime';
+import { ROUTES } from '@/app/routes';
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
 import type { ResolvedCard } from '@/data/card-catalog/resolve';
 import { db } from '@/db/db';
+import { putArchiveState, setPaymentMethodArchived } from '@/db/repos/payment-methods';
 import { writeSettings } from '@/db/repos/settings';
 import { cardDealRate } from '@/domain/card-catalog-link';
 import {
@@ -28,9 +34,11 @@ import {
   type CardCommitments,
 } from '@/domain/cards';
 import { rateOfTerm } from '@/domain/deal-rules';
+import { PARAM } from '@/domain/feed-filters';
 import { followsPrimeFrom } from '@/domain/long-credit';
 import { methodOwnedBy } from '@/domain/tx-options';
 import { ProfileSwitcher } from '@/features/feed/profile-switcher';
+import { useUndoableWrite } from '@/features/feed/use-row-actions';
 import { useResolvedCards } from '@/features/transaction/use-transaction-sheet';
 import { ordinalDay } from '@/i18n/ordinal';
 import { systemClock } from '@/lib/clock';
@@ -46,6 +54,7 @@ import {
 import type { Currency, LocalDate } from '@/types/money';
 
 import { cardGradient } from './card-colors';
+import { CardMenu, type CardMenuTarget } from './card-menu';
 import { tierName } from './catalog-names';
 import { MethodEditor, OtherMethods } from './method-editor';
 import { NetworkLogo } from './network-logo';
@@ -68,59 +77,98 @@ export function CardsScreen() {
   const baseCurrency = useBaseCurrency();
   const data = useCardsData(today, baseCurrency);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
+  // The editor opened from "Interest table" goes straight to the rates.
+  const [section, setSection] = useState<'rates' | undefined>(undefined);
+  // One card menu for the screen, anchored to the face or ⋯ that opened it.
+  const [menuFor, setMenuFor] = useState<CardMenuTarget | undefined>(undefined);
+  const navigate = useNavigate();
+  const account = useAccount();
+  const undoable = useUndoableWrite();
   // Whose cards: the same choice as the feed's, so it follows the person between screens.
   const whose = useSettings().activeProfileId;
   const cards = useMemo(
     () => (data?.cards ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
     [data, whose],
   );
+  const archived = useMemo(
+    () => (data?.archived ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
+    [data, whose],
+  );
+  // What the household's total counts: the cards on the screen, and any archived one still owed on.
+  const counted = useMemo(
+    () => [
+      ...cards,
+      ...(data?.owing ?? []).filter((card) => whose === ALL_PROFILES || methodOwnedBy(card, whose)),
+    ],
+    [cards, data, whose],
+  );
+  /*
+   * A card restored from "Archived cards": its line, and with the last one the
+   * whole list, leaves the page with the ⋯ that had focus. Focus goes to the
+   * card's own ⋯ once the card is back on the screen.
+   */
+  const restoring = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const id = restoring.current;
+    if (id === undefined || !cards.some((card) => card.id === id)) return;
+    restoring.current = undefined;
+    const more = [...document.querySelectorAll<HTMLElement>('[data-card-menu]')].find(
+      (button) => button.dataset['cardMenu'] === id,
+    );
+    more?.focus();
+  }, [cards]);
   // Each linked card's catalog entry: its rates and names, as every other screen reads them.
   const resolvedCards = useResolvedCards(cards);
   // Each card's commitments, worked out once: its panel and the household's total both read them.
   const commitments = useMemo(
-    () => new Map(cards.map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)])),
-    [cards, data, today],
+    () => new Map(counted.map((card) => [card.id, cardCommitments(data?.occurrences ?? [], card, today)])),
+    [counted, data, today],
   );
 
   return (
-    <section className="mx-auto max-w-4xl space-y-5 px-4 py-6 pb-24 lg:pb-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
+    <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <ScreenTitle>{t('title')}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-5 px-4 pt-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing('new');
-          }}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          {t('add')}
-        </Button>
-      </header>
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing('new');
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            {t('add')}
+          </Button>
+        </header>
 
-      <UnfinishedNotice kind="card" />
+        <UnfinishedNotice kind="card" />
 
-      {data === undefined ? null : (
-        <ProfileSwitcher
-          profiles={[...data.profiles.values()]}
-          active={whose}
-          onSelect={(profileId) => {
-            void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
-          }}
-        />
-      )}
+        {data === undefined ? null : (
+          <ProfileSwitcher
+            profiles={[...data.profiles.values()]}
+            active={whose}
+            onSelect={(profileId) => {
+              void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+            }}
+          />
+        )}
 
-      {data === undefined ? null : cards.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-          <CreditCard className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
-          <h2 className="mt-3 font-medium">{t('emptyTitle')}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t('emptyBody')}</p>
-        </div>
-      ) : (
-        <>
-          <HouseholdCommitments cards={cards} commitments={commitments} />
+        {data === undefined || cards.length > 0 ? null : (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+            <CreditCard className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+            <h2 className="mt-3 font-medium">{t('emptyTitle')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('emptyBody')}</p>
+          </div>
+        )}
+
+        {data === undefined || counted.length === 0 ? null : (
+          <HouseholdCommitments cards={counted} commitments={commitments} />
+        )}
+
+        {data === undefined || cards.length === 0 ? null : (
           <ul className="grid gap-6 md:grid-cols-2">
             {cards.map((card) => (
               <li key={card.id}>
@@ -132,26 +180,96 @@ export function CardsScreen() {
                   commitments={commitments.get(card.id)}
                   today={today}
                   baseCurrency={baseCurrency}
-                  onEdit={() => {
-                    setEditing(card);
+                  onMenu={(anchor, returnFocus) => {
+                    setMenuFor({ card, anchor, returnFocus });
                   }}
                 />
               </li>
             ))}
           </ul>
-        </>
-      )}
+        )}
 
-      <OtherMethods />
+        <OtherMethods />
 
-      <MethodEditor
-        target={editing}
-        profiles={data === undefined ? [] : [...data.profiles.values()]}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-        newType="credit_card"
-      />
+        {archived.length === 0 ? null : (
+          <ArchivedCards
+            cards={archived}
+            onMenu={(card, anchor) => {
+              setMenuFor({ card, anchor });
+            }}
+          />
+        )}
+
+        <MethodEditor
+          target={editing}
+          profiles={data === undefined ? [] : [...data.profiles.values()]}
+          onOpenChange={(open) => {
+            if (open) return;
+            setEditing(undefined);
+            setSection(undefined);
+          }}
+          newType="credit_card"
+          section={section}
+        />
+
+        <CardMenu
+          target={menuFor}
+          variant={menuFor?.card.isArchived === 1 ? 'archived' : 'active'}
+          aiAvailable={account.status !== 'unavailable'}
+          onClose={() => {
+            setMenuFor(undefined);
+          }}
+          onAction={(action, card) => {
+            // Closed first, unconditionally: left open over a toast, it covers the Undo.
+            setMenuFor(undefined);
+            switch (action) {
+              case 'edit':
+                setEditing(card);
+                return;
+              case 'rates':
+                setSection('rates');
+                setEditing(card);
+                return;
+              case 'transactions':
+                // The feed's own payment-method filter, on the month it opens on.
+                void navigate({
+                  pathname: ROUTES.feed,
+                  search: `?${PARAM.methods}=${encodeURIComponent(card.id)}`,
+                });
+                return;
+              case 'import':
+                void navigate({
+                  pathname: ROUTES.feed,
+                  search: `?import=1&via=${encodeURIComponent(card.id)}`,
+                });
+                return;
+              case 'archive':
+              case 'restore': {
+                // One write path both ways. Undo puts back exactly what was there, archive date and all.
+                const archived = action === 'archive';
+                if (!archived) restoring.current = card.id;
+                void undoable(
+                  async () => {
+                    const before = await setPaymentMethodArchived(
+                      db,
+                      card.id,
+                      archived,
+                      systemClock.nowIso(),
+                    );
+                    return {
+                      undo: async (at) => {
+                        if (before !== undefined) await putArchiveState(db, card.id, before, at);
+                      },
+                    };
+                  },
+                  t(archived ? 'cardMenu.archived' : 'cardMenu.restored', { name: card.label }),
+                );
+                return;
+              }
+            }
+          }}
+        />
+      </PanelSheet>
     </section>
   );
 }
@@ -164,7 +282,7 @@ function CardPanel({
   commitments,
   today,
   baseCurrency,
-  onEdit,
+  onMenu,
 }: {
   readonly card: PaymentMethod;
   /** Its catalog entry, once loaded; undefined for a card not linked. */
@@ -174,9 +292,15 @@ function CardPanel({
   readonly commitments: CardCommitments | undefined;
   readonly today: LocalDate;
   readonly baseCurrency: Currency;
-  readonly onEdit: () => void;
+  /**
+   * Open the card's menu, anchored to what was pressed: its ⋯, or its face.
+   * From the face, focus goes back to the ⋯ (`returnFocus`), the one the
+   * keyboard and screen readers know.
+   */
+  readonly onMenu: (anchor: HTMLElement, returnFocus?: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation('cards');
+  const more = useRef<HTMLButtonElement>(null);
   const details = card.card;
   const tier = tierName(details, resolved, i18n.language);
   const day = billingDayOf(card);
@@ -214,15 +338,44 @@ function CardPanel({
           cardGradient(card),
         )}
       >
-        <div className="flex items-start justify-between gap-3">
+        {/*
+          The face is a button too: a larger pointer target for the same menu
+          as the ⋯. Stretched under the text, so the name stays a heading; out
+          of the tab order and hidden from assistive tech, where the ⋯ is the
+          one control, and two identical stops per card would be noise.
+        */}
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={(event) => {
+            onMenu(event.currentTarget, more.current ?? undefined);
+          }}
+          className="absolute inset-0 rounded-2xl focus-visible:outline-none"
+        />
+        <div className="pointer-events-none relative flex items-start justify-between gap-3">
           <span className="text-sm font-medium opacity-90">
             {details?.issuer === undefined ? t('unknownIssuer') : t(`issuer.${details.issuer}`)}
           </span>
-          {details?.network === undefined ? null : (
-            <NetworkLogo network={details.network} className="shrink-0" />
-          )}
+          <span className="flex items-start gap-1">
+            {details?.network === undefined ? null : (
+              <NetworkLogo network={details.network} className="shrink-0" />
+            )}
+            <button
+              ref={more}
+              type="button"
+              data-card-menu={card.id}
+              aria-label={t('cardMenu.label', { name: card.label })}
+              onClick={(event) => {
+                onMenu(event.currentTarget);
+              }}
+              className="pointer-events-auto -me-3 -mt-3 flex size-11 items-center justify-center rounded-full text-white hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none"
+            >
+              <MoreHorizontal className="size-5" aria-hidden="true" />
+            </button>
+          </span>
         </div>
-        <div>
+        <div className="pointer-events-none relative">
           {details?.lastDigits === undefined ? null : (
             <p
               dir="ltr"
@@ -240,7 +393,7 @@ function CardPanel({
               .join(' · ')}
           </p>
         </div>
-        <div className="flex items-end justify-between gap-3 text-sm">
+        <div className="pointer-events-none relative flex items-end justify-between gap-3 text-sm">
           <span className="opacity-90">
             {card.profileId === SHARED_OWNER ? t('shared') : (owner?.name ?? '')}
           </span>
@@ -313,12 +466,72 @@ function CardPanel({
       {past.length === 0 && upcoming.length === 0 ? null : (
         <BillList bills={[...upcoming.slice(0, 2).reverse(), ...past]} today={today} />
       )}
-
-      <Button type="button" variant="outline" size="sm" onClick={onEdit}>
-        <Pencil className="size-4" aria-hidden="true" />
-        {t('edit.open')}
-      </Button>
     </article>
+  );
+}
+
+/**
+ * The cards put away, folded at the foot of the screen, so one archived from
+ * its menu is never lost once the toast's Undo has gone. Each is a line, not a
+ * face, with its own ⋯ for Restore and Edit.
+ */
+function ArchivedCards({
+  cards,
+  onMenu,
+}: {
+  readonly cards: readonly PaymentMethod[];
+  readonly onMenu: (card: PaymentMethod, anchor: HTMLElement) => void;
+}) {
+  const { t } = useTranslation('cards');
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const title = t('cardMenu.archivedCards', { count: cards.length });
+  return (
+    <section className="rounded-xl border border-border" data-testid="archived-cards">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => {
+          setOpen(!open);
+        }}
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-start text-sm text-muted-foreground hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span>{title}</span>
+        <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} aria-hidden="true" />
+      </button>
+      {open ? (
+        <ul id={listId} aria-label={title} className="divide-y divide-border border-t border-border">
+          {cards.map((card) => (
+            <li key={card.id} className="flex items-center gap-3 py-1 ps-3 pe-1 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{card.label}</span>
+                <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                  {card.card?.lastDigits === undefined ? null : (
+                    <span dir="ltr" className="font-mono tabular-nums">
+                      •••• {card.card.lastDigits}
+                    </span>
+                  )}
+                  {card.card?.issuer === undefined ? null : <span>{t(`issuer.${card.card.issuer}`)}</span>}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11 shrink-0"
+                aria-label={t('cardMenu.label', { name: card.label })}
+                onClick={(event) => {
+                  onMenu(card, event.currentTarget);
+                }}
+              >
+                <MoreHorizontal className="size-4" aria-hidden="true" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

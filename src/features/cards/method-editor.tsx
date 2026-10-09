@@ -281,17 +281,34 @@ export function MethodEditor({
   profiles,
   onOpenChange,
   newType = 'credit_card',
+  section,
 }: {
   readonly target: PaymentMethod | 'new' | undefined;
   readonly profiles: readonly Profile[];
   readonly onOpenChange: (open: boolean) => void;
   /** What a new method starts as. */
   readonly newType?: PaymentMethodType;
+  /** Opened from a card's "Interest table": straight to its rates, in view and focused. */
+  readonly section?: 'rates' | undefined;
 }) {
   const { t } = useTranslation(['common', 'categories']);
   return (
     <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
+      <SheetContent
+        side="bottom"
+        className="max-h-[92dvh] overflow-y-auto"
+        // The rates' wrapper is there as the sheet opens; a linked card's table
+        // loads into it in place, so it is focused without waiting for that.
+        initialFocus={
+          section === 'rates'
+            ? () => {
+                const rates = document.querySelector<HTMLElement>('[data-section="rates"]');
+                rates?.scrollIntoView({ block: 'start' });
+                return rates;
+              }
+            : undefined
+        }
+      >
         <SheetHeader>
           <SheetTitle>
             {target === 'new' ? t('categories:manage.methodNew') : t('categories:manage.methodEdit')}

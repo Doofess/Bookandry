@@ -1,6 +1,8 @@
 import { screen } from '@testing-library/react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { CARD_FEE_PREFIX } from '@/domain/cards';
 import { MONEY, d, makeTx } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
 import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
@@ -262,6 +264,28 @@ describe('TransactionRow', () => {
     expect(screen.queryByText('Standing order')).not.toBeInTheDocument();
   });
 
+  it('draws the same sapphire chip for income and expense; the amount carries direction', () => {
+    const income = occurrence({
+      transaction: makeTx({
+        id: 't2',
+        kind: 'income',
+        date: d('2026-09-10'),
+        recurrence: { type: 'one_time' },
+      }),
+    });
+    const { container } = render(
+      <>
+        <TransactionRow occurrence={occurrence()} context={context()} position={1} setSize={2} />
+        <TransactionRow occurrence={income} context={context()} position={2} setSize={2} />
+      </>,
+    );
+    const chips = container.querySelectorAll('[data-slot="category-chip"]');
+
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) expect(chip).toHaveClass('bg-accent', 'text-accent-foreground');
+    expect(container.querySelectorAll('.bg-muted.text-muted-foreground.size-9')).toHaveLength(0);
+  });
+
   it('falls back to the category id when the category is gone', () => {
     render(
       <TransactionRow
@@ -273,6 +297,147 @@ describe('TransactionRow', () => {
     );
     // A missing category must render a row, not throw inside the list.
     expect(screen.getByText('cat.vanished')).toBeInTheDocument();
+  });
+
+  it('makes the chip a button that reports itself, except on card-fee and skipped rows', async () => {
+    await initTestI18n('en');
+    const onCategory = vi.fn();
+    const { rerender } = renderWithProviders(
+      <TransactionRow
+        occurrence={occurrence()}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={onCategory}
+      />,
+    );
+    const chip = screen.getByRole('button', { name: /Category: .*Change it/ });
+
+    expect(chip).toHaveClass('size-11');
+    await userEvent.setup().click(chip);
+    expect(onCategory).toHaveBeenCalledWith(expect.objectContaining({ key: 't1@2026-09-10' }), chip);
+
+    rerender(
+      <TransactionRow
+        occurrence={occurrence({ isSkipped: true })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={onCategory}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Category: / })).not.toBeInTheDocument();
+  });
+
+  it('draws no chip button on a card fee, which is changed where the card is', () => {
+    render(
+      <TransactionRow
+        occurrence={occurrence({ seriesId: `${CARD_FEE_PREFIX}visa` })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Category: / })).not.toBeInTheDocument();
+  });
+
+  it('makes "not counted yet" a button on a projected row, and still opens the row from anywhere else', async () => {
+    const user = userEvent.setup();
+    const onProjected = vi.fn();
+    const onOpen = vi.fn();
+    const onMenu = vi.fn();
+    renderWithProviders(
+      <TransactionRow
+        occurrence={occurrence({ isProjected: true })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onOpen={onOpen}
+        onMenu={onMenu}
+        onCategory={vi.fn()}
+        onProjected={onProjected}
+      />,
+    );
+    const chip = screen.getByRole('button', { name: 'Not counted yet. Change it' });
+
+    await user.click(chip);
+    expect(onProjected).toHaveBeenCalledWith(expect.objectContaining({ isProjected: true }), chip);
+    expect(onOpen).not.toHaveBeenCalled();
+    // No button inside a button anywhere in the row.
+    expect(document.querySelector('button button')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /^Sep 10, 2026, Groceries$/ }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    // Task 7's ⋯ still reports its own button.
+    const more = screen.getByRole('button', { name: /Actions for/ });
+    await user.click(more);
+    expect(onMenu).toHaveBeenCalledWith(expect.objectContaining({ isProjected: true }), more);
+  });
+
+  it('shows no "not counted yet" button on a past occurrence', () => {
+    render(
+      <TransactionRow
+        occurrence={occurrence()}
+        context={context()}
+        position={1}
+        setSize={1}
+        onProjected={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Not counted yet/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps "not counted yet" a plain flag on a card fee or a skipped row', () => {
+    const { rerender } = render(
+      <TransactionRow
+        occurrence={occurrence({ isProjected: true, seriesId: `${CARD_FEE_PREFIX}visa` })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onProjected={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Not counted yet/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Not counted yet')).toBeInTheDocument();
+
+    rerender(
+      <TransactionRow
+        occurrence={occurrence({ isProjected: true, isSkipped: true })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onProjected={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Not counted yet/ })).not.toBeInTheDocument();
+  });
+
+  it('stretches its own button over the whole row, so an inert chip still opens it', () => {
+    /*
+     * On a card fee or a skipped row the category chip is not a button, and it
+     * sits outside the row's button in the DOM. The row's button covers the
+     * whole row, and only the other buttons rise above it, so a tap
+     * on the inert chip lands on the row. jsdom cannot hit-test: the tap itself
+     * is the e2e @cards fee test's.
+     */
+    render(
+      <TransactionRow
+        occurrence={occurrence({ seriesId: `${CARD_FEE_PREFIX}visa` })}
+        context={context()}
+        position={1}
+        setSize={1}
+        onCategory={vi.fn()}
+      />,
+    );
+    const row = screen.getByRole('listitem');
+    const main = screen.getByRole('button', { name: /^Sep 10, 2026, Groceries$/ });
+    const inert = row.querySelector('[data-slot="category-chip"]')?.parentElement;
+
+    expect(row).toHaveClass('relative');
+    expect(main).toHaveClass('absolute', 'inset-0');
+    expect(inert?.tagName).toBe('SPAN');
+    expect(inert?.className).not.toMatch(/\b(z-|relative)/);
   });
 });
 
@@ -323,6 +488,8 @@ describe('the card an expense was paid with', () => {
   it('shows a card icon and its last four digits, and says so', () => {
     paidWith(card());
     expect(screen.getByTestId('row-card').textContent).toBe('3214');
+    // Cut short below sm: the full name is a hover away.
+    expect(screen.getByTestId('row-card')).toHaveAttribute('title', 'Max Gold');
     expect(
       screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 3214$/ }),
     ).toBeInTheDocument();

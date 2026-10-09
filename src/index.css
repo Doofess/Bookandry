@@ -26,11 +26,13 @@
 /* ---------------------------------------------------------------------------
    Design tokens.
 
-   Contrast-audited against WCAG 2.2 AA. The spec's original accent
-   (152 76% 36%) measured 3.30:1 on white and FAILED the 4.5:1 it demanded;
-   white-on-fill at 152 70% 44% measured 2.39:1. Primary is therefore the
-   deeper emerald below (5.13:1 with white text), and the vivid green survives
-   only as --brand-vivid for the logo and dark-mode fills.
+   Contrast-audited against WCAG 2.2 AA, and every pair the design depends on
+   is re-checked by src/lib/contrast.test.ts.
+
+   The brand is SAPPHIRE (#0F3A8A deep, #56A0FF vivid). Green survives only as
+   money coming in (--income, --chart-income); red is money going out.
+   --brand-vivid is for lines and the logo, never text on a light background
+   (it is 2.67:1 on white).
 
    --border (decorative) and --input (an affordance needing 3:1) are separate
    tokens on purpose; shadcn ships them at the same value, which fails 1.4.11.
@@ -45,24 +47,24 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.004 285.8);
 
-  /* 152 76% 28% — white text 5.13:1, and 5.13:1 as a UI surface vs white */
-  --primary: oklch(0.523 0.121 156.1);
+  /* #1D4FB8 — white text 7.34:1; as text on white 7.34:1 */
+  --primary: oklch(0.462 0.175 262.6);
   --primary-foreground: oklch(1 0 0);
-  --primary-hover: oklch(0.458 0.106 156.2);
+  --primary-hover: oklch(0.374 0.142 261.5); /* #0F3A8A */
 
   --secondary: oklch(0.968 0.001 286.4);
   --secondary-foreground: oklch(0.141 0.004 285.8);
   --muted: oklch(0.968 0.001 286.4);
   --muted-foreground: oklch(0.516 0.013 285.9); /* 5.61:1 */
-  --accent: oklch(0.971 0.017 166.4); /* green tint for income chips */
-  --accent-foreground: oklch(0.523 0.121 156.1);
+  --accent: oklch(0.959 0.019 260.2); /* #EAF2FF: icon tint, menu highlight */
+  --accent-foreground: oklch(0.374 0.142 261.5); /* #0F3A8A, 9.36:1 */
 
   --destructive: oklch(0.531 0.199 27.4); /* white text 5.81:1 */
   --destructive-foreground: oklch(1 0 0);
 
   --border: oklch(0.92 0.004 286.3);
   --input: oklch(0.667 0.018 285.9); /* 3.04:1 — the field's only affordance */
-  --ring: oklch(0.627 0.148 155.7); /* 3.31:1 focus ring */
+  --ring: oklch(0.546 0.215 262.9); /* #2563EB, 5.17:1 focus ring */
 
   --income: oklch(0.523 0.121 156.1);
   --expense: oklch(0.505 0.188 27.3);
@@ -70,22 +72,12 @@
   --chart-expense: oklch(0.531 0.199 27.4);
   --chart-balance: oklch(0.516 0.013 285.9);
 
-  /* Logo + dark fills ONLY. Never text on a light background. */
-  --brand-vivid: oklch(0.71 0.163 156.3);
-  /* The front door's engraved panel: banknote green, the same in both themes.
-     White text on it measures 10.4:1. */
-  --brand-deep: oklch(0.36 0.075 158);
-  --brand-deep-foreground: oklch(0.985 0.01 156);
-
-  /* Floating action button.
-     A BLACK plus on the vivid green measures 7.64:1 - markedly better than
-     white on the same green, which is 2.40:1 and fails outright.
-     The disc itself is only 2.40:1 against a white page though, so its
-     boundary would not be perceivable (SC 1.4.11); the deeper rim carries
-     that at 5.13:1. */
-  --fab: oklch(0.71 0.163 156.3);
-  --fab-foreground: oklch(0.18 0.012 286);
-  --fab-rim: oklch(0.523 0.121 156.1);
+  /* Lines and the logo ONLY. Never text on a light background. */
+  --brand-vivid: oklch(0.702 0.158 255.6); /* #56A0FF */
+  /* The engraved panel, the front door's and every screen's. Near-white text
+     on it measures 10.1:1. */
+  --brand-deep: oklch(0.374 0.142 261.5); /* #0F3A8A */
+  --brand-deep-foreground: oklch(0.985 0.008 262);
 }
 
 .dark {
@@ -96,16 +88,16 @@
   --popover: oklch(0.231 0.007 285.8);
   --popover-foreground: oklch(0.985 0 0);
 
-  --primary: oklch(0.773 0.167 157.5); /* 9.23:1 on card */
-  --primary-foreground: oklch(0.141 0.004 285.8); /* 10.38:1 */
-  --primary-hover: oklch(0.795 0.153 159.4);
+  --primary: oklch(0.779 0.113 259.7); /* #8CB8FF, 9.87:1 on the page */
+  --primary-foreground: oklch(0.253 0.084 263); /* #0B1F4A deep navy, 7.96:1 */
+  --primary-hover: oklch(0.836 0.082 258.8); /* #A9CBFF */
 
   --secondary: oklch(0.254 0.005 286);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.254 0.005 286);
   --muted-foreground: oklch(0.755 0.011 286.1); /* 7.23:1 on --muted, the tightest surface it lands on */
-  --accent: oklch(0.334 0.047 162.2);
-  --accent-foreground: oklch(0.773 0.167 157.5);
+  --accent: oklch(0.314 0.085 263.5); /* #1A2F5C, a deep sapphire tint */
+  --accent-foreground: oklch(0.779 0.113 259.7); /* #8CB8FF, 6.49:1 */
 
   /* Dark mode INVERTS the pair, exactly as --primary does: a light red with
      dark text on it. Carrying the light-mode red over left `text-destructive`
@@ -116,7 +108,7 @@
 
   --border: oklch(0.315 0.007 286);
   --input: oklch(0.53 0.017 285.8); /* 3.35:1 vs card */
-  --ring: oklch(0.773 0.167 157.5);
+  --ring: oklch(0.779 0.113 259.7);
 
   --income: oklch(0.773 0.167 157.5);
   --expense: oklch(0.667 0.167 22.7); /* 5.42:1 on --card; spec's 0 63% 51% was 2.50:1 */
@@ -124,16 +116,9 @@
   --chart-expense: oklch(0.667 0.167 22.7);
   --chart-balance: oklch(0.755 0.011 286.1);
 
-  --brand-vivid: oklch(0.71 0.163 156.3);
-  --brand-deep: oklch(0.33 0.07 158);
-  --brand-deep-foreground: oklch(0.985 0.01 156);
-
-  /* On a near-black page the disc is already 8.30:1, so the rim is cosmetic
-     here rather than load-bearing. Kept so the shape is identical in both
-     themes. */
-  --fab: oklch(0.71 0.163 156.3);
-  --fab-foreground: oklch(0.18 0.012 286);
-  --fab-rim: oklch(0.601 0.141 155.8);
+  --brand-vivid: oklch(0.702 0.158 255.6);
+  --brand-deep: oklch(0.314 0.117 261.7); /* #0B2C6B, near-white text 12.7:1 */
+  --brand-deep-foreground: oklch(0.985 0.008 262);
 }
 
 @theme inline {
@@ -165,9 +150,6 @@
   --color-brand-vivid: var(--brand-vivid);
   --color-brand-deep: var(--brand-deep);
   --color-brand-deep-foreground: var(--brand-deep-foreground);
-  --color-fab: var(--fab);
-  --color-fab-foreground: var(--fab-foreground);
-  --color-fab-rim: var(--fab-rim);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -271,22 +253,22 @@
 }
 
 /* ---------------------------------------------------------------------------
-   The front door's engraving (src/features/account/engraving.tsx).
+   The front door's engraving (src/components/engraving.tsx).
 
    Its one moment of motion: the lines are drawn in once, as the page opens,
    the way a banknote's guilloche is cut. Every path has pathLength="1", so one
    dash the length of the path, offset by its own length, starts it hidden.
    Reduced motion: drawn already.
 --------------------------------------------------------------------------- */
-/* The front door shows one green. Its filled buttons and links take the
-   engraved panel's, not the app's brighter primary beside it: on white, the
-   deep green measures 10.4:1. */
+/* The front door shows one blue. Its filled buttons and links take the
+   engraved panel's deep sapphire, not the app's brighter primary beside it:
+   on white, the deep sapphire measures 10.1:1. */
 .front-door {
   --primary: var(--brand-deep);
   --primary-foreground: var(--brand-deep-foreground);
 }
-/* On a near-black page deep green text would vanish; links there take the
-   logo's green, the same family, at 8:1. Fills keep the panel's. */
+/* On a near-black page deep sapphire text would vanish; links there take the
+   logo's vivid blue, the same family, at 7.45:1. Fills keep the panel's. */
 .dark .front-door .text-primary {
   color: var(--brand-vivid);
 }
@@ -334,6 +316,11 @@
   stroke-width: calc(1px / var(--engrave-scale, 1));
   stroke-dasharray: 1;
   animation: engrave calc(1.8s * var(--engrave-scale, 1)) var(--ease-out-soft) both;
+}
+
+/* Drawn already: every panel after the first screen's (see engraving.tsx). */
+.engraving.engraving-drawn path {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

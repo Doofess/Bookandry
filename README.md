@@ -57,6 +57,9 @@ implied, because a reader cannot otherwise tell a check that was done from one
 that was only described — and they need redoing whenever the shell, the focus
 order or the copy changes.
 
+The sapphire redesign's screenshot matrix (`e2e/screens.spec.ts`, now with
+Cards) was reviewed by eye on **2026-10-09**.
+
 ### The three bespoke gates
 
 Lint cannot express these, so they are scripts.
@@ -259,15 +262,15 @@ the card's **total commitments** (סך הכל התחייבויות בכרטיס)
 for their bill plus every remaining payment of its תשלומים, קרדיט and loan
 plans, as charged, with the interest inside them shown apart - the present
 value of each plan's remaining payments at its own rate is the principal still
-owed, and the rest is interest. The household's total across all its cards,
-and each card's share of it, heads the screen. Plans are followed to their
+owed, and the rest is interest. The total across everyone's cards, and each
+card's share of it, heads the screen. Plans are followed to their
 last payment, however far off. The monthly card fee
 (דמי כרטיס) is a line on the card at each month's end, from the month it was
 set - worked out, not saved, so it is changed on the card - with an optional
 discount for a month the card is used for at least a set amount (100% waives
 it), usually for a year (`until`). It is in the feed, the balance (on the bill)
-and the chart, in a shekel base only; a shared card's fee is in the
-household's view. Not modelled: cycles that close on a day other than the end
+and the chart, in a shekel base only; a shared card's fee is in everyone's
+view. Not modelled: cycles that close on a day other than the end
 of the month.
 
 **A bank account is written the way the bank writes it.** A payment method of
@@ -276,18 +279,18 @@ the banks in Israel, the codes of banks that have merged, and the Arab and
 Palestinian banks that clear through Masav, with their Arabic names), the
 branch, the account number - pasting "12-689-123456" fills all three - whose
 it is (personal; joint, as a couple's; or business, with partners outside the
-household by name), and its overdraft limit (מסגרת עו״ש). A joint account held
-by several people belongs to the household and is offered only to its holders.
+app by name), and its overdraft limit (מסגרת עו״ש). A joint account held by
+several people is shared, and is offered only to its holders.
 The branch is named as it is typed, from the Bank of Israel's list of branches
 on data.gov.il: the app ships a copy (`src/data/bank-branches.json`, its own
 chunk, refreshed with `pnpm data:banks`) and fetches the live list - whole,
 never by the number typed - only when the copy lacks a branch. A card can say
 which account pays its bill (`card.accountId`); the card editor offers the
-household's accounts first, and each account shows the card bills it is about
+bank accounts already set up first, and each account shows the card bills it is about
 to pay. Paying straight from an account is any method but תשלומים and קרדיט,
 which are a card's. Not modelled: an account's balance.
 
-**One place for how the household pays.** The account menu lists _Bank
+**One place for how everyone pays.** The account menu lists _Bank
 accounts_ (`/bank-accounts`) and _Cards and payment methods_ - the Cards
 screen, which holds the credit cards and, under them, every other way to pay:
 debit cards, wallets, transfers, standing orders. `/payment-methods` sends
@@ -302,7 +305,7 @@ card's name, last four digits, network, issuer, קרדיט rate (kept as prime p
 its margin when the page says its rates are prime-based), limit and billing
 day; an account's bank, branch, number and holders. An image's are read twice
 and compared, a text's are found in the text. Each is matched to the
-household's own - by the card's last four digits - and listed as new, as an
+ones already in the app - by the card's last four digits - and listed as new, as an
 update, or as already there. One the file shows only part of (a card without
 its billing day, an account without its branch) opens in the card or account
 editor with what it did show filled in, for the person to finish; when that is
@@ -333,10 +336,10 @@ cost come from doing as little as possible with the model:
   correction call re-reads only the rows that failed; a correction is taken
   only when it is printed (text) or makes the sums meet exactly. What is
   still in doubt stays unticked.
-- **The household's own data**: rows already there (any occurrence of the
+- **What is already in the app**: rows already there (any occurrence of the
   same kind and amount within two days, a plan already running, a card's fee
   the app already charges) are grouped as "looks already added"; a category
-  comes from the household's own history for that name first.
+  comes from the app's own history for that name first.
 - **One call per request, a daily cap per person** (`ai_take_quota`), every
   request and answer checked by `import-wire.ts` - shared verbatim with the
   function - with card and account numbers masked. Every file is read
@@ -387,9 +390,53 @@ and stat cards are prose and stay in page direction.
 for expense. Red against green is 1.6–1.8:1 dot to dot, which fails WCAG 1.4.1
 outright.
 
-**The FAB is first in the DOM.** It is `position: fixed`, so markup order does
-not move it on screen — but it decides tab order, and rendered last it sat after
-every transaction row. The keyboard walkthrough found it; nothing looked wrong.
+**The Add pill is first in the DOM.** It is `position: fixed`, so markup order
+does not move it on screen — but it decides tab order, and rendered last it sat
+after every transaction row. The keyboard walkthrough found it; nothing looked
+wrong. It says "Add" rather than showing a bare plus, and its menu presets the
+form to an expense or income (`?add=expense|income`; `add=1` from older links
+still means an expense).
+
+**The brand is sapphire; green means money coming in.** `--brand-deep`
+(#0F3A8A, #0B2C6B in dark mode) is the engraved panel at the top of every
+screen, carried in from the front door; `--income` stays green and `--expense`
+red, and no other brand colour is either. Every token pair is checked by
+`src/lib/contrast.test.ts`, and the colours that live outside the token file
+(the status bar's `theme-color`, the favicon, the PWA icon background) by
+`src/lib/brand-colours.test.ts`.
+
+**The panel's figures are in the serif, and still tabular.** Frank Ruhl Libre's
+Latin subset ships `tnum`, so the counting-up balance never jitters. Amount
+columns stay in the sans stack, whose order is load-bearing (below).
+
+**A pop-out in the feed is one instance at screen level, anchored to its row.**
+The feed is virtualised: a menu per row would unmount mid-gesture when its row
+left the rendered range. One instance points at the row's control through
+base-ui's `anchor` and closes on scroll or when that control leaves the page.
+The category change and "Charged today" go through the edit form's own
+series-edit path, and their Undo restores every row they touched.
+
+**The balance breakdown does not list the opening balance.** The total is still
+the real balance; the starting-balance line was noise in the pop-out.
+
+**Archiving a card hides it; it never changes money owed.** Fees stop only after
+the archive month, and a card still owed on stays in the household's total on Cards.
+
+**Duplicate keeps the source row's person.** It keeps the card only if that
+person can use it, and the person only while they are still in the household
+(linked accounts).
+
+**Account linking is a page in Settings, not a tab.** It is set up once, so
+it sits with the account (Settings › Account linking, `/settings/linking`,
+between Account and Security) and the tab bar keeps three tabs. It was called
+Household; only the words changed - the code, the `household` i18n keys, the
+tables and the Supabase functions keep the old name, as the database keeps
+`greenback`. `/household` and `/profiles` still land on it.
+
+**Banks, card companies and networks show their real logos, on white tiles.**
+White in both themes, as the logos are drawn for it; rendered as `<img>`,
+never inlined, so artwork from outside cannot run anything. Sources and terms
+are in `src/assets/brands/SOURCES.md`.
 
 **Amounts render in a `dir="ltr"` island with `data-value` carrying the
 integer.** CLDR's Hebrew currency pattern injects two right-to-left marks and
@@ -499,21 +546,22 @@ the background.
   account and only after the second step
   (`supabase/migrations/20261003000000_avatars.sql`). Each device keeps a copy
   for offline. Without one, Google's picture (Google sign-ins) or initials.
-- **Linked accounts** (`src/features/household/`, `src/db/sync/route.ts`,
-  `supabase/migrations/20261007000000_households.sql`): a household of up to
-  ten accounts that see and edit each other's data. Every account keeps its
+- **Linked accounts** (Settings › Account linking, `/settings/linking`;
+  `src/features/household/`, `src/db/sync/route.ts`,
+  `supabase/migrations/20261007000000_households.sql`): up to ten linked
+  accounts that see and edit each other's data. Every account keeps its
   own rows in its own space, sealed with its own key; linking lets the others
   read and write it there (the record functions' `p_space`), and the server
   hands a member the account's own key entry and nothing else of it. A
   transaction, card or account lives in its owner's space (a person's
-  `profileId` is their account id); the household's structure (categories,
+  `profileId` is their account id); the shared structure (categories,
   the currency, merges) and its joint cards live in every space. Unlinking
   ends the access at once and leaves each account exactly its own - nothing
   is moved or deleted to get there. Invitations go by email (the
   `send-invite` function, through Resend): a single-use link, kept on the
   server only as a hash, good for seven days, accepted only by the signed-in
   account with that confirmed address. Joining asks the invitee to convert
-  to the household's currency first. People made inside an account before
+  to the linked accounts' currency first. People made inside an account before
   accounts could link stay listed "from before linking" until their entries
   are given to someone's account; the first of them becomes the account's
   own person. The animal avatars are gone: a person is their account's
@@ -521,7 +569,7 @@ the background.
 - **Lock after inactivity**, per device: 5 minutes, 15 (the default), an hour,
   a day, or never. The session ends on the server too, not just on screen.
 - **Deleting the account** deletes everything it holds, and this device's copy.
-- **Delete all data** (Settings › Data & backup): immediate when alone; a linked household's every other member confirms by an emailed link first.
+- **Delete all data** (Settings › Data & backup): immediate when alone; with linked accounts, every other one confirms by an emailed link first.
 - **Two-step sign-in**, optional: a code from an authenticator app after the
   password (or Google). Enforced by the database, not just the screens: every
   function refuses an account with codes turned on unless the session has

@@ -4,8 +4,25 @@ import * as React from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { cn } from 'cn';
 
-function Popover({ ...props }: PopoverPrimitive.Root.Props) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
+import {
+  ARROW_CLASS,
+  ArrowSvg,
+  CloseOnScroll,
+  POPUP_SURFACE,
+  PopupActionsContext,
+  PopupBackdrop,
+  type PopupActions,
+  anchoredPositioner,
+} from './popup-parts';
+
+function Popover({ actionsRef, ...props }: PopoverPrimitive.Root.Props) {
+  const own = React.useRef<PopupActions | null>(null);
+  const actions = actionsRef ?? own;
+  return (
+    <PopupActionsContext value={actions}>
+      <PopoverPrimitive.Root data-slot="popover" actionsRef={actions} {...props} />
+    </PopupActionsContext>
+  );
 }
 
 function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
@@ -18,27 +35,52 @@ function PopoverContent({
   alignOffset = 0,
   side = 'bottom',
   sideOffset = 4,
+  anchor,
+  arrow = false,
+  closeOnScroll = arrow,
+  backdrop = arrow,
+  children,
   ...props
 }: PopoverPrimitive.Popup.Props &
-  Pick<PopoverPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
+  Pick<PopoverPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'anchor'> & {
+    /** Pixels between the anchor and the pop-out; the arrow adds its own 6. */
+    readonly sideOffset?: number;
+    /** A small arrow pointing at the anchor, for a pop-out whose anchor is not its own edge. */
+    readonly arrow?: boolean;
+    /** Close once the page scrolls; on for a pop-out with an arrow, which points at nothing after a scroll. */
+    readonly closeOnScroll?: boolean;
+    /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
+    readonly backdrop?: boolean;
+  }) {
   return (
     <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Positioner
+      {backdrop ? <PopupBackdrop /> : null}
+      <AnchoredPositioner
+        anchor={anchor}
         align={align}
         alignOffset={alignOffset}
         side={side}
-        sideOffset={sideOffset}
+        sideOffset={arrow ? sideOffset + 6 : sideOffset}
         className="isolate z-50"
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            'z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-start-2 data-[side=inline-start]:slide-in-from-end-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+            'z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 bg-popover p-3 text-sm text-popover-foreground outline-hidden duration-100 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-start-2 data-[side=inline-start]:slide-in-from-end-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+            POPUP_SURFACE,
             className,
           )}
           {...props}
-        />
-      </PopoverPrimitive.Positioner>
+        >
+          {closeOnScroll ? <CloseOnScroll /> : null}
+          {arrow ? (
+            <PopoverPrimitive.Arrow data-slot="popup-arrow" className={ARROW_CLASS}>
+              <ArrowSvg />
+            </PopoverPrimitive.Arrow>
+          ) : null}
+          {children}
+        </PopoverPrimitive.Popup>
+      </AnchoredPositioner>
     </PopoverPrimitive.Portal>
   );
 }
@@ -64,5 +106,7 @@ function PopoverDescription({ className, ...props }: PopoverPrimitive.Descriptio
     />
   );
 }
+
+const AnchoredPositioner = anchoredPositioner(PopoverPrimitive.Positioner);
 
 export { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger };

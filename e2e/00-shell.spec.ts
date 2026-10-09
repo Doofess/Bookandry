@@ -8,7 +8,7 @@ import { bootAs, completeFirstRun } from './support/seed';
  * observable claims on their own; these are.
  */
 
-const ROUTES = ['/', '/chart', '/cards', '/household', '/settings'] as const;
+const ROUTES = ['/', '/chart', '/cards', '/settings'] as const;
 
 test.describe('@smoke0 first run', () => {
   test('gates a fresh install on the wizard, not on the shell', async ({ page }) => {
@@ -113,6 +113,27 @@ test.describe('@smoke0 app shell', () => {
     const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test('has three tabs: account linking is a page in Settings, not a tab', async ({ page }) => {
+    const nav = page.getByRole('navigation', { name: /primary|ניווט/i });
+    // The rail's mark is a link home too, shown only on a wide screen.
+    const tabs = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
+    await expect(tabs).toHaveCount(3);
+    await expect(nav.getByRole('link', { name: /household|account linking|משק|קישור/i })).toHaveCount(0);
+  });
+
+  for (const old of ['/household', '/profiles']) {
+    test(`still lands ${old}, in Settings`, async ({ page }) => {
+      /*
+       * Both go to /settings/linking. That page needs an account, which this
+       * build does not have, so it goes on to Settings - as Account does. Either
+       * way an old link opens Settings, never a page that is not there.
+       */
+      await page.goto(old);
+      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page.getByRole('heading', { level: 1, name: /settings|הגדרות/i })).toBeVisible();
+    });
+  }
 });
 
 test.describe('@theme switching language', () => {
@@ -312,27 +333,26 @@ test.describe('@hermetic', () => {
   });
 });
 
-test.describe('@fab add button', () => {
-  // The FAB lives on the feed, which only exists once a profile does.
+test.describe('@fab the Add pill', () => {
+  // The Add pill lives on the feed, which only exists once a profile does.
   test.beforeEach(async ({ page }) => {
     await completeFirstRun(page, 'en', { demo: false });
   });
 
-  test('renders as a circle with the plus centred', async ({ page }) => {
-    const fab = page.getByTestId('fab');
-    await expect(fab).toBeVisible();
+  test('renders as a labelled pill, at least 44px high', async ({ page }) => {
+    const pill = page.getByTestId('add-button');
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveText(/Add|הוספה/);
 
-    const box = await fab.boundingBox();
+    const box = await pill.boundingBox();
     expect(box).not.toBeNull();
-    // A squashed oval shipped once because a width utility overrode size-14.
-    // Assert the real rendered geometry, not the class list.
-    expect(Math.abs(box!.width - box!.height)).toBeLessThanOrEqual(1);
-    expect(box!.width).toBeGreaterThanOrEqual(44); // WCAG 2.2 target size
+    expect(box!.height).toBeGreaterThanOrEqual(44); // WCAG 2.2 target size
+    expect(box!.width).toBeGreaterThan(box!.height); // a pill, not a disc
   });
 
   test('is centred on mobile, inline-end from lg, and mirrors only where it can', async ({ page }) => {
     /*
-     * The FAB has TWO positions by design (§5.1, §8.2): bottom-centre above the
+     * The Add pill has TWO positions by design (§5.1, §8.2): bottom-centre above the
      * tab bar on mobile, bottom-inline-end from `lg` where there is no tab bar.
      *
      * Asserting "inline-end, and mirrors" at every width was simply wrong, and
@@ -347,7 +367,7 @@ test.describe('@fab add button', () => {
     const centre = viewport.width / 2;
     const isDesktop = viewport.width >= 1024;
 
-    const ltr = (await page.getByTestId('fab').boundingBox())!;
+    const ltr = (await page.getByTestId('add-button').boundingBox())!;
     if (isDesktop) expect(ltr.x).toBeGreaterThan(centre);
     else expect(ltr.x + ltr.width / 2).toBeCloseTo(centre, 0);
 
@@ -356,7 +376,7 @@ test.describe('@fab add button', () => {
     });
     await page.reload();
 
-    const rtl = (await page.getByTestId('fab').boundingBox())!;
+    const rtl = (await page.getByTestId('add-button').boundingBox())!;
     if (isDesktop) expect(rtl.x).toBeLessThan(centre);
     else expect(rtl.x + rtl.width / 2).toBeCloseTo(centre, 0);
   });
@@ -364,22 +384,24 @@ test.describe('@fab add button', () => {
   test('opens the transaction sheet', async ({ page }) => {
     /*
      * Was asserting `FAB pressed: 1` - a Phase 0 throwaway counter that the
-     * real FAB replaced three phases ago. A test pinned to scaffolding that no
+     * real Add pill replaced three phases ago. A test pinned to scaffolding that no
      * longer exists proves nothing about the button it is named after.
      */
-    await expect(page.getByRole('button', { name: /add transaction/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(Add|הוספה)$/ })).toBeVisible();
 
     await openAddSheet(page);
 
     await expect(page.getByRole('dialog')).toBeVisible();
   });
 
-  test('offers adding by hand or by Smart import, and says why it is unavailable here', async ({ page }) => {
+  test('offers an expense, income or Smart import, and says why import is unavailable here', async ({
+    page,
+  }) => {
     // This build has no account server, so the AI cannot be reached: the item
     // is there, disabled, with the reason in words rather than only greyed out.
-    await page.getByTestId('fab').click();
+    await page.getByTestId('add-button').click();
     const menu = page.getByRole('menu');
-    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    await expect(menu.getByRole('menuitem')).toHaveCount(3);
     const ai = menu.getByRole('menuitem', { name: /Smart import|ייבוא חכם/ });
     await expect(ai).toHaveAttribute('aria-disabled', 'true');
     await expect(ai).toContainText(/Needs a Bookandry account|דורש חשבון Bookandry/);

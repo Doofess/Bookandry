@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { DEFAULT_SETTINGS } from '@/db/repos/settings';
@@ -29,21 +29,41 @@ describe('AppShell', () => {
     await initTestI18n('en');
   });
 
-  it('renders one primary navigation landmark with its three routes', () => {
+  it('renders one primary navigation landmark with its three tabs', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav).toBeInTheDocument();
-    for (const label of ['Feed', 'Chart', 'Household']) {
-      expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
-    }
+    // Where anchored pop-outs find the phone's tab bar, to keep clear of it.
+    expect(nav).toHaveAttribute('data-slot', 'tab-bar');
+    // The rail's mark goes home too; every other link in the bar is a tab.
+    const tabs = within(nav)
+      .getAllByRole('link')
+      .filter((link) => link.textContent !== 'Bookandry');
+    expect(tabs.map((tab) => tab.textContent.replace('(current)', ''))).toEqual(['Feed', 'Chart', 'Cards']);
   });
 
-  it('keeps settings in the account menu at the top, not in the tabs', () => {
+  it('has no tab for account linking: it is a page in Settings', () => {
+    renderShell();
+    expect(screen.queryByRole('link', { name: /Household|Account linking/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps settings out of the tabs, and leaves the account menu to each screen panel', () => {
     renderShell();
     expect(screen.queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('banner')).toContainElement(
-      screen.getByRole('button', { name: 'Account and settings' }),
-    );
+    // The phone header is gone: the panel at the top of every screen carries the menu.
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
+  it('makes the desktop rail the deep panel, with the active tab a light pill', () => {
+    renderShell();
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    const active = screen.getByRole('link', { name: /Feed/ });
+
+    expect(nav).toHaveClass('lg:bg-brand-deep', 'lg:text-brand-deep-foreground');
+    expect(nav.querySelector('svg.engraving')).not.toBeNull();
+    expect(active).toHaveClass('text-primary', 'lg:bg-white/15');
+    // On a phone the active icon sits on the soft accent pill.
+    expect(active.querySelector('[data-slot="tab-pill"]')).toHaveClass('bg-accent');
   });
 
   it('exposes a main landmark and a skip link', () => {
