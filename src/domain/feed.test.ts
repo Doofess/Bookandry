@@ -27,6 +27,7 @@ type OccurrenceSeed = {
   destinationId?: string;
   note?: string;
   originalDate?: string;
+  mcc?: string;
 };
 
 function occ(seed: OccurrenceSeed): Occurrence {
@@ -37,6 +38,7 @@ function occ(seed: OccurrenceSeed): Occurrence {
     kind: seed.kind ?? 'expense',
     date: originalDate,
     recurrence: { type: 'one_time' },
+    ...(seed.mcc === undefined ? {} : { mcc: seed.mcc }),
   });
 
   return {
@@ -275,5 +277,34 @@ describe('emptyReason', () => {
     expect(emptyReason(0, 0, false)).toBe('no_data');
     expect(emptyReason(0, 0, true)).toBe('empty_month');
     expect(emptyReason(9, 0, true)).toBe('no_results');
+  });
+});
+
+describe('searching by business type', () => {
+  const base = defaultFilters({ profileId: 'all', today: TODAY });
+  const items = [
+    occ({ id: 'cafe', date: '2026-09-05', note: 'Cafe Nero', mcc: '5812' }),
+    occ({ id: 'bistro', date: '2026-09-06', note: 'Bistro', mcc: '5812' }),
+    occ({ id: 'bakery', date: '2026-09-07', note: 'Bakery', mcc: '5462' }),
+    occ({ id: 'plain', date: '2026-09-08', note: 'Something' }),
+  ];
+  const names: Record<string, string> = { '5812': 'מסעדות', '5462': 'מאפיות' };
+  const withNames: FeedLookup = { ...lookup, businessTypeName: (code) => names[code] };
+  const search = (query: string, using: FeedLookup = withNames) =>
+    applyFeedFilters(items, { ...base, query }, using).map((o) => o.seriesId);
+
+  it('finds every row of a business type by its name', () => {
+    expect(search('מסעדות')).toEqual(['cafe', 'bistro']);
+    expect(search('מאפיות')).toEqual(['bakery']);
+  });
+
+  it('ignores niqqud and final letters, as the picker does', () => {
+    expect(search('מִסְעָדוֹת')).toEqual(['cafe', 'bistro']);
+  });
+
+  it('matches nothing by business type until the names are there', () => {
+    expect(search('מסעדות', lookup)).toEqual([]);
+    // The rest of the row still matches.
+    expect(search('cafe', lookup)).toEqual(['cafe']);
   });
 });
