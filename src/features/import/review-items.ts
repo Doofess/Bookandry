@@ -49,6 +49,8 @@ export const DEFAULT_IMPORT_KIND: ImportKind = 'expense';
  */
 export function matchesImportKind(item: ReviewItem, mode: ImportKind): boolean {
   if (mode === 'both') return true;
+  // A row with no values has no category, so a refund among them reads as income. It cannot
+  // be saved until opened and finished, and the editor gives it values - and its place - then.
   const kind = item.values?.kind ?? item.found.kind;
   const spending = kind === 'expense' || item.values?.categoryId === REFUND_CATEGORY;
   return mode === 'expense' ? spending : !spending;

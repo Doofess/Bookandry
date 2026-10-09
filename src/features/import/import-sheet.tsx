@@ -661,11 +661,16 @@ export function ImportSheet(props: ImportSheetProps) {
                     props.onOpenCard(id);
                   }}
                   onBatch={(batch) => {
-                    setSession((s) => ({
-                      ...s,
-                      batch,
-                      items: applyBatch(s.items, batch, props.paymentMethods),
-                    }));
+                    setSession((s) => {
+                      const answered = applyBatch(s.items, batch, props.paymentMethods);
+                      // Answering whose a row is ticks it - never a left-out one: only the person does.
+                      const items = answered.map((item, i) =>
+                        matchesImportKind(item, s.kind)
+                          ? item
+                          : { ...item, ticked: s.items[i]?.ticked ?? false },
+                      );
+                      return { ...s, batch, items };
+                    });
                   }}
                   onOpen={(index) => {
                     props.onOpenRow(index);
@@ -1230,15 +1235,18 @@ function Review({
       )}
 
       <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setTicked(tickedChosen < selectable);
-          }}
-        >
-          {tickedChosen < selectable ? t('selectAll') : t('selectNone')}
-        </Button>
+        {/* Nothing to select, and nothing ticked by hand: no button. */}
+        {selectable === 0 && ticked === 0 ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setTicked(tickedChosen < selectable);
+            }}
+          >
+            {tickedChosen < selectable ? t('selectAll') : t('selectNone')}
+          </Button>
+        )}
         <Button
           type="button"
           className="h-11 flex-1"
@@ -1404,7 +1412,7 @@ function LeftOut({
           type="button"
           aria-expanded={shown}
           aria-controls={shown ? listId : undefined}
-          className="-mx-1 inline-flex min-h-11 items-center rounded-md px-1 font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:bg-muted"
+          className="-mx-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-1 font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:bg-muted"
           onClick={() => {
             onShown(!shown);
           }}

@@ -70,8 +70,8 @@
   "leftOut": {
     "expense_one": "1 expense left out",
     "expense_other": "{{count}} expenses left out",
-    "income_one": "1 income left out",
-    "income_other": "{{count}} incomes left out",
+    "income_one": "1 income item left out",
+    "income_other": "{{count}} income items left out",
     "show": "Show",
     "hide": "Hide"
   },

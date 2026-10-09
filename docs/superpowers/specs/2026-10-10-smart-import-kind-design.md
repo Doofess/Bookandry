@@ -32,7 +32,7 @@
 
 ## Edge cases
 
-- **No rows of the chosen kind.** A payslip read in Expenses mode: the review says "No expenses in these files." and still offers "1 income left out · Show". Cards or accounts found are listed as usual. The "nothing found" message stays for files with no rows at all.
+- **No rows of the chosen kind.** A payslip read in Expenses mode: the review says "No expenses in these files." and still offers "1 income item left out · Show". Cards or accounts found are listed as usual. The "nothing found" message stays for files with no rows at all.
 - **A refund in Income mode.** It is on the expense side, so it is left out and counted in "N expenses left out". Shown and ticked, it saves as the refund (income) it is.
 - **A cash withdrawal (ATM).** Still an expense: kept in Expenses and Both, flagged "Cash withdrawal" and unticked as before. In Income mode it is left out like any expense.
 - **Editing a row into the other kind.** Done in the row editor, the row is confirmed and ticked. If it no longer matches the mode, the left-out rows are shown so the row the person just settled does not vanish.
