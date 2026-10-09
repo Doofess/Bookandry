@@ -77,7 +77,8 @@
       "depositBody": "Money from the wallet into the bank. The balance does not change.",
       "startBody": "The cash you had when you started. Correct it if it was not right.",
       "dateFuture": "Pick today or an earlier day.",
-      "dateBeforeStart": "The cash count starts on {{date}}. Pick that day or a later one."
+      "dateBeforeStart": "The cash count starts on {{date}}. Pick that day or a later one.",
+      "dateAfterFirstMove": "The first withdrawal or deposit is on {{date}}. Pick that day or an earlier one."
     },
     "account": "Bank account",
     "note": "Note",

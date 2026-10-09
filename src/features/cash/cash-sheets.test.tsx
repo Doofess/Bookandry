@@ -428,18 +428,83 @@ describe('saving a move', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Pick today or an earlier day.');
     expect(save).toBeDisabled();
 
-    // The calendar offers neither side.
+    // The calendar offers neither side, and both ends.
     await user.click(within(dialog).getByRole('button', { name: 'Choose a date' }));
     const calendar = await screen.findByRole('grid');
     expect(within(calendar).getByRole('button', { name: /September 16/ })).toBeDisabled();
     expect(within(calendar).getByRole('button', { name: /August 31/ })).toBeDisabled();
-    await user.click(within(calendar).getByRole('button', { name: /September 10/ }));
+    expect(within(calendar).getByRole('button', { name: /September 1st/ })).toBeEnabled();
+    expect(within(calendar).getByRole('button', { name: /September 15/ })).toBeEnabled();
+    await user.click(within(calendar).getByRole('button', { name: /September 1st/ }));
 
     expect(within(dialog).queryByRole('alert')).toBeNull();
     await user.click(save);
     await waitFor(async () => {
-      expect(await withdrawals()).toMatchObject([{ date: '2026-09-10' }]);
+      expect(await withdrawals()).toMatchObject([{ date: '2026-09-01' }]);
     });
+  });
+
+  it('measures the day against the chosen person’s own start in the "all" view', async () => {
+    const user = userEvent.setup();
+    await db.cashMoves.put(
+      move({ id: 's2', profileId: 'p2', kind: 'start', amountMinor: 30_000, date: d('2026-09-05') }),
+    );
+    render(ALL_PROFILES);
+    await openMenuItem(user, /^Withdraw from ATM/);
+    const dialog = await screen.findByRole('dialog', { name: 'Withdraw from ATM' });
+    await user.click(within(dialog).getByRole('radio', { name: 'Yossi' }));
+    const day = within(dialog).getByRole('textbox', { name: 'Date' });
+    await user.clear(day);
+    await user.type(day, '09/03/2026{Enter}');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The cash count starts on Sep 5, 2026. Pick that day or a later one.',
+    );
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Dana' }));
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(day).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('keeps the start on or before today, and on or before the first withdrawal or deposit', async () => {
+    const user = userEvent.setup();
+    await db.cashMoves.put(move({ id: 'w1', kind: 'withdraw', amountMinor: 2_000, date: d('2026-09-10') }));
+    render();
+    const list = await screen.findByRole('region', { name: 'Activity' });
+    await user.click(within(list).getByRole('button', { name: /Cash when you started/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cash when you started' });
+    const day = within(dialog).getByRole('textbox', { name: 'Date' });
+    const save = within(dialog).getByRole('button', { name: 'Save' });
+
+    await user.clear(day);
+    await user.type(day, '09/11/2026{Enter}');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The first withdrawal or deposit is on Sep 10, 2026. Pick that day or an earlier one.',
+    );
+    expect(day).toHaveAttribute('aria-invalid', 'true');
+    expect(save).toBeDisabled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Choose a date' }));
+    const calendar = await screen.findByRole('grid');
+    expect(within(calendar).getByRole('button', { name: /September 11/ })).toBeDisabled();
+    await user.click(within(calendar).getByRole('button', { name: /September 10/ }));
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    await user.click(save);
+    await waitFor(async () => {
+      expect((await db.cashMoves.get('s1'))?.date).toBe('2026-09-10');
+    });
+  });
+
+  it('keeps the start on or before today with no withdrawal to hold it', async () => {
+    const user = userEvent.setup();
+    render();
+    const list = await screen.findByRole('region', { name: 'Activity' });
+    await user.click(within(list).getByRole('button', { name: /Cash when you started/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cash when you started' });
+    const day = within(dialog).getByRole('textbox', { name: 'Date' });
+    await user.clear(day);
+    await user.type(day, '09/16/2026{Enter}');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Pick today or an earlier day.');
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
   it('starts on the signed-in person in the "all" view', async () => {

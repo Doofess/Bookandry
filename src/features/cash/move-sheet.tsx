@@ -39,6 +39,8 @@ type SheetProps = {
   readonly people: readonly Profile[];
   /** Each person's start date: a withdrawal or deposit before it would count for nothing. */
   readonly since: ReadonlyMap<string, LocalDate>;
+  /** Each person's earliest withdrawal or deposit: their start cannot move past it. */
+  readonly firstMoves: ReadonlyMap<string, LocalDate>;
   readonly defaultProfileId: string;
   readonly methods: readonly PaymentMethod[];
   readonly currency: Currency;
@@ -112,6 +114,7 @@ function MoveForm({
   kind,
   people,
   since,
+  firstMoves,
   defaultProfileId,
   methods,
   currency,
@@ -141,16 +144,20 @@ function MoveForm({
   const accounts = destinationsFor(methods, profileId, accountId).filter((m) => m.id !== CASH_METHOD_ID);
   // A withdrawal or deposit counts only from the person's start to today:
   // outside that it would be saved and then vanish from the figure and the list.
+  // The start itself is on or before today, and on or before the person's
+  // first withdrawal or deposit, which would vanish the same way.
   const from = kind === 'start' ? undefined : since.get(profileId);
-  const to = kind === 'start' ? undefined : today;
+  const firstMove = kind === 'start' ? firstMoves.get(profileId) : undefined;
+  const to = firstMove !== undefined && compareLocal(firstMove, today) < 0 ? firstMove : today;
+  const formatted = (day: LocalDate) => formatLocalDate(day, i18n.language, { dateStyle: 'medium' });
   const outOfRange =
-    to !== undefined && compareLocal(date, to) > 0
+    compareLocal(date, today) > 0
       ? t('cash.sheet.dateFuture')
-      : from !== undefined && compareLocal(date, from) < 0
-        ? t('cash.sheet.dateBeforeStart', {
-            date: formatLocalDate(from, i18n.language, { dateStyle: 'medium' }),
-          })
-        : undefined;
+      : firstMove !== undefined && compareLocal(date, firstMove) > 0
+        ? t('cash.sheet.dateAfterFirstMove', { date: formatted(firstMove) })
+        : from !== undefined && compareLocal(date, from) < 0
+          ? t('cash.sheet.dateBeforeStart', { date: formatted(from) })
+          : undefined;
   const dateProblem = outOfRange ?? problems.date;
   const valid =
     amount !== undefined &&
@@ -249,7 +256,7 @@ function MoveForm({
           invalid={dateProblem !== undefined}
           {...(dateProblem === undefined ? {} : { describedBy: dateErrorId })}
           {...(from === undefined ? {} : { min: from })}
-          {...(to === undefined ? {} : { max: to })}
+          max={to}
         />
         <FieldProblem id={dateErrorId} text={dateProblem} />
       </div>
