@@ -108,6 +108,9 @@ export async function saveNewTransaction(db: BookandryDB, input: SaveInput): Pro
       ...(parsed.note === undefined ? {} : { note: parsed.note }),
       // A 30+ purchase: charged on the bill after next, at this rate.
       ...(parsed.deferral === undefined ? {} : { deferral: parsed.deferral }),
+      // An expense's business type, and where it came from; the form strips both from income.
+      ...(parsed.mcc === undefined ? {} : { mcc: parsed.mcc }),
+      ...(parsed.mccSource === undefined ? {} : { mccSource: parsed.mccSource }),
       // A new series is its own root. The field exists so that a later split
       // can be traced back, and seeding it with the id keeps every row's
       // lineage answerable without a null check.
