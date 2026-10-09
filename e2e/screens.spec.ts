@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
+import { openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 import { APP_ROUTES, LANGUAGES, LAYOUT_WIDTHS, viewportFor } from './support/widths';
 
@@ -89,6 +90,46 @@ for (const width of LAYOUT_WIDTHS) {
             expect(errors).toEqual([]);
             const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
             expect(overflow).toBeLessThanOrEqual(1);
+          });
+        }
+      }
+    });
+  }
+}
+
+/**
+ * The overlays (§13.3): the add-transaction panel and the Smart import
+ * pop-out, at every width, in both languages and themes. The card details
+ * pane joins with the Cards screen in phase 3b.
+ */
+const OVERLAYS = [
+  { name: 'transaction-panel', open: (page: Page) => openAddSheet(page), slot: 'editor-panel' },
+  {
+    name: 'import-popout',
+    open: async (page: Page) => {
+      await page.goto('/?import=1');
+    },
+    slot: 'popout',
+  },
+] as const;
+
+for (const width of LAYOUT_WIDTHS) {
+  for (const { lang, locale } of LANGUAGES) {
+    test.describe(`${lang} overlays at ${String(width)}`, () => {
+      test.use({ locale, viewport: viewportFor(width) });
+
+      for (const theme of THEMES) {
+        for (const overlay of OVERLAYS) {
+          const name = `overlay-${overlay.name}-${lang}-${theme}-${String(width)}`;
+          test(`@screens ${name}`, async ({ page }) => {
+            await page.emulateMedia({ colorScheme: theme });
+            await completeFirstRun(page, lang, { theme });
+            await page.goto('/');
+            await overlay.open(page);
+            await expect(page.locator(`[data-slot="${overlay.slot}"]`)).toBeVisible();
+            await page.evaluate(() => document.fonts.ready);
+            await page.waitForTimeout(400);
+            await page.screenshot({ path: `artifacts/screens/${name}.png` });
           });
         }
       }

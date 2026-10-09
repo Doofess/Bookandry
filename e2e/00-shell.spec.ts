@@ -441,15 +441,19 @@ test.describe('@nav the account menu', () => {
     const rtl = testInfo.project.name === 'he';
     await completeFirstRun(page, rtl ? 'he' : 'en');
 
-    // The screen's own menu, in main: from lg the rail carries one at its foot too.
-    const trigger = page
-      .getByRole('main')
-      .getByRole('button', { name: rtl ? 'חשבון והגדרות' : 'Account and settings' });
+    // From lg the account sits at the foot of the rail, at the inline START (§4.2);
+    // below it, the screen head's own menu in main sits at the top END.
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+    const name = rtl ? 'חשבון והגדרות' : 'Account and settings';
+    const trigger = desktop
+      ? page.getByRole('navigation').getByRole('button', { name })
+      : page.getByRole('main').getByRole('button', { name });
     await expect(trigger).toBeVisible();
     const box = await trigger.boundingBox();
     const width = page.viewportSize()?.width ?? 0;
-    if (rtl) expect(box?.x ?? width).toBeLessThan(width / 2);
-    else expect(box?.x ?? 0).toBeGreaterThan(width / 2);
+    const atRight = desktop ? rtl : !rtl;
+    if (atRight) expect(box?.x ?? 0).toBeGreaterThan(width / 2);
+    else expect(box?.x ?? width).toBeLessThan(width / 2);
 
     await trigger.click();
     await page.getByRole('menuitem', { name: rtl ? 'העדפות' : 'Preferences' }).click();

@@ -338,7 +338,10 @@ test.describe('@cards bank accounts', () => {
 
   /** From the account menu, where the household's setup lives. */
   const openAccounts = async (page: Page) => {
-    await page.getByRole('main').getByRole('button', { name: 'חשבון והגדרות' }).click();
+    // From lg the account is at the foot of the rail, below it in the screen head.
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+    const scope = desktop ? page.getByRole('navigation') : page.getByRole('main');
+    await scope.getByRole('button', { name: 'חשבון והגדרות' }).click();
     await page.getByRole('menuitem', { name: 'חשבונות בנק' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'חשבונות בנק' })).toBeVisible();
   };

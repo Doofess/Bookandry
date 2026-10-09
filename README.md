@@ -61,7 +61,11 @@ The Colour of money screenshot matrix (`e2e/screens.spec.ts`: 8 routes at 390,
 1440 and 1920, in both languages and themes) passes its overflow and console
 assertions in all 96 cases. On **2026-10-10** a sample of 23 of the 96 images was
 opened and reviewed by eye, covering every route, both languages, both themes
-and all three widths; the other 73 were not opened.
+and all three widths; the other 73 were not opened. For phase 2 (with the
+transaction panel and the import pop-out), on **2026-10-10**, 6 of the 24
+overlay images (`overlay-*`) were opened: the panel at 1440 in English and
+Hebrew and at 390, the pop-out at 1440 in Hebrew, at 390 and at 1920; the other
+18 were not opened.
 
 The sapphire redesign's screenshot matrix (`e2e/screens.spec.ts`, now with
 Cards) was reviewed by eye on **2026-10-09**.
@@ -416,6 +420,16 @@ the manifest, the icons) by `src/lib/brand-colours.test.ts`.
 
 **Two faces: Plex for text and amounts, Karantina for display.** IBM Plex Sans
 Hebrew (300, 400, 500, 600) covers Latin, Hebrew and ₪, and its digits are
+**A desktop that uses its width.** From `lg` the shell is a text rail at the
+inline start — places only, Add a button at its top — and `main` is a size
+container: screens lay out by the room they have (`@board/main:`,
+`@wide/main:`, `@vast/main:`), so a screen beside an open panel, or inside a
+pop-out, still fits. Editors are one Base UI dialog with responsive classes: a
+bottom sheet on a phone, a panel at the inline end from `lg`, so resizing
+never loses what was typed. Flows open as a pop-out that lays itself out by
+its own width. The rail's Add opens its editor over any screen
+(`src/app/shell-editors.tsx`).
+
 fixed-width, so amount columns line up in both languages. Karantina 700 draws
 screen names and the big numerals; its digits are proportional, so it is never
 used below 28px, in a column, or for a figure that counts without a box reserved
