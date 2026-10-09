@@ -287,6 +287,28 @@ describe('setting up, when the person already has a start', () => {
     expect(await handle.db.cashMoves.get('s2')).toMatchObject({ amountMinor: 45_000, date: '2026-10-06' });
   });
 
+  it('rewrites, of two starts on one day, the one the figure counts: the earlier written, not the lower id', async () => {
+    const synced = (id: string, amountMinor: number, createdAt: string) =>
+      handle.db.cashMoves.put({
+        id,
+        profileId: 'p1',
+        kind: 'start',
+        amountMinor,
+        date: d('2026-10-01'),
+        isDeleted: 0,
+        createdAt: createdAt as IsoInstant,
+        updatedAt: NOW,
+      });
+    await synced('a', 30_000, '2026-10-01T09:00:00.000Z');
+    await synced('b', 50_000, '2026-10-01T08:00:00.000Z');
+    expect(await onHand()).toBe(50_000);
+
+    await addCashMove(handle.db, 'new', start(60_000), LATER);
+    expect((await handle.db.cashMoves.get('b'))?.amountMinor).toBe(60_000);
+    expect((await handle.db.cashMoves.get('a'))?.amountMinor).toBe(30_000);
+    expect(await onHand()).toBe(60_000);
+  });
+
   it('writes one start when two are saved at once', async () => {
     await Promise.all([
       addCashMove(handle.db, 'a', start(10_000), NOW),
@@ -394,6 +416,23 @@ describe('counting the cash', () => {
     expect(await onHand('p2')).toBe(28_000);
   });
 
+  it('records one difference when two tabs count at the same moment', async () => {
+    const ids = counterIdFactory('rc');
+    const at = (countedMinor: number) =>
+      recordCount(handle.db, {
+        profileId: 'p1',
+        countedMinor,
+        currency: 'USD',
+        today: TODAY,
+        now: LATER,
+        newId: ids,
+      });
+    const results = await Promise.all([at(49_000), at(49_000)]);
+    expect(results.map((r) => r.outcome).sort()).toEqual(['matched', 'missing']);
+    expect(await handle.db.transactions.count()).toBe(1);
+    expect(await onHand()).toBe(49_000);
+  });
+
   it('refuses for someone who has not set up', async () => {
     await handle.db.cashMoves.clear();
     await expect(count(1_000)).rejects.toThrow('not_set_up');
@@ -440,6 +479,63 @@ describe('loading what the cash figure needs', () => {
     });
 
     expect(await onHand()).toBe(11_000);
+  });
+
+  it('applies every override of a cash series, and expands no series that cannot be cash', async () => {
+    await addCashMove(
+      handle.db,
+      's1',
+      draft({ kind: 'start', amountMinor: 10_000, date: d('2026-07-31') }),
+      NOW,
+    );
+    const series = (id: string, destinationId: string) =>
+      materialize({
+        id,
+        profileId: 'p1',
+        kind: 'income',
+        categoryId: 'cat.salary',
+        destinationId,
+        money: { ...MONEY, amountMinor: 1_000, baseAmountMinor: 1_000 },
+        recurrence: { type: 'monthly', dayOfMonth: 1 },
+        date: d('2026-06-01'),
+        seriesRootId: id,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+    await handle.db.transactions.bulkPut([series('cash', CASH_METHOD_ID), series('bank', 'pm.leumi')]);
+    await handle.db.overrides.bulkPut([
+      {
+        id: 'skip',
+        transactionId: 'cash',
+        occurrenceDate: d('2026-08-01'),
+        action: 'skip',
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      {
+        id: 'more',
+        transactionId: 'cash',
+        occurrenceDate: d('2026-09-01'),
+        action: 'modify',
+        patch: { money: { ...MONEY, amountMinor: 1_500, baseAmountMinor: 1_500 } },
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      {
+        id: 'note',
+        transactionId: 'bank',
+        occurrenceDate: d('2026-09-01'),
+        action: 'modify',
+        patch: { note: 'bonus' },
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+
+    const input = await loadCashInput(handle.db, { profileId: 'p1', today: TODAY });
+    expect(new Set(input.occurrences.map((o) => o.transaction.id))).toEqual(new Set(['cash']));
+    // August skipped, September 1,500, October 1,000.
+    expect(await onHand()).toBe(12_500);
   });
 
   it('loads nothing to expand while nobody in view has set up', async () => {

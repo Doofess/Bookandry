@@ -1,4 +1,5 @@
 import { FALLBACK_CATEGORY } from '@/db/seed';
+import { earliestStart, joinPot } from '@/domain/cash';
 import { PROFILE_PALETTE } from '@/domain/palette';
 import {
   ALL_PROFILES,
@@ -250,6 +251,8 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
           overridesByTx.set(o.transactionId, [...(overridesByTx.get(o.transactionId) ?? []), o]);
         }
 
+        // Every move as the repairs below leave it.
+        let pots: readonly CashMove[] = state.cashMoves;
         const patched = new Map<string, Transaction>();
         const touch = (t: Transaction): Transaction => patched.get(t.id) ?? t;
 
@@ -344,7 +347,18 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
               if (target === undefined || target === null) {
                 await db.cashMoves.delete(move.id);
               } else {
-                await db.cashMoves.put({ ...move, profileId: target, updatedAt: now });
+                // Into the target's pot, as `deleteProfile` does (`joinPot`).
+                // The person is gone, and their name with them: no note is
+                // added, so nothing is written in one language for everyone.
+                const starts = {
+                  mine: earliestStart(state.cashMoves, issue.profileId),
+                  target: earliestStart(pots, target),
+                };
+                const joined = joinPot(move, target, starts, undefined, now);
+                await db.cashMoves.put(joined);
+                // The next orphan sees this one where it now is: a start that
+                // became the target's first is that target's start from here on.
+                pots = pots.map((m) => (m.id === joined.id ? joined : m));
               }
               repaired.push(issue);
               break;

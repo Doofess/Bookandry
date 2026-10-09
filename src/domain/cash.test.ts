@@ -19,6 +19,8 @@ import { d, makeTx, modify, MONEY, skip } from './test-factories';
 
 const TODAY = d('2026-10-09');
 const AT = '2026-10-01T00:00:00.000Z' as IsoInstant;
+/** Written after the starts above: on a start day, only such a row counts. */
+const AFTER = '2026-10-01T12:00:00.000Z' as IsoInstant;
 
 const move = (over: Partial<CashMove> & Pick<CashMove, 'kind' | 'amountMinor' | 'date'>): CashMove => ({
   id: `${over.profileId ?? 'p1'}-${over.kind}-${over.date}-${String(over.amountMinor)}`,
@@ -131,10 +133,14 @@ describe('a person’s cash', () => {
     expect(result.onHandMinor).toBe(50_000);
   });
 
-  it('counts nothing from before the first start, but does count the start day itself', () => {
+  it('counts nothing from before the first start, and on the start day only what was written after it', () => {
     const result = summary(
       [start('2026-10-01', 50_000), move({ kind: 'withdraw', date: d('2026-09-25'), amountMinor: 20_000 })],
-      [spend('old', '2026-09-20', 5_000), spend('same-day', '2026-10-01', 1_000)],
+      [
+        spend('old', '2026-09-20', 5_000),
+        spend('already-in', '2026-10-01', 700),
+        spend('same-day', '2026-10-01', 1_000, { createdAt: AFTER }),
+      ],
     );
     expect(result.onHandMinor).toBe(49_000);
   });
@@ -186,7 +192,10 @@ describe('a person’s cash', () => {
       move({ kind: 'withdraw', date: d('2026-09-15'), amountMinor: 700 }),
     ];
     expect(cashSince(moves, 'p1')).toBe('2026-10-01');
-    const result = summary(moves, [spend('before', '2026-09-20', 5_000), spend('on', '2026-10-01', 300)]);
+    const result = summary(moves, [
+      spend('before', '2026-09-20', 5_000),
+      spend('on', '2026-10-01', 300, { createdAt: AFTER }),
+    ]);
     expect(result.people[0]).toMatchObject({ since: '2026-10-01', onHandMinor: 49_700 });
   });
 
@@ -216,7 +225,8 @@ describe('a person’s cash', () => {
     const later = earn('sal', '2026-08-20', 1_000, { recurrence: { type: 'monthly', dayOfMonth: 20 } });
     const input = (tx: Transaction) => ({
       profileIds: ['p1'],
-      moves: [start('2026-08-01', 0)],
+      // The day before the first payment: a payment due on the start day is already in it.
+      moves: [start('2026-07-31', 0)],
       occurrences: occurrencesOf([tx], skipped),
       today: TODAY,
     });
@@ -241,13 +251,72 @@ describe('a person’s cash', () => {
       [
         earn('in-today', '2026-10-09', 100),
         spend('out-today', '2026-10-09', 40),
-        earn('in-later', '2026-10-10', 7),
-        spend('out-end', '2026-10-31', 3),
+        // Base amounts unlike the originals: "expected" is in the household's currency too.
+        earn('in-later', '2026-10-10', 7, { money: money(7, 25) }),
+        spend('out-end', '2026-10-31', 3, { money: money(3, 12) }),
         spend('out-next', '2026-11-01', 11),
       ],
     );
     expect(result.onHandMinor).toBe(60);
-    expect(result.expected).toEqual({ inMinor: 7, outMinor: 3 });
+    expect(result.expected).toEqual({ inMinor: 25, outMinor: 12 });
+  });
+
+  describe('set up today', () => {
+    const today = (minor: Minor, createdAt: IsoInstant) =>
+      move({ kind: 'start', date: TODAY, amountMinor: minor, createdAt });
+    const SETUP = '2026-10-09T10:00:00.000Z' as IsoInstant;
+    const input = (txs: readonly Transaction[]) => ({
+      profileIds: ['p1'],
+      moves: [today(8_000, SETUP)],
+      occurrences: occurrencesOf(txs),
+      today: TODAY,
+    });
+
+    it('is the amount typed, with a cash expense dated today written before it already in it', () => {
+      const coffee = spend('coffee', '2026-10-09', 2_000, {
+        createdAt: '2026-10-09T08:00:00.000Z' as IsoInstant,
+      });
+      expect(cashSummary(input([coffee])).onHandMinor).toBe(8_000);
+      expect(cashActivity(input([coffee])).map((a) => a.type)).toEqual(['move']);
+    });
+
+    it('counts a cash expense dated today written after it', () => {
+      const coffee = spend('coffee', '2026-10-09', 2_000, {
+        createdAt: '2026-10-09T11:00:00.000Z' as IsoInstant,
+      });
+      expect(cashSummary(input([coffee])).onHandMinor).toBe(6_000);
+      expect(cashActivity(input([coffee])).map((a) => a.signedMinor)).toEqual([-2_000, 8_000]);
+    });
+
+    it('treats a recurring cash payment due today as already in it: it has its series’ time', () => {
+      const rent = spend('rent', '2026-01-09', 1_500, {
+        recurrence: { type: 'monthly', dayOfMonth: 9 },
+        createdAt: '2026-01-02T00:00:00.000Z' as IsoInstant,
+      });
+      expect(cashSummary(input([rent])).onHandMinor).toBe(8_000);
+    });
+
+    it('counts a withdrawal made today after it, and not one written before it', () => {
+      const moves = [
+        today(8_000, SETUP),
+        move({
+          kind: 'withdraw',
+          date: TODAY,
+          amountMinor: 300,
+          createdAt: '2026-10-09T09:00:00.000Z' as IsoInstant,
+        }),
+        move({
+          kind: 'deposit',
+          date: TODAY,
+          amountMinor: 100,
+          createdAt: '2026-10-09T12:00:00.000Z' as IsoInstant,
+        }),
+      ];
+      const result = cashSummary({ profileIds: ['p1'], moves, occurrences: [], today: TODAY });
+      expect(result.onHandMinor).toBe(7_900);
+      const activity = cashActivity({ profileIds: ['p1'], moves, occurrences: [], today: TODAY });
+      expect(activity.map((a) => a.signedMinor)).toEqual([-100, 8_000]);
+    });
   });
 
   it('reads income from the destination and spending from the method, whatever else is set', () => {
@@ -338,7 +407,7 @@ describe('a recurring cash income', () => {
 
   it('leaves out one payment an override sends elsewhere', () => {
     const away = [modify('salary', d('2026-09-01'), { destinationId: null })];
-    const result = summary([start('2026-08-01', 10_000)], [salary()], ['p1'], away);
+    const result = summary([start('2026-07-31', 10_000)], [salary()], ['p1'], away);
     // August and October, not September.
     expect(result.onHandMinor).toBe(12_000);
   });
