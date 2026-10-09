@@ -77,6 +77,16 @@ describe('MoneyTile (§7.3)', () => {
     const other = screen.getByRole('radio', { name: /^Not listed/ }).closest('label');
     expect(other).not.toHaveAttribute('data-sheet');
     expect(other).toHaveClass('inset-ring-2', 'inset-ring-ink');
+    // Box-shadows vanish in forced colours; the 2px border is what stays.
+    expect(other).toHaveClass('border-2', 'border-transparent');
+  });
+
+  it('puts the other-language name at the tile start edge, whatever its own direction', () => {
+    renderWithProviders(<Issuers />);
+    const tile = screen.getByRole('radio', { name: /^Cal/ }).closest('label');
+    const other = tile?.querySelector('[dir="auto"]');
+    expect(other).toHaveTextContent('כאל');
+    expect(other).toHaveClass('justify-self-start');
   });
 
   it('is at least 70px tall on a phone and 96px from lg, presses only when motion is welcome, and focuses outside its rings', () => {

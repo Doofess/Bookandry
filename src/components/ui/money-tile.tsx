@@ -66,7 +66,8 @@ export function MoneyTile({
         'transition-[box-shadow,scale] duration-(--dur-press) ease-fill motion-safe:active:scale-98',
         'has-checked:shadow-[0_0_0_3px_var(--paper),0_0_0_6px_var(--ink)]',
         'has-focus-visible:outline-3 has-focus-visible:outline-offset-9 has-focus-visible:outline-(--focus-ring)',
-        notListed && 'inset-ring-2 inset-ring-ink',
+        notListed && 'border-2 border-transparent inset-ring-2 inset-ring-ink',
+        'forced-colors:has-checked:border-[Highlight]',
       )}
     >
       <input
@@ -81,7 +82,10 @@ export function MoneyTile({
       />
       <span className="text-[1.3125rem] leading-[1.1] font-semibold lg:text-2xl">{label}</span>
       {otherLabel === undefined ? null : (
-        <span dir="auto" className="col-start-1 text-[0.9375rem] font-light group-has-checked:hidden">
+        <span
+          dir="auto"
+          className="col-start-1 justify-self-start text-[0.9375rem] font-light group-has-checked:hidden"
+        >
           {otherLabel}
         </span>
       )}
