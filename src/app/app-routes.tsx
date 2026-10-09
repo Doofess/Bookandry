@@ -4,6 +4,7 @@ import { AccountScreen } from '@/features/account/account-screen';
 import { SecurityScreen } from '@/features/account/security-screen';
 import { BankAccountsScreen } from '@/features/bank-accounts/bank-accounts-screen';
 import { CardsScreen } from '@/features/cards/cards-screen';
+import { CashScreen } from '@/features/cash/cash-screen';
 import { ChartScreen } from '@/features/chart/chart-screen';
 import { CommitmentsScreen } from '@/features/commitments/commitments-screen';
 import { FeedScreen } from '@/features/feed/feed-screen';
@@ -25,6 +26,7 @@ export const appRoutes: RouteObject[] = [
   { index: true, element: <FeedScreen /> },
   { path: ROUTES.chart, element: <ChartScreen /> },
   { path: ROUTES.cards, element: <CardsScreen /> },
+  { path: ROUTES.cash, element: <CashScreen /> },
   // The Household tab became Settings > Account linking; its addresses still land there.
   { path: ROUTES.household, element: <Navigate to={SETTINGS_ROUTES.linking} replace /> },
   { path: LINKED_ROUTES.profiles, element: <Navigate to={SETTINGS_ROUTES.linking} replace /> },
