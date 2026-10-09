@@ -27,6 +27,7 @@
     "gate:money": "node scripts/gate-money.mjs",
     "gate:pci": "node scripts/gate-pci.mjs",
     "data:banks": "node scripts/fetch-bank-branches.mjs",
+    "data:mcc": "node scripts/build-mcc.mjs",
     "emails": "node scripts/emails.mjs",
     "gates": "pnpm gate:rtl && pnpm gate:money && pnpm gate:pci",
     "icons": "pwa-assets-generator",
@@ -41,7 +42,7 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs}": [
-      "eslint --fix --max-warnings 0",
+      "eslint --fix --max-warnings 0 --no-warn-ignored",
       "prettier --write"
     ],
     "*.{json,jsonc,css,md,html,yml,yaml}": "prettier --write"
