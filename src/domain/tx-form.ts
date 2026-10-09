@@ -21,6 +21,7 @@ import {
 import type { Recurrence } from '@/types/domain';
 import type { Kind, LocalDate, Minor } from '@/types/money';
 
+import { MCC_SHAPE } from './mcc';
 import { graphemeLength } from './validation';
 
 /**
@@ -256,6 +257,13 @@ export const txFormSchema = z
      * saved with `primeRate` as prime at purchase.
      */
     resetAt: z.number().int().positive().optional(),
+    /**
+     * Expenses only: the business type ('' for none) and where it came from
+     * ('' for none). Defaults rather than required keys, so every caller that
+     * builds form values without them (import review, older tests) still parses.
+     */
+    mcc: z.string().default(''),
+    mccSource: z.string().default(''),
   })
   .superRefine((values, ctx) => {
     const amountMinor = parseAmount(values.amount, values.currency);
@@ -395,11 +403,30 @@ export const txFormSchema = z
       partialFirst: partialFirstOf(values),
       /** A 30+ purchase's rate, snapshotted: '0' when none was entered. */
       deferral: values.mode === 'deferred' ? { rate: deferralRate(values) } : undefined,
+      /*
+       * The business type belongs to expenses. Stripped from income rather
+       * than refused: switching an expense to income leaves it behind, which
+       * is the form's own doing (Review Focus 4). Held to its shape only - a
+       * code a later list added rides through an edit; every way a code comes
+       * IN has already checked it against the list.
+       */
+      mcc: businessType(values)?.mcc,
+      mccSource: businessType(values)?.mccSource,
     };
   });
 
 export type TxFormValues = z.input<typeof txFormSchema>;
 export type TxFormParsed = z.output<typeof txFormSchema>;
+
+/** The form's business type, when it has one an expense may keep. */
+function businessType(values: {
+  readonly kind: Kind;
+  readonly mcc: string;
+  readonly mccSource: string;
+}): { readonly mcc: string; readonly mccSource: string | undefined } | undefined {
+  if (values.kind !== 'expense' || !MCC_SHAPE.test(values.mcc)) return undefined;
+  return { mcc: values.mcc, mccSource: values.mccSource === '' ? undefined : values.mccSource };
+}
 
 function toRecurrence(
   values: {
@@ -622,6 +649,8 @@ export function defaultFormValues(input: {
     // then): today's date and the last-day default are not a person saying
     // "it started mid-month", and rent entered on the 4th is not a part-month.
     partialFirst: false,
+    mcc: '',
+    mccSource: '',
   };
 }
 
