@@ -6,6 +6,7 @@ import {
   base64Bytes,
   cleanExtract,
   cleanMap,
+  cleanMerchantCats,
   cleanRow,
   cleanText,
   cleanVerify,
@@ -375,8 +376,8 @@ describe('an answer', () => {
     const clean = cleanMap(map, 5, 4, ctx, merchants);
     expect(clean?.card).toBe(3);
     expect(clean?.mc).toEqual([
-      { m: 'SPOTIFY P2B3', cat: 'c1' },
-      { m: 'Wolt', cat: null },
+      { m: 'SPOTIFY P2B3', mcc: null, cat: 'c1' },
+      { m: 'Wolt', mcc: null, cat: null },
     ]);
     // What the function already cleaned reaches the app with names, and passes as it is.
     expect(cleanMap(clean, 5, 4, ctx)?.mc).toEqual(clean?.mc);
@@ -512,5 +513,70 @@ describe('what the model is given', () => {
     expect(tokensForRows(0)).toBe(400);
     expect(tokensForRows(10)).toBe(1100);
     expect(tokensForRows(1000)).toBe(LIMITS.maxTokens);
+  });
+});
+
+describe('business types on the wire', () => {
+  it('keeps a row’s four-digit code and its printed sector, on an expense only', () => {
+    expect(cleanRow(row({ mcc: ' 5812 ', sec: 'מסעדות' }), 1, ctx)).toMatchObject({
+      mcc: '5812',
+      sec: 'מסעדות',
+    });
+    // Shape only: whether the list has it is the app's to say (import-check).
+    expect(cleanRow(row({ mcc: '9999' }), 1, ctx)?.mcc).toBe('9999');
+    for (const bad of ['58120', 'abc', '', 5812, null]) {
+      expect(cleanRow(row({ mcc: bad }), 1, ctx), String(bad)).not.toHaveProperty('mcc');
+    }
+    expect(cleanRow(row({ sec: '' }), 1, ctx)).not.toHaveProperty('sec');
+    // A stray code on income is no answer: income has no business type.
+    const income = cleanRow(row({ k: 'i', cat: null, mcc: '5812', sec: 'מסעדות' }), 1, ctx);
+    expect(income).not.toHaveProperty('mcc');
+    expect(income).not.toHaveProperty('sec');
+  });
+
+  it('reads a merchant answer as { m, mcc, cat }, dropping a code that is not one', () => {
+    const answer = {
+      mc: [
+        { i: 0, mcc: '5812', cat: 'c1' },
+        { i: 1, mcc: 'x', cat: null },
+        { i: 2, cat: null },
+      ],
+    };
+    expect(cleanMerchantCats(answer, ctx, ['Cafe', 'Shop', 'Old function'])).toEqual([
+      { m: 'Cafe', mcc: '5812', cat: 'c1' },
+      { m: 'Shop', mcc: null, cat: null },
+      { m: 'Old function', mcc: null, cat: null },
+    ]);
+  });
+
+  it('sends each merchant’s sector beside it, and refuses sectors that do not line up', () => {
+    const asked = (sectors: unknown) =>
+      parseWireRequest({
+        mode: 'map',
+        ctx,
+        rows: [['a']],
+        merchants: ['Cafe', 'Shop'],
+        sectors,
+        maxTokens: 500,
+      });
+    const ok = asked(['שונות', '']);
+    expect(ok).toMatchObject({ mode: 'map', sectors: ['שונות', ''] });
+    expect(ok?.mode === 'map' && mapTask(ok)).toContain('0: "Cafe" (sector "שונות")');
+    expect(ok?.mode === 'map' && mapTask(ok)).toContain('1: "Shop"');
+    expect(ok?.mode === 'map' && mapTask(ok)).not.toContain('"Shop" (sector');
+    expect(asked(['שונות'])).toBeUndefined();
+    expect(asked(['שונות', 7])).toBeUndefined();
+    // An app from before sends none.
+    expect(asked(undefined)).toMatchObject({ mode: 'map' });
+    expect(asked(undefined)).not.toHaveProperty('sectors');
+  });
+
+  it('asks the model for a business type on every row and every merchant', () => {
+    const schema = extractSchema(ctx) as {
+      properties: { r: { items: { properties: Record<string, unknown>; required: string[] } } };
+    };
+    expect(schema.properties.r.items.required).toEqual(expect.arrayContaining(['mcc', 'sec']));
+    const map = mapSchema(ctx) as { properties: { mc: { items: { required: string[] } } } };
+    expect(map.properties.mc.items.required).toEqual(['i', 'mcc', 'cat']);
   });
 });

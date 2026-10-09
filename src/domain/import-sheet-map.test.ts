@@ -188,3 +188,87 @@ describe('plan text', () => {
     expect(planFromText('רגילה')).toBeUndefined();
   });
 });
+
+describe('business types in a sheet', () => {
+  it('reads an MCC column however Excel stored it, and never fails a row over it (Review Focus 5)', () => {
+    const sheet: Cell[][] = [
+      ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה', 'MCC', 'ענף'],
+      ['01/10/2026', 'Vet', '100.00', 742, 'חיות מחמד'],
+      ['02/10/2026', 'Shop', '10.00', 5411, null],
+      ['03/10/2026', 'Shop', '10.00', '5411.0', ''],
+      ['04/10/2026', 'Cafe', '10.00', ' 5812 ', 'מסעדות'],
+      ['05/10/2026', 'Odd', '10.00', '9999', null],
+      ['06/10/2026', 'Odd', '10.00', 'abc', null],
+      ['07/10/2026', 'Odd', '10.00', '', null],
+      ['08/10/2026', 'Odd', '10.00', 5411.5, null],
+    ];
+    const map = mapByDictionary(sheet)!;
+    expect(map).toMatchObject({ mcc: 3, sector: 4 });
+    const read = readSheet(sheet, map, ctx);
+    expect(read.unreadable).toBe(0);
+    expect(read.rows.map((r) => r.fileMcc)).toEqual([
+      '0742',
+      '5411',
+      '5411',
+      '5812',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(read.rows.map((r) => r.sector)).toEqual([
+      'חיות מחמד',
+      undefined,
+      undefined,
+      'מסעדות',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(read.rows.every((r) => r.flags.length === 0)).toBe(true);
+  });
+
+  it('knows the MCC and sector headers Israeli and English exports use, and keeps them apart', () => {
+    const header = (cells: string[]): Cell[][] => [['תאריך', 'תיאור', 'סכום', ...cells]];
+    expect(mapByDictionary(header(['קוד ענף', 'ענף עסקי']))).toMatchObject({ mcc: 3, sector: 4 });
+    expect(mapByDictionary(header(['Merchant category code', 'Category']))).toMatchObject({
+      mcc: 3,
+      sector: 4,
+    });
+    expect(mapByDictionary(header(['SIC', 'Sector']))).toMatchObject({ mcc: 3, sector: 4 });
+    expect(mapByDictionary(header(['קטגוריה']))).toMatchObject({ mcc: null, sector: 3 });
+    expect(mapByDictionary(header(['תחום']))).toMatchObject({ mcc: null, sector: 3 });
+    expect(mapByDictionary(header([]))).toMatchObject({ mcc: null, sector: null });
+  });
+
+  it('finds them on a header row the model mapped, too', () => {
+    const rows: Cell[][] = [
+      ['when', 'what', 'how much', 'MCC', 'ענף'],
+      ['10/03/2026', 'Cafe', 12.5, '5812', 'מסעדות'],
+    ];
+    const wire = {
+      hr: 0,
+      date: 0,
+      desc: 1,
+      amt: 2,
+      debit: null,
+      credit: null,
+      cur: null,
+      chg: null,
+      chgCur: null,
+      chgDate: null,
+      plan: null,
+      card: null,
+      dec: '.' as const,
+      df: 'dmy' as const,
+      mc: [],
+    };
+    expect(fromWireMap(wire, rows)).toMatchObject({ mcc: 3, sector: 4 });
+    expect(fromWireMap(wire)).toMatchObject({ mcc: null, sector: null });
+    expect(readSheet(rows, fromWireMap(wire, rows), ctx).rows[0]).toMatchObject({
+      fileMcc: '5812',
+      sector: 'מסעדות',
+    });
+  });
+});
