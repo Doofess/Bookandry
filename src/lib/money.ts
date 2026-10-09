@@ -431,6 +431,37 @@ export function prorateMinor(minor: Minor, part: number, whole: number): Minor {
 }
 
 /**
+ * Each value's share of their total in basis points (1/10,000 of the whole),
+ * by the largest remainder, so the shares always sum to exactly 10,000 (§7.4).
+ *
+ * Strips and bars turn them into widths in CSS (`calc(var(--bp) * 0.01%)`),
+ * so no other code divides money. A negative value counts as nothing - a
+ * share is a size - and a zero total gives every value 0. Ties in the
+ * remainder go to the earlier value, so the result is stable.
+ */
+export function sharesBp(minors: readonly Minor[]): number[] {
+  const values = minors.map((minor) => BigInt(Math.max(0, minor)));
+  const total = values.reduce((acc, value) => acc + value, 0n);
+  if (total === 0n) return minors.map(() => 0);
+
+  const scaled = values.map((value) => value * 10_000n);
+  const shares = scaled.map((value) => value / total);
+  const left = Number(10_000n - shares.reduce((acc, share) => acc + share, 0n));
+  const order = scaled
+    .map((value, index) => ({ index, remainder: value % total }))
+    .sort((a, b) => (a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1));
+  // The `left` values with the largest remainders each take one more.
+  const extra = new Set(order.slice(0, left).map(({ index }) => index));
+  return shares.map((share, index) => Number(share) + (extra.has(index) ? 1 : 0));
+}
+
+/** The amount in whole major units - shekels, dollars - rounded half away from zero (§9.4). */
+export function wholeMinor(minor: Minor, currency: Currency): Minor {
+  const unit = 10n ** BigInt(exponentOf(currency));
+  return toSafeNumber(divRound(BigInt(minor), unit) * unit);
+}
+
+/**
  * לוח שפיצר - the fixed monthly payment of an amortizing plan.
  *
  *   PMT = PV · r(1+r)^n / ((1+r)^n − 1)
