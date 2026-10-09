@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CardIssuer, CardNetwork } from '@/types/domain';
 
-import { brandColor, brandLogo, type BrandKey } from './brands';
+import { brandLogo } from './brands';
 import { banks } from './card-catalog/banks';
 
 const DIR = resolve(__dirname, '../assets/brands');
@@ -62,21 +62,6 @@ describe('coverage', () => {
       ].map((key) => brandLogo(key)),
     );
     expect(FILES.filter((file) => !reached.has(urlOf(file)))).toEqual([]);
-  });
-});
-
-describe('brand colour', () => {
-  it('is the brand’s own hex', () => {
-    expect(brandColor('bank-10')).toBe('#0066FF');
-    expect(brandColor('bank-12')).toBe('#F0000B');
-  });
-
-  it('is there for every catalog bank', () => {
-    for (const bank of banks) expect(brandColor(`bank-${bank.id}` as BrandKey)).toMatch(/^#[0-9A-F]{6}$/);
-  });
-
-  it('is undefined for a bank it does not know', () => {
-    expect(brandColor('bank-99')).toBeUndefined();
   });
 });
 

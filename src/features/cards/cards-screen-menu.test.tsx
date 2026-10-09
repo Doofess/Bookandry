@@ -248,3 +248,40 @@ describe('an archived card in the household commitments', () => {
     expect(screen.queryByTestId('household-commitments')).not.toBeInTheDocument();
   });
 });
+
+describe('a card’s face', () => {
+  const face = async () => {
+    render();
+    await options();
+    return screen.getByTestId('card-face');
+  };
+
+  it('is a money sheet in its company’s colour when it was given none', async () => {
+    const el = await face();
+    expect(el).toHaveAttribute('data-sheet', 'money');
+    expect(el).toHaveAttribute('data-money', 'issuer-max');
+  });
+
+  it('is in its own colour when it has one', async () => {
+    await db.paymentMethods.update('card-1', { color: 'gold' });
+    expect(await face()).toHaveAttribute('data-money', 'card-gold');
+  });
+
+  it('falls back to its company for a colour an older build stored as hex', async () => {
+    await db.paymentMethods.update('card-1', { color: '#ff0000' });
+    expect(await face()).toHaveAttribute('data-money', 'issuer-max');
+  });
+
+  it('is the neutral ink sheet for a card of an "other" company with no colour', async () => {
+    await db.paymentMethods.update('card-1', {
+      card: { issuer: 'other', billingDay: 10, lastDigits: '4821' },
+    });
+    expect(await face()).toHaveAttribute('data-money', 'neutral');
+  });
+
+  it('writes no colour of its own: no white text, no translucent text that would drop under 4.5:1', async () => {
+    const el = await face();
+    expect(el.querySelector('[class*="text-white"]')).toBeNull();
+    expect(el.querySelector('[class*="opacity-"]')).toBeNull();
+  });
+});

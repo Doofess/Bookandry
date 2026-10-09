@@ -415,3 +415,28 @@ test.describe('@cards bank accounts', () => {
     await expect(page.getByRole('combobox', { name: /בנק/ })).toContainText('בנק פלסטין');
   });
 });
+
+test.describe('@forced-colours the Cards screen', () => {
+  test('keeps an edge on every card face and the colour in every swatch', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'en', 'One language is enough for a system colour scheme.');
+    await page.emulateMedia({ forcedColors: 'active' });
+    await completeFirstRun(page, 'en');
+    await page.goto('/cards');
+
+    // Windows High Contrast replaces backgrounds: the transparent 2px border is what it paints instead.
+    const faces = page.getByTestId('card-face');
+    await expect(faces.first()).toBeVisible();
+    for (const face of await faces.all()) {
+      const edge = await face.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return `${style.borderTopWidth} ${style.borderTopStyle}`;
+      });
+      expect(edge).toBe('2px solid');
+    }
+
+    // The swatches keep their colour: here the colour is what is being chosen.
+    await page.getByRole('button', { name: COPY.en.add }).click();
+    const swatch = page.getByTitle(COPY.en.gold, { exact: true }).locator('[data-money]');
+    expect(await swatch.evaluate((el) => getComputedStyle(el).forcedColorAdjust)).toBe('none');
+  });
+});
