@@ -6,8 +6,14 @@ import { AmountInput } from '@/components/amount-input';
 import { Money } from '@/components/money';
 import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import type { UndoableAction } from '@/db/occurrence-actions';
 import { InvalidCashMoveError, recordCount, type CountOutcome } from '@/db/repos/cash-moves';
@@ -45,15 +51,15 @@ export function CountSheet({
   const { t } = useTranslation();
   const titleId = useId();
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>{t('cash.menu.count')}</SheetTitle>
-          <SheetDescription>{t('cash.countBody')}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent aria-labelledby={titleId}>
+        <EditorPanelHeader>
+          <EditorPanelTitle id={titleId}>{t('cash.menu.count')}</EditorPanelTitle>
+          <EditorPanelDescription>{t('cash.countBody')}</EditorPanelDescription>
+        </EditorPanelHeader>
         {open ? <CountForm {...props} /> : null}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 

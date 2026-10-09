@@ -225,7 +225,7 @@ for (const lang of ['en', 'he'] as const) {
 
       // The SHEET, by its slot: the method picker is a dialog too, and it is
       // still in the DOM for the length of its closing animation.
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(sheet).toContainText('1,242.36');
       await expect(sheet).toContainText('207.06');
       // The interest on its own, not as the tail of "1,242.36".
@@ -258,7 +258,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('radio', { name: copy.fixed, exact: true }).click();
       await page.getByLabel(copy.rate, { exact: true }).fill('5');
 
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(sheet).toContainText('2,684.11');
       await expect(sheet).toContainText('966,279.60');
       await expect(sheet).toContainText('466,279.60');
@@ -302,7 +302,7 @@ for (const lang of ['en', 'he'] as const) {
       await expect(prime).toHaveAttribute('readonly', '');
       await page.getByLabel(copy.margin, { exact: true }).fill('1.5');
 
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(sheet).toContainText(copy.primeLoan);
       await expect(sheet).toContainText('3,078.59');
 
@@ -369,7 +369,7 @@ for (const lang of ['en', 'he'] as const) {
       const date = page.getByLabel(copy.firstPayment, { exact: true });
       await date.fill(copy.typed);
       await date.press('Enter');
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(sheet).toContainText(copy.readout);
 
       // The day it repeats on follows the first payment.
@@ -399,7 +399,7 @@ for (const lang of ['en', 'he'] as const) {
       await date.press('Enter');
       await page.getByLabel(copy.day, { exact: true }).fill('1');
 
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(page.getByRole('switch', { name: copy.partial })).toBeChecked();
       await expect(sheet).toContainText(copy.partialText);
       await expect(sheet).toContainText('150.00');

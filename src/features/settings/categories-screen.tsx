@@ -20,9 +20,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import { createCategory, deleteCategory, renameCategory, setCategoryArchived } from '@/db/repos/categories';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -301,13 +306,13 @@ function CategoryEditor({
   };
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {isNew ? t('categories:manage.newTitle') : t('categories:manage.editTitle')}
-          </SheetTitle>
-        </SheetHeader>
+          </EditorPanelTitle>
+        </EditorPanelHeader>
 
         <form
           noValidate
@@ -357,7 +362,7 @@ function CategoryEditor({
             </div>
           ) : null}
 
-          <div className="flex gap-2 pt-1">
+          <div data-slot="editor-actions" className="flex gap-2 pt-1">
             <Button
               type="button"
               variant="outline"
@@ -373,8 +378,8 @@ function CategoryEditor({
             </Button>
           </div>
         </form>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 

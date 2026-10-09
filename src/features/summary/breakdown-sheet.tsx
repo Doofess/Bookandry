@@ -2,7 +2,13 @@ import { useTranslation } from 'react-i18next';
 
 import { CategoryIcon } from '@/components/category-icon';
 import { Money } from '@/components/money';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import type { BalanceBreakdown, ForecastBreakdown } from '@/domain/breakdown';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { formatLocalDate } from '@/lib/dates';
@@ -35,22 +41,22 @@ export function BalanceBreakdownSheet({
   const { t, i18n } = useTranslation();
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[80dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{t('summary.balance')}</SheetTitle>
-          <SheetDescription>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>{t('summary.balance')}</EditorPanelTitle>
+          <EditorPanelDescription>
             {t('breakdown.balanceBody', {
               date: formatLocalDate(since, i18n.language, { dateStyle: 'long' }),
             })}
-          </SheetDescription>
-        </SheetHeader>
+          </EditorPanelDescription>
+        </EditorPanelHeader>
 
         <div className="px-4 pb-4">
           <BalanceLines breakdown={breakdown} currency={currency} />
         </div>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -121,12 +127,12 @@ export function ExpenseBreakdownSheet({
   const monthLabel = formatLocalDate(month, i18n.language, { month: 'long', year: 'numeric' });
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[80dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{t('summary.expected')}</SheetTitle>
-          <SheetDescription>{t('breakdown.expenseBody', { month: monthLabel })}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>{t('summary.expected')}</EditorPanelTitle>
+          <EditorPanelDescription>{t('breakdown.expenseBody', { month: monthLabel })}</EditorPanelDescription>
+        </EditorPanelHeader>
 
         <div className="px-4 pb-4">
           {breakdown.groups.length === 0 ? (
@@ -156,8 +162,8 @@ export function ExpenseBreakdownSheet({
             ))
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 

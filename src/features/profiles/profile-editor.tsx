@@ -7,9 +7,15 @@ import { CurrencySelect } from '@/components/currency-select';
 import { PersonAvatar } from '@/components/person-avatar';
 import { ColorPicker } from '@/components/pickers';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { nextFreeColor, PROFILE_PALETTE } from '@/domain/palette';
 import { graphemeLength, NAME_MAX_LENGTH } from '@/domain/validation';
 import { startOfMonth } from '@/lib/dates';
@@ -95,14 +101,14 @@ export function ProfileEditor({
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {profile === undefined ? t('profiles:screen.newTitle') : t('profiles:screen.editTitle')}
-          </SheetTitle>
-          <SheetDescription>{t('profiles:screen.openingBalanceHelp')}</SheetDescription>
-        </SheetHeader>
+          </EditorPanelTitle>
+          <EditorPanelDescription>{t('profiles:screen.openingBalanceHelp')}</EditorPanelDescription>
+        </EditorPanelHeader>
 
         {/* Keyed, so opening a different profile does not inherit the last
             one's half-edited draft. */}
@@ -122,8 +128,8 @@ export function ProfileEditor({
             saving={saving}
           />
         ) : null}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -236,7 +242,7 @@ function EditorForm({
         </p>
       )}
 
-      <div className="flex gap-2 pt-1">
+      <div data-slot="editor-actions" className="flex gap-2 pt-1">
         <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
           {t('action.cancel')}
         </Button>

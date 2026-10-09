@@ -169,31 +169,33 @@ test.describe('@rtl amounts and the chart', () => {
   });
 });
 
-test.describe('@rtl sheets open on the right edge', () => {
-  test('brings the add sheet in from the correct side', async ({ page }) => {
+test.describe('@rtl the add panel', () => {
+  test('comes in at the inline end: the left in Hebrew from lg, the whole width on a phone', async ({
+    page,
+  }) => {
     /*
-     * Measured by BOX POSITION, not by class name. shadcn's rtl transform
-     * rewrites the physical utilities it knows about, but `side`/`align` on
-     * floating elements are NOT in its mapping table - so the only honest check
-     * is where the thing actually landed.
+     * Measured by BOX POSITION, not by class name: a physical side surviving a
+     * rewrite looks right in English and opens over the rail in Hebrew.
      */
     await completeFirstRun(page, 'he');
-
     await openAddSheet(page);
 
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-
-    const box = await dialog.boundingBox();
+    const panel = page.locator('[data-slot="editor-panel"]');
+    await expect(panel).toBeVisible();
+    const box = await panel.boundingBox();
     const viewport = page.viewportSize();
     expect(box).not.toBeNull();
     expect(viewport).not.toBeNull();
+    if (box === null || viewport === null) return;
 
-    if (box !== null && viewport !== null) {
-      // A bottom sheet spans the width; what matters is that it is not pinned
-      // to one physical edge with a gap on the other.
-      expect(box.x).toBeLessThan(viewport.width);
-      expect(box.x + box.width).toBeGreaterThan(0);
+    if (viewport.width >= 1024) {
+      // 480px, one sheet gap (16px) from the left edge, nowhere near the rail on the right.
+      expect(Math.round(box.width)).toBe(480);
+      expect(box.x).toBeGreaterThanOrEqual(15);
+      expect(box.x).toBeLessThanOrEqual(17);
+    } else {
+      expect(box.x).toBeLessThanOrEqual(1);
+      expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1);
     }
   });
 });
