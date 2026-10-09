@@ -395,4 +395,86 @@ describe('Smart import', () => {
     const saved = await db.transactions.filter((t) => t.note === 'Aroma' || t.note === 'Kiosk').toArray();
     expect(Object.fromEntries(saved.map((t) => [t.note, t.profileId]))).toEqual({ Aroma: 'p2', Kiosk: 'p1' });
   });
+
+  it('files a sheet by its sector, asks about the rest with the sector as a hint, and leaves a cash withdrawal out', async () => {
+    writeSession(undefined);
+    reader.calls = [];
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: {
+          mc: [
+            { m: 'Mystery Shop', mcc: '5999', cat: null },
+            { m: 'משיכת מזומן', mcc: '6011', cat: null },
+          ],
+        },
+      },
+    ];
+    const onSaved = vi.fn<(date: LocalDate) => void>();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ImportSheet
+        target={{ mode: 'import' }}
+        onOpenChange={() => undefined}
+        onOpenRow={() => undefined}
+        onOpenCard={() => undefined}
+        profiles={[profile]}
+        categories={[
+          category('cat.dining', 'expense'),
+          category('cat.shopping', 'expense'),
+          category('cat.currencyExchange', 'expense'),
+          category('cat.otherExpense', 'expense'),
+          category('cat.salary', 'income'),
+        ]}
+        paymentMethods={[]}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={'2026-09-15' as LocalDate}
+        onSaved={onSaved}
+      />,
+    );
+
+    const csv = [
+      'תאריך עסקה,שם בית העסק,סכום עסקה,ענף',
+      '03/09/2026,Cafe Landwer,58.00,מסעדות',
+      '04/09/2026,Mystery Shop,20.00,שונות',
+      '05/09/2026,משיכת מזומן,500.00,',
+    ].join('\n');
+    await user.upload(screen.getByTestId('import-input'), new File([csv], 'max.csv', { type: 'text/csv' }));
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+
+    await screen.findByRole('button', { name: 'Ready (2)' });
+    // One call, for the two merchants nothing placed, each with its sector.
+    expect(reader.calls).toHaveLength(1);
+    const asked = reader.calls[0];
+    expect(asked?.mode === 'map' && [asked.merchants, asked.sectors]).toEqual([
+      ['Mystery Shop', 'משיכת מזומן'],
+      ['שונות', ''],
+    ]);
+    expect(screen.getByRole('button', { name: 'Check this (1)' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Cash withdrawal: not counted as an expense. You can record it in the Cash tab.'),
+    ).toBeInTheDocument();
+    const withdrawal = screen.getByRole('checkbox', { name: 'Add משיכת מזומן' });
+    expect(withdrawal).not.toBeChecked();
+
+    // The person can still keep it.
+    await user.click(withdrawal);
+    await user.click(screen.getByTestId('import-add'));
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const names = ['Cafe Landwer', 'Mystery Shop', 'משיכת מזומן'];
+    const saved = (await db.transactions.toArray()).filter((t) => names.includes(t.note ?? ''));
+    expect(
+      saved
+        .map((t) => [t.note, t.categoryId, t.mcc, t.mccSource])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    ).toEqual([
+      ['Cafe Landwer', 'cat.dining', '5812', 'sector'],
+      ['Mystery Shop', 'cat.shopping', '5999', 'ai'],
+      ['משיכת מזומן', 'cat.currencyExchange', '6011', 'ai'],
+    ]);
+  });
 });

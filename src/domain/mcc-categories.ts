@@ -1,5 +1,8 @@
-import type { Category } from '@/types/domain';
+import type { Category, MccSource } from '@/types/domain';
+import type { Kind } from '@/types/money';
 
+import { categoryFromText, knownCategory } from './import-categories';
+import { isMcc } from './mcc';
 import { MCC_CODES } from './mcc-codes';
 
 /**
@@ -190,4 +193,80 @@ export function businessTypesOf(
     (code) => defaultCategoryForMcc(code) === category.id && !elsewhere.has(code) && !moved.includes(code),
   );
   return { defaults, moved };
+}
+
+/** A row's business type, and where it came from. The person's own ('user') is never picked here. */
+export type MccPick = { readonly mcc: string; readonly source: Exclude<MccSource, 'user'> };
+
+/**
+ * An expense's business type: the first source with a code the list has -
+ * the file's MCC column, the card company's sector (already a code, from
+ * `sectorMcc`), the household's history, then Claude (spec §2).
+ *
+ * Claude's code is dropped when it would file the row somewhere a name rule
+ * (`knownCategory`) says it is not: 5411 for "Netflix" would make history
+ * spread "supermarket" to the next Netflix and its merchant-key siblings
+ * (Review Focus 2). A code from the file or the sector is the document's
+ * own word, and is kept. Income has none.
+ */
+export function pickMcc(
+  row: { readonly kind: Kind; readonly description: string },
+  found: {
+    readonly file?: string;
+    readonly sector?: string;
+    readonly history?: string;
+    readonly ai?: string;
+  },
+  categories: readonly Category[],
+): MccPick | undefined {
+  if (row.kind !== 'expense') return undefined;
+  if (isMcc(found.file)) return { mcc: found.file, source: 'file' };
+  if (isMcc(found.sector)) return { mcc: found.sector, source: 'sector' };
+  if (isMcc(found.history)) return { mcc: found.history, source: 'history' };
+  if (!isMcc(found.ai)) return undefined;
+  const known = knownCategory(row, categories);
+  if (known !== undefined && categoryForMcc(found.ai, categories) !== known) return undefined;
+  return { mcc: found.ai, source: 'ai' };
+}
+
+/**
+ * A row's category, in the order of spec §3:
+ *  1. a well-known name (`knownCategory`) - narrower than a business type;
+ *  2. the person's own choice for this merchant (`merchantHistory`);
+ *  3. the business type (`categoryForMcc`) - an expense's only;
+ *  4. the row's own words (`categoryFromText`);
+ *  5. Claude's category.
+ * Undefined leaves the refund and Other to the caller. Income runs the same
+ * order without step 3. Only a live category of the row's kind is taken.
+ */
+export function chooseExpenseCategory(
+  row: {
+    readonly kind: Kind;
+    readonly description: string;
+    readonly plan?: { readonly mode: string } | null;
+  },
+  found: { readonly history?: string; readonly mcc?: string; readonly claude?: string },
+  categories: readonly Category[],
+): string | undefined {
+  const usable = (id: string | undefined): string | undefined =>
+    id !== undefined && categories.some((c) => c.id === id && c.kind === row.kind && c.isArchived === 0)
+      ? id
+      : undefined;
+  return (
+    knownCategory(row, categories) ??
+    usable(found.history) ??
+    (row.kind === 'expense' && found.mcc !== undefined ? categoryForMcc(found.mcc, categories) : undefined) ??
+    categoryFromText(row, categories) ??
+    usable(found.claude)
+  );
+}
+
+/**
+ * Cash taken out at a bank or an ATM. Not an expense in an import (the
+ * user's ruling of 2026-10-09): the money is still the household's, now in
+ * the wallet. The default table still files it, under Currency exchange,
+ * for a row the person keeps.
+ */
+export function isCashWithdrawal(mcc: string | undefined): boolean {
+  return mcc === '6010' || mcc === '6011';
 }

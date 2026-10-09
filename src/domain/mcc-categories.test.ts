@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import type { Category } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { businessTypesOf, categoryForMcc, defaultCategoryForMcc } from './mcc-categories';
+import {
+  businessTypesOf,
+  categoryForMcc,
+  chooseExpenseCategory,
+  defaultCategoryForMcc,
+  isCashWithdrawal,
+  pickMcc,
+} from './mcc-categories';
 
 const NOW = '2026-10-01T00:00:00.000Z' as IsoInstant;
 const LATER = '2026-10-05T00:00:00.000Z' as IsoInstant;
@@ -158,5 +165,105 @@ describe('businessTypesOf', () => {
       defaults: [],
       moved: [],
     });
+  });
+});
+
+describe('pickMcc', () => {
+  const ALL = [...CATEGORIES, builtin('cat.subscriptions'), builtin('cat.shopping')];
+  const expense = (description: string) => ({ kind: 'expense' as const, description });
+
+  it('takes the first source that has a listed code: file, sector, history, then Claude', () => {
+    const all = { file: '5812', sector: '5411', history: '5499', ai: '5999' };
+    expect(pickMcc(expense('Cafe'), all, ALL)).toEqual({ mcc: '5812', source: 'file' });
+    expect(pickMcc(expense('Cafe'), { ...all, file: undefined }, ALL)).toEqual({
+      mcc: '5411',
+      source: 'sector',
+    });
+    expect(pickMcc(expense('Cafe'), { history: '5499', ai: '5999' }, ALL)).toEqual({
+      mcc: '5499',
+      source: 'history',
+    });
+    expect(pickMcc(expense('Cafe'), { ai: '5999' }, ALL)).toEqual({ mcc: '5999', source: 'ai' });
+    expect(pickMcc(expense('Cafe'), { file: '9999', ai: '5999' }, ALL)).toEqual({
+      mcc: '5999',
+      source: 'ai',
+    });
+    expect(pickMcc(expense('Cafe'), {}, ALL)).toBeUndefined();
+  });
+
+  it('drops Claude’s code when it files the row somewhere a name rule says it is not (Review Focus 2)', () => {
+    // Netflix is a subscription by name; 5411 would file it as groceries, and then spread through history.
+    expect(pickMcc(expense('Netflix'), { ai: '5411' }, ALL)).toBeUndefined();
+    expect(pickMcc(expense('Netflix'), { ai: '5968' }, ALL)).toEqual({ mcc: '5968', source: 'ai' });
+    // A code from the file or the card company's sector is the document's word, and is kept.
+    expect(pickMcc(expense('Netflix'), { sector: '5411' }, ALL)).toEqual({ mcc: '5411', source: 'sector' });
+    expect(pickMcc(expense('Netflix'), { file: '5411' }, ALL)).toEqual({ mcc: '5411', source: 'file' });
+  });
+
+  it('gives income none, whatever any source says', () => {
+    expect(
+      pickMcc({ kind: 'income', description: 'Cafe' }, { file: '5812', ai: '5812' }, ALL),
+    ).toBeUndefined();
+  });
+});
+
+describe('chooseExpenseCategory: the order of spec §3, one case per step', () => {
+  const ALL = [
+    ...CATEGORIES,
+    builtin('cat.subscriptions'),
+    builtin('cat.loans'),
+    custom('c.coffee'),
+    builtin('cat.salary', { kind: 'income' }),
+  ];
+  const expense = (description: string) => ({ kind: 'expense' as const, description });
+
+  it('1. a well-known name beats the business type', () => {
+    expect(chooseExpenseCategory(expense('Netflix'), { mcc: '5812' }, ALL)).toBe('cat.subscriptions');
+  });
+
+  it('2. the person’s own choice for this merchant beats the business type', () => {
+    expect(chooseExpenseCategory(expense('Cafe'), { history: 'c.coffee', mcc: '5812' }, ALL)).toBe(
+      'c.coffee',
+    );
+  });
+
+  it('3. the business type beats the row’s own words and Claude', () => {
+    expect(chooseExpenseCategory(expense('הלוואה מהבנק'), { mcc: '5812', claude: 'cat.travel' }, ALL)).toBe(
+      'cat.dining',
+    );
+  });
+
+  it('4. the row’s own words, then 5. Claude’s category, then nothing', () => {
+    expect(chooseExpenseCategory(expense('הלוואה מהבנק'), { claude: 'cat.travel' }, ALL)).toBe('cat.loans');
+    expect(chooseExpenseCategory(expense('Cafe'), { claude: 'cat.travel' }, ALL)).toBe('cat.travel');
+    expect(chooseExpenseCategory(expense('Cafe'), {}, ALL)).toBeUndefined();
+  });
+
+  it('never takes a choice that is archived, missing, or of the other kind', () => {
+    const archived = ALL.map((c) => (c.id === 'c.coffee' ? { ...c, isArchived: 1 as const } : c));
+    expect(chooseExpenseCategory(expense('Cafe'), { history: 'c.coffee', mcc: '5812' }, archived)).toBe(
+      'cat.dining',
+    );
+    expect(
+      chooseExpenseCategory(expense('Cafe'), { history: 'c.gone', claude: 'cat.salary' }, ALL),
+    ).toBeUndefined();
+  });
+
+  it('never maps income through the business type', () => {
+    expect(
+      chooseExpenseCategory({ kind: 'income', description: 'Cafe' }, { mcc: '5812' }, ALL),
+    ).toBeUndefined();
+    expect(
+      chooseExpenseCategory({ kind: 'income', description: 'Pay' }, { history: 'cat.salary' }, ALL),
+    ).toBe('cat.salary');
+  });
+});
+
+describe('isCashWithdrawal', () => {
+  it('is 6010 and 6011 only', () => {
+    expect(isCashWithdrawal('6010')).toBe(true);
+    expect(isCashWithdrawal('6011')).toBe(true);
+    expect(isCashWithdrawal('6051')).toBe(false);
+    expect(isCashWithdrawal(undefined)).toBe(false);
   });
 });
