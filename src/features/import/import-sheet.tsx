@@ -9,6 +9,7 @@ import { accountController, useAccount } from '@/app/account';
 import { usePrime } from '@/app/prime';
 import { forgetShared, readShared } from '@/app/shared-files';
 import { Money } from '@/components/money';
+import { PersonAvatar } from '@/components/person-avatar';
 import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
@@ -780,7 +781,14 @@ function Picker({
           <Segmented
             value={whose}
             onChange={onWhose}
-            options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+            // Faces, not names: two people can share a first name. The name stays each option's
+            // accessible name, read out but not seen.
+            options={profiles.map((p) => ({
+              value: p.id,
+              label: p.name,
+              icon: <PersonAvatar person={p} size="md" />,
+              labelHidden: true,
+            }))}
             labelledBy={whoseId}
           />
           <p className="text-xs text-muted-foreground">{t('whoseHint')}</p>
