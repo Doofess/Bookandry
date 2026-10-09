@@ -378,6 +378,32 @@ describe('cash moves', () => {
     ]);
   });
 
+  it('converts from the old base into the new, whose minor units differ: dollars into yen', () => {
+    const toJPY: RateLookup = (from, to, on) =>
+      from === 'USD' && to === 'JPY' ? { rate: '147.25', rateDate: on, source: 'frankfurter' } : undefined;
+    const plan = planReconversion(input({ newBase: 'JPY', cashMoves: [move()] }), toJPY);
+    // $200.00 at 147.25 is ¥29,450; read the other way round it would be cents of yen.
+    expect(plan.cashMoves).toEqual([{ id: 'm1', amountMinor: 29_450 }]);
+  });
+
+  it('asks once for the old base on a date shared by two moves and a manual-rate row', () => {
+    const manual = makeTx({
+      id: 'manual',
+      date: d('2026-03-12'),
+      recurrence: { type: 'one_time' },
+      money: money({ currency: 'JPY', rateSource: 'manual', rateUsed: '0.0068' }),
+    });
+    const reqs = collectRateRequests(
+      input({
+        newBase: 'EUR',
+        transactions: [manual],
+        cashMoves: [move({ id: 'a' }), move({ id: 'b', kind: 'deposit' })],
+      }),
+    );
+    expect(reqs.filter((r) => r.currency === 'USD')).toEqual([{ currency: 'USD', date: '2026-03-12' }]);
+    expect(reqs).toHaveLength(2);
+  });
+
   it('converts a move of a kind this build does not know', () => {
     // The money is real even if the kind comes from a newer build.
     const odd = move({ id: 'odd', kind: 'lent_to_neighbour' });

@@ -476,12 +476,15 @@ describe('cash moves in a backup', () => {
       counts: { ...doc.counts, transactions: 0, cashMoves: 1 },
       data: { ...doc.data, transactions: [], cashMoves: [cashMove({ id: 'm.ils', amountMinor: 100_000 })] },
     };
+    // A rate for each day, so a move converted at any day but its own comes out wrong.
     const lookup: RateLookup = (from, to, on) =>
-      from === 'ILS' && to === 'USD' ? { rate: '0.327965', rateDate: on, source: 'frankfurter' } : undefined;
+      from === 'ILS' && to === 'USD'
+        ? { rate: on === '2026-10-01' ? '0.327965' : '0.25', rateDate: on, source: 'frankfurter' }
+        : undefined;
 
     const result = await importDocument(handle.db, shekels, { mode: 'merge', now: NOW, rateLookup: lookup });
-    expect(result).toMatchObject({ ok: true });
-    // ₪1,000.00 at 0.327965, rounded half away from zero, once.
+    expect(result).toMatchObject({ ok: true, reconverted: 1 });
+    // ₪1,000.00 at its own day's 0.327965, rounded half away from zero, once.
     expect((await handle.db.cashMoves.get('m.ils'))?.amountMinor).toBe(32_797);
 
     const refused = await importDocument(handle.db, shekels, {

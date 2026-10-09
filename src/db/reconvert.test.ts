@@ -222,6 +222,28 @@ describe('atomicity', () => {
     expect((await getSettings(handle.db))?.defaultCurrency).toBe('USD');
   });
 
+  it('leaves a cash move at its old amount when the settings write fails, last of all', async () => {
+    await seedTx('tx1', '2026-03-12', money({ amountMinor: 4500 }));
+    await seedMove();
+    const plan = {
+      transactions: [{ id: 'tx1', money: money({ baseCurrency: 'ILS', baseAmountMinor: 15_885 }) }],
+      overrides: [],
+      profiles: [],
+      cashMoves: [{ id: 'm1', amountMinor: 60_982 }],
+      unresolved: [],
+    };
+
+    const spy = vi
+      .spyOn(handle.db.settings, 'put')
+      .mockImplementation((() => Promise.reject(new Error('disk full'))) as never);
+    await expect(applyReconvertPlan(handle.db, plan, 'ILS', NOW)).rejects.toThrow('disk full');
+    spy.mockRestore();
+
+    expect((await handle.db.cashMoves.get('m1'))?.amountMinor).toBe(20000);
+    expect((await handle.db.transactions.get('tx1'))?.money.baseCurrency).toBe('USD');
+    expect((await getSettings(handle.db))?.defaultCurrency).toBe('USD');
+  });
+
   it('does not fetch inside the write transaction', async () => {
     // An IndexedDB transaction auto-commits on any non-Dexie await, so a fetch
     // inside it would silently END the transaction and drop atomicity without
