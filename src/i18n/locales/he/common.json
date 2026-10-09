@@ -178,7 +178,8 @@
     "typeMonthly": "חודשי",
     "typeYearly": "שנתי",
     "cardEnding": "כרטיס שמסתיים ב־{{digits}}",
-    "paidWith": "שולם ב־{{name}}"
+    "paidWith": "שולם ב־{{name}}",
+    "into": "נכנס ל־{{name}}"
   },
   "breakdown": {
     "balanceBody": "כל מה שנספר מ-{{date}}.",

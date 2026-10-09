@@ -9,7 +9,7 @@ import {
 } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { defaultDestination, destinationsFor, isDestinationType } from './income-destination';
+import { defaultDestination, destinationsFor, isDestinationType, nextIncoming } from './income-destination';
 import { expandOccurrences } from './occurrences';
 import { d, makeTx, MONEY, skip } from './test-factories';
 
@@ -156,5 +156,43 @@ describe('where new income goes by default', () => {
     expect(at('2026-04-08')).toBe('');
     expect(at('2026-10-09')).toBe('Leumi');
     expect(at('2026-10-10')).toBe('');
+  });
+});
+
+describe('the next income into each account', () => {
+  it('is the earliest payment after today for each destination', () => {
+    const salary = makeTx({
+      id: 'salary',
+      kind: 'income',
+      categoryId: 'cat.salary',
+      date: d('2026-08-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10 },
+      destinationId: 'Leumi',
+    });
+    const gift = makeTx({
+      id: 'gift',
+      kind: 'income',
+      categoryId: 'cat.gift',
+      date: d('2026-10-20'),
+      recurrence: { type: 'one_time' },
+      destinationId: CASH_METHOD_ID,
+    });
+    const today = makeTx({
+      id: 'today',
+      kind: 'income',
+      categoryId: 'cat.gift',
+      date: TODAY,
+      recurrence: { type: 'one_time' },
+      destinationId: 'Hapoalim',
+    });
+    const all = [salary, gift, today].flatMap((tx) =>
+      expandOccurrences(tx, [], TODAY, d('2027-10-31'), { today: TODAY }),
+    );
+
+    const next = nextIncoming(all, TODAY);
+    expect(next.get('Leumi')?.date).toBe('2026-10-10');
+    expect(next.get(CASH_METHOD_ID)?.date).toBe('2026-10-20');
+    // Arriving today is not "expected": it is already here.
+    expect(next.has('Hapoalim')).toBe(false);
   });
 });
