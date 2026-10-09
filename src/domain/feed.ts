@@ -4,6 +4,7 @@ import type { Occurrence } from '@/types/domain';
 import type { LocalDate, Minor } from '@/types/money';
 
 import { matchesKind, type FeedFilters } from './feed-filters';
+import { foldSearch } from './mcc';
 
 /**
  * The feed as a FLAT array.
@@ -47,6 +48,11 @@ export type FlattenOptions = {
 export type FeedLookup = {
   readonly categoryName: (id: string) => string | undefined;
   readonly paymentMethodLabel: (id: string) => string | undefined;
+  /**
+   * A business type's name in the UI language; absent, or undefined for a
+   * code, until the names have loaded.
+   */
+  readonly businessTypeName?: (code: string) => string | undefined;
 };
 
 /**
@@ -191,7 +197,12 @@ export function applyFeedFilters(
       o.paymentMethodId === undefined ? undefined : lookup.paymentMethodLabel(o.paymentMethodId),
       o.destinationId === undefined ? undefined : lookup.paymentMethodLabel(o.destinationId),
     ];
-    return haystack.some((value) => value?.toLocaleLowerCase().includes(needle) === true);
+    if (haystack.some((value) => value?.toLocaleLowerCase().includes(needle) === true)) return true;
+    // And the business type, which the row's edit form shows (spec §4.3): "מסעדות" finds every
+    // restaurant. Folded like the picker's search, so niqqud and final letters do not matter.
+    const mcc = o.transaction.mcc;
+    const business = mcc === undefined ? undefined : lookup.businessTypeName?.(mcc);
+    return business !== undefined && foldSearch(business).includes(foldSearch(needle));
   });
 }
 
