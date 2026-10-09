@@ -3,6 +3,7 @@ import { parseStatementAmount } from '@/lib/money';
 import type { Currency, LocalDate } from '@/types/money';
 
 import type { WireRow, WireTotal } from './import-wire';
+import { isMcc } from './mcc';
 
 /**
  * The mistake-correction stage of "Smart import": what the model transcribed,
@@ -93,6 +94,16 @@ export type FoundRow = {
   readonly flags: readonly Flag[];
   /** What was transcribed, kept for a second look. */
   readonly wire: WireRow;
+  /** The business type the file's MCC column gave, when the list has it. */
+  readonly fileMcc?: string;
+  /** The card company's business sector (ענף), as printed. */
+  readonly sector?: string;
+  /**
+   * The business type the reader gave - for a PDF or image row, transcribed
+   * or guessed (spec point 7); for a sheet row, Claude's answer for its
+   * merchant (Task 8). Only a code the list has.
+   */
+  readonly aiMcc?: string;
   /** What the other read said, when the two disagree. */
   readonly otherRead?: FoundRow;
 };
@@ -200,6 +211,9 @@ export function readRow(wire: WireRow, id: string, ctx: ReadContext): FoundRow {
     cardFee: wire.fee,
     flags,
     wire,
+    // An expense's only: money coming back has no business type, whatever the reader said.
+    ...(kind === 'expense' && isMcc(wire.mcc) ? { aiMcc: wire.mcc } : {}),
+    ...(wire.sec === undefined || wire.sec === '' ? {} : { sector: wire.sec }),
   };
 }
 

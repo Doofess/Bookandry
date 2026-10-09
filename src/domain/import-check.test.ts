@@ -331,3 +331,20 @@ describe('mistakes the checks must catch', () => {
     expect(swapped.flags).toContain('date_out_of_range');
   });
 });
+
+describe('a transcribed row’s business type', () => {
+  it('is the reader’s, on an expense, when the list has it - and its sector as printed', () => {
+    expect(readRow(wire({ mcc: '5812', sec: 'מסעדות' }), 'r1', ctx)).toMatchObject({
+      aiMcc: '5812',
+      sector: 'מסעדות',
+    });
+    expect(readRow(wire({ mcc: '9999' }), 'r2', ctx)).not.toHaveProperty('aiMcc');
+    expect(readRow(wire({}), 'r3', ctx)).not.toHaveProperty('aiMcc');
+  });
+
+  it('is none when the row turns out to be money coming back', () => {
+    const credit = readRow(wire({ a: '-50.00', mcc: '5812' }), 'r4', ctx);
+    expect(credit.kind).toBe('income');
+    expect(credit).not.toHaveProperty('aiMcc');
+  });
+});
