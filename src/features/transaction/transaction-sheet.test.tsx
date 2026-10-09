@@ -621,6 +621,22 @@ describe('where income goes', () => {
     return { onSaved, user: userEvent.setup() };
   }
   const goesTo = () => screen.getByRole('combobox', { name: /Goes to/ });
+  const historyTo = (destinationId: string, profileId = 'p1') =>
+    expandOccurrences(
+      makeTx({
+        id: `pay-${profileId}`,
+        kind: 'income',
+        profileId,
+        categoryId: 'cat.salary',
+        date: '2026-07-01' as LocalDate,
+        recurrence: { type: 'monthly', dayOfMonth: 1 },
+        destinationId,
+      }),
+      [],
+      '2026-04-08' as LocalDate,
+      TODAY,
+      { today: TODAY },
+    );
 
   it('offers the person’s accounts, then cash, then not assigned, and never a card', async () => {
     const { user } = add({ mode: 'add', kind: 'income' });
@@ -709,5 +725,98 @@ describe('where income goes', () => {
     expect(saved).toMatchObject({ kind: 'expense' });
     expect(saved).not.toHaveProperty('destinationId');
     expect(saved?.paymentMethodId).toBeUndefined();
+  });
+
+  it('does not save an account the new person cannot use', async () => {
+    const { onSaved, user } = add({ mode: 'add', kind: 'income' }, { profiles: [profile, yossi] });
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Leumi current/ }));
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    await user.type(screen.getByLabelText('Amount'), '500');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved?.profileId).toBe('p2');
+    expect(saved?.destinationId ?? '').toBe('');
+  });
+
+  it('keeps cash through a change of person, saved', async () => {
+    const { onSaved, user } = add({ mode: 'add', kind: 'income' }, { profiles: [profile, yossi] });
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Cash/ }));
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    await user.type(screen.getByLabelText('Amount'), '500');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved?.destinationId).toBe(CASH_METHOD_ID);
+  });
+
+  it('applies the usual destination when a new row is switched to income', async () => {
+    const { user } = add({ mode: 'add', kind: 'expense' }, { incomeHistory: historyTo('pm.leumi') });
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(goesTo()).toHaveAccessibleName(/Leumi current/);
+  });
+
+  it('keeps a destination picked by hand when switched to income and back', async () => {
+    const { user } = add({ mode: 'add', kind: 'income' }, { incomeHistory: historyTo('pm.leumi') });
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Cash/ }));
+    await user.click(screen.getByRole('radio', { name: 'Expense' }));
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(goesTo()).toHaveAccessibleName(/Cash/);
+  });
+
+  it('never applies the usual destination to a row being edited', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'old',
+        kind: 'income',
+        categoryId: 'cat.salary',
+        date: '2026-10-01' as LocalDate,
+        recurrence: { type: 'one_time' },
+      }),
+    );
+    add(
+      { mode: 'edit', transactionId: 'old', at: '2026-10-01' as LocalDate },
+      { incomeHistory: historyTo('pm.leumi') },
+    );
+    expect(await screen.findByRole('combobox', { name: /Goes to/ })).toHaveAccessibleName(/Not assigned/);
+  });
+
+  it('still shows the name of an archived account an income went to', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'old',
+        kind: 'income',
+        categoryId: 'cat.salary',
+        date: '2026-10-01' as LocalDate,
+        recurrence: { type: 'one_time' },
+        destinationId: 'pm.old',
+      }),
+    );
+    add(
+      { mode: 'edit', transactionId: 'old', at: '2026-10-01' as LocalDate },
+      { methods: [maxCard, account('pm.old', 'Old savings', { isArchived: 1 }), cash] },
+    );
+    expect(await screen.findByRole('combobox', { name: /Goes to/ })).toHaveAccessibleName(/Old savings/);
+  });
+
+  it('starts the new person on their own usual destination when Whose? changes', async () => {
+    const { user } = add(
+      { mode: 'add', kind: 'income' },
+      {
+        profiles: [profile, yossi],
+        methods: [maxCard, leumi, discount, cash, account('pm.yossi', 'Yossi current', { profileId: 'p2' })],
+        incomeHistory: [...historyTo('pm.leumi'), ...historyTo('pm.yossi', 'p2')],
+      },
+    );
+    expect(goesTo()).toHaveAccessibleName(/Leumi current/);
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    expect(goesTo()).toHaveAccessibleName(/Yossi current/);
   });
 });

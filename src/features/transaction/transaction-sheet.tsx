@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from 'cn';
 import { History, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -446,6 +446,8 @@ function TransactionForm({
   const partialId = useId();
   const profileLabelId = useId();
   const destinationLabelId = useId();
+  // Whether the destination was chosen by hand (or preset to cash): a change of person then leaves it be.
+  const destinationChosen = useRef(initial.destinationId === CASH_METHOD_ID);
 
   // Opened from "A different amount…": the amount is what the person came to change.
   useEffect(() => {
@@ -1127,7 +1129,10 @@ function TransactionForm({
               render={({ field }) => (
                 <DestinationField
                   value={field.value ?? ''}
-                  onChange={field.onChange}
+                  onChange={(id) => {
+                    destinationChosen.current = true;
+                    field.onChange(id);
+                  }}
                   profileId={values.profileId}
                   methods={paymentMethods}
                   labelledBy={destinationLabelId}
@@ -1161,6 +1166,17 @@ function TransactionForm({
                     const destination = paymentMethods.find((m) => m.id === form.getValues('destinationId'));
                     if (destination !== undefined && !methodOwnedBy(destination, next)) {
                       setValue('destinationId', '');
+                    }
+                    // New income, nothing chosen by hand: the new person's usual destination.
+                    if (
+                      form.getValues('kind') === 'income' &&
+                      editing === undefined &&
+                      !destinationChosen.current
+                    ) {
+                      setValue(
+                        'destinationId',
+                        defaultDestination(incomeHistory ?? [], next, paymentMethods, today),
+                      );
                     }
                   }}
                   size="sm"
