@@ -27,7 +27,7 @@ function EditorPanel(props: DialogPrimitive.Root.Props) {
 const PANEL = [
   // Below lg: the bottom sheet.
   'fixed start-0 end-0 inset-be-0 z-50 flex max-h-[92dvh] flex-col overflow-y-auto overscroll-contain',
-  'rounded-t-sheet bg-card text-card-foreground outline-none @container/panel',
+  'rounded-t-sheet border-2 border-transparent bg-card text-card-foreground outline-none @container/panel',
   // An opacity fade for everyone; the rise and the slide only when motion is welcome (§8.2).
   'transition-[opacity,translate] duration-(--dur-panel) ease-out data-starting-style:opacity-0 data-ending-style:opacity-0',
   'motion-safe:data-starting-style:translate-y-8 motion-safe:data-ending-style:translate-y-8',
