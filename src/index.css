@@ -888,6 +888,27 @@
   /* §8.1: anything that moves, and colour fills. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-fill: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* §4.3: screens lay out by main's width, not the window's. */
+  --container-board: 47.5rem; /* 760px: what a 1024 window leaves main */
+  --container-wide: 67.5rem; /* 1080px: main is 1184px at 1440 */
+  --container-vast: 90rem; /* 1440px: main is 1664px at 1920 */
+  /* §6.2: the pop-out lays out by its own width. */
+  --container-pane2: 45rem; /* 720px: steps and body */
+  --container-pane3: 65rem; /* 1040px: steps, body and preview */
+
+  /* §9.5: title pairs, each fluid from its phone size at 390 to its desktop size at 1440. */
+  --text-screen-name: 4.75rem; /* the phone's Karantina screen name */
+  --text-title-screen: 2.375rem; /* the desktop top bar: 38 */
+  --text-sub-screen: 1.3125rem; /* 21 */
+  --text-title-hero: clamp(1.25rem, 0.7857rem + 1.9048vw, 2.5rem); /* 20 -> 40 */
+  --text-sub-hero: clamp(1rem, 0.8143rem + 0.7619vw, 1.5rem); /* 16 -> 24 */
+  --text-title-sheet: clamp(1.25rem, 1.0179rem + 0.9524vw, 1.875rem); /* 20 -> 30 */
+  --text-sub-sheet: clamp(1rem, 0.8839rem + 0.4762vw, 1.3125rem); /* 16 -> 21 */
+  --text-title-question: clamp(2rem, 1.6286rem + 1.5238vw, 3rem); /* 32 -> 48 */
+  --text-sub-question: clamp(1.1875rem, 1.0714rem + 0.4762vw, 1.5rem); /* 19 -> 24 */
+  --text-title-steps: clamp(1.5rem, 1.4536rem + 0.1905vw, 1.625rem); /* 24 -> 26 */
+  --text-sub-steps: clamp(1.0625rem, 1.0393rem + 0.0952vw, 1.125rem); /* 17 -> 18 */
 }
 
 /* ---------------------------------------------------------------------------
@@ -1154,5 +1175,231 @@
 @media (prefers-reduced-motion: reduce) {
   .engraving path {
     animation: none;
+  }
+}
+
+/* ===========================================================================
+   Phase 2: the shell, editors and shared components.
+
+   Every rule here waits on an attribute its component sets (data-slot,
+   data-numeral, data-nav-dir), so it is harmless until that lands.
+   src/lib/stylesheet.test.ts pins the values the spec fixed.
+=========================================================================== */
+:root {
+  --tab-bar-h: 3.875rem; /* the phone's tab bar: a 2px line, 8px, a 44px pill, 8px */
+
+  /* §9.4: the share of a numeral's glyph height a sheet's foot hides, and that
+     height in em (fontTools: Karantina's digits are 600-608 units). Changing
+     the depth later changes only --numeral-bleed. */
+  --numeral-bleed: 0.06;
+  --numeral-cap: 0.61;
+
+  /* §9.1: the grain's strength is the veil of the surface's own colour over it. */
+  --grain-veil: 92.5%;
+  --grain-blend: multiply;
+}
+
+.dark {
+  --grain-veil: 94%;
+  --grain-blend: screen;
+}
+
+@media (width < 64rem) {
+  :root {
+    --numeral-bleed: 0.03;
+  }
+}
+
+/* No bounce on desktop: the rail never drags with a trackpad's rubber band (§4.3). */
+@media (pointer: fine) {
+  html {
+    overscroll-behavior-y: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The paper grain (§9.1): a static 180px tile, drawn as a background layer on
+   the paper and on every sheet, under a veil of the surface's own colour, so
+   its strength is 7.5% in light (multiply) and 6% in dark (screen). Not a
+   full-screen overlay with mix-blend-mode: over a long virtualised feed that
+   re-composites the page on every scroll frame. Forced colours drop it.
+--------------------------------------------------------------------------- */
+body,
+[data-sheet] {
+  background-image:
+    linear-gradient(
+      color-mix(in oklch, var(--surface) var(--grain-veil), transparent),
+      color-mix(in oklch, var(--surface) var(--grain-veil), transparent)
+    ),
+    url('./assets/grain.png');
+  background-blend-mode: normal, var(--grain-blend);
+  background-size:
+    auto,
+    11.25rem 11.25rem;
+}
+
+body {
+  --surface: var(--background);
+}
+
+[data-sheet] {
+  --surface: var(--fill);
+}
+
+@media (forced-colors: active) {
+  body,
+  [data-sheet] {
+    background-image: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Route changes (§8.2): same-document view transitions. The rail, the tab bar
+   and the collapsed bar have names of their own, so they stay still while
+   main changes. Before navigating, the shell sets data-nav-dir on <html> from
+   the rail's order; main cross-fades for everyone and slides 24px in the
+   reading direction only when motion is welcome (no view transition types:
+   Baseline only since January 2026). Without view transitions the route just
+   changes.
+--------------------------------------------------------------------------- */
+[data-slot='tab-bar'] {
+  view-transition-name: nav;
+}
+
+#main {
+  view-transition-name: main;
+}
+
+[data-testid='collapsed-summary'] {
+  view-transition-name: collapsed-bar;
+}
+
+::view-transition-group(main),
+::view-transition-old(main),
+::view-transition-new(main) {
+  animation-duration: var(--dur-move);
+  animation-timing-function: var(--ease-out);
+}
+
+@keyframes nav-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes nav-from-right {
+  from {
+    translate: 1.5rem 0;
+  }
+}
+
+@keyframes nav-from-left {
+  from {
+    translate: -1.5rem 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-nav-dir='forward']::view-transition-new(main),
+  html[data-nav-dir='back']:dir(rtl)::view-transition-new(main) {
+    animation-name: nav-fade-in, nav-from-right;
+  }
+
+  html[data-nav-dir='back']::view-transition-new(main),
+  html[data-nav-dir='forward']:dir(rtl)::view-transition-new(main) {
+    animation-name: nav-fade-in, nav-from-left;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Numerals that run off a sheet (§9.4, v2's rules). Numeral sets --glyphs
+   (the formatted figure's length) and --numeral-max (its type-scale cap); it
+   fits its container and never goes under 28px. The sheet's foot cuts it:
+   padding-block-end 0 under it, overflow: clip on the sheet. A figure with a
+   fraction sets --b: 0 inline and never bleeds.
+--------------------------------------------------------------------------- */
+[data-numeral] {
+  --b: var(--numeral-bleed);
+  font-size: max(1.75rem, min(var(--numeral-max, 7.375rem), calc(100cqi / (var(--glyphs, 6) * 0.34))));
+  line-height: 0.74;
+  letter-spacing: -0.005em;
+  margin-block-end: calc(var(--b) * var(--numeral-cap) * -1em - 0.02em);
+}
+
+[data-card-sheet] [data-numeral] {
+  --b: calc(var(--numeral-bleed) * 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   The pop-out (§6.2) lays out by its own width: one pane below 720px; steps
+   and body from 720px; steps, body and preview from 1040px. Missing areas
+   collapse: a flow with no preview has two panes at most. One popup always,
+   so a pop-out crossing a threshold keeps its step and its answers.
+--------------------------------------------------------------------------- */
+[data-slot='popout-layout'] {
+  display: grid;
+  block-size: 100%;
+  min-block-size: 0;
+  grid-template:
+    'preview' auto
+    'body' minmax(0, 1fr)
+    / minmax(0, 1fr);
+}
+
+[data-slot='popout-steps'] {
+  grid-area: steps;
+  display: none;
+}
+
+[data-slot='popout-body'] {
+  grid-area: body;
+}
+
+/* Small, above the question, until there is room beside it. */
+[data-slot='popout-preview'] {
+  grid-area: preview;
+  max-block-size: 14rem;
+  overflow: clip;
+}
+
+[data-slot='popout-preview'] [data-slot='popout-close'] {
+  display: none;
+}
+
+@container popout (width >= 45rem) {
+  [data-slot='popout-layout']:has(> [data-slot='popout-steps']) {
+    grid-template:
+      'steps preview' auto
+      'steps body' minmax(0, 1fr)
+      / 14.5rem minmax(0, 1fr);
+  }
+
+  [data-slot='popout-steps'] {
+    display: flex;
+  }
+}
+
+@container popout (width >= 65rem) {
+  [data-slot='popout-layout']:has(> [data-slot='popout-preview']) {
+    grid-template: 'body preview' minmax(0, 1fr) / minmax(0, 1fr) 22.5rem;
+  }
+
+  [data-slot='popout-layout']:has(> [data-slot='popout-preview']):has(> [data-slot='popout-steps']) {
+    grid-template: 'steps body preview' minmax(0, 1fr) / 14.5rem minmax(0, 1fr) 22.5rem;
+  }
+
+  [data-slot='popout-preview'] {
+    max-block-size: none;
+  }
+
+  /* The round × moves to the preview's corner (§6.2). */
+  [data-slot='popout-preview'] [data-slot='popout-close'] {
+    display: inline-flex;
+  }
+
+  [data-slot='popout-layout']:has(> [data-slot='popout-preview'])
+    [data-slot='popout-body']
+    [data-slot='popout-close'] {
+    display: none;
   }
 }

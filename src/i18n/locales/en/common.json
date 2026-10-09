@@ -9,7 +9,19 @@
     "chart": "Chart",
     "settings": "Settings",
     "cards": "Cards",
-    "cash": "Cash"
+    "cash": "Cash",
+    "bankAccounts": "Bank accounts",
+    "categories": "Categories",
+    "commitments": "Commitments"
+  },
+  "popout": {
+    "stepOf": "Step {{current}} of {{total}}",
+    "steps": "Steps"
+  },
+  "sheets": {
+    "other": "Other",
+    "selected": "Selected ✓",
+    "cardName": "{{issuer}} ending {{last4}}"
   },
   "a11y": {
     "skipToContent": "Skip to content",

@@ -17,6 +17,14 @@ const buttonVariants = cva(
         destructive:
           'bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40',
         link: 'text-primary-ink underline-offset-4 hover:underline',
+        // §9.6, Bold sheets. Colours come from the context: on the paper the
+        // pressed pair is ink and paper; inside a sheet it is the sheet's box.
+        pill: 'border-2 border-current bg-transparent text-current active:border-press active:bg-press active:text-on-press hover-fine:border-press hover-fine:bg-press hover-fine:text-on-press',
+        'pill-solid':
+          'border-2 border-primary bg-primary text-primary-foreground active:border-ink active:bg-ink active:text-paper hover-fine:border-ink hover-fine:bg-ink hover-fine:text-paper',
+        round:
+          'border-2 border-current bg-transparent text-current active:border-press active:bg-press active:text-on-press hover-fine:border-press hover-fine:bg-press hover-fine:text-on-press',
+        text: 'text-current underline decoration-2 underline-offset-4',
       },
       size: {
         default: 'h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pe-2 has-data-[icon=inline-start]:ps-2',
@@ -30,6 +38,24 @@ const buttonVariants = cva(
         'icon-lg': 'size-9',
       },
     },
+    // Applied after `size`, so a pill's own shape wins over the default h-8.
+    compoundVariants: [
+      {
+        variant: ['pill', 'pill-solid', 'round'],
+        className:
+          'transition-[background-color,color,border-color,scale] duration-(--dur-press) ease-fill focus-visible:border-current focus-visible:ring-0 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring active:not-aria-[haspopup]:translate-y-0 motion-safe:active:scale-97',
+      },
+      {
+        variant: ['pill', 'pill-solid'],
+        className: 'h-auto min-h-12 gap-2 rounded-full px-5.5 text-base font-medium',
+      },
+      { variant: 'round', className: "size-12 rounded-full p-0 [&_svg:not([class*='size-'])]:size-5" },
+      {
+        variant: 'text',
+        className:
+          'h-auto min-h-11 min-w-11 px-2.5 text-base font-medium focus-visible:ring-0 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring',
+      },
+    ],
     defaultVariants: {
       variant: 'default',
       size: 'default',
