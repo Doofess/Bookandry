@@ -1,3 +1,4 @@
+import { isMcc } from './mcc';
 import { CURRENT_DOC_VERSION, envelopeSchema, type ExportEnvelope } from './transfer-schema';
 
 /**
@@ -83,10 +84,27 @@ function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
       });
     }
 
+    if (t.kind === 'income' && t.mcc !== undefined) {
+      // A refund from a supermarket is still a refund: income has no business type.
+      issues.push({ path: `transactions.${t.id}.mcc`, message: 'Only expenses have a business type' });
+    }
+    if (t.kind === 'income' && t.mccSource !== undefined) {
+      issues.push({ path: `transactions.${t.id}.mccSource`, message: 'Only expenses have a business type' });
+    }
+
     if (t.money.baseCurrency !== doc.defaultCurrency) {
       issues.push({
         path: `transactions.${t.id}.money.baseCurrency`,
         message: `Base currency ${t.money.baseCurrency} does not match the file's ${doc.defaultCurrency}`,
+      });
+    }
+  }
+
+  for (const c of categories) {
+    if (c.kind === 'income' && c.mccs !== undefined && c.mccs.length > 0) {
+      issues.push({
+        path: `categories.${c.id}.mccs`,
+        message: 'Only expense categories have business types',
       });
     }
   }
@@ -179,5 +197,29 @@ export function validateEnvelope(input: unknown): ValidationResult {
     };
   }
 
-  return { ok: true, doc: parsed.data };
+  return { ok: true, doc: knownBusinessTypes(parsed.data) };
+}
+
+/**
+ * A business type this build's list does not have is dropped, never stored:
+ * the row it was on is kept. (A synced row keeps it - see transfer-schema -
+ * but a file is a way in, and every way in checks the list.)
+ */
+function knownBusinessTypes(doc: ExportEnvelope): ExportEnvelope {
+  return {
+    ...doc,
+    data: {
+      ...doc.data,
+      categories: doc.data.categories.map((c) => {
+        if (c.mccs === undefined) return c;
+        const known = c.mccs.filter(isMcc);
+        return known.length === c.mccs.length ? c : { ...c, mccs: known };
+      }),
+      transactions: doc.data.transactions.map((t) => {
+        if (t.mcc === undefined || isMcc(t.mcc)) return t;
+        const { mcc: _code, mccSource: _source, ...rest } = t;
+        return rest;
+      }),
+    },
+  };
 }
