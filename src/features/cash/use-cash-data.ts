@@ -2,14 +2,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import { db } from '@/db/db';
 import { loadCashInput } from '@/db/repos/cash-moves';
-import { cashActivity, cashSummary, type CashActivity, type CashSummary } from '@/domain/cash';
-import { compareLocal } from '@/lib/dates';
+import { cashActivity, cashSummary, compareStarts, type CashActivity, type CashSummary } from '@/domain/cash';
 import type { CashMove } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
 /**
  * A person with more than one live start: two devices set up offline and
- * synced. `keep` is the earliest, the one the figure already counts from.
+ * synced. `keep` is the earliest (`compareStarts`), the only one the figure
+ * counts; `extra` count for nothing until they are removed.
  */
 export type TwoStarts = {
   readonly profileId: string;
@@ -24,16 +24,12 @@ export type CashData = {
   readonly twoStarts: readonly TwoStarts[];
 };
 
-/** Earliest first: by date, then by when it was written, then by id - stable everywhere. */
-const earliest = (a: CashMove, b: CashMove): number =>
-  compareLocal(a.date, b.date) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
-
 function findTwoStarts(profileIds: readonly string[], moves: readonly CashMove[]): TwoStarts[] {
   const found: TwoStarts[] = [];
   for (const profileId of profileIds) {
     const starts = moves
       .filter((m) => m.isDeleted === 0 && m.kind === 'start' && m.profileId === profileId)
-      .sort(earliest);
+      .sort(compareStarts);
     const [keep, ...extra] = starts;
     if (keep !== undefined && extra.length > 0) found.push({ profileId, keep, extra });
   }

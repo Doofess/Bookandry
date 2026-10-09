@@ -54,9 +54,11 @@
       "deposit": "Deposited to the bank"
     },
     "someAccount": "A bank account",
-    "twoStarts": "Two starting amounts were recorded for {{name}}. Keep the earlier one?",
-    "keepEarlier": "Keep the earlier one",
-    "twoStartsFixed": "Kept the earlier starting amount"
+    "manyStarts": "More than one starting amount was recorded for {{name}}. Keep the first one?",
+    "keepFirst": "Keep the first one",
+    "keptFirst": "Kept the first starting amount",
+    "startStays": "Stays",
+    "startGoes": "Goes"
   },
   "categoryPop": {
     "title": "Category",
