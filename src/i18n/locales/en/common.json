@@ -58,7 +58,38 @@
     "keepFirst": "Keep the first one",
     "keptFirst": "Kept the first starting amount",
     "startStays": "Stays",
-    "startGoes": "Goes"
+    "startGoes": "Goes",
+    "menu": {
+      "withdraw": "Withdraw from ATM",
+      "withdrawHint": "From the bank into cash",
+      "deposit": "Deposit to the bank",
+      "depositHint": "From cash into the bank",
+      "count": "Count my cash",
+      "countHint": "Make the figure match the wallet",
+      "expense": "Cash expense",
+      "expenseHint": "Paid in cash",
+      "income": "Cash income",
+      "incomeHint": "Received in cash",
+      "setUpFirst": "Say how much cash you have first"
+    },
+    "sheet": {
+      "withdrawBody": "Money from the bank into the wallet. The balance does not change.",
+      "depositBody": "Money from the wallet into the bank. The balance does not change.",
+      "startBody": "The cash you had when you started. Correct it if it was not right."
+    },
+    "account": "Bank account",
+    "note": "Note",
+    "saved": "Saved",
+    "startExists": "{{name}} already has a starting amount.",
+    "countBody": "Count what is in the wallet. Any difference is recorded as cash found or missing.",
+    "countQuestion": "How much is in the wallet now?",
+    "countRecorded": "Recorded: <amount/>",
+    "countMore": "<amount/> more than recorded",
+    "countMissing": "<amount/> missing",
+    "countMatches": "Matches what is recorded",
+    "countFound": "Recorded as cash found",
+    "countLost": "Recorded as cash missing",
+    "countMatched": "Counted. It matches."
   },
   "categoryPop": {
     "title": "Category",

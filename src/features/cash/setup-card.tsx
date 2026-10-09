@@ -101,7 +101,7 @@ export function CashSetupCard({
           </Button>
         </div>
         {error === undefined ? null : (
-          <p id={errorId} className="mt-1.5 text-xs text-destructive">
+          <p id={errorId} role="alert" className="mt-1.5 text-xs text-destructive">
             {error === 'required' ? t('tx.errAmountRequired') : t('tx.errAmountInvalid')}
           </p>
         )}

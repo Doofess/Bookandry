@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
 import { PanelSheet } from '@/components/brand-panel';
@@ -25,7 +26,10 @@ import { ALL_PROFILES, type CashMove, type Profile } from '@/types/domain';
 import type { Currency, IsoInstant, Minor } from '@/types/money';
 
 import { CashActivityList } from './activity-list';
+import { CashAddMenu } from './cash-add-menu';
 import { CashFigure } from './cash-figure';
+import { CountSheet } from './count-sheet';
+import { CashMoveSheet, type MoveTarget } from './move-sheet';
 import { CashSetupCard, type SetupProblem } from './setup-card';
 import { useCashData, type TwoStarts } from './use-cash-data';
 
@@ -53,6 +57,25 @@ export function CashScreen() {
     .filter((p): p is Profile => p !== undefined);
   const setUp = data !== undefined && data.summary.people.length > 0;
   const everyone = whose === ALL_PROFILES;
+  const account = useAccount();
+  const me = account.status === 'signed_in' ? account.user.id : undefined;
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | undefined>(undefined);
+  const [counting, setCounting] = useState(false);
+
+  // Whose cash a sheet starts on: the person in view, else this account's own, else the first who set up.
+  const figures = (data?.summary.people ?? []).flatMap((p) => {
+    const profile = byId.get(p.profileId);
+    return profile === undefined ? [] : [{ profile, onHandMinor: p.onHandMinor }];
+  });
+  const ids = figures.map((p) => p.profile.id);
+  const defaultPerson = ids.includes(whose)
+    ? whose
+    : me !== undefined && ids.includes(me)
+      ? me
+      : (ids[0] ?? '');
+  const done = (message: string, undoable: UndoableAction): void => {
+    offerUndo(message, undoable, t);
+  };
 
   const start = async (profileId: string, amountMinor: Minor): Promise<SetupProblem | undefined> => {
     try {
@@ -85,6 +108,22 @@ export function CashScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
+      <CashAddMenu
+        disabled={profiles.length === 0}
+        canMove={figures.length > 0}
+        onMove={(kind) => {
+          setMoveTarget({ mode: 'add', kind });
+        }}
+        onCount={() => {
+          setCounting(true);
+        }}
+        onCashExpense={() => {
+          sheet.openAdd('expense', { cash: true });
+        }}
+        onCashIncome={() => {
+          sheet.openAdd('income', { cash: true });
+        }}
+      />
       <ScreenPanel>
         <ScreenTitle>{t('cash.title')}</ScreenTitle>
         {lookups === undefined ? null : (
@@ -140,6 +179,9 @@ export function CashScreen() {
               onOpenOccurrence={(occurrence) => {
                 sheet.openEdit(occurrence);
               }}
+              onOpenMove={(move) => {
+                setMoveTarget({ mode: 'edit', move });
+              }}
             />
           </>
         ) : null}
@@ -161,6 +203,36 @@ export function CashScreen() {
           }}
         />
       )}
+      {lookups === undefined ? null : (
+        <CashMoveSheet
+          target={moveTarget}
+          onOpenChange={(open) => {
+            if (!open) setMoveTarget(undefined);
+          }}
+          people={figures.map((p) => p.profile)}
+          defaultProfileId={defaultPerson}
+          methods={[...lookups.paymentMethods.values()]}
+          currency={currency}
+          today={today}
+          onDone={(message, undoable) => {
+            // Closed first, so the toast's Undo is not under the sheet.
+            setMoveTarget(undefined);
+            done(message, undoable);
+          }}
+        />
+      )}
+      <CountSheet
+        open={counting}
+        onOpenChange={setCounting}
+        people={figures}
+        defaultProfileId={defaultPerson}
+        currency={currency}
+        today={today}
+        onDone={(message, undoable) => {
+          setCounting(false);
+          done(message, undoable);
+        }}
+      />
     </section>
   );
 }
