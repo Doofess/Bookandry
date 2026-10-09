@@ -713,17 +713,34 @@ describe('where income goes', () => {
     expect(goesTo()).toHaveAccessibleName(/Cash/);
   });
 
-  it('saves neither a destination nor a method when cash income is switched to an expense', async () => {
+  it('keeps cash income cash when switched to an expense: paid in cash, with no destination saved', async () => {
     const { onSaved, user } = add({ mode: 'add', kind: 'income', cash: true });
     await user.click(screen.getByRole('radio', { name: 'Expense' }));
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Cash/);
     await user.type(screen.getByLabelText('Amount'), '80');
     await user.click(save());
     await waitFor(() => {
       expect(onSaved).toHaveBeenCalled();
     });
     const [saved] = await db.transactions.toArray();
-    expect(saved).toMatchObject({ kind: 'expense' });
+    expect(saved).toMatchObject({ kind: 'expense', paymentMethodId: CASH_METHOD_ID });
     expect(saved).not.toHaveProperty('destinationId');
+  });
+
+  it('keeps a cash expense cash when switched to income: going to cash, not where income usually goes', async () => {
+    const { onSaved, user } = add(
+      { mode: 'add', kind: 'expense', cash: true },
+      { incomeHistory: historyTo('pm.leumi') },
+    );
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(goesTo()).toHaveAccessibleName(/Cash/);
+    await user.type(screen.getByLabelText('Amount'), '80');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ kind: 'income', destinationId: CASH_METHOD_ID });
     expect(saved?.paymentMethodId).toBeUndefined();
   });
 
@@ -824,6 +841,16 @@ describe('where income goes', () => {
     profiles: [profile, yossi],
     methods: [maxCard, leumi, discount, cash, account('pm.yossi', 'Yossi current', { profileId: 'p2' })],
     incomeHistory: [...historyTo('pm.leumi'), ...historyTo('pm.yossi', 'p2')],
+  });
+
+  it('re-defaults on a change of person when cash was only where this person’s income usually goes', async () => {
+    const { user } = add(
+      { mode: 'add', kind: 'income' },
+      { ...twoPeople(), incomeHistory: [...historyTo(CASH_METHOD_ID), ...historyTo('pm.yossi', 'p2')] },
+    );
+    expect(goesTo()).toHaveAccessibleName(/Cash/);
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    expect(goesTo()).toHaveAccessibleName(/Yossi current/);
   });
 
   it('keeps a hand-picked Not assigned through a change of person', async () => {

@@ -23,7 +23,7 @@ import { systemClock } from '@/lib/clock';
 import { formatLocalDate } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import { ALL_PROFILES, type CashMove, type Profile } from '@/types/domain';
-import type { Currency, IsoInstant, Minor } from '@/types/money';
+import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
 import { CashActivityList } from './activity-list';
 import { CashAddMenu } from './cash-add-menu';
@@ -32,6 +32,8 @@ import { CountSheet } from './count-sheet';
 import { CashMoveSheet, type MoveTarget } from './move-sheet';
 import { CashSetupCard, type SetupProblem } from './setup-card';
 import { useCashData, type TwoStarts } from './use-cash-data';
+
+const NO_MOVES: ReadonlyMap<string, LocalDate> = new Map();
 
 /**
  * The cash tab: how much of the balance is cash right now.
@@ -212,6 +214,7 @@ export function CashScreen() {
           }}
           people={figures.map((p) => p.profile)}
           since={since}
+          firstMoves={data?.firstMoves ?? NO_MOVES}
           defaultProfileId={defaultPerson}
           methods={[...lookups.paymentMethods.values()]}
           currency={currency}

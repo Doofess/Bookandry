@@ -276,6 +276,7 @@ export function TransactionSheet({
               key={`add-${addKind}-${addCash ? 'cash' : 'any'}-${from === undefined ? 'new' : `${from.transactionId}@${from.at}`}`}
               initial={addInitial}
               duplicate={from !== undefined}
+              cash={addCash}
               incomeHistory={incomeHistory}
               profiles={profiles}
               categories={categories}
@@ -386,6 +387,7 @@ function EditBody({
 function TransactionForm({
   initial,
   duplicate = false,
+  cash = false,
   incomeHistory,
   editing,
   focusAmount = false,
@@ -400,6 +402,8 @@ function TransactionForm({
   readonly initial: TxFormValues;
   /** Adding a copy of another row. */
   readonly duplicate?: boolean;
+  /** Adding from the cash tab: the row stays cash, whichever kind it becomes. */
+  readonly cash?: boolean;
   /** Adding only: where income goes when the kind is switched to income. */
   readonly incomeHistory?: readonly Occurrence[];
   /** Absent when adding. */
@@ -450,9 +454,9 @@ function TransactionForm({
   const partialId = useId();
   const profileLabelId = useId();
   const destinationLabelId = useId();
-  // Whether the destination was chosen by hand (or preset to cash): a change of person then leaves it be.
-  // A duplicated row's carried destination is never counted as chosen.
-  const destinationChosen = useRef(!duplicate && initial.destinationId === CASH_METHOD_ID);
+  // Whether the destination was chosen by hand (or preset by the cash tab): a change of person then leaves it be.
+  // A destination that only defaulted to cash, or a duplicated row's carried one, is never counted as chosen.
+  const destinationChosen = useRef(!duplicate && cash);
 
   // Opened from "A different amount…": the amount is what the person came to change.
   useEffect(() => {
@@ -571,6 +575,8 @@ function TransactionForm({
   const changeKind = useCallback(
     (next: Kind) => {
       setValue('kind', next);
+      // Opened from the cash tab: cash income goes to cash, and a cash expense is paid with it.
+      if (cash) setValue(next === 'income' ? 'destinationId' : 'paymentMethodId', CASH_METHOD_ID);
       // Switched to income on a new row with nowhere chosen yet: where this person's income usually goes.
       if (
         next === 'income' &&
@@ -590,7 +596,7 @@ function TransactionForm({
       auto.typeChosen(undefined, form.getValues('note'), next);
       auto.nameChanged(form.getValues('note'), next);
     },
-    [categories, setValue, form, auto, editing, incomeHistory, paymentMethods, today],
+    [categories, setValue, form, auto, editing, incomeHistory, paymentMethods, today, cash],
   );
 
   const errorText = useCallback(
