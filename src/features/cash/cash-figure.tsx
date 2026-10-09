@@ -8,7 +8,7 @@ import type { Profile } from '@/types/domain';
 import type { Currency } from '@/types/money';
 
 /**
- * The cash on hand, on the panel, in the balance's own figure: the serif,
+ * The cash on hand, on the panel, in the balance's own figure: Karantina,
  * the same size and the same step down below 360px, so a seven-figure amount
  * still fits a 320px phone in Hebrew. With more than one person, each one's
  * own figure under it: the pot always splits back into its people.
@@ -28,7 +28,7 @@ export function CashFigure({
     <div>
       <p className="text-sm text-brand-deep-foreground/80">{t('cash.onHand')}</p>
       <p
-        className="mt-1 font-display text-[2.75rem] leading-none font-bold tracking-tight max-[359px]:text-[2.25rem]"
+        className="mt-1 font-display text-[2.75rem] leading-none tracking-tight max-[359px]:text-[2.25rem]"
         data-testid="cash-amount"
       >
         <Money minor={summary.onHandMinor} currency={currency} />

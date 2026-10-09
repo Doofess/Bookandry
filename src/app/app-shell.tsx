@@ -63,7 +63,7 @@ function PrimaryNav() {
         className="mb-6 hidden items-center gap-2 rounded-lg px-3 py-2 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none lg:flex"
       >
         <Logo size={28} tone="inverse" decorative />
-        <span className="font-display text-lg font-bold tracking-tight">{t('app.name')}</span>
+        <span className="text-lg font-semibold tracking-tight">{t('app.name')}</span>
       </NavLink>
 
       {NAV_ORDER.map((key) => {

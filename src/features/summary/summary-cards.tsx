@@ -77,14 +77,22 @@ export function BalanceFigure({
         The animating figure is hidden from assistive tech and ONE live region
         carries the settled value. Announcing every frame turns a balance into
         ~39 interruptions; announcing nothing leaves a number that changed
-        silently. Frank Ruhl Libre has tabular figures, so the count-up never
-        makes the line jitter.
+        silently.
+
+        Karantina's digits are proportional, so the box is reserved from the
+        settled figure: an invisible copy shares the grid cell, and the line
+        never jitters while the count runs (§2.3).
       */}
       <span
-        className="mt-1 block font-display text-[2.75rem] leading-none font-bold tracking-tight max-[359px]:text-[2.25rem]"
+        className="mt-1 grid justify-items-start font-display text-[2.75rem] leading-none tracking-tight max-[359px]:text-[2.25rem]"
         data-testid="balance-amount"
       >
-        <Money minor={animated} currency={currency} announce={false} />
+        <span aria-hidden="true" dir="ltr" className="invisible col-start-1 row-start-1">
+          {settled.text}
+        </span>
+        <span className="col-start-1 row-start-1">
+          <Money minor={animated} currency={currency} announce={false} />
+        </span>
       </span>
     </>
   );
@@ -138,8 +146,8 @@ export function ForecastLine({
 
   const line = (
     <>
-      <span className="block font-display text-base">
-        {title} <Money minor={expense.total} currency={currency} className="font-bold" />
+      <span className="block text-base font-medium">
+        {title} <Money minor={expense.total} currency={currency} className="font-semibold" />
       </span>
       {isPast ? null : (
         <span className="mt-0.5 block text-xs text-brand-deep-foreground/80">

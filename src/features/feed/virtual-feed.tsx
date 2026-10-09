@@ -147,7 +147,7 @@ export function VirtualFeed({
   });
 
   if (!fontsReady) {
-    // Every row would re-measure on the Inter/Heebo swap otherwise, which
+    // Every row would re-measure on the Plex swap otherwise, which
     // reflows the entire list one frame after it first paints.
     return (
       <div className="space-y-2 py-2" aria-busy="true">
@@ -279,8 +279,8 @@ function renderRow(row: FeedRow, options: RenderOptions) {
 /**
  * Gate the first render on the webfonts.
  *
- * Inter and Heebo swap in after first paint, and every row changes height when
- * they do. Without this the virtualizer measures the fallback font, paints, then
+ * Plex swaps in after first paint, and every row changes height when it
+ * does. Without this the virtualizer measures the fallback font, paints, then
  * re-measures the entire list one frame later - visible as a jump, and on a long
  * list as a jump that moves the row under the user's finger.
  */

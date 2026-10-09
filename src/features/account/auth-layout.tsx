@@ -41,11 +41,11 @@ export function AuthLayout({ children }: { readonly children: ReactNode }) {
             <p
               lang="en"
               dir="ltr"
-              className="font-display text-[3.75rem] leading-none font-bold tracking-[-0.01em] sm:text-[5rem] lg:text-[7rem] rtl:text-end"
+              className="font-display text-[3.75rem] leading-none tracking-[-0.01em] sm:text-[5rem] lg:text-[7rem] rtl:text-end"
             >
               {t('app.name')}
             </p>
-            <p className="mt-4 max-w-[24ch] font-display text-[1.375rem] leading-snug text-balance text-brand-deep-foreground/85 sm:text-[1.75rem] lg:mt-6 lg:text-[2.125rem]">
+            <p className="mt-4 max-w-[24ch] text-[1.375rem] leading-snug font-light text-balance text-brand-deep-foreground/85 sm:text-[1.75rem] lg:mt-6 lg:text-[2.125rem]">
               {t('account.welcome.headline')}
             </p>
           </div>

@@ -42,7 +42,7 @@ export function ScreenPanel({
           className="-mx-2 flex min-h-11 items-center gap-2 rounded-lg px-2 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none lg:hidden"
         >
           <Logo size={24} tone="inverse" decorative />
-          <span className="font-display text-base font-bold tracking-tight">{t('app.name')}</span>
+          <span className="text-base font-semibold tracking-tight">{t('app.name')}</span>
         </NavLink>
         <UserMenu />
       </div>
@@ -53,5 +53,5 @@ export function ScreenPanel({
 
 /** The page's own h1, set in the brand's face on the panel. */
 export function ScreenTitle({ children }: { readonly children: ReactNode }) {
-  return <h1 className="mt-3 font-display text-[2rem] leading-tight font-bold">{children}</h1>;
+  return <h1 className="mt-3 font-display text-[2rem] leading-tight">{children}</h1>;
 }

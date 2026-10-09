@@ -18,7 +18,7 @@ const ROW = cn(
 );
 
 /**
- * The summary, collapsed to one line: a slim sapphire bar, the balance in the serif.
+ * The summary, collapsed to one line: a slim sapphire bar, the balance in Plex.
  *
  * What survives and what does not is the whole design decision. BALANCE stays,
  * at a size still worth reading - it is the number people open the app for, and
@@ -63,11 +63,7 @@ export function CollapsedSummaryBar({
         {state.status === 'ready' ? (
           // Not animated here: a count-up that replays every time the header
           // collapses is motion with nothing to say.
-          <Money
-            minor={state.minor}
-            currency={currency}
-            className="truncate font-display text-lg font-bold"
-          />
+          <Money minor={state.minor} currency={currency} className="truncate text-lg font-semibold" />
         ) : state.status === 'blocked' ? (
           <span className="truncate text-sm text-brand-deep-foreground">
             {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
