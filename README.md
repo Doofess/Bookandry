@@ -311,6 +311,7 @@ its billing day, an account without its branch) opens in the card or account
 editor with what it did show filled in, for the person to finish; when that is
 all the files held, the editor opens straight away. A statement row's card is
 the one whose last four digits are printed beside it.
+The sheet also takes an optional note (300 characters) about the files - "these are all my Max card transactions for September" - sent in the text of each call of that import, context only: what the files show always wins. It is kept nowhere.
 The + button opens a menu: _Add manually_, or _Smart import_, which takes
 screenshots (a Bit or bank notification), photos, PDFs, Excel/CSV and Word
 files - picked, pasted, dropped, or shared from the phone (the installed

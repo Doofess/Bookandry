@@ -115,6 +115,17 @@ export type ImportContext = {
    * its category, and its business type. The caller memoises it per import.
    */
   readonly history: (kind: Kind, description: string) => Promise<MerchantHistory>;
+  /**
+   * What the person said about these files, if anything. The same on every
+   * call of the import; kept nowhere.
+   */
+  readonly note?: string;
+};
+
+/** The note as a request carries it: present when there is one, absent otherwise. */
+const withNote = (ctx: ImportContext): { readonly note?: string } => {
+  const note = ctx.note?.trim() ?? '';
+  return note === '' ? {} : { note: note.slice(0, LIMITS.note) };
 };
 
 export type ImportResult = {
@@ -275,6 +286,7 @@ export async function runImport(
           candidates: d.candidates.map((c) => ({ ...c, s: Math.min(c.s, job.sources.length - 1) })),
         })),
         maxTokens: tokensForRows(disputes.length),
+        ...withNote(ctx),
       };
       answer = cleanVerify(
         await ask(request),
@@ -366,6 +378,7 @@ async function extractAll(
         maxTokens,
         continueAfter: all.length,
         cache,
+        ...withNote(ctx),
       });
     } catch (error) {
       // Cut off mid-answer: the same again with room to finish.
@@ -654,6 +667,7 @@ async function askCategories(
     // Only when one was printed: an older function ignores the key either way.
     ...(sectors.some((sector) => sector !== '') ? { sectors } : {}),
     maxTokens: tokensForRows(10 + merchants.length / 2),
+    ...withNote(ctx),
   };
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -680,6 +694,7 @@ async function askMap(
     rows: sample,
     merchants,
     maxTokens: tokensForRows(10 + merchants.length / 2),
+    ...withNote(ctx),
   });
   const map = cleanMap(raw, sample.length, cols, ctx.wire);
   if (map === undefined) throw new Failure('upstream');

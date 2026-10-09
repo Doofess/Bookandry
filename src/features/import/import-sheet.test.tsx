@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WireRequest } from '@/domain/import-wire';
 import { wireRow } from '@/domain/test-factories';
@@ -373,7 +373,7 @@ describe('Smart import', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
 
-    await screen.findByRole('button', { name: 'Ready (1)' });
+    await screen.findByTestId('import-add');
     // The reader was told who is in the household, by alias.
     const request = reader.calls.at(-1);
     expect(request?.ctx.ppl).toEqual([
@@ -529,5 +529,114 @@ describe('Smart import', () => {
       ['Mystery Shop', 'cat.shopping', '5999', 'ai'],
       ['משיכת מזומן', 'cat.currencyExchange', '6011', 'ai'],
     ]);
+  });
+});
+
+describe('Smart import: a note about the files', () => {
+  const sheet = () => (
+    <ImportSheet
+      target={{ mode: 'import' }}
+      onOpenChange={() => undefined}
+      onOpenRow={() => undefined}
+      onOpenCard={() => undefined}
+      profiles={[profile]}
+      categories={[category('cat.groceries', 'expense')]}
+      paymentMethods={[]}
+      activeProfileId="p1"
+      baseCurrency="ILS"
+      today={'2026-09-15' as LocalDate}
+      onSaved={() => undefined}
+    />
+  );
+  const answer: ExtractOutcome = {
+    ok: true,
+    usage,
+    result: { r: [wireRow({ d: '03/09/26', a: '120.50', m: 'Shufersal' })], t: [], per: null, done: true },
+  };
+
+  beforeAll(async () => {
+    await initTestI18n('en');
+  });
+  beforeEach(() => {
+    // A session outlives its sheet; each of these starts afresh.
+    writeSession(undefined);
+    reader.calls = [];
+    reader.answers = [];
+  });
+
+  it('is asked for, optionally, next to the files', () => {
+    renderWithProviders(sheet());
+    const field = screen.getByRole('textbox', { name: 'Anything we should know about these files?' });
+    expect(field).toHaveAttribute('maxlength', '300');
+    expect(field).not.toBeRequired();
+    expect(field).toHaveAttribute('placeholder', 'e.g. These are all my Max card transactions for September');
+    expect(
+      screen.getByText('Optional. It helps the reader; what the files show always comes first.'),
+    ).toBeInTheDocument();
+    // Before the file list and the Read button, so it reads as being about the files.
+    const drop = screen.getByTestId('import-input');
+    expect(drop.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      field.compareDocumentPosition(screen.getByRole('button', { name: 'Read' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('is asked for in Hebrew too', async () => {
+    await initTestI18n('he');
+    try {
+      renderWithProviders(sheet());
+      const field = screen.getByRole('textbox', { name: 'משהו שכדאי לדעת על הקבצים?' });
+      expect(field).toHaveAttribute('placeholder', 'למשל: כל העסקאות בכרטיס מקס שלי לחודש ספטמבר');
+      expect(
+        screen.getByText('לא חובה. זה עוזר לקריאה, אבל מה שמופיע בקבצים תמיד קובע.'),
+      ).toBeInTheDocument();
+    } finally {
+      await initTestI18n('en');
+    }
+  });
+
+  it('counts only once it is getting long', () => {
+    renderWithProviders(sheet());
+    const field = screen.getByRole('textbox', { name: 'Anything we should know about these files?' });
+    fireEvent.change(field, { target: { value: 'x'.repeat(250) } });
+    expect(screen.queryByText('250 of 300')).toBeNull();
+    fireEvent.change(field, { target: { value: 'x'.repeat(251) } });
+    expect(screen.getByText('251 of 300')).toBeInTheDocument();
+  });
+
+  it('travels with the read, trimmed', async () => {
+    reader.answers = [answer, { ok: true, usage, result: { r: [] } }];
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await user.type(
+      screen.getByRole('textbox', { name: 'Anything we should know about these files?' }),
+      '  All my Max card, September  ',
+    );
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['03/09/26 Shufersal 120.50\n'], 'statement.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+    await screen.findByTestId('import-add');
+    expect(reader.calls.length).toBeGreaterThan(0);
+    expect(reader.calls.every((c) => c.note === 'All my Max card, September')).toBe(true);
+  });
+
+  it('sends nothing about it when left empty', async () => {
+    reader.answers = [answer];
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await user.type(
+      screen.getByRole('textbox', { name: 'Anything we should know about these files?' }),
+      '   ',
+    );
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['03/09/26 Shufersal 120.50\n'], 'statement.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+    await screen.findByTestId('import-add');
+    expect(reader.calls[0]).not.toHaveProperty('note');
   });
 });

@@ -15,6 +15,10 @@
   "readNone": "Read",
   "whose": "Whose spending and income is this?",
   "whoseHint": "Where a file shows whose it is, that's filled in for you. The rest is added for whoever you pick here.",
+  "noteLabel": "Anything we should know about these files?",
+  "notePlaceholder": "e.g. These are all my Max card transactions for September",
+  "noteHint": "Optional. It helps the reader; what the files show always comes first.",
+  "noteCount": "{{count}} of {{max}}",
   "remove": "Remove {{name}}",
   "stop": "Stop",
   "status": {

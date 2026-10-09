@@ -24,6 +24,8 @@ export type ImportSession = {
   readonly drafted: number;
   readonly reconciliations: readonly Reconciliation[];
   readonly batch: { readonly methodId: string; readonly profileId: string };
+  /** What the person said about these files, as typed. Only sent with the reading; never saved. */
+  readonly note: string;
   /** The share the files came from, so it can be forgotten once read. */
   readonly sharedId?: string;
 };
