@@ -42,6 +42,8 @@ const BLOCKING: readonly Combo[] = [
   { route: '/settings', name: 'settings', lang: 'en', theme: 'dark' },
   { route: '/cards', name: 'cards', lang: 'he', theme: 'dark' },
   { route: '/cards', name: 'cards', lang: 'en', theme: 'light' },
+  { route: '/cash', name: 'cash', lang: 'he', theme: 'dark' },
+  { route: '/cash', name: 'cash', lang: 'en', theme: 'light' },
 ];
 
 const REPORTING: readonly Combo[] = [

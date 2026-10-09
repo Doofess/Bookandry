@@ -428,10 +428,32 @@ person can use it, and the person only while they are still in the household
 
 **Account linking is a page in Settings, not a tab.** It is set up once, so
 it sits with the account (Settings › Account linking, `/settings/linking`,
-between Account and Security) and the tab bar keeps three tabs. It was called
+between Account and Security) and takes no tab. It was called
 Household; only the words changed - the code, the `household` i18n keys, the
 tables and the Supabase functions keep the old name, as the database keeps
 `greenback`. `/household` and `/profiles` still land on it.
+
+**Cash is part of the balance, not beside it.** The Cash tab (קופת מזומן) shows how
+much of the balance is in the wallet: the feed's balance stays "all my money".
+Cash income raises both, paying cash lowers both, and moving money between the
+bank and the wallet - a withdrawal, a deposit, the amount someone started with -
+moves only the cash. Those moves are a table of their own (`cashMoves`), not a
+new transaction kind or payment-method type: an older build syncing alongside
+this one rejects, forever, a row carrying an enum value it does not know, while
+a table it does not know it simply never reads. For the same reason a move's
+`kind` is a free string and every sum ignores a kind it does not know. Income
+says where it went in its own field, `destinationId` (a bank account, as a
+label, or cash), not in `paymentMethodId`, which older income forms drop on
+edit. A recount writes an ordinary cash income ("Cash found") or expense ("Cash
+missing") tagged `cashCount`, so an older build's balance is right too, or a
+zero `count` move when it matched. Each person's cash counts from their first
+`start`, so old cash spending cannot drive it negative; it can still go below
+zero, and says so. Linked accounts share one pot - every row keeps its person,
+so the pot always splits back, and unlinking takes the other person's moves off
+the device with their space. Not modelled: per-account balances, cash in a
+foreign currency, notes and coins by denomination, a cash move recorded on a
+device that was offline while the default currency changed. The design is in
+`docs/superpowers/specs/2026-10-09-cash-deposit-design.md`.
 
 **Banks, card companies and networks show their real logos, on white tiles.**
 White in both themes, as the logos are drawn for it; rendered as `<img>`,
