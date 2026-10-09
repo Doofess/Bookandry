@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PROFILE_PALETTE } from '@/domain/palette';
 import { MONEY, d } from '@/domain/test-factories';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import type { Profile, Transaction } from '@/types/domain';
+import { redirectId, type CashMove, type Profile, type Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { checkIntegrity, repairIntegrity } from './integrity';
@@ -42,6 +42,17 @@ const tx = (over: Partial<Transaction> & { id: string }): Transaction =>
     ...over,
   });
 
+const cashMove = (id: string, profileId: string): CashMove => ({
+  id,
+  profileId,
+  kind: 'withdraw',
+  amountMinor: 20_000,
+  date: d('2026-09-01'),
+  isDeleted: 0,
+  createdAt: EARLIER,
+  updatedAt: EARLIER,
+});
+
 beforeEach(async () => {
   handle = freshDb();
   await ensureSettings(handle.db, NOW);
@@ -75,6 +86,7 @@ describe('checkIntegrity', () => {
       updatedAt: NOW,
     });
     await handle.db.profiles.put(profile('p2', { createdAt: NOW, updatedAt: NOW }));
+    await handle.db.cashMoves.put(cashMove('m-ghost', 'ghost'));
 
     const kinds = (await checkIntegrity(handle.db)).map((i) => i.kind).sort();
     expect(kinds).toEqual([
@@ -83,6 +95,7 @@ describe('checkIntegrity', () => {
       'missing_category',
       'missing_payment_method',
       'missing_profile',
+      'orphan_cash_move',
       'orphan_override',
     ]);
   });
@@ -184,6 +197,45 @@ describe('repairIntegrity', () => {
     });
     await repairIntegrity(handle.db, NOW);
     expect(await handle.db.overrides.get('o1')).toBeUndefined();
+  });
+
+  it('gives a cash move whose person was given away to the person they went to', async () => {
+    // Given away on another device while this one, offline, recorded a withdrawal.
+    await handle.db.profiles.put(profile('p2', { color: PROFILE_PALETTE[1].hex, createdAt: NOW }));
+    await handle.db.redirects.put({
+      id: redirectId('profiles', 'gone'),
+      tbl: 'profiles',
+      from: 'gone',
+      to: 'p2',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await handle.db.cashMoves.put(cashMove('m1', 'gone'));
+
+    const report = await repairIntegrity(handle.db, NOW);
+
+    expect(report.repaired.map((i) => i.kind)).toEqual(['orphan_cash_move']);
+    expect(await handle.db.cashMoves.get('m1')).toMatchObject({ profileId: 'p2', updatedAt: NOW });
+    expect(await checkIntegrity(handle.db)).toEqual([]);
+  });
+
+  it('deletes a cash move whose person went nowhere, rather than giving it to a guess', async () => {
+    await handle.db.redirects.put({
+      id: redirectId('profiles', 'cleared'),
+      tbl: 'profiles',
+      from: 'cleared',
+      to: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await handle.db.cashMoves.bulkPut([cashMove('m-cleared', 'cleared'), cashMove('m-ghost', 'ghost')]);
+
+    const report = await repairIntegrity(handle.db, NOW);
+
+    expect(report.repaired.map((i) => i.kind)).toEqual(['orphan_cash_move', 'orphan_cash_move']);
+    // The balance never counted them, so nothing leaves it.
+    expect(await handle.db.cashMoves.count()).toBe(0);
+    expect(await checkIntegrity(handle.db)).toEqual([]);
   });
 
   it('gives the younger of two same-coloured profiles a free colour', async () => {

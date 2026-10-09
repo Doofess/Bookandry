@@ -3,6 +3,7 @@ import { PROFILE_PALETTE } from '@/domain/palette';
 import {
   ALL_PROFILES,
   redirectId,
+  type CashMove,
   type Category,
   type Override,
   type Profile,
@@ -47,6 +48,8 @@ export type IntegrityIssue =
       readonly problems: readonly string[];
     }
   | { readonly kind: 'orphan_override'; readonly overrideId: string; readonly transactionId: string }
+  /** A cash move whose person is gone: given away or deleted on another device. */
+  | { readonly kind: 'orphan_cash_move'; readonly cashMoveId: string; readonly profileId: string }
   | { readonly kind: 'duplicate_color'; readonly profileIds: readonly string[]; readonly color: string }
   /** The feed is filtered to a profile that no longer exists: deleted on another device. */
   | { readonly kind: 'dangling_active_profile'; readonly activeProfileId: string };
@@ -57,21 +60,24 @@ type Snapshot = {
   methods: Set<string>;
   transactions: Transaction[];
   overrides: Override[];
+  cashMoves: CashMove[];
   hasSettings: boolean;
   activeProfileId: string | undefined;
   redirects: Map<string, Redirect>;
 };
 
 async function snapshot(db: BookandryDB): Promise<Snapshot> {
-  const [profiles, categories, methods, transactions, overrides, settings, redirects] = await Promise.all([
-    db.profiles.toArray(),
-    db.categories.toArray(),
-    db.paymentMethods.toArray(),
-    db.transactions.toArray(),
-    db.overrides.toArray(),
-    db.settings.get('singleton'),
-    db.redirects.toArray(),
-  ]);
+  const [profiles, categories, methods, transactions, overrides, cashMoves, settings, redirects] =
+    await Promise.all([
+      db.profiles.toArray(),
+      db.categories.toArray(),
+      db.paymentMethods.toArray(),
+      db.transactions.toArray(),
+      db.overrides.toArray(),
+      db.cashMoves.toArray(),
+      db.settings.get('singleton'),
+      db.redirects.toArray(),
+    ]);
 
   return {
     profiles,
@@ -79,6 +85,7 @@ async function snapshot(db: BookandryDB): Promise<Snapshot> {
     methods: new Set(methods.map((m) => m.id)),
     transactions,
     overrides,
+    cashMoves,
     hasSettings: settings !== undefined,
     activeProfileId: settings?.activeProfileId,
     redirects: new Map(redirects.map((r) => [r.id, r])),
@@ -168,6 +175,13 @@ export async function checkIntegrity(db: BookandryDB): Promise<IntegrityIssue[]>
     }
   }
 
+  for (const m of state.cashMoves) {
+    // Out of every person's pot, and a backup that holds it will not restore.
+    if (!profileIds.has(m.profileId)) {
+      issues.push({ kind: 'orphan_cash_move', cashMoveId: m.id, profileId: m.profileId });
+    }
+  }
+
   if (
     state.activeProfileId !== undefined &&
     state.activeProfileId !== ALL_PROFILES &&
@@ -223,6 +237,7 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
         db.paymentMethods,
         db.transactions,
         db.overrides,
+        db.cashMoves,
         db.settings,
         db.redirects,
       ],
@@ -313,6 +328,24 @@ export async function repairIntegrity(db: BookandryDB, now: IsoInstant): Promise
 
             case 'orphan_override': {
               await db.overrides.delete(issue.overrideId);
+              repaired.push(issue);
+              break;
+            }
+
+            case 'orphan_cash_move': {
+              // Where the person's transactions went; with no one named, the
+              // move is deleted rather than given to a guess: it never changed
+              // the balance, so no money leaves it.
+              const move = state.cashMoves.find((m) => m.id === issue.cashMoveId);
+              if (!move) break;
+              const target = followRedirect(state.redirects, 'profiles', issue.profileId, (id) =>
+                profileIds.has(id),
+              );
+              if (target === undefined || target === null) {
+                await db.cashMoves.delete(move.id);
+              } else {
+                await db.cashMoves.put({ ...move, profileId: target, updatedAt: now });
+              }
               repaired.push(issue);
               break;
             }

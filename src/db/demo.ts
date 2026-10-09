@@ -107,12 +107,20 @@ export async function removeDemoData(db: BookandryDB): Promise<DemoRemoval> {
       const survivors = await db.transactions.toArray();
 
       const demoProfiles = await db.profiles.where('id').startsWith(DEMO_PREFIX).primaryKeys();
-      const claimed = new Set(survivors.map((t) => t.profileId).filter(isDemoRow));
+      // A person the user has set cash up for is theirs too, like one they
+      // filed a transaction under; the demo's own moves claim no one.
+      const moves = await db.cashMoves.toArray();
+      const userMoves = moves.filter((m) => !isDemoRow(m.id));
+      const claimed = new Set(
+        [...survivors.map((t) => t.profileId), ...userMoves.map((m) => m.profileId)].filter(isDemoRow),
+      );
       const removableProfiles = demoProfiles.map(String).filter((id) => !claimed.has(id));
       await db.profiles.bulkDelete(removableProfiles);
-      // A removed person's cash moves go with them.
+      // The demo's moves go, and with them every move of a person who went.
       const gone = new Set(removableProfiles);
-      await db.cashMoves.filter((m) => gone.has(m.profileId)).delete();
+      await db.cashMoves.bulkDelete(
+        moves.filter((m) => isDemoRow(m.id) || gone.has(m.profileId)).map((m) => m.id),
+      );
 
       const demoMethods = (await db.paymentMethods.where('id').startsWith(DEMO_PREFIX).primaryKeys()).map(
         String,

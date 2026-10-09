@@ -220,14 +220,22 @@ describe('deleteProfile', () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
-    await handle.db.cashMoves.bulkPut([move('m1', 'p1'), move('m2', 'p2')]);
+    // A deleted move goes too: "Recently deleted" may restore it.
+    const deleted = (id: string, profileId: string): CashMove => ({
+      ...move(id, profileId),
+      isDeleted: 1,
+      deletedAt: NOW,
+    });
+    await handle.db.cashMoves.bulkPut([move('m1', 'p1'), deleted('m1d', 'p1'), move('m2', 'p2')]);
 
     await deleteProfile(handle.db, 'p1', { reassignTo: 'p2' }, NOW);
     expect((await handle.db.cashMoves.get('m1'))?.profileId).toBe('p2');
+    expect((await handle.db.cashMoves.get('m1d'))?.profileId).toBe('p2');
 
     await createProfile(handle.db, 'p3', draft('Noa'), NOW);
-    await handle.db.cashMoves.put(move('m3', 'p3'));
+    await handle.db.cashMoves.bulkPut([move('m3', 'p3'), deleted('m3d', 'p3')]);
     await deleteProfile(handle.db, 'p3', {}, NOW);
     expect(await handle.db.cashMoves.get('m3')).toBeUndefined();
+    expect(await handle.db.cashMoves.get('m3d')).toBeUndefined();
   });
 });
