@@ -469,6 +469,25 @@ denomination, a cash move recorded on a device that was offline while the
 default currency changed. The design is in
 `docs/superpowers/specs/2026-10-09-cash-deposit-design.md`.
 
+**An expense's category follows its business type.** Every expense can carry a
+business type, a Merchant Category Code (`mcc`, "5812" for restaurants), and a
+table files each type under a built-in category; the person can move a type into
+any category of theirs (`Category.mccs`), and its past expenses with it, with
+Undo. Israeli exports carry no MCC, so each row takes the first it can get: an
+MCC column, the card company's sector text, the same merchant seen before, then
+Claude, choosing only codes the list has. The person's own choices always win:
+a category they gave a merchant beats the table, and a business type they picked
+is never replaced. The list is greggles/mcc-codes (public domain), the only one
+the app may ship; the Hebrew names are ours (`src/data/mcc-SOURCES.md`,
+`pnpm data:mcc`). The codes alone are a small synchronous module, so a schema can
+check one, while the names are their own lazy chunk. A synced row is checked
+for a code's shape only, because a later build's list may have codes this one
+does not; every way a code comes in - the form, a file, history, Claude -
+checks the list. All three fields are optional and older builds keep them on an
+edit. A cash withdrawal (6010, 6011) is not an expense in an import: it is left
+unticked with a note pointing to the Cash tab. The design is in
+`docs/superpowers/specs/2026-10-09-mcc-categories-design.md`.
+
 **Banks, card companies and networks show their real logos, on white tiles.**
 White in both themes, as the logos are drawn for it; rendered as `<img>`,
 never inlined, so artwork from outside cannot run anything. Sources and terms
