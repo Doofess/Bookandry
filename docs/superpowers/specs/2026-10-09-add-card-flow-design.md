@@ -76,7 +76,11 @@ The fix is not to hide one of the two. Each question is asked once, in one place
 ### 2.1 One component, two shapes
 
 - `CardFlowDialog` uses the existing Base UI dialog (`src/components/ui/dialog.tsx`). That gives a modal with a focus trap, an inert page behind it, Escape to close, and focus returned to the button that opened it.
-- **Desktop (from `sm`):** centred, `max-w-md`, at most `85dvh` tall. The step body scrolls inside; the header and footer stay put.
+- **Desktop (from `sm`):** centred, up to 1140 by 732 px, using the `PopOut` shell from the Colour of money spec (section 6.2, branch `colour-of-money`).
+  - Below 720 px wide it is one pane, laid out as 2.2.
+  - From 720 px the steps sit beside the body.
+  - From 1040 px a live card preview sits on the far side.
+  - The step body scrolls inside; the header and footer stay put.
 - **Phone (below `sm`):** the same popup fills the screen (`inset-0`, `h-dvh`), with the footer above the safe area (`env(safe-area-inset-bottom)`).
 - It is one popup with responsive classes, not a dialog on desktop and a sheet on phones. Rotating a tablet or resizing a window never loses the answers.
 
@@ -118,7 +122,7 @@ From top to bottom:
 
 ### 2.6 Layout inside the pop-out
 
-- The step body is a size container (`@container`). Its grids follow the pop-out's width, not the screen's. For example, the company logos are 2 across in a narrow pop-out and 3 across in a wide one. The same step then lays out right inside the import sheet and on a phone.
+- The step body is a size container (`@container`). Its grids follow the pop-out's width, not the screen's. For example, the company tiles are 1 across in a narrow pop-out and 2 across from 440 px. The same step then lays out right inside the import sheet and on a phone.
 - Only logical properties are used (`ms-`, `pe-`, `start-`), as `gate:rtl` requires.
 - Every colour, radius and shadow is a token: `--popover`, `--primary`, `--accent`, `--border`, `--muted-foreground` and so on. No colour is written into the flow. The colourful redesign changes the tokens, and the flow follows. Section 15 has the build order.
 
@@ -131,7 +135,7 @@ The catalog starts loading (`loadCatalog()`, a dynamic import) the moment the po
 ### Step 1 · Card company
 
 - **Heading:** "Which company issued the card?". Help: "It's printed on the card and at the top of your statement."
-- **Choices:** Isracard, Cal, Max, American Express, Diners and Other. Each is a large tile with the company's logo (`BrandMark`), and Other has the neutral mark.
+- **Choices:** Isracard, Cal, Max, American Express, Diners and Other. Each is a large tile in the company's colour with its name (Colour of money spec, 6.4), and Other is an outlined tile.
 - **Other:** shows a "Company name" field on the same step, with Next. The name is optional. The card is unlinked.
 - Changing the company after later steps were answered clears the answers that no longer fit: a bank that doesn't issue that company, the type, the club, and a network that company doesn't use. Answers that still fit stay.
 
