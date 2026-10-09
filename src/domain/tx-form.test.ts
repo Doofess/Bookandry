@@ -964,4 +964,11 @@ describe('the business type', () => {
   it('keeps a code a later list added, so opening and saving a row does not erase it', () => {
     expect(parse(values({ mcc: '9999', mccSource: 'history' })).mcc).toBe('9999');
   });
+
+  it('drops a source longer than the 20 characters a row may carry, and keeps the code', () => {
+    const parsed = parse(values({ mcc: '5411', mccSource: 'x'.repeat(21) }));
+    expect(parsed.mcc).toBe('5411');
+    expect(parsed.mccSource).toBeUndefined();
+    expect(parse(values({ mcc: '5411', mccSource: 'x'.repeat(20) })).mccSource).toBe('x'.repeat(20));
+  });
 });

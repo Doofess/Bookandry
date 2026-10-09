@@ -418,6 +418,9 @@ export const txFormSchema = z
 export type TxFormValues = z.input<typeof txFormSchema>;
 export type TxFormParsed = z.output<typeof txFormSchema>;
 
+/** The longest `mccSource` a row may carry. */
+const MCC_SOURCE_MAX = 20;
+
 /** The form's business type, when it has one an expense may keep. */
 function businessType(values: {
   readonly kind: Kind;
@@ -425,7 +428,10 @@ function businessType(values: {
   readonly mccSource: string;
 }): { readonly mcc: string; readonly mccSource: string | undefined } | undefined {
   if (values.kind !== 'expense' || !MCC_SHAPE.test(values.mcc)) return undefined;
-  return { mcc: values.mcc, mccSource: values.mccSource === '' ? undefined : values.mccSource };
+  // A source longer than a row may carry (spec §6: 1 to 20 characters) is no source.
+  const source =
+    values.mccSource === '' || values.mccSource.length > MCC_SOURCE_MAX ? undefined : values.mccSource;
+  return { mcc: values.mcc, mccSource: source };
 }
 
 function toRecurrence(

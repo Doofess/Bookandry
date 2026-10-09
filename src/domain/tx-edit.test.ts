@@ -635,6 +635,12 @@ describe('the business type, in the edit form', () => {
     expect(patchFor({ mcc: '', mccSource: '' })).toEqual({ mcc: null, mccSource: null });
   });
 
+  it('leaves the series’ business type alone when the form switched the kind, which an edit does not save', () => {
+    const switched = patchFor({ kind: 'income', categoryId: 'cat.salary' });
+    expect(switched).not.toHaveProperty('mcc');
+    expect(switched).not.toHaveProperty('mccSource');
+  });
+
   it('opens a row from before business types with none', () => {
     expect(occurrenceToFormValues(occurrenceOf(rent(), [], '2026-09-10'), rent())).toMatchObject({
       mcc: '',
