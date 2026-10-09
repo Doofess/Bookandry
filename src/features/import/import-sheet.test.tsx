@@ -396,6 +396,59 @@ describe('Smart import', () => {
     expect(Object.fromEntries(saved.map((t) => [t.note, t.profileId]))).toEqual({ Aroma: 'p2', Kiosk: 'p1' });
   });
 
+  describe('the whose picker', () => {
+    const twin = { ...profile, id: 'p2', name: 'Dana', color: 'red', sortOrder: 1 } as Profile;
+    const open = (profiles: Profile[]) =>
+      renderWithProviders(
+        <ImportSheet
+          target={{ mode: 'import' }}
+          onOpenChange={() => undefined}
+          onOpenRow={() => undefined}
+          onOpenCard={() => undefined}
+          profiles={profiles}
+          categories={[category('cat.groceries', 'expense')]}
+          paymentMethods={[]}
+          activeProfileId="all"
+          baseCurrency="ILS"
+          today={'2026-09-15' as LocalDate}
+          onSaved={() => undefined}
+        />,
+      );
+
+    it('shows each person as their round avatar, named for a screen reader, so two of the same name can be told apart', async () => {
+      const user = userEvent.setup();
+      open([profile, twin]);
+      const whose = screen.getByRole('radiogroup', { name: 'Whose spending and income is this?' });
+      const radios = within(whose).getAllByRole('radio', { name: 'Dana' });
+      expect(radios).toHaveLength(2);
+      // The avatar is there, one per person, in each person's own colour; the name is not drawn.
+      const avatars = radios.map((radio) => radio.querySelector<HTMLElement>('[data-person]'));
+      expect(avatars.map((a) => a?.dataset['person'])).toEqual(['p1', 'p2']);
+      expect(avatars[0]?.style.backgroundColor).not.toBe(avatars[1]?.style.backgroundColor);
+      expect(radios[0]?.querySelector('.sr-only')).toHaveTextContent('Dana');
+      // Choosing one chooses that person, not the other of the same name.
+      await user.click(radios[1]!);
+      expect(radios[1]).toBeChecked();
+      expect(radios[0]).not.toBeChecked();
+      await user.click(radios[0]!);
+      expect(radios[0]).toBeChecked();
+    });
+
+    it('reads in Hebrew, with the avatars in the same place', async () => {
+      await initTestI18n('he');
+      try {
+        open([profile, { ...twin, name: 'יוסי' }]);
+        const whose = screen.getByRole('radiogroup', { name: 'של מי ההוצאות וההכנסות האלה?' });
+        const yossi = within(whose).getByRole('radio', { name: 'יוסי' });
+        expect(yossi.querySelector('[data-person="p2"]')).not.toBeNull();
+        await userEvent.setup().click(yossi);
+        expect(yossi).toBeChecked();
+      } finally {
+        await initTestI18n('en');
+      }
+    });
+  });
+
   it('files a sheet by its sector, asks about the rest with the sector as a hint, and leaves a cash withdrawal out', async () => {
     writeSession(undefined);
     reader.calls = [];
