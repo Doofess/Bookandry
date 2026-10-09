@@ -150,12 +150,37 @@ export const DEFAULT_MCC_CATEGORY: readonly MccRange[] = [
   ['8351', '8351', 'cat.kids'],
 ];
 
+/** The category of the range that names a code, or undefined for the fall-through to Other. */
+const rangeOf = (code: string): string | undefined =>
+  DEFAULT_MCC_CATEGORY.find(([from, to]) => from <= code && code <= to)?.[2];
+
 /** The built-in category the table files a business type under. */
 export function defaultCategoryForMcc(code: string): string {
-  return DEFAULT_MCC_CATEGORY.find(([from, to]) => from <= code && code <= to)?.[2] ?? DEFAULT_OTHER;
+  return rangeOf(code) ?? DEFAULT_OTHER;
+}
+
+/**
+ * Whether the table itself files a code: false for one that only falls
+ * through to Other, which decides nothing (final review C1). The person's
+ * own moves are not seen here; `categoryForMccOrNone` counts those too.
+ */
+export function tableFiles(code: string): boolean {
+  return rangeOf(code) !== undefined;
 }
 
 const liveExpense = (category: Category): boolean => category.kind === 'expense' && category.isArchived === 0;
+
+/** The live category the person moved a business type into - the one updated last, if two claim it. */
+function movedInto(code: string, categories: readonly Category[]): string | undefined {
+  return categories
+    .filter((category) => liveExpense(category) && category.mccs?.includes(code) === true)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))[0]?.id;
+}
+
+const liveId = (id: string | undefined, categories: readonly Category[]): string | undefined =>
+  id !== undefined && categories.some((category) => category.id === id && liveExpense(category))
+    ? id
+    : undefined;
 
 /**
  * The category a business type files under, or undefined to let the rest of
@@ -165,14 +190,18 @@ const liveExpense = (category: Category): boolean => category.kind === 'expense'
  *  2. the default table's built-in, unless that is archived or missing.
  */
 export function categoryForMcc(code: string, categories: readonly Category[]): string | undefined {
-  const moved = categories
-    .filter((category) => liveExpense(category) && category.mccs?.includes(code) === true)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
-  if (moved[0] !== undefined) return moved[0].id;
-  const fallback = defaultCategoryForMcc(code);
-  return categories.some((category) => category.id === fallback && liveExpense(category))
-    ? fallback
-    : undefined;
+  return movedInto(code, categories) ?? liveId(defaultCategoryForMcc(code), categories);
+}
+
+/**
+ * As `categoryForMcc`, but only a real answer: a category the person moved
+ * the code into (Other included - that was their decision), or a range of the
+ * table. A code no range names falls through to Other in `categoryForMcc`;
+ * here it gives undefined, so the row's words and Claude still decide - 9311
+ * (tax payments) does not file Claude's Arnona under Other (final review C1).
+ */
+export function categoryForMccOrNone(code: string, categories: readonly Category[]): string | undefined {
+  return movedInto(code, categories) ?? liveId(rangeOf(code), categories);
 }
 
 /**
@@ -233,7 +262,9 @@ export function pickMcc(
  * A row's category, in the order of spec §3:
  *  1. a well-known name (`knownCategory`) - narrower than a business type;
  *  2. the person's own choice for this merchant (`merchantHistory`);
- *  3. the business type (`categoryForMcc`) - an expense's only;
+ *  3. the business type (`categoryForMccOrNone`) - an expense's only, and
+ *     only a real answer: a code that merely falls through to Other decides
+ *     nothing;
  *  4. the row's own words (`categoryFromText`);
  *  5. Claude's category.
  * Undefined leaves the refund and Other to the caller. Income runs the same
@@ -255,7 +286,9 @@ export function chooseExpenseCategory(
   return (
     knownCategory(row, categories) ??
     usable(found.history) ??
-    (row.kind === 'expense' && found.mcc !== undefined ? categoryForMcc(found.mcc, categories) : undefined) ??
+    (row.kind === 'expense' && found.mcc !== undefined
+      ? categoryForMccOrNone(found.mcc, categories)
+      : undefined) ??
     categoryFromText(row, categories) ??
     usable(found.claude)
   );

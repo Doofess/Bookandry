@@ -45,6 +45,7 @@ const CATEGORIES = [
 function setup(
   options: {
     chosenByPerson?: boolean;
+    categories?: readonly Category[];
     mcc?: FormMcc;
     opening?: { readonly name: string; readonly kind: Kind };
   } = {},
@@ -56,7 +57,7 @@ function setup(
   });
   const hook = renderHook(() =>
     useAutoCategory({
-      categories: CATEGORIES,
+      categories: options.categories ?? CATEGORIES,
       translate: (c) => c.id,
       choose,
       chosenByPerson: options.chosenByPerson ?? false,
@@ -138,6 +139,30 @@ describe('choosing the category and the business type from the name', () => {
     });
     await settle();
     expect(choose).toHaveBeenCalledWith('cat.dining');
+  });
+
+  it('lets a business type that only falls through to Other decide nothing, and asks Claude (final review C1)', async () => {
+    const categories = [...CATEGORIES, category('cat.arnona'), category('cat.otherExpense')];
+    // History knows the code, 9311 (tax payments), which no range names.
+    history.answer = { mcc: '9311' };
+    claude.suggestCategory.mockResolvedValue({ categoryId: 'cat.arnona', mcc: '9311' });
+    const arnona = setup({ categories });
+    act(() => {
+      arnona.hook.result.current.nameChanged('ארנונה עיריית תל אביב', 'expense');
+    });
+    await settle();
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(arnona.choose).toHaveBeenCalledWith('cat.arnona');
+    expect(arnona.chooseMcc).toHaveBeenCalledWith({ mcc: '9311', source: 'history' });
+
+    // 6012 (financial institutions) does not beat the loan rule.
+    history.answer = { mcc: '6012' };
+    const loan = setup({ categories });
+    act(() => {
+      loan.hook.result.current.nameChanged('פירעון הלוואה', 'expense');
+    });
+    await settle();
+    expect(loan.choose).toHaveBeenCalledWith('cat.loans');
   });
 
   it('drops a business type that a name rule says is wrong (Review Focus 2)', async () => {

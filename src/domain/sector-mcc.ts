@@ -6,9 +6,10 @@ import { foldSearch } from './mcc';
  * folding case, niqqud, punctuation and spacing - never by a part of the
  * text, so "מזון לחיות" is not taken for groceries.
  *
- * Common sector words and the groupings the card sites use, none yet
- * confirmed against a real export: the table grows as exports are seen. A
- * sector it does not know is not dropped - it goes to Claude as a hint.
+ * Common sector words and the specific groupings the card sites use; Max's
+ * were confirmed against a real export (2026-10-09). The table grows as
+ * exports are seen. A sector it does not know is not dropped - it goes to
+ * Claude as a hint, and so does a broad one (`HINT_SECTORS`).
  */
 export const SECTORS: readonly (readonly [sector: string, mcc: string])[] = [
   ['מסעדות', '5812'],
@@ -19,15 +20,9 @@ export const SECTORS: readonly (readonly [sector: string, mcc: string])[] = [
   ['סופרמרקטים', '5411'],
   ['סופרמרקט', '5411'],
   ['מרכולים', '5411'],
-  ['מזון', '5411'],
-  ['מזון וצריכה', '5411'],
-  ['מזון ומשקאות', '5411'],
   ['דלק', '5541'],
   ['תחנות דלק', '5541'],
-  ['דלק, חשמל וגז', '5541'],
-  ['תחבורה', '4111'],
   ['תחבורה ציבורית', '4111'],
-  ['תחבורה ורכבים', '4111'],
   ['מוניות', '4121'],
   ['חניה', '7523'],
   ['חניונים', '7523'],
@@ -58,10 +53,6 @@ export const SECTORS: readonly (readonly [sector: string, mcc: string])[] = [
   ['בתי מלון', '7011'],
   ['מלונות', '7011'],
   ['ביטוח', '6300'],
-  ['ביטוח ופיננסים', '6300'],
-  ['בידור', '7999'],
-  ['פנאי ובידור', '7999'],
-  ['פנאי, בידור וספורט', '7999'],
   ['קולנוע', '7832'],
   ['ספורט', '7997'],
   ['חדרי כושר', '7997'],
@@ -75,15 +66,12 @@ export const SECTORS: readonly (readonly [sector: string, mcc: string])[] = [
   ['צעצועים', '5945'],
   ['ילדים', '5641'],
   ['חיות מחמד', '5995'],
-  ['עירייה וממשלה', '9399'],
-  ['ממשלה', '9399'],
   ['restaurants', '5812'],
   ['fast food', '5814'],
   ['supermarkets', '5411'],
   ['groceries', '5411'],
   ['fuel', '5541'],
   ['gas stations', '5541'],
-  ['transportation', '4111'],
   ['pharmacy', '5912'],
   ['medical', '8011'],
   ['communications', '4814'],
@@ -94,8 +82,32 @@ export const SECTORS: readonly (readonly [sector: string, mcc: string])[] = [
   ['airlines', '4511'],
   ['hotels', '7011'],
   ['insurance', '6300'],
-  ['entertainment', '7999'],
   ['education', '8299'],
+];
+
+/**
+ * Sectors a card company prints over several of the household's categories
+ * at once: Max files WOLT under "מזון וצריכה" (groceries, delivery and
+ * restaurants alike) and an electricity bill under "דלק, חשמל וגז". One
+ * code would file whole merchants wrongly and stop Claude being asked
+ * (final review C2), so these give no business type here. They still travel
+ * to Claude as the sector hint, like a sector the table does not know.
+ */
+export const HINT_SECTORS: readonly string[] = [
+  'מזון',
+  'מזון וצריכה',
+  'מזון ומשקאות',
+  'תחבורה',
+  'תחבורה ורכבים',
+  'דלק, חשמל וגז',
+  'פנאי, בידור וספורט',
+  'פנאי ובידור',
+  'בידור',
+  'עירייה וממשלה',
+  'ממשלה',
+  'ביטוח ופיננסים',
+  'transportation',
+  'entertainment',
 ];
 
 /** As compared: folded like search, with punctuation as spaces. */

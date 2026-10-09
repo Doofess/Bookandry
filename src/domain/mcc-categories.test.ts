@@ -6,10 +6,12 @@ import type { IsoInstant } from '@/types/money';
 import {
   businessTypesOf,
   categoryForMcc,
+  categoryForMccOrNone,
   chooseExpenseCategory,
   defaultCategoryForMcc,
   isCashWithdrawal,
   pickMcc,
+  tableFiles,
 } from './mcc-categories';
 
 const NOW = '2026-10-01T00:00:00.000Z' as IsoInstant;
@@ -143,6 +145,28 @@ describe('categoryForMcc', () => {
   });
 });
 
+describe('categoryForMccOrNone: only a real answer, never the fall-through to Other', () => {
+  it('gives nothing for a code no range names, and the table or a move otherwise', () => {
+    expect(categoryForMccOrNone('9311', CATEGORIES)).toBeUndefined();
+    expect(categoryForMccOrNone('6012', CATEGORIES)).toBeUndefined();
+    expect(categoryForMccOrNone('5812', CATEGORIES)).toBe('cat.dining');
+    // The person's own move counts, into a category of theirs or into Other itself.
+    expect(categoryForMccOrNone('9311', [...CATEGORIES, custom('c.city', { mccs: ['9311'] })])).toBe(
+      'c.city',
+    );
+    const other = CATEGORIES.map((c) => (c.id === 'cat.otherExpense' ? { ...c, mccs: ['9311'] } : c));
+    expect(categoryForMccOrNone('9311', other)).toBe('cat.otherExpense');
+  });
+
+  it('tableFiles says whether the table names a code at all, for import to know what to ask about', () => {
+    expect(tableFiles('5812')).toBe(true);
+    expect(tableFiles('0742')).toBe(true);
+    expect(tableFiles('9311')).toBe(false);
+    expect(tableFiles('6012')).toBe(false);
+    expect(tableFiles('8641')).toBe(false);
+  });
+});
+
 describe('businessTypesOf', () => {
   it('lists the table’s codes, then the ones moved in, and not the ones moved out', () => {
     expect(businessTypesOf(builtin('cat.dining'), CATEGORIES)).toEqual({
@@ -237,6 +261,27 @@ describe('chooseExpenseCategory: the order of spec §3, one case per step', () =
     expect(chooseExpenseCategory(expense('הלוואה מהבנק'), { claude: 'cat.travel' }, ALL)).toBe('cat.loans');
     expect(chooseExpenseCategory(expense('Cafe'), { claude: 'cat.travel' }, ALL)).toBe('cat.travel');
     expect(chooseExpenseCategory(expense('Cafe'), {}, ALL)).toBeUndefined();
+  });
+
+  it('3. lets a business type that only falls through to Other decide nothing (final review C1)', () => {
+    const all = [...ALL, builtin('cat.arnona'), builtin('cat.buildingFee')];
+    // Claude's Arnona over its own vague 9311 (tax payments).
+    expect(
+      chooseExpenseCategory(expense('ארנונה עיריית תל אביב'), { mcc: '9311', claude: 'cat.arnona' }, all),
+    ).toBe('cat.arnona');
+    // The loan rule over 6012 (financial institutions).
+    expect(chooseExpenseCategory(expense('פירעון הלוואה'), { mcc: '6012' }, all)).toBe('cat.loans');
+    // Claude's building fee over 8641 (associations).
+    expect(chooseExpenseCategory(expense('ועד בית'), { mcc: '8641', claude: 'cat.buildingFee' }, all)).toBe(
+      'cat.buildingFee',
+    );
+    // Nothing else known: the caller's Other, as before.
+    expect(chooseExpenseCategory(expense('Somewhere'), { mcc: '9311' }, all)).toBeUndefined();
+    // The person moved 9311 into Other themselves: that is a decision, and it stands.
+    const moved = all.map((c) => (c.id === 'cat.otherExpense' ? { ...c, mccs: ['9311'] } : c));
+    expect(
+      chooseExpenseCategory(expense('ארנונה עיריית תל אביב'), { mcc: '9311', claude: 'cat.arnona' }, moved),
+    ).toBe('cat.otherExpense');
   });
 
   it('never takes a choice that is archived, missing, or of the other kind', () => {

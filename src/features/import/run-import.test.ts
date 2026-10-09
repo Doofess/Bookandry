@@ -415,6 +415,40 @@ describe('a spreadsheet’s business types', () => {
     expect(calls[0]?.mode === 'map' && calls[0]).not.toHaveProperty('sectors');
   });
 
+  it('still asks about a merchant whose code the table only lets fall through to Other (final review C1)', async () => {
+    const { result, calls } = await run(
+      [
+        sheet([
+          header,
+          // 9311 (tax payments) names no range: Claude's own category is still wanted.
+          ['01/10/2026', 'ארנונה עיריית דוגמה', '900.00', '9311', null],
+          // 5812 files under Dining: nothing to ask.
+          ['02/10/2026', 'Cafe Landwer', '58.00', '5812', null],
+          // A broad sector gives no code either, and travels as the hint.
+          ['03/10/2026', 'FOODDASH DELIVERY', '72.00', null, 'מזון וצריכה'],
+        ]),
+      ],
+      {
+        map: [
+          ok({
+            mc: [
+              { m: 'ארנונה עיריית דוגמה', mcc: '9311', cat: 'c1' },
+              { m: 'FOODDASH DELIVERY', mcc: '5814', cat: null },
+            ],
+          }),
+        ],
+      },
+    );
+    const asked = calls[0];
+    expect(asked?.mode === 'map' && asked.merchants).toEqual(['ארנונה עיריית דוגמה', 'FOODDASH DELIVERY']);
+    expect(asked?.mode === 'map' && asked.sectors).toEqual(['', 'מזון וצריכה']);
+    expect(result.rows.map((r) => [r.description, r.fileMcc, r.sector, r.aiMcc, r.categoryAlias])).toEqual([
+      ['ארנונה עיריית דוגמה', '9311', undefined, '9311', 'c1'],
+      ['Cafe Landwer', '5812', undefined, undefined, null],
+      ['FOODDASH DELIVERY', undefined, 'מזון וצריכה', '5814', null],
+    ]);
+  });
+
   it('reads the MCC and sector columns of a sheet the model mapped, too (the model’s map gets the rows)', async () => {
     const { result, calls } = await run(
       [
@@ -451,6 +485,120 @@ describe('a spreadsheet’s business types', () => {
       ['Vet clinic', '0742', undefined],
       ['Cafe Landwer', undefined, 'מסעדות'],
     ]);
+  });
+});
+
+describe('a Max export', () => {
+  // Max's header row as printed, under three title rows. Merchants and amounts are made up.
+  const MAX_HEADER = [
+    'תאריך עסקה',
+    'שם בית העסק',
+    'קטגוריה',
+    '4 ספרות אחרונות של כרטיס האשראי',
+    'סוג עסקה',
+    'סכום חיוב',
+    'מטבע חיוב',
+    'סכום עסקה מקורי',
+    'מטבע עסקה מקורי',
+    'תאריך חיוב',
+    'הערות',
+    'תיוגים',
+    'מועדון הנחות',
+    'מפתח דיסקונט',
+    'אופן ביצוע ההעסקה',
+    'שער המרה ממטבע מקור/התחשבנות לש"ח',
+  ];
+  const TITLES = [['כל המשתמשים (1)'], ['כל הכרטיסים (5)'], ['10/2026']];
+  const maxRow = (date: string, merchant: string, sector: string, amount: string): (string | null)[] => [
+    date,
+    merchant,
+    sector,
+    '1234',
+    'רגילה',
+    amount,
+    'ILS',
+    amount,
+    'ILS',
+    '10/10/2026',
+    null,
+    null,
+    null,
+    null,
+    'אינטרנט',
+    null,
+  ];
+  const workbook = (): PreparedFile => ({
+    kind: 'sheet',
+    file: 0,
+    name: 'transaction-details_export.xlsx',
+    hash: 'max',
+    sheets: [
+      {
+        name: 'עסקאות במועד החיוב',
+        date1904: false,
+        rows: [
+          ...TITLES,
+          MAX_HEADER,
+          maxRow('02/10/2026', 'FOODDASH DELIVERY', 'מזון וצריכה', '72.00'),
+          maxRow('03/10/2026', 'חשמל לעיר בע"מ', 'דלק, חשמל וגז', '410.50'),
+          maxRow('04/10/2026', 'מסעדת הפינה', 'מסעדות, קפה וברים', '186.00'),
+          maxRow('05/10/2026', 'עיריית דוגמה - ארנונה', 'עירייה וממשלה', '350.00'),
+        ],
+      },
+      {
+        name: 'עסקאות בחיוב מיידי',
+        date1904: false,
+        rows: [
+          ...TITLES,
+          MAX_HEADER,
+          maxRow('06/10/2026', 'סלולר פלוס', 'שירותי תקשורת', '59.90'),
+          maxRow('07/10/2026', 'שופרסל', 'מזון וצריכה', '120.50'),
+          maxRow('08/10/2026', 'מכון כושר הרים', 'פנאי, בידור וספורט', '199.00'),
+        ],
+      },
+    ],
+  });
+
+  it('reads every sheet by the dictionary, and leaves the broad sectors to Claude as hints (final review C2)', async () => {
+    const { result, calls, states } = await run([workbook()], {
+      map: [
+        ok({
+          mc: [
+            { m: 'FOODDASH DELIVERY', mcc: '5814', cat: null },
+            { m: 'חשמל לעיר בע"מ', mcc: '4900', cat: null },
+            { m: 'עיריית דוגמה - ארנונה', mcc: '9311', cat: 'c1' },
+          ],
+        }),
+        ok({ mc: [{ m: 'מכון כושר הרים', mcc: '7997', cat: null }] }),
+      ],
+    });
+    expect(states.at(-1)).toMatchObject({ file: 0, status: 'done' });
+    // One call per sheet, for the merchants nothing places: a specific sector or history places the rest.
+    expect(calls.map((c) => c.mode)).toEqual(['map', 'map']);
+    expect(calls[0]?.mode === 'map' && calls[0].merchants).toEqual([
+      'FOODDASH DELIVERY',
+      'חשמל לעיר בע"מ',
+      'עיריית דוגמה - ארנונה',
+    ]);
+    expect(calls[0]?.mode === 'map' && calls[0].sectors).toEqual([
+      'מזון וצריכה',
+      'דלק, חשמל וגז',
+      'עירייה וממשלה',
+    ]);
+    expect(calls[1]?.mode === 'map' && calls[1].merchants).toEqual(['מכון כושר הרים']);
+    expect(calls[1]?.mode === 'map' && calls[1].sectors).toEqual(['פנאי, בידור וספורט']);
+    expect(
+      result.rows.map((r) => [r.description, r.amountMinor, r.sector, r.aiMcc, r.categoryAlias]),
+    ).toEqual([
+      ['FOODDASH DELIVERY', 7_200, 'מזון וצריכה', '5814', null],
+      ['חשמל לעיר בע"מ', 41_050, 'דלק, חשמל וגז', '4900', null],
+      ['מסעדת הפינה', 18_600, 'מסעדות, קפה וברים', undefined, null],
+      ['עיריית דוגמה - ארנונה', 35_000, 'עירייה וממשלה', '9311', 'c1'],
+      ['סלולר פלוס', 5_990, 'שירותי תקשורת', undefined, null],
+      ['שופרסל', 12_050, 'מזון וצריכה', undefined, null],
+      ['מכון כושר הרים', 19_900, 'פנאי, בידור וספורט', '7997', null],
+    ]);
+    expect(result.rows.every((r) => r.kind === 'expense' && r.fileMcc === undefined)).toBe(true);
   });
 });
 
