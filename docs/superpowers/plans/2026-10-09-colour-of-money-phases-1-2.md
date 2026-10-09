@@ -5619,7 +5619,7 @@ function PopOutContent({
           'transition-[opacity,translate] duration-(--dur-panel) ease-out data-ending-style:opacity-0 data-starting-style:opacity-0',
           'motion-safe:data-ending-style:translate-y-2 motion-safe:data-starting-style:translate-y-2',
           // From sm: centred by auto margins, which leaves `translate` free for the rise.
-          'sm:rounded-dialog sm:m-auto sm:shadow-pop',
+          'sm:m-auto sm:rounded-dialog sm:shadow-pop',
           SIZE[size],
           className,
         )}
@@ -5786,7 +5786,7 @@ function PopOutPreview({
     <aside
       data-slot="popout-preview"
       data-sheet="night"
-      className="rounded-preview m-3 flex flex-col gap-4 p-7"
+      className="m-3 flex flex-col gap-4 rounded-preview p-7"
     >
       <div className="flex items-start justify-between gap-3">
         <TitlePair as="h3" size="steps" title={title} subtitle={subtitle} />
@@ -6516,7 +6516,7 @@ import { useWipeNotice } from './use-wipe-notice';
  */
 const PILL = cn(
   'flex min-h-11 items-center justify-center gap-2 rounded-full px-2 text-[0.84375rem]',
-  'ease-fill hover-fine:bg-accent transition-[background-color,color] duration-(--dur-press)',
+  'transition-[background-color,color] duration-(--dur-press) ease-fill hover-fine:bg-accent',
   'focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring',
   'aria-[current=page]:bg-press aria-[current=page]:font-semibold aria-[current=page]:text-on-press',
   'lg:min-h-12 lg:justify-between lg:px-4.5 lg:text-[1.0625rem]',
@@ -7405,7 +7405,7 @@ replace the closing `</ScreenPanel>` with `</HeroSheet>`, and change the pills r
 <ScreenHead title={title}>
   <Link
     to={ROUTES.settings}
-    className="hover-fine:text-foreground -ms-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-md px-1 text-sm text-muted-foreground focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring"
+    className="-ms-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-md px-1 text-sm text-muted-foreground focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring hover-fine:text-foreground"
   >
     {/* Directional: it points back, so it flips. */}
     <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden="true" />
@@ -8442,8 +8442,8 @@ export function CardFace({
       data-sheet="money"
       data-money={moneyKey}
       className={cn(
-        'rounded-face @container grid aspect-[1.586] w-full grid-rows-[auto_1fr_auto] px-[8%] pt-[7%]',
-        'ease-fill transition-colors duration-(--dur-press)',
+        '@container grid aspect-[1.586] w-full grid-rows-[auto_1fr_auto] rounded-face px-[8%] pt-[7%]',
+        'transition-colors duration-(--dur-press) ease-fill',
         variant === 'preview' && '-rotate-4 shadow-[0_2px_0_color-mix(in_oklch,var(--box)_25%,transparent)]',
         className,
       )}
@@ -8522,7 +8522,7 @@ export function CardSheet({
       data-sheet="money"
       data-money={moneyKey}
       className={cn(
-        'rounded-sheet-s @container flex min-h-31 items-end justify-between gap-4 overflow-clip px-5 pt-4 lg:min-h-27 lg:px-6.5 lg:pt-4.5',
+        '@container flex min-h-31 items-end justify-between gap-4 overflow-clip rounded-sheet-s px-5 pt-4 lg:min-h-27 lg:px-6.5 lg:pt-4.5',
         '[&:nth-child(even_of_[data-card-sheet])]:flex-row-reverse',
         '[&:nth-child(even_of_[data-card-sheet])_[data-slot=card-sheet-text]]:text-end',
         className,
@@ -8620,8 +8620,8 @@ export function MoneyTile({
     <label
       {...(notListed ? {} : { 'data-sheet': 'money', 'data-money': moneyKey ?? 'neutral' })}
       className={cn(
-        'group rounded-tile relative grid min-h-17.5 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-5.5 py-2.5 lg:min-h-24',
-        'ease-fill transition-[box-shadow,scale] duration-(--dur-press) motion-safe:active:scale-98',
+        'group relative grid min-h-17.5 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-tile px-5.5 py-2.5 lg:min-h-24',
+        'transition-[box-shadow,scale] duration-(--dur-press) ease-fill motion-safe:active:scale-98',
         'has-checked:shadow-[0_0_0_3px_var(--paper),0_0_0_6px_var(--ink)]',
         'has-focus-visible:outline-3 has-focus-visible:outline-offset-9 has-focus-visible:outline-(--focus-ring)',
         notListed && 'inset-ring-2 inset-ring-ink',

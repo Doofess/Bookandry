@@ -57,7 +57,10 @@ test.describe('@rtl the document', () => {
     if (box !== null && viewport !== null) {
       // Desktop layout: a vertical rail, so the assertion is which EDGE it hugs.
       expect(viewport.width).toBeGreaterThanOrEqual(1024);
-      expect(box.x + box.width).toBeCloseTo(viewport.width, -1);
+      // The window less the scrollbar the reset keeps room for (scrollbar-gutter: stable).
+      // On the right: an English rail would end near 224.
+      expect(box.x + box.width).toBeGreaterThan(viewport.width - 20);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
     }
   });
 });

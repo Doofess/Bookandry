@@ -23,6 +23,19 @@
 @custom-variant rtl (&:where(:dir(rtl), [dir='rtl'], [dir='rtl'] *));
 @custom-variant ltr (&:where(:dir(ltr), [dir='ltr'], [dir='ltr'] *));
 
+/*
+ * Hover for a fine pointer only (§9.6, good-css). Tailwind's own `hover:`
+ * checks `(hover: hover)` alone, which some touch screens with a stylus
+ * report, and a fill that sticks after a tap reads as a pressed button.
+ */
+@custom-variant hover-fine {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Design tokens: Colour of money (docs/superpowers/specs/2026-10-09-colour-of-money-design.md).
 
@@ -776,6 +789,35 @@
   color: var(--fill);
 }
 
+/* ---------------------------------------------------------------------------
+   Shape and motion (§9.1, §8.1).
+
+   Each fluid radius runs from its phone size at a 390 window to its desktop
+   size at 1440, worked out as good-css's "Fluid sizes" says: the slope is
+   (max - min) / (1440 - 390), times 100 for the vw part; the rem part is
+   min - slope * 390. src/lib/base-css.test.ts checks every one at both ends.
+--------------------------------------------------------------------------- */
+:root {
+  --r-sheet: clamp(2.25rem, 1.786rem + 1.905vw, 3.5rem); /* 36 -> 56px: board and phone sheets, panels */
+  --r-sheet-s: clamp(2.125rem, 2.0786rem + 0.1905vw, 2.25rem); /* 34 -> 36px: card sheets */
+  --r-sheet-cash: clamp(2.25rem, 2.0643rem + 0.7619vw, 2.75rem); /* 36 -> 44px: the cash sheet */
+  --r-tile: clamp(1.75rem, 1.6571rem + 0.381vw, 2rem); /* 28 -> 32px: choice tiles */
+  --r-row: 1.625rem; /* account sheets inside the balance sheet */
+  --r-face: 1.375rem; /* CardFace */
+  --r-preview: 3.25rem; /* the pop-out's preview sheet */
+  --r-dialog: 4rem; /* the pop-out */
+  --r-mark: 3px; /* the black box */
+  --r-pill: 999px;
+
+  /* Sheets sit one gap apart: 8px at 390, 16px from about 1024. */
+  --gap-sheet: clamp(0.5rem, 0.193rem + 1.262vw, 1rem);
+
+  --dur-press: 150ms; /* pill and round-button fills, presses */
+  --dur-pop: 200ms; /* menus and popovers */
+  --dur-move: 250ms; /* view transitions */
+  --dur-panel: 300ms; /* panels and pop-outs */
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -825,6 +867,17 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-sheet: var(--r-sheet);
+  --radius-sheet-s: var(--r-sheet-s);
+  --radius-sheet-cash: var(--r-sheet-cash);
+  --radius-tile: var(--r-tile);
+  --radius-row: var(--r-row);
+  --radius-face: var(--r-face);
+  --radius-preview: var(--r-preview);
+  --radius-dialog: var(--r-dialog);
+  --radius-mark: var(--r-mark);
+  --radius-pill: var(--r-pill);
+  --spacing-sheet: var(--gap-sheet);
 
   --font-sans: var(--font-stack-sans);
   --font-display: var(--font-stack-display);
@@ -832,6 +885,10 @@
   --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-soft: cubic-bezier(0.3, 0, 0.8, 0.15);
   --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* §8.1: anything that moves, and colour fills. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-fill: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ---------------------------------------------------------------------------
@@ -862,8 +919,34 @@
 }
 
 @layer base {
-  * {
+  /* good-css's reset, adopted one rule at a time (§10). With min-width: 0 a
+     sized icon, avatar or logo in a flex row can shrink to make room for the
+     text beside it: it needs `shrink-0`. e2e/16-widths.spec.ts fails on any
+     squeezed icon. */
+  *,
+  *::before,
+  *::after {
     border-color: var(--border);
+    min-width: 0;
+  }
+
+  :root {
+    interpolate-size: allow-keywords;
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Room for the scrollbar is kept from a tablet up, so a page does not
+     jump sideways when it grows past the window. Not on a phone: its
+     scrollbar floats over the page, so the gutter would only be 15px of
+     margin (the 320px layout is measured with it in e2e/08-polish.spec.ts). */
+  @media (min-width: 40rem) {
+    :root {
+      scrollbar-gutter: stable;
+    }
   }
 
   body {
@@ -871,6 +954,41 @@
     color: var(--foreground);
     font-family: var(--font-stack-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  /* iOS zooms into a field whose text is under 16px. A component that sets
+     its own size (Input's md:text-sm) wins over this on a desktop. */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+
+  button,
+  a,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  /* Controls only: people copy text, so never on body or on links. */
+  button,
+  [role='button'] {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Focus shows as an outline. A component that draws its own ring says so
+     with Tailwind's outline-none, which wins over this layer. */
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 3px;
   }
 
   /* Amounts are mathematical runs: always lining, always tabular. */
