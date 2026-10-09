@@ -26,8 +26,8 @@ import { SETTINGS_ID } from './repos/settings';
  * So:
  *   PHASE A  network only, outside any transaction. This is where the seconds
  *            and the progress bar live. ANY failure aborts and writes nothing.
- *   PHASE B  one rw transaction over transactions, overrides, profiles and
- *            settings. No awaits on anything but Dexie.
+ *   PHASE B  one rw transaction over transactions, overrides, profiles, cash
+ *            moves and settings. No awaits on anything but Dexie.
  *
  * settings.defaultCurrency is written INSIDE phase B, which makes "settings and
  * data disagree about the base currency" unrepresentable.
@@ -45,7 +45,7 @@ export type ReconvertDeps = {
 export type ReconvertResult =
   | {
       readonly ok: true;
-      readonly changed: { transactions: number; overrides: number; profiles: number };
+      readonly changed: { transactions: number; overrides: number; profiles: number; cashMoves: number };
     }
   | { readonly ok: false; readonly reason: 'unresolved'; readonly unresolved: readonly UnresolvedRow[] }
   | { readonly ok: false; readonly reason: 'fetch_failed'; readonly failed: readonly string[] }
@@ -57,12 +57,13 @@ export async function loadReconvertInput(
   oldBase: Currency,
   newBase: Currency,
 ): Promise<ReconvertInput> {
-  const [transactions, overrides, profiles] = await Promise.all([
+  const [transactions, overrides, profiles, cashMoves] = await Promise.all([
     db.transactions.toArray(),
     db.overrides.toArray(),
     db.profiles.toArray(),
+    db.cashMoves.toArray(),
   ]);
-  return { oldBase, newBase, transactions, overrides, profiles };
+  return { oldBase, newBase, transactions, overrides, profiles, cashMoves };
 }
 
 /** PHASE A: obtain every rate the plan will need. Network only, no writes. */
@@ -109,8 +110,9 @@ export async function applyReconvertPlan(
   plan: ReconvertPlan,
   newBase: Currency,
   now: IsoInstant,
-): Promise<{ transactions: number; overrides: number; profiles: number }> {
-  return db.transaction('rw', db.transactions, db.overrides, db.profiles, db.settings, async () => {
+): Promise<{ transactions: number; overrides: number; profiles: number; cashMoves: number }> {
+  const tables = [db.transactions, db.overrides, db.profiles, db.cashMoves, db.settings];
+  return db.transaction('rw', tables, async () => {
     for (const entry of plan.transactions) {
       await db.transactions.update(entry.id, { money: entry.money, updatedAt: now });
     }
@@ -132,6 +134,13 @@ export async function applyReconvertPlan(
       });
     }
 
+    // A cash move's amount is in the base, so it is rewritten here too, in the
+    // same transaction: the cash figure can never be in a different currency
+    // from the rest of the ledger.
+    for (const entry of plan.cashMoves) {
+      await db.cashMoves.update(entry.id, { amountMinor: entry.amountMinor, updatedAt: now });
+    }
+
     // Written inside the SAME transaction, so settings and data can never
     // disagree about which currency the stored base amounts are in.
     const settings = await db.settings.get(SETTINGS_ID);
@@ -143,6 +152,7 @@ export async function applyReconvertPlan(
       transactions: plan.transactions.length,
       overrides: plan.overrides.length,
       profiles: plan.profiles.length,
+      cashMoves: plan.cashMoves.length,
     };
   });
 }
@@ -163,7 +173,7 @@ export async function reconvertDefaultCurrency(
   deps: ReconvertDeps,
 ): Promise<ReconvertResult> {
   if (oldBase === newBase) {
-    return { ok: true, changed: { transactions: 0, overrides: 0, profiles: 0 } };
+    return { ok: true, changed: { transactions: 0, overrides: 0, profiles: 0, cashMoves: 0 } };
   }
 
   try {
