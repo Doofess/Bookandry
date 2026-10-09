@@ -1,4 +1,4 @@
-import { compareLocal, endOfMonth, startOfMonth } from '@/lib/dates';
+import { compareLocal, endOfMonth, nowIso, startOfMonth } from '@/lib/dates';
 import { add, sum } from '@/lib/money';
 import { CASH_METHOD_ID, type CashMove, type Occurrence, type Transaction } from '@/types/domain';
 import type { IsoInstant, LocalDate, Minor } from '@/types/money';
@@ -103,8 +103,9 @@ export function cashSince(moves: readonly CashMove[], profileId: string): LocalD
  * second start and count for nothing: it becomes a withdrawal of the same
  * amount instead, which adds to the pot exactly as the start did (both are
  * +amount, and neither touches the balance). It is dated no earlier than the
- * target's start, so it counts, and written `now`, so it counts on that start
- * day too. `note` (say "Cash from Dad") goes on it when it has none of its own.
+ * target's start, so it counts, and written no earlier than that start, so it
+ * counts on that start day too. `note` (say "Cash from Dad") goes on it when
+ * it has none of its own.
  *
  * Anything else follows its person as it is: a deleted start, a later start
  * that already counted for nothing, every other move.
@@ -131,7 +132,11 @@ export function joinPot(
     kind: 'withdraw',
     date: compareLocal(move.date, target.date) < 0 ? target.date : move.date,
     ...(kept === undefined || kept === '' ? {} : { note: kept }),
-    createdAt: now,
+    // Written at the merge - or, when this device's clock is behind the one
+    // that wrote the target's start, just after that start. A row dated on the
+    // start day counts only when written after it (`counts`), so a slow clock
+    // must not make the pot drop what it just took in.
+    createdAt: now > target.createdAt ? now : nowIso(new Date(Date.parse(target.createdAt) + 1)),
     updatedAt: now,
   };
 }

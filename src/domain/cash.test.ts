@@ -11,6 +11,7 @@ import {
   earliestStart,
   isCashIn,
   isCashOut,
+  joinPot,
   moveSigned,
   personCash,
 } from './cash';
@@ -382,6 +383,22 @@ describe('a person’s cash', () => {
     const moves = [start('2026-10-01', 50_000), start('2026-10-01', 30_000, 'p2')];
     const result = summary(moves, [spend('moved', '2026-10-02', 5_000, { profileId: 'p2' })], ['p1', 'p2']);
     expect(result.people.map((p) => p.onHandMinor)).toEqual([50_000, 25_000]);
+  });
+});
+
+describe('joining a pot', () => {
+  it('writes the converted start no earlier than the target’s own, so a slow clock cannot drop it on the start day', () => {
+    const mine = start('2026-09-20', 300, 'dad');
+    const target = move({ kind: 'start', date: d('2026-10-01'), amountMinor: 500, createdAt: AFTER });
+    // The merging device's clock (`AT`) is behind the one that wrote the target's start (`AFTER`).
+    const joined = joinPot(mine, 'p1', { mine, target }, undefined, AT);
+    expect(joined).toMatchObject({
+      profileId: 'p1',
+      kind: 'withdraw',
+      date: '2026-10-01',
+      createdAt: '2026-10-01T12:00:00.001Z',
+    });
+    expect(personCash('p1', [target, joined], [], TODAY)?.onHandMinor).toBe(800);
   });
 });
 

@@ -755,6 +755,26 @@ describe('where income goes', () => {
     expect(saved?.paymentMethodId).toBeUndefined();
   });
 
+  it('keeps a hand-picked Goes to on a cash-tab row through expense and back to income', async () => {
+    const { user } = add({ mode: 'add', kind: 'income', cash: true });
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Leumi current/ }));
+    await user.click(screen.getByRole('radio', { name: 'Expense' }));
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Cash/);
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(goesTo()).toHaveAccessibleName(/Leumi current/);
+  });
+
+  it('keeps a hand-picked Paid with on a cash-tab row through income and back to expense', async () => {
+    const { user } = add({ mode: 'add', kind: 'expense', cash: true });
+    await user.click(screen.getByRole('combobox', { name: /Paid with/ }));
+    await user.click(await screen.findByRole('option', { name: /^Max/ }));
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(goesTo()).toHaveAccessibleName(/Cash/);
+    await user.click(screen.getByRole('radio', { name: 'Expense' }));
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Max/);
+  });
+
   it('does not save an account the new person cannot use', async () => {
     const { onSaved, user } = add({ mode: 'add', kind: 'income' }, { profiles: [profile, yossi] });
     await user.click(goesTo());

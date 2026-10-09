@@ -21,6 +21,7 @@ import {
 
 const NOW = '2026-10-09T10:00:00.000Z' as IsoInstant;
 const LATER = '2026-10-09T10:05:00.000Z' as IsoInstant;
+const AGAIN = '2026-10-09T10:07:00.000Z' as IsoInstant;
 const UNDONE = '2026-10-09T10:10:00.000Z' as IsoInstant;
 const TODAY = d('2026-10-09');
 
@@ -216,6 +217,55 @@ describe('setting up, when the person already has a start', () => {
     await undoable.undo(UNDONE);
     expect(await handle.db.cashMoves.get('s1')).toMatchObject({ amountMinor: 50_000, date: '2026-10-01' });
     expect(await handle.db.cashMoves.count()).toBe(1);
+  });
+
+  /** A cash coffee bought today, from the feed: not gated on the cash tab being set up. */
+  const coffee = () =>
+    handle.db.transactions.put(
+      materialize({
+        id: 'coffee',
+        profileId: 'p1',
+        kind: 'expense',
+        categoryId: 'cat.groceries',
+        paymentMethodId: CASH_METHOD_ID,
+        money: { ...MONEY, amountMinor: 2_000, baseAmountMinor: 2_000 },
+        recurrence: { type: 'one_time' },
+        date: TODAY,
+        seriesRootId: 'coffee',
+        createdAt: LATER,
+        updatedAt: LATER,
+      }),
+    );
+
+  it('takes a cash coffee bought between deleting the start and setting up again as already in the amount typed', async () => {
+    await addCashMove(handle.db, 's1', start(50_000, TODAY), NOW);
+    await deleteCashMove(handle.db, 's1', NOW);
+    await coffee();
+
+    const undoable = await addCashMove(handle.db, 's2', start(12_000, TODAY), AGAIN);
+    expect(await onHand()).toBe(12_000);
+    expect(await handle.db.cashMoves.get('s1')).toMatchObject({ isDeleted: 0, createdAt: AGAIN });
+
+    await undoable.undo(UNDONE);
+    expect(await handle.db.cashMoves.get('s1')).toMatchObject({
+      isDeleted: 1,
+      deletedAt: NOW,
+      amountMinor: 50_000,
+      createdAt: NOW,
+    });
+  });
+
+  it('takes a cash coffee bought before setting up today over a start dated in the future as already in the amount typed', async () => {
+    await addCashMove(handle.db, 's1', start(50_000, '2026-10-15'), NOW);
+    expect(await onHand()).toBeUndefined();
+    await coffee();
+
+    const undoable = await addCashMove(handle.db, 's2', start(12_000, TODAY), AGAIN);
+    expect(await onHand()).toBe(12_000);
+    expect(await handle.db.cashMoves.get('s1')).toMatchObject({ date: TODAY, createdAt: AGAIN });
+
+    await undoable.undo(UNDONE);
+    expect(await handle.db.cashMoves.get('s1')).toMatchObject({ date: '2026-10-15', createdAt: NOW });
   });
 
   it('brings back a start that was deleted, under its own id', async () => {

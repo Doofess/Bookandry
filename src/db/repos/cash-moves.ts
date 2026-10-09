@@ -117,7 +117,17 @@ export async function addCashMove(
   return db.transaction('rw', db.cashMoves, async () => {
     if (fields.kind === 'start') {
       const existing = await startRowOf(db, fields.profileId);
-      if (existing !== undefined) return rewrite(db, existing, fields, optional, now);
+      if (existing !== undefined) {
+        // Brought back from deleted, or pulled in from a later date (a start
+        // set in the future, set up over today): set up afresh, so written
+        // afresh. A cash row recorded meanwhile is in the amount just counted,
+        // and the start-day rule reads `createdAt` to know so. A live start
+        // that already counts from on or before the new date keeps its time,
+        // which is what the figure's tie-break between two same-day starts
+        // goes by. Undo keeps the old row, its old `createdAt` included.
+        const fresh = existing.isDeleted === 1 || compareLocal(existing.date, fields.date) > 0;
+        return rewrite(db, fresh ? { ...existing, createdAt: now } : existing, fields, optional, now);
+      }
     }
 
     const row: CashMove = { id, ...fields, ...optional, isDeleted: 0, createdAt: now, updatedAt: now };
