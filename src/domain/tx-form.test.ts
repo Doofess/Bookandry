@@ -936,3 +936,39 @@ describe('where income went', () => {
     expect(parsed.destinationId).toBeUndefined();
   });
 });
+
+describe('the business type', () => {
+  it('is kept on an expense, with where it came from', () => {
+    expect(parse(values({ mcc: '5411', mccSource: 'user' }))).toMatchObject({
+      mcc: '5411',
+      mccSource: 'user',
+    });
+  });
+
+  it('is stripped from income: what switching an expense to income leaves behind (Review Focus 4)', () => {
+    const parsed = parse(values({ kind: 'income', categoryId: 'cat.salary', mcc: '5411', mccSource: 'ai' }));
+    expect(parsed.mcc).toBeUndefined();
+    expect(parsed.mccSource).toBeUndefined();
+  });
+
+  it('is none when empty or not a code, and parses when a caller never set it', () => {
+    expect(parse(values({ mcc: '', mccSource: 'ai' }))).toMatchObject({
+      mcc: undefined,
+      mccSource: undefined,
+    });
+    expect(parse(values({ mcc: '58', mccSource: 'ai' })).mcc).toBeUndefined();
+    const { mcc: _code, mccSource: _source, ...older } = values();
+    expect(parse(older).mcc).toBeUndefined();
+  });
+
+  it('keeps a code a later list added, so opening and saving a row does not erase it', () => {
+    expect(parse(values({ mcc: '9999', mccSource: 'history' })).mcc).toBe('9999');
+  });
+
+  it('drops a source longer than the 20 characters a row may carry, and keeps the code', () => {
+    const parsed = parse(values({ mcc: '5411', mccSource: 'x'.repeat(21) }));
+    expect(parsed.mcc).toBe('5411');
+    expect(parsed.mccSource).toBeUndefined();
+    expect(parse(values({ mcc: '5411', mccSource: 'x'.repeat(20) })).mccSource).toBe('x'.repeat(20));
+  });
+});

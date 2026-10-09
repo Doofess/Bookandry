@@ -15,6 +15,7 @@ import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculato
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
+import { mccName } from '@/domain/mcc';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
@@ -34,6 +35,7 @@ import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences
 import { useFeedFilters } from './use-feed-filters';
 import { offerUndo, useRowActions, useUndoableWrite } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
+import { useMccList } from '../business-type/use-mcc-list';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
@@ -121,6 +123,13 @@ export function FeedScreen() {
     [t],
   );
 
+  // Business type names for the search box: their own chunk, loaded once the feed is up.
+  const mccList = useMccList();
+  const businessTypeName = useMemo(
+    () => (code: string) => (mccList === undefined ? undefined : mccName(mccList, code, i18n.language)),
+    [mccList, i18n.language],
+  );
+
   const { rows, windowCount, isLoading } = useFeedRows(
     occurrences,
     filters,
@@ -128,6 +137,7 @@ export function FeedScreen() {
     today,
     translateCategory,
     translateMethod,
+    businessTypeName,
   );
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);

@@ -33,7 +33,12 @@ import {
 } from '@/db/import-drafts';
 import { redoImport, saveImported, undoImport, type ImportItem } from '@/db/import-transactions';
 import { quoteRate } from '@/db/rates-gateway';
-import { categoryFromHistory, findCandidates, findOverrides } from '@/db/repos/transactions';
+import {
+  findCandidates,
+  findOverrides,
+  merchantHistory,
+  type MerchantHistory,
+} from '@/db/repos/transactions';
 import type { ResolvedRate } from '@/db/save-transaction';
 import { cardFeeOccurrences, fxFeeFor } from '@/domain/cards';
 import { buildMethodReview, type MethodReviewItem } from '@/domain/import-cards';
@@ -59,7 +64,7 @@ import {
   type PaymentMethod,
   type Profile,
 } from '@/types/domain';
-import type { Currency, LocalDate } from '@/types/money';
+import type { Currency, Kind, LocalDate } from '@/types/money';
 
 import {
   foundMethodOf,
@@ -297,6 +302,18 @@ export function ImportSheet(props: ImportSheetProps) {
         : { ppl: people.map((p, i) => ({ a: `u${String(i + 1)}`, n: p.name.slice(0, 60) })) }),
     };
 
+    // What history says about each merchant: looked up once per import, for the reader and the review.
+    const looked = new Map<string, Promise<MerchantHistory>>();
+    const history = (kind: Kind, description: string): Promise<MerchantHistory> => {
+      const key = `${kind}\u0000${description}`;
+      let answer = looked.get(key);
+      if (answer === undefined) {
+        answer = merchantHistory(db, kind, description).catch((): MerchantHistory => ({}));
+        looked.set(key, answer);
+      }
+      return answer;
+    };
+
     try {
       const prepared = await prepareFiles(files, browserImageOps);
       const known = new Set<Currency>(SUPPORTED_CURRENCIES);
@@ -313,9 +330,7 @@ export function ImportSheet(props: ImportSheetProps) {
               ? props.today
               : minDate(todayLocal(new Date(modified)), props.today);
           },
-          knownMerchant: async (description) =>
-            (await categoryFromHistory(db, 'expense', description)) !== undefined ||
-            (await categoryFromHistory(db, 'income', description)) !== undefined,
+          history,
         },
         (request, signal) => accountController().extractTransactions(request, signal),
         {
@@ -341,6 +356,7 @@ export function ImportSheet(props: ImportSheetProps) {
         base: props.baseCurrency,
         today: props.today,
         primeRate: prime.primeRate,
+        history,
       });
       const found = buildMethodReview(result.cards, result.accounts, props.paymentMethods);
       // What the files showed only part of is kept apart, until it is finished or deleted -

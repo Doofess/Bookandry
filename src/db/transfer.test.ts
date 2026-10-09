@@ -495,3 +495,22 @@ describe('cash moves in a backup', () => {
     expect(refused).toMatchObject({ ok: false, reason: 'base_mismatch' });
   });
 });
+
+describe('business types in a backup', () => {
+  it('are exported and restored with their rows', async () => {
+    await seed();
+    await handle.db.transactions.update('tx1', { mcc: '5411', mccSource: 'history' });
+    await handle.db.categories.update('cat.groceries', { mccs: ['5499'] });
+    const doc = await buildExport(handle.db, NOW);
+
+    await handle.db.transactions.clear();
+    await handle.db.categories.clear();
+    const result = await importDocument(handle.db, JSON.parse(JSON.stringify(doc)), {
+      mode: 'replace',
+      now: NOW,
+    });
+    expect(result.ok).toBe(true);
+    expect(await handle.db.transactions.get('tx1')).toMatchObject({ mcc: '5411', mccSource: 'history' });
+    expect((await handle.db.categories.get('cat.groceries'))?.mccs).toEqual(['5499']);
+  });
+});

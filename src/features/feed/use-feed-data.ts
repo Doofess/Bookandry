@@ -177,6 +177,11 @@ export function useFeedRows(
    * Hebrew speaker find מזומן.
    */
   methodName: (method: PaymentMethod) => string,
+  /**
+   * A business type's name in the UI language, so the search box finds
+   * "מסעדות"; undefined until the names have loaded.
+   */
+  businessTypeName: (code: string) => string | undefined,
 ): FeedResult {
   const deferredQuery = useDeferredValue(filters.query);
 
@@ -200,6 +205,7 @@ export function useFeedRows(
           const method = lookups.paymentMethods.get(id);
           return method === undefined ? undefined : methodName(method);
         },
+        businessTypeName,
       },
     );
 
@@ -209,5 +215,5 @@ export function useFeedRows(
       windowCount: occurrences.length,
       isLoading: false,
     };
-  }, [occurrences, lookups, filters, deferredQuery, today, categoryName, methodName]);
+  }, [occurrences, lookups, filters, deferredQuery, today, categoryName, methodName, businessTypeName]);
 }
