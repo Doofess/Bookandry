@@ -11,7 +11,7 @@ import type { IsoInstant } from '@/types/money';
 
 import { defaultDestination, destinationsFor, isDestinationType } from './income-destination';
 import { expandOccurrences } from './occurrences';
-import { d, makeTx, MONEY } from './test-factories';
+import { d, makeTx, MONEY, skip } from './test-factories';
 
 const AT = '2026-01-01T00:00:00.000Z' as IsoInstant;
 const TODAY = d('2026-10-09');
@@ -122,5 +122,39 @@ describe('where new income goes by default', () => {
       income('gone', '2026-09-03', 'pm.deleted'),
     ];
     expect(defaultDestination(history(...txs), 'p1', ALL, TODAY)).toBe('');
+  });
+
+  const wide = (txs: Transaction[], overrides: Parameters<typeof expandOccurrences>[1] = []) =>
+    txs.flatMap((tx) =>
+      expandOccurrences(tx, overrides, d('2025-01-01'), d('2030-01-01'), {
+        today: TODAY,
+        includeSkipped: true,
+      }),
+    );
+
+  it('does not count a skipped payment', () => {
+    const salary = income('salary', '2026-07-01', 'Leumi', {
+      recurrence: { type: 'monthly', dayOfMonth: 1 },
+    });
+    const skips = ['07', '08', '09', '10'].map((m) => skip('salary', d(`2026-${m}-01`)));
+    const found = wide([salary, income('o', '2026-09-05', 'Hapoalim')], skips);
+    expect(found.some((o) => o.isSkipped)).toBe(true);
+    expect(defaultDestination(found, 'p1', ALL, TODAY)).toBe('Hapoalim');
+  });
+
+  it('does not count someone else’s income, even to a place this person can use', () => {
+    const txs = [
+      income('p2cash', '2026-09-01', CASH_METHOD_ID, { profileId: 'p2' }),
+      income('p2joint', '2026-09-02', 'Joint', { profileId: 'p2' }),
+    ];
+    expect(defaultDestination(history(...txs), 'p1', ALL, TODAY)).toBe('');
+  });
+
+  it('counts from exactly six months ago, not a day before, and never the future', () => {
+    const at = (date: string) => defaultDestination(wide([income('x', date, 'Leumi')]), 'p1', ALL, TODAY);
+    expect(at('2026-04-09')).toBe('Leumi');
+    expect(at('2026-04-08')).toBe('');
+    expect(at('2026-10-09')).toBe('Leumi');
+    expect(at('2026-10-10')).toBe('');
   });
 });

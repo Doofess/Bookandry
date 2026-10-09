@@ -567,6 +567,20 @@ describe('where income went, in the edit form', () => {
     expect(patchFor('')).toEqual({ destinationId: null });
   });
 
+  it('clears it when an income becomes an expense', () => {
+    const tx = salary();
+    const occurrence = occurrenceOf(tx, [], '2026-09-10');
+    const base = occurrenceToFormValues(occurrence, tx);
+    const patch = buildPatch({
+      parsed: parse({ ...base, kind: 'expense', destinationId: 'Leumi' }),
+      occurrence,
+      transaction: tx,
+      scope: 'one',
+      money: occurrence.money,
+    });
+    expect(patch.destinationId).toBeNull();
+  });
+
   it('keeps it on a duplicate the person can use, and drops it otherwise', () => {
     const NOW = '2026-01-01T00:00:00.000Z' as IsoInstant;
     const account = (id: string, profileId: string): PaymentMethod => ({
