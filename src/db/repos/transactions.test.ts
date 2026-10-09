@@ -11,6 +11,7 @@ import {
   findCandidates,
   findOverrides,
   listRecentlyDeleted,
+  loadIncomeOccurrences,
   purgeExpiredDeletions,
   putTransaction,
   removeOverride,
@@ -394,5 +395,63 @@ describe('categoryFromHistory', () => {
     expect(await categoryFromHistory(handle.db, 'expense', 'Amazon')).toBeUndefined();
     expect(await categoryFromHistory(handle.db, 'expense', 'Something new')).toBeUndefined();
     expect(await categoryFromHistory(handle.db, 'expense', '   ')).toBeUndefined();
+  });
+});
+
+describe('loadIncomeOccurrences', () => {
+  const incomeTx = (
+    id: string,
+    date: string,
+    recurrence: Recurrence,
+    kind: 'income' | 'expense' = 'income',
+  ) => ({
+    id,
+    profileId: id === 'other' ? 'p2' : 'p1',
+    kind,
+    categoryId: 'cat.salary',
+    money: MONEY,
+    date: d(date),
+    recurrence,
+    seriesRootId: id,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  const query = { from: d('2026-08-01'), to: d('2026-09-15'), today: d('2026-09-15') };
+
+  it('is everyone’s income only, within the window', async () => {
+    await putTransaction(handle.db, incomeTx('pay', '2026-07-10', { type: 'monthly', dayOfMonth: 10 }), []);
+    await putTransaction(handle.db, incomeTx('other', '2026-09-01', { type: 'one_time' }), []);
+    await putTransaction(handle.db, incomeTx('spend', '2026-09-02', { type: 'one_time' }, 'expense'), []);
+    await putTransaction(handle.db, incomeTx('later', '2026-09-20', { type: 'one_time' }), []);
+
+    const got = await loadIncomeOccurrences(handle.db, query);
+    expect(got.map((o) => [o.seriesId, o.date]).sort()).toEqual([
+      ['other', '2026-09-01'],
+      ['pay', '2026-08-10'],
+      ['pay', '2026-09-10'],
+    ]);
+  });
+
+  it('applies an override to its own series only', async () => {
+    const ov: Override = {
+      id: 'ov',
+      transactionId: 'pay',
+      occurrenceDate: d('2026-09-10'),
+      action: 'modify',
+      patch: { destinationId: 'leumi', date: d('2026-09-12') },
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    await handle.db.overrides.put(ov);
+    await putTransaction(handle.db, incomeTx('pay', '2026-08-10', { type: 'monthly', dayOfMonth: 10 }), [ov]);
+    await putTransaction(handle.db, incomeTx('other', '2026-08-10', { type: 'monthly', dayOfMonth: 10 }), []);
+
+    const got = await loadIncomeOccurrences(handle.db, query);
+    const pay = got.find((o) => o.seriesId === 'pay' && o.originalDate === '2026-09-10');
+    expect(pay?.date).toBe('2026-09-12');
+    expect(pay?.destinationId).toBe('leumi');
+    const other = got.find((o) => o.seriesId === 'other' && o.originalDate === '2026-09-10');
+    expect(other?.date).toBe('2026-09-10');
+    expect(other?.destinationId).toBeUndefined();
   });
 });

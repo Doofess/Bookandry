@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from 'cn';
 import { History, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -32,6 +32,7 @@ import { applyUndoablePlan, withSeriesBounds, type UndoableAction } from '@/db/o
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
+import { defaultDestination } from '@/domain/income-destination';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
 import {
   buildPatch,
@@ -68,12 +69,19 @@ import { systemClock } from '@/lib/clock';
 import { formatLocalDate, isLocalDate, monthsBetween, parseLocalDate } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import { toDecimalString, toMinor } from '@/lib/money';
-import type { Category, PaymentMethod, Profile } from '@/types/domain';
+import {
+  CASH_METHOD_ID,
+  type Category,
+  type Occurrence,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 import type { Currency, Kind, LocalDate, Minor } from '@/types/money';
 
 import { CardChargeNote } from './card-charge-note';
 import { CategoryField } from './category-field';
 import { DateField } from './date-field';
+import { DestinationField } from './destination-field';
 import { PaymentMethodField } from './payment-method-field';
 import { RateField } from './rate-field';
 import { RecurrenceFields } from './recurrence-fields';
@@ -152,6 +160,7 @@ export function TransactionSheet({
   activeProfileId,
   baseCurrency,
   today,
+  incomeHistory,
   onSaved,
 }: {
   readonly target: SheetTarget;
@@ -163,6 +172,8 @@ export function TransactionSheet({
   readonly activeProfileId: string;
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
+  /** Everyone's recent income (`useIncomeHistory`): where new income goes by default. */
+  readonly incomeHistory?: readonly Occurrence[];
   readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
@@ -185,8 +196,9 @@ export function TransactionSheet({
   );
 
   const addKind = target.mode === 'add' ? target.kind : 'expense';
-  const adding = useMemo<TxFormValues>(
-    () => ({
+  const addCash = target.mode === 'add' && target.cash === true;
+  const adding = useMemo<TxFormValues>(() => {
+    const base: TxFormValues = {
       ...defaultFormValues({
         profileId: defaultProfileId,
         currency: baseCurrency,
@@ -196,9 +208,29 @@ export function TransactionSheet({
       // Preset by the Add menu's choice; the kind control can still switch it.
       kind: addKind,
       categoryId: categoriesFor(categories, addKind)[0]?.id ?? '',
-    }),
-    [defaultProfileId, baseCurrency, today, categories, prime.primeRate, addKind],
-  );
+    };
+    // From the cash tab: paid in cash, or going to cash.
+    if (addCash) {
+      return addKind === 'expense'
+        ? { ...base, paymentMethodId: CASH_METHOD_ID }
+        : { ...base, destinationId: CASH_METHOD_ID };
+    }
+    if (addKind !== 'income') return base;
+    return {
+      ...base,
+      destinationId: defaultDestination(incomeHistory ?? [], defaultProfileId, paymentMethods, today),
+    };
+  }, [
+    defaultProfileId,
+    baseCurrency,
+    today,
+    categories,
+    prime.primeRate,
+    addKind,
+    addCash,
+    incomeHistory,
+    paymentMethods,
+  ]);
 
   // Duplicate: the row named by the URL, loaded exactly as the edit form loads one.
   const from = target.mode === 'add' ? target.from : undefined;
@@ -241,8 +273,11 @@ export function TransactionSheet({
           ) : (
             <TransactionForm
               // A fresh form for each kind and each source row.
-              key={`add-${addKind}-${from === undefined ? 'new' : `${from.transactionId}@${from.at}`}`}
+              key={`add-${addKind}-${addCash ? 'cash' : 'any'}-${from === undefined ? 'new' : `${from.transactionId}@${from.at}`}`}
               initial={addInitial}
+              duplicate={from !== undefined}
+              cash={addCash}
+              incomeHistory={incomeHistory}
               profiles={profiles}
               categories={categories}
               paymentMethods={paymentMethods}
@@ -351,6 +386,9 @@ function EditBody({
 
 function TransactionForm({
   initial,
+  duplicate = false,
+  cash = false,
+  incomeHistory,
   editing,
   focusAmount = false,
   profiles,
@@ -362,6 +400,12 @@ function TransactionForm({
   onCancel,
 }: {
   readonly initial: TxFormValues;
+  /** Adding a copy of another row. */
+  readonly duplicate?: boolean;
+  /** Adding from the cash tab: the row stays cash, whichever kind it becomes. */
+  readonly cash?: boolean;
+  /** Adding only: where income goes when the kind is switched to income. */
+  readonly incomeHistory?: readonly Occurrence[];
   /** Absent when adding. */
   readonly editing?: EditTarget;
   /** Put the caret in the amount once the form is up. */
@@ -409,6 +453,10 @@ function TransactionForm({
   const noteId = useId();
   const partialId = useId();
   const profileLabelId = useId();
+  const destinationLabelId = useId();
+  // Whether the destination was chosen by hand (or preset by the cash tab): a change of person then leaves it be.
+  // A destination that only defaulted to cash, or a duplicated row's carried one, is never counted as chosen.
+  const destinationChosen = useRef(!duplicate && cash);
 
   // Opened from "A different amount…": the amount is what the person came to change.
   useEffect(() => {
@@ -527,6 +575,25 @@ function TransactionForm({
   const changeKind = useCallback(
     (next: Kind) => {
       setValue('kind', next);
+      // Opened from the cash tab: cash income goes to cash, and a cash expense is
+      // paid with it - unless that field was already picked by hand, which a
+      // round trip through the other kind must not undo.
+      if (cash) {
+        const field = next === 'income' ? 'destinationId' : 'paymentMethodId';
+        if ((form.getValues(field) ?? '') === '') setValue(field, CASH_METHOD_ID);
+      }
+      // Switched to income on a new row with nowhere chosen yet: where this person's income usually goes.
+      if (
+        next === 'income' &&
+        editing === undefined &&
+        !destinationChosen.current &&
+        (form.getValues('destinationId') ?? '') === ''
+      ) {
+        setValue(
+          'destinationId',
+          defaultDestination(incomeHistory ?? [], form.getValues('profileId'), paymentMethods, today),
+        );
+      }
       const current = categories.find((category) => category.id === form.getValues('categoryId'));
       if (current?.kind === next) return;
       setValue('categoryId', categoriesFor(categories, next)[0]?.id ?? '', { shouldValidate: false });
@@ -534,7 +601,7 @@ function TransactionForm({
       auto.typeChosen(undefined, form.getValues('note'), next);
       auto.nameChanged(form.getValues('note'), next);
     },
-    [categories, setValue, form, auto],
+    [categories, setValue, form, auto, editing, incomeHistory, paymentMethods, today, cash],
   );
 
   const errorText = useCallback(
@@ -1074,6 +1141,28 @@ function TransactionForm({
           </div>
         ) : null}
 
+        {values.kind === 'income' ? (
+          <div className="space-y-1.5">
+            <Label id={destinationLabelId}>{t('tx.destination')}</Label>
+            <Controller
+              control={form.control}
+              name="destinationId"
+              render={({ field }) => (
+                <DestinationField
+                  value={field.value ?? ''}
+                  onChange={(id) => {
+                    destinationChosen.current = true;
+                    field.onChange(id);
+                  }}
+                  profileId={values.profileId}
+                  methods={paymentMethods}
+                  labelledBy={destinationLabelId}
+                />
+              )}
+            />
+          </div>
+        ) : null}
+
         {/* One profile makes the switcher pure noise - as on the feed. */}
         {profiles.length > 1 ? (
           <div className="space-y-1.5">
@@ -1093,6 +1182,22 @@ function TransactionForm({
                     if (method !== undefined && !methodOwnedBy(method, next)) {
                       setValue('paymentMethodId', '');
                       changeMethod('');
+                    }
+                    // Likewise an account the new person does not hold; cash is everyone's.
+                    const destination = paymentMethods.find((m) => m.id === form.getValues('destinationId'));
+                    if (destination !== undefined && !methodOwnedBy(destination, next)) {
+                      setValue('destinationId', '');
+                    }
+                    // New income, nothing chosen by hand: the new person's usual destination.
+                    if (
+                      form.getValues('kind') === 'income' &&
+                      editing === undefined &&
+                      !destinationChosen.current
+                    ) {
+                      setValue(
+                        'destinationId',
+                        defaultDestination(incomeHistory ?? [], next, paymentMethods, today),
+                      );
                     }
                   }}
                   size="sm"

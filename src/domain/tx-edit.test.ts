@@ -533,3 +533,80 @@ describe('duplicateFormValues', () => {
     ).toBe('');
   });
 });
+
+describe('where income went, in the edit form', () => {
+  const salary = (over: Partial<Transaction> = {}, overrides: readonly Override[] = []) =>
+    rent({ kind: 'income', categoryId: 'cat.salary', destinationId: 'Leumi', ...over }, overrides);
+
+  it('opens on the occurrence’s own destination', () => {
+    const toCash = modify('rent', d('2026-09-10'), { destinationId: 'pm.cash' });
+    const tx = salary({}, [toCash]);
+    expect(occurrenceToFormValues(occurrenceOf(tx, [toCash], '2026-09-10'), tx).destinationId).toBe(
+      'pm.cash',
+    );
+    expect(occurrenceToFormValues(occurrenceOf(tx, [toCash], '2026-08-10'), tx).destinationId).toBe('Leumi');
+    const none = rent();
+    expect(occurrenceToFormValues(occurrenceOf(none, [], '2026-09-10'), none).destinationId).toBe('');
+  });
+
+  it('patches it only when it changed, and clears it with null', () => {
+    const tx = salary();
+    const occurrence = occurrenceOf(tx, [], '2026-09-10');
+    const base = occurrenceToFormValues(occurrence, tx);
+    const patchFor = (destinationId: string) =>
+      buildPatch({
+        parsed: parse({ ...base, destinationId }),
+        occurrence,
+        transaction: tx,
+        scope: 'one',
+        money: occurrence.money,
+      });
+
+    expect(isEmptyPatch(patchFor('Leumi'))).toBe(true);
+    expect(patchFor('pm.cash')).toEqual({ destinationId: 'pm.cash' });
+    expect(patchFor('')).toEqual({ destinationId: null });
+  });
+
+  it('clears it when an income becomes an expense', () => {
+    const tx = salary();
+    const occurrence = occurrenceOf(tx, [], '2026-09-10');
+    const base = occurrenceToFormValues(occurrence, tx);
+    const patch = buildPatch({
+      parsed: parse({ ...base, kind: 'expense', destinationId: 'Leumi' }),
+      occurrence,
+      transaction: tx,
+      scope: 'one',
+      money: occurrence.money,
+    });
+    expect(patch.destinationId).toBeNull();
+  });
+
+  it('keeps it on a duplicate the person can use, and drops it otherwise', () => {
+    const NOW = '2026-01-01T00:00:00.000Z' as IsoInstant;
+    const account = (id: string, profileId: string): PaymentMethod => ({
+      id,
+      profileId,
+      type: 'bank_account',
+      label: id,
+      account: { bank: '10', holding: 'personal' },
+      isArchived: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const tx = salary({ profileId: 'p2', destinationId: 'yossi-bank' });
+    const occurrence = occurrenceOf(tx, [], '2026-09-10');
+    const base = defaultFormValues({ profileId: 'p1', currency: 'ILS', today: d('2026-10-08') });
+    const methods = [account('yossi-bank', 'p2')];
+
+    expect(
+      duplicateFormValues(occurrence, tx, base, d('2026-10-08'), {
+        profiles: [{ id: 'p1' }, { id: 'p2' }],
+        methods,
+      }).destinationId,
+    ).toBe('yossi-bank');
+    expect(
+      duplicateFormValues(occurrence, tx, base, d('2026-10-08'), { profiles: [{ id: 'p1' }], methods })
+        .destinationId,
+    ).toBe('');
+  });
+});

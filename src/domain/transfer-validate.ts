@@ -22,12 +22,13 @@ const MAX_REPORTED_ISSUES = 20;
 
 function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const { profiles, categories, paymentMethods, transactions, overrides } = doc.data;
+  const { profiles, categories, paymentMethods, transactions, overrides, cashMoves } = doc.data;
 
   const profileIds = new Set(profiles.map((p) => p.id));
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const methodIds = new Set(paymentMethods.map((m) => m.id));
   const transactionIds = new Set(transactions.map((t) => t.id));
+  const kindOf = new Map(transactions.map((t) => [t.id, t.kind]));
 
   const colours = new Map<string, string>();
   for (const p of profiles) {
@@ -74,6 +75,14 @@ function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
       });
     }
 
+    if (t.kind !== 'income' && t.destinationId !== undefined) {
+      // Only income lands somewhere; a destination on an expense would count it as cash coming in.
+      issues.push({
+        path: `transactions.${t.id}.destinationId`,
+        message: 'Only income rows say where the money went',
+      });
+    }
+
     if (t.money.baseCurrency !== doc.defaultCurrency) {
       issues.push({
         path: `transactions.${t.id}.money.baseCurrency`,
@@ -87,6 +96,13 @@ function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
     if (!transactionIds.has(o.transactionId)) {
       issues.push({ path: `overrides.${o.id}.transactionId`, message: `No transaction ${o.transactionId}` });
     }
+    const destination = o.patch?.destinationId;
+    if (destination !== undefined && destination !== null && kindOf.get(o.transactionId) === 'expense') {
+      issues.push({
+        path: `overrides.${o.id}.patch.destinationId`,
+        message: 'Only income rows say where the money went',
+      });
+    }
     const slot = `${o.transactionId}|${o.occurrenceDate}`;
     if (slots.has(slot)) {
       issues.push({
@@ -97,12 +113,19 @@ function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
     slots.add(slot);
   }
 
+  for (const m of cashMoves) {
+    if (!profileIds.has(m.profileId)) {
+      issues.push({ path: `cashMoves.${m.id}.profileId`, message: `No profile ${m.profileId}` });
+    }
+  }
+
   const actual = {
     profiles: profiles.length,
     categories: categories.length,
     paymentMethods: paymentMethods.length,
     transactions: transactions.length,
     overrides: overrides.length,
+    cashMoves: cashMoves.length,
   };
   for (const [key, count] of Object.entries(doc.counts)) {
     const got = actual[key as keyof typeof actual];

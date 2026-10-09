@@ -24,6 +24,7 @@ type OccurrenceSeed = {
   amount?: Minor;
   categoryId?: string;
   paymentMethodId?: string;
+  destinationId?: string;
   note?: string;
   originalDate?: string;
 };
@@ -47,6 +48,7 @@ function occ(seed: OccurrenceSeed): Occurrence {
     money: { ...MONEY, amountMinor: seed.amount ?? 1000, baseAmountMinor: seed.amount ?? 1000 },
     categoryId: seed.categoryId ?? 'cat.groceries',
     paymentMethodId: seed.paymentMethodId,
+    ...(seed.destinationId === undefined ? {} : { destinationId: seed.destinationId }),
     note: seed.note,
     isOverridden: false,
     isMoved: originalDate !== date,
@@ -57,7 +59,7 @@ function occ(seed: OccurrenceSeed): Occurrence {
 
 const lookup: FeedLookup = {
   categoryName: (id) => ({ 'cat.groceries': 'Groceries', 'cat.salary': 'Salary' })[id],
-  paymentMethodLabel: (id) => ({ m1: 'Blue card' })[id],
+  paymentMethodLabel: (id) => ({ m1: 'Blue card', leumi: 'Leumi current' })[id],
 };
 
 describe('flattenFeed', () => {
@@ -210,6 +212,22 @@ describe('applyFeedFilters', () => {
     occ({ id: 'bus', date: '2026-09-06' }),
   ];
   const filter = (over: Partial<FeedFilters>) => applyFeedFilters(items, { ...base, ...over }, lookup);
+
+  it('finds income by the account it went to, with the same filter and search as a card', () => {
+    const withIncome = [
+      ...items,
+      occ({
+        id: 'pay',
+        date: '2026-09-10',
+        kind: 'income',
+        categoryId: 'cat.salary',
+        destinationId: 'leumi',
+      }),
+    ];
+    const run = (over: Partial<FeedFilters>) => applyFeedFilters(withIncome, { ...base, ...over }, lookup);
+    expect(run({ paymentMethodIds: ['leumi'] }).map((o) => o.seriesId)).toEqual(['pay']);
+    expect(run({ query: 'leumi' }).map((o) => o.seriesId)).toEqual(['pay']);
+  });
 
   it('passes everything through by default', () => {
     expect(filter({})).toHaveLength(3);

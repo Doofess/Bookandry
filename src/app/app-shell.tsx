@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import { BarChart3, CreditCard, Receipt } from 'lucide-react';
+import { BarChart3, CreditCard, Receipt, Wallet } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router-dom';
@@ -16,6 +16,7 @@ const ICONS: Record<NavKey, ComponentType<{ className?: string; strokeWidth?: nu
   feed: Receipt,
   chart: BarChart3,
   cards: CreditCard,
+  cash: Wallet,
 };
 
 /**
@@ -24,7 +25,7 @@ const ICONS: Record<NavKey, ComponentType<{ className?: string; strokeWidth?: nu
  * tree for no gain, and screen readers see both.
  *
  * Tab labels are kept at every size: an icon-only bottom bar is a known
- * comprehension and a11y regression, and three items are not crowded.
+ * comprehension and a11y regression, and four items are not crowded, down to a 320px phone in Hebrew.
  */
 function PrimaryNav() {
   const { t } = useTranslation();

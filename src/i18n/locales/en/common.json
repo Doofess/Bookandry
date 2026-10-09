@@ -8,7 +8,8 @@
     "feed": "Feed",
     "chart": "Chart",
     "settings": "Settings",
-    "cards": "Cards"
+    "cards": "Cards",
+    "cash": "Cash"
   },
   "a11y": {
     "skipToContent": "Skip to content",
@@ -34,6 +35,63 @@
     "ai": "Smart import",
     "aiHint": "From a file or a photo of a statement",
     "aiUnavailable": "Needs a Bookandry account"
+  },
+  "cash": {
+    "title": "Cash",
+    "onHand": "Cash on hand",
+    "counted": "Counted {{date}}",
+    "negative": "More spent in cash than you have. Count your cash?",
+    "expected": "Expected this month: <in/> in, <out/> out",
+    "setupTitle": "How much cash do you have now?",
+    "setupBody": "Count what is in the wallet. Cash that comes in or goes out from today is counted from here.",
+    "setupSaved": "Cash on hand saved",
+    "activity": "Activity",
+    "activityEmpty": "Nothing yet. Withdrawals, deposits and cash payments show up here.",
+    "recount": "Recount",
+    "move": {
+      "start": "Cash when you started",
+      "withdraw": "Withdrawn from the ATM",
+      "deposit": "Deposited to the bank"
+    },
+    "someAccount": "A bank account",
+    "manyStarts": "More than one starting amount was recorded for {{name}}. Keep the first one?",
+    "keepFirst": "Keep the first one",
+    "keptFirst": "Kept the first starting amount",
+    "startStays": "Stays",
+    "startGoes": "Goes",
+    "menu": {
+      "withdraw": "Withdraw from ATM",
+      "withdrawHint": "From the bank into cash",
+      "deposit": "Deposit to the bank",
+      "depositHint": "From cash into the bank",
+      "count": "Count my cash",
+      "countHint": "Make the figure match the wallet",
+      "expense": "Cash expense",
+      "expenseHint": "Paid in cash",
+      "income": "Cash income",
+      "incomeHint": "Received in cash",
+      "setUpFirst": "Say how much cash you have first"
+    },
+    "sheet": {
+      "withdrawBody": "Money from the bank into the wallet. The balance does not change.",
+      "depositBody": "Money from the wallet into the bank. The balance does not change.",
+      "startBody": "The cash you had when you started. Correct it if it was not right.",
+      "dateFuture": "Pick today or an earlier day.",
+      "dateBeforeStart": "The cash count starts on {{date}}. Pick that day or a later one.",
+      "dateAfterFirstMove": "The first withdrawal or deposit is on {{date}}. Pick that day or an earlier one."
+    },
+    "account": "Bank account",
+    "note": "Note",
+    "saved": "Saved",
+    "countBody": "Count what is in the wallet. Any difference is recorded as cash found or missing.",
+    "countQuestion": "How much is in the wallet now?",
+    "countRecorded": "Recorded: <amount/>",
+    "countMore": "<amount/> more than recorded",
+    "countMissing": "<amount/> missing",
+    "countMatches": "Matches what is recorded",
+    "countFound": "Recorded as cash found",
+    "countLost": "Recorded as cash missing",
+    "countMatched": "Counted. It matches."
   },
   "categoryPop": {
     "title": "Category",
@@ -177,7 +235,8 @@
     "typeMonthly": "Monthly",
     "typeYearly": "Yearly",
     "cardEnding": "Card ending {{digits}}",
-    "paidWith": "Paid with {{name}}"
+    "paidWith": "Paid with {{name}}",
+    "into": "Into {{name}}"
   },
   "breakdown": {
     "balanceBody": "Everything counted since {{date}}.",
@@ -226,6 +285,9 @@
     "paymentMethod": "Paid with",
     "paymentMethodNone": "Not specified",
     "paymentMethodEmpty": "No payment methods yet. You can add them in Settings.",
+    "destination": "Goes to",
+    "destinationNone": "Not assigned",
+    "destinationEmpty": "No bank accounts yet. Add one under Bank accounts.",
     "date": "Date",
     "dateUnreadable": "Type the date as {{pattern}}.",
     "dateFirst": "First payment",

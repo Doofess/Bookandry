@@ -69,7 +69,7 @@ export function deferredChargeDate(date: LocalDate, billingDay: number): LocalDa
 }
 
 /** An occurrence on a billing card: its bill's date, a month later for a 30+ purchase. */
-type Billed = Pick<Occurrence, 'date'> & { readonly transaction?: Pick<Transaction, 'deferral'> };
+type Billed = Pick<Occurrence, 'date'> & { readonly transaction?: Pick<Transaction, 'deferral' | 'kind'> };
 
 function billedOn(occurrence: Billed, billingDay: number): LocalDate {
   return occurrence.transaction?.deferral === undefined
@@ -86,6 +86,11 @@ export function settleDate(
   occurrence: Pick<Occurrence, 'date' | 'paymentMethodId'> & Billed,
   methods: ReadonlyMap<string, PaymentMethod>,
 ): LocalDate {
+  // A billing day is about money leaving. Income lands on its own date, whatever
+  // method a row names - only an expense waits for a card's bill.
+  if (occurrence.transaction !== undefined && occurrence.transaction.kind !== 'expense') {
+    return occurrence.date;
+  }
   const id = occurrence.paymentMethodId;
   const day = id === undefined ? undefined : billingDayOf(methods.get(id));
   return day === undefined ? occurrence.date : billedOn(occurrence, day);

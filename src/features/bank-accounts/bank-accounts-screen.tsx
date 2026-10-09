@@ -2,8 +2,10 @@ import { cn } from 'cn';
 import { Landmark, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
+import { ROUTES } from '@/app/routes';
 import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
 import { BankMark } from '@/components/brand-mark';
 import { PanelSheet } from '@/components/brand-panel';
@@ -15,6 +17,7 @@ import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
+import { monthParam, PARAM } from '@/domain/feed-filters';
 import { methodOwnedBy } from '@/domain/tx-options';
 import { cardColorValue } from '@/features/cards/card-colors';
 import { MethodEditor } from '@/features/cards/method-editor';
@@ -22,10 +25,19 @@ import { UnfinishedNotice } from '@/features/cards/unfinished-notice';
 import { useBranch } from '@/features/cards/use-branch';
 import { useCardsData } from '@/features/cards/use-cards-data';
 import { ProfileSwitcher } from '@/features/feed/profile-switcher';
+import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
 import { compareLocal, formatLocalDate } from '@/lib/dates';
-import { ALL_PROFILES, type Occurrence, type PaymentMethod, type Profile } from '@/types/domain';
+import {
+  ALL_PROFILES,
+  type Category,
+  type Occurrence,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 import type { LocalDate } from '@/types/money';
+
+import { useIncoming } from './use-incoming';
 
 /**
  * The household's bank accounts: which bank and branch, whose, how far below
@@ -40,6 +52,7 @@ export function BankAccountsScreen() {
   const today = useToday();
   const baseCurrency = useBaseCurrency();
   const data = useCardsData(today, baseCurrency);
+  const incoming = useIncoming(today);
   const [editing, setEditing] = useState<PaymentMethod | 'new' | undefined>(undefined);
   // Whose accounts: the same choice as the feed's. A joint account is everyone's who holds it.
   const whose = useSettings().activeProfileId;
@@ -93,6 +106,8 @@ export function BankAccountsScreen() {
                   cards={[...data.cards, ...data.owing].filter((card) => card.card?.accountId === account.id)}
                   occurrences={data.occurrences}
                   profiles={data.profiles}
+                  incoming={incoming?.next.get(account.id)}
+                  categories={incoming?.categories}
                   onEdit={() => {
                     setEditing(account);
                   }}
@@ -133,12 +148,17 @@ function AccountPanel({
   cards,
   occurrences,
   profiles,
+  incoming,
+  categories,
   onEdit,
 }: {
   readonly account: PaymentMethod;
   readonly cards: readonly PaymentMethod[];
   readonly occurrences: readonly Occurrence[];
   readonly profiles: ReadonlyMap<string, Profile>;
+  /** The next income expected into this account, if any. */
+  readonly incoming: Occurrence | undefined;
+  readonly categories: ReadonlyMap<string, Category> | undefined;
   readonly onEdit: () => void;
 }) {
   const { t, i18n } = useTranslation('cards');
@@ -245,6 +265,10 @@ function AccountPanel({
         </div>
       )}
 
+      {incoming === undefined ? null : (
+        <IncomingLine accountId={account.id} incoming={incoming} categories={categories} />
+      )}
+
       <Button type="button" variant="outline" size="sm" onClick={onEdit}>
         <Pencil className="size-4" aria-hidden="true" />
         {t('accounts.edit.open')}
@@ -316,5 +340,47 @@ function CardCharge({
         </span>
       )}
     </li>
+  );
+}
+
+/**
+ * The next income into the account: "Salary · 10 Nov · 12,400 ₪", linking to
+ * the feed of that account's income in that month.
+ */
+function IncomingLine({
+  accountId,
+  incoming,
+  categories,
+}: {
+  readonly accountId: string;
+  readonly incoming: Occurrence;
+  readonly categories: ReadonlyMap<string, Category> | undefined;
+}) {
+  const { t, i18n } = useTranslation(['cards', 'categories']);
+  const baseCurrency = useBaseCurrency();
+  const category = categories?.get(incoming.categoryId);
+  const name = incoming.note ?? (category === undefined ? '' : categoryDisplayName(category, t));
+  const date = formatLocalDate(incoming.date, i18n.language, { day: 'numeric', month: 'short' });
+  const params = new URLSearchParams({
+    [PARAM.kind]: 'income',
+    [PARAM.methods]: accountId,
+    [PARAM.month]: monthParam(incoming.date),
+  });
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">{t('accounts.incoming')}</p>
+      <Link
+        to={`${ROUTES.feed}?${params.toString()}`}
+        className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-sm transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span className="min-w-0 truncate">{[name, date].filter((part) => part !== '').join(' · ')}</span>
+        <Money
+          minor={incoming.money.baseAmountMinor}
+          currency={baseCurrency}
+          className="shrink-0 font-medium text-income"
+        />
+      </Link>
+    </div>
   );
 }

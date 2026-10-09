@@ -1,9 +1,10 @@
 import { cn } from 'cn';
 import type { TFunction } from 'i18next';
-import { CreditCard, HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
+import { Banknote, CreditCard, HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { BankMark } from '@/components/brand-mark';
 import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
@@ -12,8 +13,15 @@ import { isCardFee } from '@/domain/cards';
 import { recurrenceModeOf } from '@/domain/tx-edit';
 import { standingViaOf } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
+import { methodDisplayName } from '@/i18n/method-name';
 import { formatLocalDate, monthsBetween } from '@/lib/dates';
-import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
+import {
+  CASH_METHOD_ID,
+  type Category,
+  type Occurrence,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
 export type RowContext = {
@@ -128,6 +136,30 @@ function cardOf(
 }
 
 /**
+ * Where an income went, shown the way an expense shows its card: the bank's
+ * mark and the account's name, or the cash icon. Nothing when it is not
+ * assigned, or names an account that no longer exists - which is "not
+ * assigned", never an error. An archived account still shows: the row keeps
+ * its label.
+ */
+function destinationOf(
+  occurrence: Occurrence,
+  methods: ReadonlyMap<string, PaymentMethod> | undefined,
+  t: TFunction<['common', 'profiles']>,
+):
+  | { readonly kind: 'cash'; readonly text: string; readonly label: string }
+  | { readonly kind: 'bank'; readonly bank: string; readonly text: string; readonly label: string }
+  | undefined {
+  if (occurrence.transaction.kind !== 'income' || occurrence.destinationId === undefined) return undefined;
+  const method = methods?.get(occurrence.destinationId);
+  if (method === undefined) return undefined;
+  const text = methodDisplayName(method, t);
+  if (method.id === CASH_METHOD_ID) return { kind: 'cash', text, label: t('feed.into', { name: text }) };
+  if (method.type !== 'bank_account') return undefined;
+  return { kind: 'bank', bank: method.account?.bank ?? '', text, label: t('feed.into', { name: text }) };
+}
+
+/**
  * One occurrence.
  *
  * `memo` is load-bearing, not decoration: `effectiveTransaction` returns the
@@ -165,6 +197,8 @@ export const TransactionRow = memo(function TransactionRow({
   onProjected?: (occurrence: Occurrence, anchor: HTMLElement) => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories']);
+  // The method's own namespace too, for cash's name in the UI language.
+  const { t: tMethod } = useTranslation(['common', 'profiles']);
 
   const category = context.categories.get(occurrence.categoryId);
   const categoryName = category === undefined ? occurrence.categoryId : categoryDisplayName(category, t);
@@ -173,6 +207,7 @@ export const TransactionRow = memo(function TransactionRow({
   const isIncome = occurrence.transaction.kind === 'income';
   const type = rowType(occurrence, t, context.methods);
   const card = cardOf(occurrence, context.methods, t);
+  const destination = destinationOf(occurrence, context.methods, tMethod);
   const signed = isIncome ? occurrence.money.baseAmountMinor : -occurrence.money.baseAmountMinor;
 
   // The date is part of the NAME, so the row is self-describing when the
@@ -187,6 +222,7 @@ export const TransactionRow = memo(function TransactionRow({
     occurrence.note,
     type?.label,
     card?.label,
+    destination?.label,
     context.showProfile ? profile?.name : undefined,
   ]
     .filter(Boolean)
@@ -351,6 +387,20 @@ export const TransactionRow = memo(function TransactionRow({
             >
               <CreditCard className="size-3 shrink-0" aria-hidden="true" />
               <span className="truncate tabular-nums">{card.text}</span>
+            </span>
+          )}
+          {destination === undefined ? null : (
+            <span
+              className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground max-sm:max-w-14"
+              data-testid="row-destination"
+              title={destination.text}
+            >
+              {destination.kind === 'cash' ? (
+                <Banknote className="size-3 shrink-0" aria-hidden="true" />
+              ) : (
+                <BankMark code={destination.bank} size="xs" />
+              )}
+              <span className="truncate">{destination.text}</span>
             </span>
           )}
         </span>

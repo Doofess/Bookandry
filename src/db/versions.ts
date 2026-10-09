@@ -4,7 +4,7 @@ import { revFromIso } from '@/lib/rev';
 import { isBuiltinPaymentMethod } from '@/types/domain';
 
 import { readOrCreateDeviceId } from './sync/device';
-import type { OutboxRow, SyncedTable, SyncStateRow } from './sync/tables';
+import { SYNC_CURSOR_KEY, type OutboxRow, type SyncedTable, type SyncStateRow } from './sync/tables';
 
 /**
  * Schema versions as DATA, not as calls baked into a singleton.
@@ -50,6 +50,10 @@ export type SchemaVersion = {
  *   throws instead of silently producing two conflicting patches. Dexie's
  *   virtual-index rule gives `where('transactionId')` for free from this.
  *
+ * [profileId+isDeleted+date]   (cashMoves)
+ *   One person's live cash moves in date order: the cash tab's figure and
+ *   activity read exactly this.
+ *
  * kind, note, date and currency are deliberately NOT indexed: IndexedDB cannot
  * intersect two indexes anyway, so those filters run in memory over the already
  * windowed candidate set.
@@ -89,7 +93,35 @@ export const SCHEMA_VERSIONS: readonly SchemaVersion[] = [
     version: 3,
     stores: { redirects: 'id' },
   },
+  {
+    /*
+     * The cash tab: withdrawals, deposits, the cash someone started with, and
+     * counts that matched. A new table rather than a new transaction kind, so
+     * an older build syncing alongside this one has nothing to reject.
+     */
+    version: 4,
+    stores: { cashMoves: 'id, [profileId+isDeleted+date], updatedAt' },
+    upgrade: resetPullCursors,
+  },
 ];
+
+/**
+ * Pull every space again from the start.
+ *
+ * A build from before the cash tab skipped `cashMoves` records as unreadable
+ * while still advancing its cursor past them, so an upgraded device would
+ * never fetch the moves made elsewhere. Each cursor goes back to 0 rather than
+ * away: its presence means "this device syncs" (the sweeper) and "this space
+ * was pulled before" (`shareWith`), and a cursor of 0 reads as the start.
+ */
+async function resetPullCursors(tx: DexieTransaction): Promise<void> {
+  await tx
+    .table<{ key: string; value: unknown }, string>('meta')
+    .toCollection()
+    .modify((row) => {
+      if (row.key === SYNC_CURSOR_KEY || row.key.startsWith(`${SYNC_CURSOR_KEY}:`)) row.value = 0;
+    });
+}
 
 /**
  * Give every row that existed before tracking a rev, and queue it for upload.

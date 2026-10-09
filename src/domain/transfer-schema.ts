@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { isLocalDate } from '@/lib/dates';
 import { normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
-import { DEAL_KINDS, EXTRA_RATE_KINDS } from '@/types/domain';
+import { DEAL_KINDS, EXTRA_RATE_KINDS, SHARED_OWNER } from '@/types/domain';
 
 import { isExpiresMonth } from './cards';
 
@@ -258,6 +258,11 @@ const transactionSchema = z.object({
   note: z.string().max(2000).optional(),
   // A 30+ purchase's rate; absent on every other row, and on rows from before it.
   deferral: z.object({ rate: annualRate }).optional(),
+  // Income only: the account or the cash it went to. transfer-validate refuses
+  // it on an expense; a destination naming nothing is "not assigned", never an error.
+  destinationId: z.string().min(1).optional(),
+  // A recount's row; absent on every other.
+  cashCount: z.literal(true).optional(),
   seriesStart: localDate,
   seriesEnd: localDate,
   isDeleted: z.union([z.literal(0), z.literal(1)]),
@@ -275,6 +280,8 @@ const patchSchema = z.object({
   // `null` means "clear this field" - a distinction Partial<> cannot express,
   // which is why clearing a note was unrepresentable before.
   paymentMethodId: z.string().nullable().optional(),
+  // One payment's own destination; `null` clears it.
+  destinationId: z.string().min(1).nullable().optional(),
   note: z.string().max(2000).nullable().optional(),
   date: localDate.optional(),
 });
@@ -320,6 +327,29 @@ const redirectSchema = z.object({
   updatedAt: isoInstant,
 });
 
+/**
+ * A cash move. `kind` is any non-empty string on purpose: a later build may
+ * add a kind, and this one must keep the row rather than refuse it forever -
+ * every sum here ignores a kind it does not know (src/domain/cash.ts).
+ */
+export const cashMoveSchema = z.object({
+  id: z.string().min(1),
+  profileId: z
+    .string()
+    .min(1)
+    .refine((id) => id !== SHARED_OWNER, 'a cash move belongs to one person'),
+  kind: z.string().min(1).max(40),
+  // 0 only for a count that matched; the repository holds every other kind above it.
+  amountMinor: minorAmount,
+  date: localDate,
+  accountId: z.string().min(1).optional(),
+  note: z.string().max(2000).optional(),
+  isDeleted: z.union([z.literal(0), z.literal(1)]),
+  deletedAt: isoInstant.optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+});
+
 export const rowSchemas = {
   redirects: redirectSchema,
   profiles: profileSchema,
@@ -327,6 +357,7 @@ export const rowSchemas = {
   paymentMethods: paymentMethodSchema,
   transactions: transactionSchema,
   overrides: overrideSchema,
+  cashMoves: cashMoveSchema,
 } as const;
 
 /** The settings row syncs one field; this is all a device ever sends of it. */
@@ -355,6 +386,8 @@ export const envelopeSchema = z.object({
     paymentMethods: z.number().int().nonnegative(),
     transactions: z.number().int().nonnegative(),
     overrides: z.number().int().nonnegative(),
+    // Absent from every file made before the cash tab: read as none.
+    cashMoves: z.number().int().nonnegative().default(0),
   }),
   settings: settingsSchema,
   data: z.object({
@@ -363,6 +396,7 @@ export const envelopeSchema = z.object({
     paymentMethods: z.array(paymentMethodSchema),
     transactions: z.array(transactionSchema),
     overrides: z.array(overrideSchema),
+    cashMoves: z.array(cashMoveSchema).default([]),
   }),
 });
 

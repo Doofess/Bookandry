@@ -106,6 +106,9 @@ export async function rebaseStaleRows(db: BookandryDB, deps: RebaseDeps): Promis
       transactions: g.transactions,
       overrides: g.overrides,
       profiles: [],
+      // A cash move carries no currency of its own, so nothing marks one as
+      // stale and there is never one to find here.
+      cashMoves: [],
     };
     const { lookup, failed } = await prefetchRates(input, { fetchQuote: deps.fetchQuote, now: deps.now });
     failedFetches.push(...failed);

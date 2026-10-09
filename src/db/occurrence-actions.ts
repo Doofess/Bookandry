@@ -152,57 +152,93 @@ export async function deleteTransaction(
   };
 }
 
+/** The tables an undoable write can touch, and which of their rows it may change. */
+export type UndoableRows = readonly {
+  readonly table: 'transactions' | 'overrides' | 'cashMoves';
+  readonly ids: readonly string[];
+}[];
+
+/** All an Undo needs of a row: its key, and the stamp that says whether it changed. */
+type StampedRow = { readonly id: string; readonly updatedAt: IsoInstant };
+
 /**
- * Apply a series-edit plan and keep what it overwrote, so Undo puts back
- * every row it touched exactly as it was.
+ * Run `write` and keep what it overwrote in `rows`, so Undo puts back every
+ * one of those rows exactly as it was.
  *
- * A row that did not exist before (a split's continuation, a new override)
- * is deleted on undo; every other row is written back whole, stamped with
- * the undo instant so it wins a later merge. Both halves are one transaction.
+ * A row that did not exist before (a split's continuation, a new override, a
+ * new cash move) is deleted on undo; every other row is written back whole,
+ * stamped with the undo instant so it wins a later merge. Both halves are one
+ * transaction each, and Undo restores the tables in the order of `rows`.
  *
- * Undo refuses, whole, once any of those rows has changed since: the series
- * deleted, or the same row saved again, inside the toast's window. Putting
- * the old rows back then would silently overwrite that later change. Each
- * row's `updatedAt` as the plan left it (or its absence) is the witness.
+ * Undo refuses, whole, once any of those rows has changed since: the row
+ * deleted, or saved again, inside the toast's window. Putting the old rows
+ * back then would silently overwrite that later change. Each row's
+ * `updatedAt` as the write left it (or its absence) is the witness.
+ *
+ * `write` must touch only rows named in `rows`, in only those tables: the
+ * transaction is scoped to them, and Undo restores nothing else.
  */
-export async function applyUndoablePlan(db: BookandryDB, plan: SeriesEditPlan): Promise<UndoableAction> {
-  const transactionIds = plan.transactions.map((t) => t.id);
-  const overrideIds = [...new Set([...plan.overrides.map((o) => o.id), ...plan.deleteOverrideIds])];
-  let transactionsBefore: readonly (Transaction | undefined)[] = [];
-  let overridesBefore: readonly (Override | undefined)[] = [];
+export async function undoableWrite(
+  db: BookandryDB,
+  rows: UndoableRows,
+  write: () => Promise<void>,
+): Promise<UndoableAction> {
+  const scoped = rows.map((r) => ({ table: db.table<StampedRow, string>(r.table), ids: [...r.ids] }));
+  const tables = scoped.map((s) => s.table);
+  let before: readonly (StampedRow | undefined)[] = [];
   let written: readonly (IsoInstant | undefined)[] = [];
 
-  const stamps = async (): Promise<readonly (IsoInstant | undefined)[]> => [
-    ...(await db.transactions.bulkGet(transactionIds)).map((row) => row?.updatedAt),
-    ...(await db.overrides.bulkGet(overrideIds)).map((row) => row?.updatedAt),
-  ];
+  // Every row, flat, in the order of `rows` and then of each one's ids.
+  const read = async (): Promise<readonly (StampedRow | undefined)[]> => {
+    const all: (StampedRow | undefined)[] = [];
+    for (const { table, ids } of scoped) all.push(...(await table.bulkGet(ids)));
+    return all;
+  };
+  const stamps = async (): Promise<readonly (IsoInstant | undefined)[]> =>
+    (await read()).map((row) => row?.updatedAt);
 
-  await db.transaction('rw', [db.transactions, db.overrides], async () => {
-    transactionsBefore = await db.transactions.bulkGet(transactionIds);
-    overridesBefore = await db.overrides.bulkGet(overrideIds);
-    await applySeriesEdit(db, plan);
+  await db.transaction('rw', tables, async () => {
+    before = await read();
+    await write();
     written = await stamps();
   });
 
   return {
     undo: async (undoneAt: IsoInstant) => {
-      await db.transaction('rw', [db.transactions, db.overrides], async () => {
+      await db.transaction('rw', tables, async () => {
         const now = await stamps();
         // Thrown inside the transaction, so nothing below is written.
         if (now.some((stamp, i) => stamp !== written[i])) throw new Error('changed_since');
-        for (const [i, id] of overrideIds.entries()) {
-          const before = overridesBefore[i];
-          if (before === undefined) await db.overrides.delete(id);
-          else await db.overrides.put({ ...before, updatedAt: undoneAt });
-        }
-        for (const [i, id] of transactionIds.entries()) {
-          const before = transactionsBefore[i];
-          if (before === undefined) await db.transactions.delete(id);
-          else await db.transactions.put({ ...before, updatedAt: undoneAt });
+        let at = 0;
+        for (const { table, ids } of scoped) {
+          for (const id of ids) {
+            const row = before[at];
+            at += 1;
+            if (row === undefined) await table.delete(id);
+            else await table.put({ ...row, updatedAt: undoneAt });
+          }
         }
       });
     },
   };
+}
+
+/**
+ * Apply a series-edit plan through `undoableWrite`, so Undo puts back every
+ * transaction and override it touched exactly as it was. Overrides are
+ * restored first, then the transactions they belong to.
+ */
+export async function applyUndoablePlan(db: BookandryDB, plan: SeriesEditPlan): Promise<UndoableAction> {
+  const transactionIds = plan.transactions.map((t) => t.id);
+  const overrideIds = [...new Set([...plan.overrides.map((o) => o.id), ...plan.deleteOverrideIds])];
+  return undoableWrite(
+    db,
+    [
+      { table: 'overrides', ids: overrideIds },
+      { table: 'transactions', ids: transactionIds },
+    ],
+    () => applySeriesEdit(db, plan),
+  );
 }
 
 /**

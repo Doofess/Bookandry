@@ -1,3 +1,4 @@
+import { CASH_FOUND_CATEGORY_ID, CASH_MISSING_CATEGORY_ID } from '@/domain/cash';
 import {
   CASH_METHOD_ID,
   CHEQUE_METHOD_ID,
@@ -24,6 +25,8 @@ export const BUILTIN_INCOME: readonly BuiltinSeed[] = [
   { id: 'cat.gift', nameKey: 'categories:builtin.gift', icon: 'Gift' },
   { id: 'cat.investment', nameKey: 'categories:builtin.investment', icon: 'TrendingUp' },
   { id: 'cat.refund', nameKey: 'categories:builtin.refund', icon: 'Undo2' },
+  // Cash a recount found (the cash tab): an income, so the balance rises with the cash.
+  { id: CASH_FOUND_CATEGORY_ID, nameKey: 'categories:builtin.cashFound', icon: 'Banknote' },
   { id: 'cat.otherIncome', nameKey: 'categories:builtin.otherIncome', icon: 'CirclePlus' },
 ];
 
@@ -60,6 +63,8 @@ export const BUILTIN_EXPENSE: readonly BuiltinSeed[] = [
   { id: 'cat.loans', nameKey: 'categories:builtin.loans', icon: 'HandCoins' },
   // Where a credit card's monthly fee lands (worked out from the card, not typed).
   { id: 'cat.cardFees', nameKey: 'categories:builtin.cardFees', icon: 'CreditCard' },
+  // Cash a recount found missing: an expense, so the balance falls with the cash.
+  { id: CASH_MISSING_CATEGORY_ID, nameKey: 'categories:builtin.cashMissing', icon: 'BanknoteX' },
   { id: 'cat.otherExpense', nameKey: 'categories:builtin.otherExpense', icon: 'CircleMinus' },
 ];
 

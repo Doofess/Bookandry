@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Override, Profile } from '@/types/domain';
+import { convertMinor } from '@/lib/money';
+import type { CashMove, Override, Profile } from '@/types/domain';
 import type { IsoInstant, MoneySnapshot } from '@/types/money';
 
 import { collectRateRequests, planReconversion, type RateLookup, type ReconvertInput } from './reconvert';
@@ -54,9 +55,34 @@ function input(over: Partial<ReconvertInput> = {}): ReconvertInput {
     transactions: [],
     overrides: [],
     profiles: [],
+    cashMoves: [],
     ...over,
   };
 }
+
+function move(over: Partial<CashMove> = {}): CashMove {
+  return {
+    id: 'm1',
+    profileId: 'p1',
+    kind: 'withdraw',
+    amountMinor: 20000,
+    date: d('2026-03-12'),
+    isDeleted: 0,
+    createdAt: ts('2026-01-01T00:00:00.000Z'),
+    updatedAt: ts('2026-01-01T00:00:00.000Z'),
+    ...over,
+  };
+}
+
+/** USD into EUR at a rate that differs by date, so a test can tell which date was used. */
+const USD_EUR: Record<string, string> = { '2026-03-12': '0.9215', '2026-04-01': '0.9102' };
+
+const toEUR: RateLookup = (from, to, on) => {
+  if (from === to) return { rate: '1', rateDate: on, source: 'frankfurter' };
+  if (from !== 'USD' || to !== 'EUR') return undefined;
+  const rate = USD_EUR[on];
+  return rate === undefined ? undefined : { rate, rateDate: on, source: 'frankfurter' };
+};
 
 describe('collectRateRequests', () => {
   it('deduplicates by currency AND date', () => {
@@ -296,5 +322,95 @@ describe('planReconversion', () => {
     );
     expect(plan.unresolved).toHaveLength(3);
     expect(plan.unresolved.map((u) => u.kind)).toEqual(['transaction', 'transaction', 'profile']);
+  });
+});
+
+describe('cash moves', () => {
+  // A move stores no currency: its amount is in the household's base, which is
+  // exactly what is changing. So it converts from the OLD base at its own date.
+
+  it('requests the old base at the date of every move with money in it', () => {
+    const reqs = collectRateRequests(
+      input({
+        newBase: 'EUR',
+        cashMoves: [
+          move({ id: 'a', date: d('2026-03-12') }),
+          move({ id: 'b', date: d('2026-04-01'), kind: 'deposit' }),
+          move({ id: 'c', date: d('2026-05-01'), kind: 'count', amountMinor: 0 }),
+          move({ id: 'e', date: d('2026-05-02'), kind: 'start', amountMinor: 0 }),
+        ],
+      }),
+    );
+    expect(reqs).toEqual([
+      { currency: 'USD', date: '2026-03-12' },
+      { currency: 'USD', date: '2026-04-01' },
+    ]);
+  });
+
+  it('converts a move at the rate for its own date', () => {
+    const plan = planReconversion(
+      input({ newBase: 'EUR', cashMoves: [move({ date: d('2026-04-01') })] }),
+      toEUR,
+    );
+    expect(plan.cashMoves).toEqual([{ id: 'm1', amountMinor: convertMinor(20000, 'USD', 'EUR', '0.9102') }]);
+    expect(plan.unresolved).toEqual([]);
+  });
+
+  it('leaves zero-amount and deleted moves alone, needing no rate', () => {
+    const zero = move({ id: 'zero', kind: 'count', amountMinor: 0, date: d('2026-06-01') });
+    const deleted = move({ id: 'gone', isDeleted: 1, date: d('2026-06-02') });
+    const both = input({ newBase: 'EUR', cashMoves: [zero, deleted] });
+
+    expect(collectRateRequests(both)).toEqual([]);
+    const plan = planReconversion(both, emptyLookup);
+    expect(plan.cashMoves).toEqual([]);
+    expect(plan.unresolved).toEqual([]);
+  });
+
+  it('reports a move with no rate as unresolved', () => {
+    const plan = planReconversion(
+      input({ newBase: 'EUR', cashMoves: [move({ date: d('2026-07-07') })] }),
+      toEUR,
+    );
+    expect(plan.cashMoves).toEqual([]);
+    expect(plan.unresolved).toEqual([
+      { kind: 'cashMove', id: 'm1', currency: 'USD', date: '2026-07-07', reason: 'no_rate' },
+    ]);
+  });
+
+  it('converts from the old base into the new, whose minor units differ: dollars into yen', () => {
+    const toJPY: RateLookup = (from, to, on) =>
+      from === 'USD' && to === 'JPY' ? { rate: '147.25', rateDate: on, source: 'frankfurter' } : undefined;
+    const plan = planReconversion(input({ newBase: 'JPY', cashMoves: [move()] }), toJPY);
+    // $200.00 at 147.25 is ¥29,450; read the other way round it would be cents of yen.
+    expect(plan.cashMoves).toEqual([{ id: 'm1', amountMinor: 29_450 }]);
+  });
+
+  it('asks once for the old base on a date shared by two moves and a manual-rate row', () => {
+    const manual = makeTx({
+      id: 'manual',
+      date: d('2026-03-12'),
+      recurrence: { type: 'one_time' },
+      money: money({ currency: 'JPY', rateSource: 'manual', rateUsed: '0.0068' }),
+    });
+    const reqs = collectRateRequests(
+      input({
+        newBase: 'EUR',
+        transactions: [manual],
+        cashMoves: [move({ id: 'a' }), move({ id: 'b', kind: 'deposit' })],
+      }),
+    );
+    expect(reqs.filter((r) => r.currency === 'USD')).toEqual([{ currency: 'USD', date: '2026-03-12' }]);
+    expect(reqs).toHaveLength(2);
+  });
+
+  it('converts a move of a kind this build does not know', () => {
+    // The money is real even if the kind comes from a newer build.
+    const odd = move({ id: 'odd', kind: 'lent_to_neighbour' });
+    expect(collectRateRequests(input({ newBase: 'EUR', cashMoves: [odd] }))).toEqual([
+      { currency: 'USD', date: '2026-03-12' },
+    ]);
+    const plan = planReconversion(input({ newBase: 'EUR', cashMoves: [odd] }), toEUR);
+    expect(plan.cashMoves).toEqual([{ id: 'odd', amountMinor: convertMinor(20000, 'USD', 'EUR', '0.9215') }]);
   });
 });

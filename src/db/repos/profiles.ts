@@ -1,4 +1,5 @@
 import type { BookandryDB } from '@/db/db';
+import { earliestStart, joinPot } from '@/domain/cash';
 import { MAX_PROFILES, nextFreeColor } from '@/domain/palette';
 import { normalizeName } from '@/domain/validation';
 import { ALL_PROFILES, redirectId, type Profile } from '@/types/domain';
@@ -121,6 +122,16 @@ export async function updateProfile(
   });
 }
 
+/**
+ * The note on a merged person's starting amount once it joins another pot:
+ * stored as plain text, so written here, in the household's language.
+ */
+function cashFromNote(name: string, language: 'en' | 'he' | undefined): string | undefined {
+  const trimmed = name.trim();
+  if (trimmed === '') return undefined;
+  return language === 'he' ? `מזומן מ־${trimmed}` : `Cash from ${trimmed}`;
+}
+
 export type DeleteProfileOptions = {
   /** Where this profile's transactions and payment methods go. */
   readonly reassignTo?: string;
@@ -135,7 +146,8 @@ export type DeleteProfileResult = {
 /**
  * Delete a profile, atomically, taking nothing with it by accident.
  *
- * One transaction covering profiles, transactions, payment methods and settings.
+ * One transaction covering profiles, transactions, payment methods, cash moves
+ * and settings.
  * Four writes that must all land or none: a crash between "reassign the
  * transactions" and "delete the profile" leaves rows pointing at a profile that
  * still exists, which looks fine; a crash the other way round leaves them
@@ -153,7 +165,7 @@ export async function deleteProfile(
 ): Promise<DeleteProfileResult> {
   return db.transaction(
     'rw',
-    [db.profiles, db.transactions, db.paymentMethods, db.settings, db.redirects],
+    [db.profiles, db.transactions, db.paymentMethods, db.cashMoves, db.settings, db.redirects],
     async () => {
       const profile = await db.profiles.get(id);
       if (!profile) throw new Error(`No such profile: ${id}`);
@@ -186,6 +198,27 @@ export async function deleteProfile(
           methods.map((m) => ({ ...m, profileId: reassignTo, updatedAt: now })),
         );
         moved = methods.length;
+      }
+
+      // A person's cash goes where their transactions go, and joins that
+      // person's pot (`joinPot`). With nowhere to go it is deleted: a move
+      // never changed the balance, so no money leaves it.
+      const movesOf = (profileId: string) =>
+        db.cashMoves
+          .where('[profileId+isDeleted+date]')
+          .between([profileId, 0, ''], [profileId, 1, '￿'])
+          .toArray();
+      const moves = await movesOf(id);
+      if (reassignTo === undefined) {
+        await db.cashMoves.bulkDelete(moves.map((m) => m.id));
+      } else {
+        const starts = {
+          mine: earliestStart(moves, id),
+          target: earliestStart(await movesOf(reassignTo), reassignTo),
+        };
+        const language = (await db.settings.get(SETTINGS_ID))?.language;
+        const note = cashFromNote(profile.name, language);
+        await db.cashMoves.bulkPut(moves.map((m) => joinPot(m, reassignTo, starts, note, now)));
       }
 
       await db.profiles.delete(id);

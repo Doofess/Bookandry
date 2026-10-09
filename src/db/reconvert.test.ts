@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RateQuote } from '@/domain/reconvert';
 import { d, MONEY } from '@/domain/test-factories';
+import { convertMinor } from '@/lib/money';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import type { Profile } from '@/types/domain';
+import type { CashMove, Profile } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, MoneySnapshot } from '@/types/money';
 
 import { materialize } from './materialize';
@@ -73,6 +74,20 @@ async function seedProfile(over: Partial<Profile> = {}) {
   });
 }
 
+async function seedMove(over: Partial<CashMove> = {}) {
+  await handle.db.cashMoves.put({
+    id: 'm1',
+    profileId: 'p1',
+    kind: 'withdraw',
+    amountMinor: 20000,
+    date: d('2026-06-01'),
+    isDeleted: 0,
+    createdAt: ts('2026-01-01T00:00:00.000Z'),
+    updatedAt: ts('2026-01-01T00:00:00.000Z'),
+    ...over,
+  });
+}
+
 describe('reconvertDefaultCurrency', () => {
   it('rewrites every row and the settings singleton together', async () => {
     await seedTx('tx1', '2026-03-12', money({ amountMinor: 4500 }));
@@ -104,7 +119,10 @@ describe('reconvertDefaultCurrency', () => {
       fetchQuote: () => Promise.reject(new Error('should not fetch')),
       now: NOW,
     });
-    expect(result).toEqual({ ok: true, changed: { transactions: 0, overrides: 0, profiles: 0 } });
+    expect(result).toEqual({
+      ok: true,
+      changed: { transactions: 0, overrides: 0, profiles: 0, cashMoves: 0 },
+    });
   });
 
   it('reports progress across the prefetch', async () => {
@@ -184,6 +202,7 @@ describe('atomicity', () => {
       ],
       overrides: [],
       profiles: [{ id: 'p1', openingBalanceMinor: 304_910 }],
+      cashMoves: [],
       unresolved: [],
     };
 
@@ -200,6 +219,28 @@ describe('atomicity', () => {
     const rows = await handle.db.transactions.toArray();
     expect(rows.every((t) => t.money.baseCurrency === 'USD')).toBe(true);
     expect((await handle.db.profiles.get('p1'))?.openingBalanceCurrency).toBe('USD');
+    expect((await getSettings(handle.db))?.defaultCurrency).toBe('USD');
+  });
+
+  it('leaves a cash move at its old amount when the settings write fails, last of all', async () => {
+    await seedTx('tx1', '2026-03-12', money({ amountMinor: 4500 }));
+    await seedMove();
+    const plan = {
+      transactions: [{ id: 'tx1', money: money({ baseCurrency: 'ILS', baseAmountMinor: 15_885 }) }],
+      overrides: [],
+      profiles: [],
+      cashMoves: [{ id: 'm1', amountMinor: 60_982 }],
+      unresolved: [],
+    };
+
+    const spy = vi
+      .spyOn(handle.db.settings, 'put')
+      .mockImplementation((() => Promise.reject(new Error('disk full'))) as never);
+    await expect(applyReconvertPlan(handle.db, plan, 'ILS', NOW)).rejects.toThrow('disk full');
+    spy.mockRestore();
+
+    expect((await handle.db.cashMoves.get('m1'))?.amountMinor).toBe(20000);
+    expect((await handle.db.transactions.get('tx1'))?.money.baseCurrency).toBe('USD');
     expect((await getSettings(handle.db))?.defaultCurrency).toBe('USD');
   });
 
@@ -283,11 +324,56 @@ describe('prefetchRates', () => {
     });
 
     const { failed } = await prefetchRates(
-      { oldBase: 'USD', newBase: 'ILS', transactions: [tx], overrides: [], profiles: [] },
+      { oldBase: 'USD', newBase: 'ILS', transactions: [tx], overrides: [], profiles: [], cashMoves: [] },
       { fetchQuote: quoteFor('ILS'), now: NOW },
     );
     // Surfaced to the user rather than silently skipped.
     expect(failed).toEqual(['GBP on 2026-03-12']);
+  });
+});
+
+describe('cash moves', () => {
+  // A move stores no currency - it is in the base - so changing the base must
+  // convert it, or the cash figure ends up in the wrong currency.
+
+  it('converts a move at its own date, as a tracked edit', async () => {
+    await seedTx('tx1', '2026-03-12', money({ currency: 'ILS', amountMinor: 4500 }));
+    await seedMove();
+    const revBefore = (await handle.db.syncState.get(['cashMoves', 'm1']))?.rev;
+
+    const result = await reconvertDefaultCurrency(handle.db, 'USD', 'EUR', {
+      fetchQuote: quoteFor('EUR'),
+      now: NOW,
+    });
+
+    expect(result).toMatchObject({ ok: true, changed: { cashMoves: 1 } });
+    const stored = await handle.db.cashMoves.get('m1');
+    expect(stored?.amountMinor).toBe(convertMinor(20000, 'USD', 'EUR', '0.864'));
+    expect(stored?.updatedAt).toBe(NOW);
+    // A new rev and an outbox entry, exactly like a converted transaction, so
+    // the converted amount reaches every other device.
+    const revAfter = (await handle.db.syncState.get(['cashMoves', 'm1']))?.rev;
+    expect(revAfter).toBeDefined();
+    expect(revAfter).not.toBe(revBefore);
+    expect(await handle.db.outbox.get(['cashMoves', 'm1'])).toBeDefined();
+  });
+
+  it('writes NOTHING when the rate for a move date is missing', async () => {
+    await seedTx('tx1', '2026-03-12', money({ currency: 'ILS', amountMinor: 4500 }));
+    await seedMove();
+    const txBefore = await handle.db.transactions.toArray();
+    const moveBefore = await handle.db.cashMoves.get('m1');
+
+    const result = await reconvertDefaultCurrency(handle.db, 'USD', 'EUR', {
+      fetchQuote: (currency, date) =>
+        date === '2026-06-01' ? Promise.resolve(undefined) : quoteFor('EUR')(currency, date),
+      now: NOW,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'fetch_failed', failed: ['USD on 2026-06-01'] });
+    expect(await handle.db.cashMoves.get('m1')).toEqual(moveBefore);
+    expect(await handle.db.transactions.toArray()).toEqual(txBefore);
+    expect((await getSettings(handle.db))?.defaultCurrency).toBe('USD');
   });
 });
 
