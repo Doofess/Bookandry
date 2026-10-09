@@ -5,8 +5,7 @@ import { Link } from 'react-router-dom';
 import { useAccount } from '@/app/account';
 import { useAccountAvatar } from '@/app/account-avatar';
 import { SETTINGS_ROUTES } from '@/app/routes';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { AccountAvatar } from '@/features/account/account-avatar';
 
 import { useSettingsSections, type SettingsSection } from './sections';
@@ -23,14 +22,12 @@ export function SettingsScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('settings.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-6 px-4 pt-6">
+      <ScreenHead title={t('settings.title')} />
+      <ScreenSheet className="space-y-6 px-4 pt-6">
         {signedIn ? <Who /> : null}
         {sections.account.length > 0 ? <Group sections={sections.account} /> : null}
         <Group sections={sections.app} />
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }

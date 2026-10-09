@@ -117,3 +117,41 @@ export function compositeOver(top: Oklch, alpha: number, bottom: Oklch): Rgb {
   const lower = oklchToSrgb(bottom);
   return [0, 1, 2].map((i) => (upper[i] ?? 0) * alpha + (lower[i] ?? 0) * (1 - alpha)) as unknown as Rgb;
 }
+
+/** Whether an alpha written in a colour (`0`, `0%`) makes it transparent. */
+function isClear(amount: string | undefined): boolean {
+  return amount !== undefined && Number(amount.replace('%', '')) === 0;
+}
+
+/**
+ * A colour as getComputedStyle reports it - rgb(), rgba(), oklch() as
+ * written, or color(srgb …) for a color-mix() - as the #RRGGBB the browser's
+ * chrome takes (`<meta name="theme-color">`). Undefined for a transparent
+ * colour, or anything else.
+ */
+export function cssColorToHex(css: string): string | undefined {
+  const value = css.trim();
+  let channels: Rgb | undefined;
+
+  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i.exec(value);
+  const srgb = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i.exec(value);
+  if (rgb !== null) {
+    if (isClear(rgb[4])) return undefined;
+    channels = [Number(rgb[1]) / 255, Number(rgb[2]) / 255, Number(rgb[3]) / 255];
+  } else if (srgb !== null) {
+    if (isClear(srgb[4])) return undefined;
+    channels = [Number(srgb[1]), Number(srgb[2]), Number(srgb[3])];
+  } else if (/^oklch\(/i.test(value)) {
+    if (isClear(/\/\s*([\d.]+%?)\s*\)$/.exec(value)?.[1])) return undefined;
+    const color = parseOklch(value);
+    if (color !== undefined) channels = oklchToSrgb(color);
+  }
+  if (channels === undefined) return undefined;
+
+  const hex = channels.map((channel) =>
+    Math.round(Math.min(Math.max(channel, 0), 1) * 255) // money-allow: a colour channel, not money
+      .toString(16)
+      .padStart(2, '0'),
+  );
+  return `#${hex.join('')}`.toUpperCase();
+}

@@ -5,9 +5,8 @@ import { Link } from 'react-router-dom';
 
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { BankMark } from '@/components/brand-mark';
-import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
@@ -60,10 +59,8 @@ export function BankAccountsScreen() {
 
   return (
     <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('accounts.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-5 px-4 pt-6">
+      <ScreenHead title={t('accounts.title')} />
+      <ScreenSheet className="space-y-5 px-4 pt-6">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('accounts.body')}</p>
           <Button
@@ -123,7 +120,7 @@ export function BankAccountsScreen() {
           }}
           newType="bank_account"
         />
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }

@@ -60,10 +60,10 @@ for (const size of WIDTHS) {
       const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(1);
 
-      // Every pill on the panel sits inside the viewport: they wrap rather than overflow.
+      // Every pill on the hero sheet sits inside the viewport: they wrap rather than overflow.
       const outside = await page.evaluate(
         () =>
-          [...document.querySelectorAll('[data-slot="brand-panel"] button')]
+          [...document.querySelectorAll('[data-slot="hero-sheet"] button')]
             .map((el) => el.getBoundingClientRect())
             .filter((box) => box.width > 0 && (box.left < 0 || box.right > window.innerWidth + 0.5)).length,
       );

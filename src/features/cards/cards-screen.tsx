@@ -8,8 +8,7 @@ import { useAccount } from '@/app/account';
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { usePrime } from '@/app/prime';
 import { ROUTES } from '@/app/routes';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
@@ -127,10 +126,8 @@ export function CardsScreen() {
 
   return (
     <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-5 px-4 pt-6">
+      <ScreenHead title={t('title')} />
+      <ScreenSheet className="space-y-5 px-4 pt-6">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           <Button
@@ -269,7 +266,7 @@ export function CardsScreen() {
             }
           }}
         />
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }

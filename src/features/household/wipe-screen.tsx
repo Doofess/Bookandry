@@ -6,8 +6,7 @@ import { toast } from 'sonner';
 
 import { accountController, useAccount } from '@/app/account';
 import { ROUTES, SETTINGS_ROUTES } from '@/app/routes';
-import { ScreenPanel } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ServerError } from '@/services/supabase/transport';
 import type { WipePreview } from '@/services/supabase/wipe';
@@ -194,8 +193,8 @@ export function WipeScreen() {
 
   return (
     <div className="mx-auto max-w-lg pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel />
-      <PanelSheet>
+      <ScreenHead />
+      <ScreenSheet>
         <section className="space-y-4 px-4 pt-8 pb-10">
           <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
             <ShieldAlert className="size-6" aria-hidden="true" />
@@ -207,7 +206,7 @@ export function WipeScreen() {
             </Button>
           ) : null}
         </section>
-      </PanelSheet>
+      </ScreenSheet>
     </div>
   );
 }

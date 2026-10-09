@@ -15,6 +15,7 @@ import { ShellEditors } from './shell-editors';
 import { Toaster } from './toaster';
 import { useDesktop, useMediaQuery } from './use-desktop';
 import { useReturnToInvite } from './use-return-to-invite';
+import { useThemeColor } from './use-theme-color';
 import { useWipeNotice } from './use-wipe-notice';
 
 /**
@@ -165,6 +166,7 @@ export function AppShell() {
   const { t } = useTranslation();
   useReturnToInvite();
   useWipeNotice();
+  useThemeColor();
 
   return (
     <div className="min-h-dvh">

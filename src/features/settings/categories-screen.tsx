@@ -4,8 +4,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { CategoryChip, CategoryIcon } from '@/components/category-icon';
 import { ICON_NAMES } from '@/components/category-icons';
 import { Segmented } from '@/components/segmented';
@@ -78,10 +77,8 @@ export function CategoriesScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('categories:manage.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-4 px-4 pt-6">
+      <ScreenHead title={t('categories:manage.title')} />
+      <ScreenSheet className="space-y-4 px-4 pt-6">
         <p className="text-sm text-muted-foreground">{t('categories:manage.body')}</p>
 
         <Label id={kindId} className="sr-only">
@@ -157,7 +154,7 @@ export function CategoriesScreen() {
             if (!open) setTypesOf(undefined);
           }}
         />
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }
