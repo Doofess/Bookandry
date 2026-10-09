@@ -161,7 +161,7 @@ const rowDigits = (row: FoundRow): string => row.wire.l4 || (row.statementCard?.
  * digits printed beside it or in its statement's header, else - a statement
  * that names its card but not its digits - the one of that name.
  */
-function cardOf(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
+export function cardOf(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
   const cards = methods.filter((m) => m.type === 'credit_card' && m.isArchived === 0);
   const digits = rowDigits(row);
   const byDigits = digits === '' ? undefined : cards.find((m) => m.card?.lastDigits === digits);

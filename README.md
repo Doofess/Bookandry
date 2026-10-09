@@ -347,7 +347,9 @@ cost come from doing as little as possible with the model:
   still in doubt stays unticked.
 - **What is already in the app**: rows already there (any occurrence of the
   same kind and amount within two days, a plan already running, a card's fee
-  the app already charges) are grouped as "looks already added"; a category
+  the app already charges) are grouped as "looks already added" - but never
+  a row on one card for an occurrence on another, and on the same card a day
+  apart only for the same merchant; a category
   comes from the app's own history for that name first.
 - **One call per request, a daily cap per person** (`ai_take_quota`), every
   request and answer checked by `import-wire.ts` - shared verbatim with the

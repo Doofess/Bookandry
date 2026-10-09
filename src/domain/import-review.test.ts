@@ -4,7 +4,7 @@ import type { Occurrence, PaymentMethod } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
 import { readRow, type FoundRow, type ReadContext } from './import-check';
-import { collapseOverlaps, draftOf, flagCardFees, flagExisting } from './import-review';
+import { collapseOverlaps, draftOf, flagCardFees, flagExisting, sameMerchant } from './import-review';
 import { expandOccurrences } from './occurrences';
 import { d, makeTx, wireRow as wire } from './test-factories';
 import { txFormSchema } from './tx-form';
@@ -126,6 +126,117 @@ describe('rows the household already has', () => {
   it('leaves rows it cannot date or price alone', () => {
     const row = readRow(wire({ d: 'soon' }), 'x', ctx);
     expect(flagExisting([row], [])[0]).toBe(row);
+  });
+
+  describe('when both sides name a card', () => {
+    // Invented: two cards of one household, used at the same shops.
+    const card = (id: string, lastDigits?: string): PaymentMethod => ({
+      id,
+      profileId: 'p1',
+      type: 'credit_card',
+      label: id,
+      isArchived: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...(lastDigits === undefined ? {} : { card: { lastDigits } }),
+    });
+    const methods = [card('a', '1111'), card('b')];
+    const onCard = (minor: number, date: string, paymentMethodId?: string, note = 'מרקט דמה') =>
+      occurrencesOf(
+        makeTx({
+          id: `${date}-${String(minor)}`,
+          date: d(date),
+          money: money(minor),
+          recurrence: { type: 'one_time' },
+          note,
+          ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
+        }),
+      );
+    const row = (id: string, a: string, date: string, l4: string, m = 'מרקט דמה'): FoundRow => {
+      const found = at(0, null, id, a, m, date);
+      return { ...found, wire: { ...found.wire, l4 } };
+    };
+    const byDigits = (r: FoundRow) => methods.find((m) => m.card?.lastDigits === r.wire.l4);
+    const cards = { methods, methodOf: byDigits };
+
+    it('never takes a row on one card for an occurrence on another: the five near-misses', () => {
+      const existing = [
+        ...onCard(3_700, '2026-04-28', 'a'),
+        ...onCard(3_700, '2026-05-17', 'a'),
+        ...onCard(3_700, '2026-06-08', 'a'),
+        ...onCard(3_900, '2026-05-31', 'a'),
+      ];
+      // The other card, not yet in the household: its digits are all the row has.
+      const rows = [
+        row('r1', '37.00', '29/04/26', '2222'),
+        row('r2', '37.00', '17/05/26', '2222'),
+        row('r3', '37.00', '07/06/26', '2222'),
+        row('r4', '37.00', '09/06/26', '2222'),
+        row('r5', '39.00', '01/06/26', '2222'),
+      ];
+      expect(flagExisting(rows, existing, cards).map((r) => r.flags)).toEqual([[], [], [], [], []]);
+      // Without what the cards say, as before: every one looks already added.
+      expect(flagExisting(rows, existing).map((r) => r.flags)).toEqual(Array(5).fill(['already_added']));
+    });
+
+    it('still knows a re-import on the same card', () => {
+      const existing = onCard(3_700, '2026-04-28', 'a');
+      expect(flagExisting([row('r', '37.00', '29/04/26', '1111')], existing, cards)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+    });
+
+    it('on the same card a day apart, lets the merchant break the tie; on the same day, the amount is enough', () => {
+      const existing = onCard(3_700, '2026-04-28', 'a', 'קפה בדוי');
+      const flags = (date: string) =>
+        flagExisting([row('r', '37.00', date, '1111', 'מרקט דמה')], existing, cards)[0]?.flags;
+      expect(flags('29/04/26')).toEqual([]);
+      expect(flags('28/04/26')).toEqual(['already_added']);
+      // A different spelling of the same shop is the same shop.
+      expect(
+        flagExisting([row('r', '37.00', '29/04/26', '1111', 'ק.בדוי בע"מ')], existing, cards)[0]?.flags,
+      ).toEqual(['already_added']);
+    });
+
+    it('compares the payment methods themselves when the row names one', () => {
+      const existing = onCard(3_700, '2026-04-28', 'a');
+      const named = (r: FoundRow) => (r.id === 'r' ? methods[1] : undefined);
+      expect(
+        flagExisting([row('r', '37.00', '28/04/26', '')], existing, { methods, methodOf: named })[0]?.flags,
+      ).toEqual([]);
+    });
+
+    it('keeps today’s match when either side carries no card', () => {
+      const noMethod = onCard(3_700, '2026-04-28');
+      expect(flagExisting([row('r', '37.00', '29/04/26', '2222')], noMethod, cards)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+      const onA = onCard(3_700, '2026-04-28', 'a');
+      expect(flagExisting([row('r', '37.00', '29/04/26', '')], onA, cards)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+    });
+
+    it('does not take a plan on one card for a plan on another', () => {
+      const existing = occurrencesOf(
+        makeTx({
+          id: 'tv',
+          date: d('2026-08-14'),
+          money: money(20_000),
+          recurrence: { type: 'monthly', dayOfMonth: 14, installments: 6 },
+          paymentMethodId: 'a',
+        }),
+      );
+      const payment = readRow(
+        wire({ a: '200.00', d: '14/08/26', l4: '2222', pl: { md: 'installments', n: 3, of: 6, tot: null } }),
+        'p',
+        ctx,
+      );
+      expect(flagExisting([payment], existing, cards)[0]?.flags).toEqual([]);
+      expect(
+        flagExisting([{ ...payment, wire: { ...payment.wire, l4: '1111' } }], existing, cards)[0]?.flags,
+      ).toEqual(['already_plan']);
+    });
   });
 
   it('knows a card’s monthly fee is already charged by the app', () => {
@@ -270,5 +381,15 @@ describe('a found row as form values', () => {
 
   it('has nothing to offer for a row it cannot read', () => {
     expect(draftOf(readRow(wire({ a: 'x' }), 'x', ctx), base)).toBeUndefined();
+  });
+});
+
+describe('one merchant, two spellings', () => {
+  it('is one when a name sits inside the other or they share a real word', () => {
+    expect(sameMerchant('אר קפה', 'ארקפה שרונה מר')).toBe(true);
+    expect(sameMerchant('קפה רוזה', 'ק.רוזה בע"מ')).toBe(true);
+    expect(sameMerchant('WOLT', 'Wolt (12.00 USD)')).toBe(true);
+    expect(sameMerchant('מרקט דמה', 'קפה בדוי')).toBe(false);
+    expect(sameMerchant('', 'קפה בדוי')).toBe(true);
   });
 });

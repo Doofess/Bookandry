@@ -83,6 +83,7 @@ import { readSession, startSession, usableVia, writeSession, type ImportSession 
 import {
   applyBatch,
   buildReview,
+  cardOf,
   holderOfMethod,
   linkToCard,
   saveable,
@@ -726,7 +727,13 @@ async function flagAgainstHousehold(
     row.methodAlias === null
       ? undefined
       : methods.find((m) => m.id === aliases.methods.get(row.methodAlias ?? ''));
-  return flagCardFees(flagExisting(rows, [...occurrences, ...fees]), method, cards);
+  // What each row was paid with, as the review will take it: its card's digits, else the method it names.
+  const paidWith = (row: FoundRow) => cardOf(row, methods) ?? method(row);
+  return flagCardFees(
+    flagExisting(rows, [...occurrences, ...fees], { methods, methodOf: paidWith }),
+    method,
+    cards,
+  );
 }
 
 /** Who a found card or account goes to: whoever its file was read as being of, else `fallback`. */
