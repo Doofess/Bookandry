@@ -43,7 +43,7 @@ export function isCashOut(o: CashLike): boolean {
 /** What one occurrence does to the cash: + in, − out, 0 for anything not cash. */
 export function cashSigned(o: Occurrence): Minor {
   if (isCashIn(o)) return o.money.baseAmountMinor;
-  if (isCashOut(o)) return -o.money.baseAmountMinor;
+  if (isCashOut(o)) return 0 - o.money.baseAmountMinor;
   return 0;
 }
 
@@ -54,7 +54,7 @@ export function moveSigned(move: Pick<CashMove, 'kind' | 'amountMinor'>): Minor 
     case 'withdraw':
       return move.amountMinor;
     case 'deposit':
-      return -move.amountMinor;
+      return 0 - move.amountMinor;
     default:
       // 'count' is 0 by definition. A kind a later build added is not this
       // build's to sum: ignoring it is what lets that build add it safely.
