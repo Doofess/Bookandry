@@ -14,7 +14,7 @@ import {
   personCash,
 } from './cash';
 import { expandOccurrences } from './occurrences';
-import { d, makeTx, modify, MONEY } from './test-factories';
+import { d, makeTx, modify, MONEY, skip } from './test-factories';
 
 const TODAY = d('2026-10-09');
 const AT = '2026-10-01T00:00:00.000Z' as IsoInstant;
@@ -30,7 +30,11 @@ const move = (over: Partial<CashMove> & Pick<CashMove, 'kind' | 'amountMinor' | 
 const start = (date: string, amountMinor: Minor, profileId = 'p1') =>
   move({ kind: 'start', date: d(date), amountMinor, profileId });
 
-const money = (minor: Minor) => ({ ...MONEY, amountMinor: minor, baseAmountMinor: minor });
+const money = (minor: Minor, base: Minor = minor) => ({
+  ...MONEY,
+  amountMinor: minor,
+  baseAmountMinor: base,
+});
 /** Paid in cash. */
 const spend = (id: string, date: string, minor: Minor, over: Partial<Transaction> = {}) =>
   makeTx({
@@ -61,7 +65,7 @@ function occurrencesOf(txs: readonly Transaction[], overrides: readonly Override
       overrides.filter((o) => o.transactionId === tx.id),
       d('2026-01-01'),
       d('2026-12-31'),
-      { today: TODAY },
+      { today: TODAY, includeSkipped: true },
     ),
   );
 }
@@ -147,8 +151,14 @@ describe('a person’s cash', () => {
   });
 
   it('is not set up by a start dated after today, until that day', () => {
-    const moves = [start('2026-10-20', 50_000)];
-    expect(summary(moves).notSetUp).toEqual(['p1']);
+    const moves = [
+      start('2026-10-20', 50_000),
+      move({ kind: 'withdraw', date: d('2026-10-02'), amountMinor: 20_000 }),
+    ];
+    const result = summary(moves, [earn('in', '2026-10-03', 3_000)]);
+    expect(result.notSetUp).toEqual(['p1']);
+    expect(result.people).toEqual([]);
+    expect(result.onHandMinor).toBe(0);
     expect(cashSince(moves, 'p1')).toBe('2026-10-20');
   });
 
@@ -169,8 +179,95 @@ describe('a person’s cash', () => {
   });
 
   it('starts again from the first live start once that start is deleted', () => {
-    const moves = [{ ...start('2026-09-01', 10_000), isDeleted: 1 as const }, start('2026-10-01', 50_000)];
+    const moves = [
+      { ...start('2026-09-01', 10_000), isDeleted: 1 as const },
+      start('2026-10-01', 50_000),
+      move({ kind: 'withdraw', date: d('2026-09-15'), amountMinor: 700 }),
+    ];
     expect(cashSince(moves, 'p1')).toBe('2026-10-01');
+    const result = summary(moves, [spend('before', '2026-09-20', 5_000), spend('on', '2026-10-01', 300)]);
+    expect(result.people[0]).toMatchObject({ since: '2026-10-01', onHandMinor: 49_700 });
+  });
+
+  it('never returns negative zero', () => {
+    const result = summary([start('2026-10-01', 0)], [spend('free', '2026-10-02', 0)]);
+    expect(Object.is(result.onHandMinor, 0)).toBe(true);
+    expect(Object.is(result.people[0]!.onHandMinor, 0)).toBe(true);
+    const [free] = occurrencesOf([spend('free', '2026-10-02', 0)]);
+    expect(Object.is(cashSigned(free!), 0)).toBe(true);
+    expect(Object.is(moveSigned({ kind: 'deposit', amountMinor: 0 }), 0)).toBe(true);
+  });
+
+  it('uses the base amount, not the original', () => {
+    const result = summary(
+      [start('2026-10-01', 50_000)],
+      [
+        spend('usd', '2026-10-02', 100, { money: money(100, 370) }),
+        earn('eur', '2026-10-03', 200, { money: money(200, 800) }),
+      ],
+    );
+    expect(result.onHandMinor).toBe(50_000 - 370 + 800);
+  });
+
+  it('leaves out skipped payments from the figure, what is expected and the activity', () => {
+    const salary = earn('sal', '2026-08-01', 1_000, { recurrence: { type: 'monthly', dayOfMonth: 1 } });
+    const skipped = [skip('sal', d('2026-09-01')), skip('sal', d('2026-10-20'))];
+    const later = earn('sal', '2026-08-20', 1_000, { recurrence: { type: 'monthly', dayOfMonth: 20 } });
+    const input = (tx: Transaction) => ({
+      profileIds: ['p1'],
+      moves: [start('2026-08-01', 0)],
+      occurrences: occurrencesOf([tx], skipped),
+      today: TODAY,
+    });
+    expect(cashSummary(input(salary)).onHandMinor).toBe(2_000);
+    expect(cashActivity(input(salary)).filter((a) => a.type === 'occurrence')).toHaveLength(2);
+    expect(cashSummary(input(later)).expected).toEqual({ inMinor: 0, outMinor: 0 });
+  });
+
+  it('leaves out moves dated after today, and counts one dated today', () => {
+    const result = summary([
+      start('2026-10-01', 50_000),
+      move({ kind: 'withdraw', date: d('2026-10-10'), amountMinor: 20_000 }),
+      move({ kind: 'deposit', date: d('2026-10-15'), amountMinor: 7_000 }),
+      move({ kind: 'deposit', date: d('2026-10-09'), amountMinor: 3_000 }),
+    ]);
+    expect(result.onHandMinor).toBe(47_000);
+  });
+
+  it('counts a row dated today on hand, and only later rows this month as expected', () => {
+    const result = summary(
+      [start('2026-10-01', 0)],
+      [
+        earn('in-today', '2026-10-09', 100),
+        spend('out-today', '2026-10-09', 40),
+        earn('in-later', '2026-10-10', 7),
+        spend('out-end', '2026-10-31', 3),
+        spend('out-next', '2026-11-01', 11),
+      ],
+    );
+    expect(result.onHandMinor).toBe(60);
+    expect(result.expected).toEqual({ inMinor: 7, outMinor: 3 });
+  });
+
+  it('reads income from the destination and spending from the method, whatever else is set', () => {
+    const result = summary(
+      [start('2026-10-01', 50_000)],
+      [
+        earn('inc', '2026-10-02', 9_000, { destinationId: undefined, paymentMethodId: CASH_METHOD_ID }),
+        spend('exp', '2026-10-03', 4_000, { paymentMethodId: undefined, destinationId: CASH_METHOD_ID }),
+      ],
+    );
+    expect(result.onHandMinor).toBe(50_000);
+  });
+
+  it('starts at the earliest of two live starts', () => {
+    const moves = [
+      start('2026-10-01', 10_000),
+      start('2026-10-05', 3_000),
+      move({ kind: 'withdraw', date: d('2026-10-02'), amountMinor: 500 }),
+    ];
+    const result = summary(moves);
+    expect(result.people[0]).toMatchObject({ since: '2026-10-01', onHandMinor: 13_500 });
   });
 
   it('follows the row’s person: a row given to someone else takes its cash with it', () => {
@@ -298,6 +395,24 @@ describe('the activity', () => {
       ['2026-10-01', 'move', 50_000],
     ]);
     expect(activity.filter((a) => a.type === 'occurrence').map((a) => a.recount)).toEqual([false, true]);
+  });
+
+  it('leaves out a deleted move, and puts the newest-written first within a day', () => {
+    const older = move({ kind: 'withdraw', date: d('2026-10-02'), amountMinor: 100 });
+    const newer = move({
+      kind: 'deposit',
+      date: d('2026-10-02'),
+      amountMinor: 200,
+      createdAt: '2026-10-02T00:00:00.000Z' as IsoInstant,
+    });
+    const gone = move({ kind: 'withdraw', date: d('2026-10-03'), amountMinor: 300, isDeleted: 1 });
+    const activity = cashActivity({
+      profileIds: ['p1'],
+      moves: [start('2026-10-01', 0), older, gone, newer],
+      occurrences: [],
+      today: TODAY,
+    });
+    expect(activity.map((a) => a.signedMinor)).toEqual([-200, 100, 0]);
   });
 
   it('shows only the people in view, from their own start, and nothing after today', () => {
