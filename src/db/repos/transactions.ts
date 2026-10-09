@@ -2,8 +2,9 @@ import type { BookandryDB } from '@/db/db';
 import { LOCK_SWEEP, withLock } from '@/db/lock';
 import { materialize, type TransactionDraft } from '@/db/materialize';
 import { SYNC_CURSOR_KEY } from '@/db/sync/tables';
+import { expandOccurrences } from '@/domain/occurrences';
 import { compareLocal, instantFromMs } from '@/lib/dates';
-import type { Override, Transaction } from '@/types/domain';
+import type { Occurrence, Override, Transaction } from '@/types/domain';
 import type { IsoInstant, Kind, LocalDate } from '@/types/money';
 
 export const ALL_PROFILES = 'all';
@@ -74,6 +75,32 @@ export async function findOverrides(db: BookandryDB, ids: readonly string[]): Pr
     .where('transactionId')
     .anyOf([...ids])
     .toArray();
+}
+
+/**
+ * Everyone's income over [from, to], expanded into payments with its overrides
+ * applied. The one query behind "where income usually lands" and an account's
+ * "Incoming" line.
+ */
+export async function loadIncomeOccurrences(
+  db: BookandryDB,
+  q: { readonly from: LocalDate; readonly to: LocalDate; readonly today: LocalDate },
+): Promise<Occurrence[]> {
+  const income = (await findCandidates(db, { profileId: ALL_PROFILES, from: q.from, to: q.to })).filter(
+    (tx) => tx.kind === 'income',
+  );
+  const byTransaction = new Map<string, Override[]>();
+  for (const o of await findOverrides(
+    db,
+    income.map((tx) => tx.id),
+  )) {
+    const list = byTransaction.get(o.transactionId);
+    if (list === undefined) byTransaction.set(o.transactionId, [o]);
+    else list.push(o);
+  }
+  return income.flatMap((tx) =>
+    expandOccurrences(tx, byTransaction.get(tx.id) ?? [], q.from, q.to, { today: q.today }),
+  );
 }
 
 export async function putTransaction(

@@ -487,3 +487,23 @@ describe('eraseLocalData', () => {
     expect(await a.db.meta.get(SYNC_WIPED_KEY)).toBeDefined();
   });
 });
+
+describe('deleting everything, and the cash tab', () => {
+  it('leaves no cash moves, and nothing of them to send', async () => {
+    await a.db.cashMoves.put({
+      id: 'm1',
+      profileId: 'p1',
+      kind: 'start',
+      amountMinor: 50_000,
+      date: d('2026-10-01'),
+      isDeleted: 0,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    await eraseLocalData(a.db);
+
+    expect(await a.db.cashMoves.count()).toBe(0);
+    expect((await a.db.syncState.toArray()).filter((s) => s.tbl === 'cashMoves')).toEqual([]);
+    expect((await a.db.outbox.toArray()).filter((o) => o.tbl === 'cashMoves')).toEqual([]);
+  });
+});

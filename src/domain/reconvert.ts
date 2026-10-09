@@ -1,5 +1,5 @@
 import { addPercentFee, convertMinor, multiplyRates } from '@/lib/money';
-import type { Override, Profile, Transaction } from '@/types/domain';
+import type { CashMove, Override, Profile, Transaction } from '@/types/domain';
 import type { Currency, LocalDate, MoneySnapshot, RateSource, RateString } from '@/types/money';
 
 /**
@@ -20,6 +20,8 @@ import type { Currency, LocalDate, MoneySnapshot, RateSource, RateString } from 
  *  - Overrides carrying their own money snapshot are rewritten too. Missing
  *    them would leave those occurrences denominated in the OLD base, giving a
  *    feed whose totals silently mix two currencies.
+ *  - Cash moves store no currency: their amount is in the base, which is the
+ *    very thing changing. So each converts from the OLD base at its own date.
  */
 
 export type RateQuote = {
@@ -38,10 +40,11 @@ export type ReconvertInput = {
   readonly transactions: readonly Transaction[];
   readonly overrides: readonly Override[];
   readonly profiles: readonly Profile[];
+  readonly cashMoves: readonly CashMove[];
 };
 
 export type UnresolvedRow = {
-  readonly kind: 'transaction' | 'override' | 'profile';
+  readonly kind: 'transaction' | 'override' | 'profile' | 'cashMove';
   readonly id: string;
   readonly currency: Currency;
   readonly date: LocalDate;
@@ -52,6 +55,7 @@ export type ReconvertPlan = {
   readonly transactions: readonly { id: string; money: MoneySnapshot }[];
   readonly overrides: readonly { id: string; money: MoneySnapshot }[];
   readonly profiles: readonly { id: string; openingBalanceMinor: number }[];
+  readonly cashMoves: readonly { id: string; amountMinor: number }[];
   /** Rows that cannot be converted. A non-empty list ABORTS the whole flow. */
   readonly unresolved: readonly UnresolvedRow[];
 };
@@ -102,7 +106,22 @@ export function collectRateRequests(input: ReconvertInput): RateRequest[] {
     add(p.openingBalanceCurrency, p.openingBalanceDate);
   }
 
+  for (const move of input.cashMoves) {
+    if (!movesMoney(move)) continue;
+    add(input.oldBase, move.date);
+  }
+
   return out;
+}
+
+/**
+ * Whether a cash move has an amount to convert. A deleted one is left as it was,
+ * like a deleted transaction, so a restore brings back what was deleted; a zero
+ * one (a count, or a zero start) is zero in every currency. Neither needs a rate.
+ * The kind is NOT checked: a kind from a newer build is still real money.
+ */
+function movesMoney(move: CashMove): boolean {
+  return move.isDeleted !== 1 && move.amountMinor !== 0;
 }
 
 type Resolved = { money: MoneySnapshot } | { reason: UnresolvedRow['reason'] };
@@ -200,6 +219,7 @@ export function planReconversion(input: ReconvertInput, lookup: RateLookup): Rec
   const transactions: { id: string; money: MoneySnapshot }[] = [];
   const overrides: { id: string; money: MoneySnapshot }[] = [];
   const profiles: { id: string; openingBalanceMinor: number }[] = [];
+  const cashMoves: { id: string; amountMinor: number }[] = [];
   const unresolved: UnresolvedRow[] = [];
 
   for (const tx of input.transactions) {
@@ -263,5 +283,26 @@ export function planReconversion(input: ReconvertInput, lookup: RateLookup): Rec
     });
   }
 
-  return { transactions, overrides, profiles, unresolved };
+  for (const move of input.cashMoves) {
+    if (!movesMoney(move)) continue;
+
+    const quote = lookup(input.oldBase, input.newBase, move.date);
+    if (!quote) {
+      unresolved.push({
+        kind: 'cashMove',
+        id: move.id,
+        currency: input.oldBase,
+        date: move.date,
+        reason: 'no_rate',
+      });
+      continue;
+    }
+
+    cashMoves.push({
+      id: move.id,
+      amountMinor: convertMinor(move.amountMinor, input.oldBase, input.newBase, quote.rate),
+    });
+  }
+
+  return { transactions, overrides, profiles, cashMoves, unresolved };
 }

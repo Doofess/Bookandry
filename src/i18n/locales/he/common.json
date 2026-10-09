@@ -8,7 +8,8 @@
     "feed": "תנועות",
     "chart": "תרשים",
     "settings": "הגדרות",
-    "cards": "כרטיסים"
+    "cards": "כרטיסים",
+    "cash": "מזומן"
   },
   "a11y": {
     "skipToContent": "דילוג לתוכן",
@@ -34,6 +35,63 @@
     "ai": "ייבוא חכם",
     "aiHint": "מקובץ או מצילום של דף פירוט",
     "aiUnavailable": "דורש חשבון Bookandry"
+  },
+  "cash": {
+    "title": "קופת מזומן",
+    "onHand": "מזומן ביד",
+    "counted": "נספר ב-{{date}}",
+    "negative": "יותר הוצאות במזומן ממה שיש. לספור את המזומן?",
+    "expected": "צפוי החודש: <in/> נכנס, <out/> יוצא",
+    "setupTitle": "כמה מזומן יש לך עכשיו?",
+    "setupBody": "כדאי לספור מה יש בארנק. מזומן שנכנס או יוצא מהיום והלאה נספר מכאן.",
+    "setupSaved": "המזומן נשמר",
+    "activity": "תנועות במזומן",
+    "activityEmpty": "עדיין אין כלום. משיכות, הפקדות ותשלומים במזומן יופיעו כאן.",
+    "recount": "ספירה",
+    "move": {
+      "start": "מזומן בהתחלה",
+      "withdraw": "משיכה מכספומט",
+      "deposit": "הפקדה לבנק"
+    },
+    "someAccount": "חשבון בנק",
+    "manyStarts": "נרשם יותר מסכום פתיחה אחד עבור {{name}}. להשאיר את הראשון?",
+    "keepFirst": "להשאיר את הראשון",
+    "keptFirst": "סכום הפתיחה הראשון נשאר",
+    "startStays": "נשאר",
+    "startGoes": "יימחק",
+    "menu": {
+      "withdraw": "משיכה מכספומט",
+      "withdrawHint": "מהבנק למזומן",
+      "deposit": "הפקדה לבנק",
+      "depositHint": "מהמזומן לבנק",
+      "count": "ספירת מזומן",
+      "countHint": "שהסכום יתאים לארנק",
+      "expense": "הוצאה במזומן",
+      "expenseHint": "שולם במזומן",
+      "income": "הכנסה במזומן",
+      "incomeHint": "התקבל במזומן",
+      "setUpFirst": "קודם לרשום כמה מזומן יש"
+    },
+    "sheet": {
+      "withdrawBody": "כסף מהבנק לארנק. היתרה לא משתנה.",
+      "depositBody": "כסף מהארנק לבנק. היתרה לא משתנה.",
+      "startBody": "המזומן שהיה כשהתחלת. אפשר לתקן אם הסכום לא היה נכון.",
+      "dateFuture": "צריך לבחור את היום או יום קודם.",
+      "dateBeforeStart": "ספירת המזומן מתחילה ב־{{date}}. צריך לבחור את היום הזה או יום מאוחר יותר.",
+      "dateAfterFirstMove": "המשיכה או ההפקדה הראשונה היא ב־{{date}}. צריך לבחור את היום הזה או יום מוקדם יותר."
+    },
+    "account": "חשבון בנק",
+    "note": "הערה",
+    "saved": "נשמר",
+    "countBody": "כדאי לספור מה יש בארנק. הפרש יירשם כמזומן שנמצא או חסר.",
+    "countQuestion": "כמה כסף יש בארנק עכשיו?",
+    "countRecorded": "רשום: <amount/>",
+    "countMore": "<amount/> יותר ממה שנרשם",
+    "countMissing": "חסרים <amount/>",
+    "countMatches": "תואם למה שנרשם",
+    "countFound": "נרשם כמזומן שנמצא",
+    "countLost": "נרשם כמזומן חסר",
+    "countMatched": "נספר. הסכום תואם."
   },
   "categoryPop": {
     "title": "קטגוריה",
@@ -178,7 +236,8 @@
     "typeMonthly": "חודשי",
     "typeYearly": "שנתי",
     "cardEnding": "כרטיס שמסתיים ב־{{digits}}",
-    "paidWith": "שולם ב־{{name}}"
+    "paidWith": "שולם ב־{{name}}",
+    "into": "נכנס ל־{{name}}"
   },
   "breakdown": {
     "balanceBody": "כל מה שנספר מ-{{date}}.",
@@ -229,6 +288,9 @@
     "paymentMethod": "אמצעי תשלום",
     "paymentMethodNone": "לא צוין",
     "paymentMethodEmpty": "עדיין אין אמצעי תשלום. אפשר להוסיף בהגדרות.",
+    "destination": "נכנס ל",
+    "destinationNone": "לא שויך",
+    "destinationEmpty": "אין עדיין חשבונות בנק. אפשר להוסיף בחשבונות בנק.",
     "date": "תאריך",
     "dateUnreadable": "יש להקליד את התאריך בפורמט {{pattern}}.",
     "dateFirst": "תשלום ראשון",

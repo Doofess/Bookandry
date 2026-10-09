@@ -174,16 +174,22 @@ export function applyFeedFilters(
     if (!matchesKind(filters.kind, o.transaction.kind)) return false;
     if (categories.size > 0 && !categories.has(o.categoryId)) return false;
     if (methods.size > 0) {
-      if (o.paymentMethodId === undefined || !methods.has(o.paymentMethodId)) return false;
+      // Income is found by the account it went to, as an expense is by its card:
+      // the bank account's "Incoming" line links here with that account.
+      const matches =
+        (o.paymentMethodId !== undefined && methods.has(o.paymentMethodId)) ||
+        (o.destinationId !== undefined && methods.has(o.destinationId));
+      if (!matches) return false;
     }
     if (needle.length === 0) return true;
 
-    // Note, category and payment method - the three things visible on the row.
+    // Note, category, payment method and where income went - what is visible on the row.
     // Searching a field the user cannot see returns results they cannot explain.
     const haystack = [
       o.note,
       lookup.categoryName(o.categoryId),
       o.paymentMethodId === undefined ? undefined : lookup.paymentMethodLabel(o.paymentMethodId),
+      o.destinationId === undefined ? undefined : lookup.paymentMethodLabel(o.destinationId),
     ];
     return haystack.some((value) => value?.toLocaleLowerCase().includes(needle) === true);
   });

@@ -141,6 +141,7 @@
     "cardsFrom": "Card bills paid from this account",
     "chargeOn": "on {{date}}",
     "noCharge": "Nothing coming up",
+    "incoming": "Incoming",
     "archivedCard": "Archived",
     "edit": {
       "open": "Edit account",

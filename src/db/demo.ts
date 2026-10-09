@@ -93,7 +93,7 @@ export type DemoRemoval = {
 export async function removeDemoData(db: BookandryDB): Promise<DemoRemoval> {
   return db.transaction(
     'rw',
-    [db.profiles, db.paymentMethods, db.transactions, db.overrides, db.settings],
+    [db.profiles, db.paymentMethods, db.transactions, db.overrides, db.cashMoves, db.settings],
     async () => {
       const demoTxIds = new Set(
         (await db.transactions.where('id').startsWith(DEMO_PREFIX).primaryKeys()).map(String),
@@ -107,9 +107,20 @@ export async function removeDemoData(db: BookandryDB): Promise<DemoRemoval> {
       const survivors = await db.transactions.toArray();
 
       const demoProfiles = await db.profiles.where('id').startsWith(DEMO_PREFIX).primaryKeys();
-      const claimed = new Set(survivors.map((t) => t.profileId).filter(isDemoRow));
+      // A person the user has set cash up for is theirs too, like one they
+      // filed a transaction under; the demo's own moves claim no one.
+      const moves = await db.cashMoves.toArray();
+      const userMoves = moves.filter((m) => !isDemoRow(m.id));
+      const claimed = new Set(
+        [...survivors.map((t) => t.profileId), ...userMoves.map((m) => m.profileId)].filter(isDemoRow),
+      );
       const removableProfiles = demoProfiles.map(String).filter((id) => !claimed.has(id));
       await db.profiles.bulkDelete(removableProfiles);
+      // The demo's moves go, and with them every move of a person who went.
+      const gone = new Set(removableProfiles);
+      await db.cashMoves.bulkDelete(
+        moves.filter((m) => isDemoRow(m.id) || gone.has(m.profileId)).map((m) => m.id),
+      );
 
       const demoMethods = (await db.paymentMethods.where('id').startsWith(DEMO_PREFIX).primaryKeys()).map(
         String,

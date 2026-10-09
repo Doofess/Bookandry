@@ -453,3 +453,113 @@ describe('referential integrity', () => {
     }
   });
 });
+
+describe('where income went, and what a recount wrote', () => {
+  const salary = {
+    id: 'cat.salary',
+    kind: 'income',
+    icon: 'Wallet',
+    sortOrder: 0,
+    isArchived: 0,
+    source: 'builtin',
+    nameKey: 'categories:builtin.salary',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  function withRow(row: Record<string, unknown>, overrides: unknown[] = []): unknown {
+    const doc = envelope() as ExportEnvelope;
+    return {
+      ...doc,
+      counts: { ...doc.counts, categories: 2, overrides: overrides.length },
+      data: {
+        ...doc.data,
+        categories: [...doc.data.categories, salary],
+        transactions: [{ ...doc.data.transactions[0]!, ...row }],
+        overrides,
+      },
+    };
+  }
+
+  const income = { kind: 'income', categoryId: 'cat.salary', paymentMethodId: undefined };
+
+  it('accepts income that went to cash, or to an account the file does not have', () => {
+    // A destination that names nothing is shown as "not assigned": never an error.
+    for (const destinationId of ['pm.cash', 'pm.gone']) {
+      expect(validateEnvelope(withRow({ ...income, destinationId })).ok, destinationId).toBe(true);
+    }
+  });
+
+  it('refuses a destination on an expense', () => {
+    const result = validateEnvelope(withRow({ destinationId: 'pm.cash' }));
+    expect(result).toMatchObject({ ok: false, reason: 'invalid' });
+    if (!result.ok && result.reason === 'invalid') {
+      expect(result.issues.map((i) => i.path)).toContain('transactions.tx1.destinationId');
+    }
+  });
+
+  it('refuses a destination an override gives one payment of an expense', () => {
+    const override = {
+      id: 'o1',
+      transactionId: 'tx1',
+      occurrenceDate: '2026-03-12',
+      action: 'modify',
+      patch: { destinationId: 'pm.cash' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const result = validateEnvelope(withRow({}, [override]));
+    expect(result).toMatchObject({ ok: false, reason: 'invalid' });
+    if (!result.ok && result.reason === 'invalid') {
+      expect(result.issues.map((i) => i.path)).toContain('overrides.o1.patch.destinationId');
+    }
+    // The same override on income is fine.
+    expect(validateEnvelope(withRow(income, [override])).ok).toBe(true);
+  });
+
+  it('keeps a recount’s tag', () => {
+    const result = validateEnvelope(withRow({ cashCount: true }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.data.transactions[0]?.cashCount).toBe(true);
+  });
+
+  it('reads a file from before either existed exactly as before', () => {
+    const result = validateEnvelope(envelope());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('destinationId');
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('cashCount');
+    }
+  });
+});
+
+describe('cash moves in a file', () => {
+  const move = {
+    id: 'm1',
+    profileId: 'p1',
+    kind: 'withdraw',
+    amountMinor: 20_000,
+    date: '2026-10-01',
+    isDeleted: 0,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+  };
+  const withMoves = (moves: unknown[], count = moves.length): unknown => {
+    const doc = envelope() as ExportEnvelope;
+    return { ...doc, counts: { ...doc.counts, cashMoves: count }, data: { ...doc.data, cashMoves: moves } };
+  };
+
+  it('are read, and a file without any reads as having none', () => {
+    const result = validateEnvelope(withMoves([move]));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.data.cashMoves).toHaveLength(1);
+    const older = validateEnvelope(envelope());
+    expect(older.ok).toBe(true);
+    if (older.ok) expect(older.doc.data.cashMoves).toEqual([]);
+  });
+
+  it('refuses a move whose person is not in the file, and a header that miscounts them', () => {
+    expect(validateEnvelope(withMoves([{ ...move, profileId: 'ghost' }])).ok).toBe(false);
+    expect(validateEnvelope(withMoves([move], 2)).ok).toBe(false);
+  });
+});

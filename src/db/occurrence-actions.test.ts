@@ -5,17 +5,20 @@ import { planSeriesEdit } from '@/domain/series-edit';
 import { d, modify, MONEY } from '@/domain/test-factories';
 import { counterIdFactory } from '@/lib/id';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import type { Occurrence, Transaction } from '@/types/domain';
+import type { CashMove, Occurrence, Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { materialize } from './materialize';
 import {
+  applyUndoablePlan,
   changeCategory,
   deleteTransaction,
   editOccurrence,
   moveOccurrence,
   restoreOccurrence,
   skipOccurrence,
+  undoableWrite,
+  type UndoableRows,
 } from './occurrence-actions';
 import { findCandidates, listRecentlyDeleted } from './repos/transactions';
 import { applySeriesEdit } from './series-edit';
@@ -718,5 +721,101 @@ describe('moving a projected occurrence', () => {
       moveOccurrence(handle.db, { occurrence: first, to: TODAY, today: TODAY, now: NOW, newId: ids() }),
     ).rejects.toThrow('before_series_start');
     expect(await handle.db.overrides.count()).toBe(0);
+  });
+});
+
+describe('undoableWrite', () => {
+  const UNDONE = '2026-09-15T10:00:10.000Z' as IsoInstant;
+
+  const move: CashMove = {
+    id: 'm1',
+    profileId: 'p1',
+    kind: 'withdraw',
+    amountMinor: 1_000,
+    date: TODAY,
+    isDeleted: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+
+  /** Each write the Undo makes, in order, as "table:what id". */
+  function recordWrites(): string[] {
+    const log: string[] = [];
+    for (const name of ['cashMoves', 'transactions', 'overrides'] as const) {
+      const table = handle.db.table<{ id: string }, string>(name);
+      table.hook('creating', (key) => {
+        log.push(`${name}:create ${key}`);
+      });
+      table.hook('updating', (_mods, key) => {
+        log.push(`${name}:update ${key}`);
+      });
+      table.hook('deleting', (key) => {
+        log.push(`${name}:delete ${key}`);
+      });
+    }
+    return log;
+  }
+
+  /** Over two tables: adds a cash move, and changes the rent's amount. */
+  const write = (rows: UndoableRows) =>
+    undoableWrite(handle.db, rows, async () => {
+      await handle.db.cashMoves.add(move);
+      const tx = await handle.db.transactions.get('rent');
+      await handle.db.transactions.put({ ...tx!, note: 'Changed', updatedAt: NOW });
+    });
+
+  const movesThenRent: UndoableRows = [
+    { table: 'cashMoves', ids: ['m1'] },
+    { table: 'transactions', ids: ['rent'] },
+  ];
+
+  it('deletes the row it created and puts back the row it changed, table by table in the order given', async () => {
+    const tx = rent();
+    await handle.db.transactions.add({ ...tx, updatedAt: '2026-09-01T00:00:00.000Z' as IsoInstant });
+    const before = await handle.db.transactions.get('rent');
+    const undoable = await write(movesThenRent);
+    expect(await handle.db.transactions.get('rent')).toMatchObject({ note: 'Changed' });
+
+    const log = recordWrites();
+    await undoable.undo(UNDONE);
+
+    expect(log).toEqual(['cashMoves:delete m1', 'transactions:update rent']);
+    expect(await handle.db.cashMoves.get('m1')).toBeUndefined();
+    expect(await handle.db.transactions.get('rent')).toEqual({ ...before, updatedAt: UNDONE });
+  });
+
+  it('follows the order of the rows, not of the tables', async () => {
+    await handle.db.transactions.add(rent());
+    const undoable = await write([...movesThenRent].reverse());
+
+    const log = recordWrites();
+    await undoable.undo(UNDONE);
+    expect(log).toEqual(['transactions:update rent', 'cashMoves:delete m1']);
+  });
+
+  it('refuses, whole, once either row changed since', async () => {
+    await handle.db.transactions.add(rent());
+    const undoable = await write(movesThenRent);
+    await handle.db.cashMoves.update('m1', { amountMinor: 2_000, updatedAt: LATER });
+
+    await expect(undoable.undo(UNDONE)).rejects.toThrow('changed_since');
+    expect(await handle.db.cashMoves.get('m1')).toMatchObject({ amountMinor: 2_000 });
+    expect(await handle.db.transactions.get('rent')).toMatchObject({ note: 'Changed' });
+  });
+
+  it('restores a series edit overrides first, then transactions', async () => {
+    const tx = rent();
+    await handle.db.transactions.add(tx);
+    const undoable = await applyUndoablePlan(handle.db, {
+      transactions: [{ ...tx, note: 'Changed', updatedAt: LATER }],
+      overrides: [modify('rent', d('2026-09-10'), { note: 'One' })],
+      deleteOverrideIds: [],
+      warnings: [],
+      effectiveScope: 'one',
+    });
+
+    const log = recordWrites();
+    await undoable.undo(UNDONE);
+    expect(log.map((entry) => entry.split(':')[0])).toEqual(['overrides', 'transactions']);
   });
 });

@@ -227,3 +227,43 @@ describe('an archived card on the account', () => {
     if (closed !== null) expect(within(closed).getByText('בארכיון')).toBeInTheDocument();
   });
 });
+
+describe('an account’s incoming money', () => {
+  afterEach(async () => {
+    await db.transactions.bulkDelete(['pay', 'elsewhere']);
+  });
+
+  const income = (id: string, destinationId: string) =>
+    makeTx({
+      id,
+      profileId: 'p1',
+      kind: 'income',
+      categoryId: 'cat.salary',
+      date: d('2026-08-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10 },
+      destinationId,
+      money: { ...MONEY, amountMinor: 1_240_000, baseAmountMinor: 1_240_000 },
+    });
+
+  it('shows the next income going into it, and links to the feed of that account’s income that month', async () => {
+    await db.transactions.put(income('pay', 'leumi'));
+    render();
+
+    const panel = await account();
+    const link = await within(panel).findByRole('link', { name: /^Salary · Oct 10/ });
+    expect(link.querySelector('[data-value="1240000"]')).not.toBeNull();
+    const href = new URL(link.getAttribute('href') ?? '', 'http://x');
+    expect(href.pathname).toBe('/');
+    expect(href.searchParams.get('pm')).toBe('leumi');
+    expect(href.searchParams.get('k')).toBe('income');
+    expect(href.searchParams.get('m')).toBe('2026-10');
+  });
+
+  it('shows nothing for an account no income is expected into', async () => {
+    await db.transactions.put(income('elsewhere', 'pm.cash'));
+    render();
+
+    const panel = await account();
+    expect(within(panel).queryByText('Incoming')).toBeNull();
+  });
+});

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RateLookup } from '@/domain/reconvert';
 import { d, MONEY } from '@/domain/test-factories';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import type { Category, PaymentMethod, Profile } from '@/types/domain';
+import type { CashMove, Category, PaymentMethod, Profile } from '@/types/domain';
 import type { IsoInstant, MoneySnapshot } from '@/types/money';
 
 import { materialize } from './materialize';
@@ -89,6 +89,18 @@ async function seed(txId = 'tx1', m: MoneySnapshot = money(), updatedAt: IsoInst
   );
 }
 
+const cashMove = (over: Partial<CashMove> = {}): CashMove => ({
+  id: 'm1',
+  profileId: 'p1',
+  kind: 'start',
+  amountMinor: 50_000,
+  date: d('2026-10-01'),
+  isDeleted: 0,
+  createdAt: EARLIER,
+  updatedAt: EARLIER,
+  ...over,
+});
+
 describe('export', () => {
   it('produces a valid, self-describing envelope', async () => {
     await seed();
@@ -123,6 +135,7 @@ describe('export', () => {
       'paymentMethods',
       'transactions',
       'overrides',
+      'cashMoves',
     ]);
   });
 
@@ -410,5 +423,75 @@ describe('import rejection', () => {
       expect(result.ok).toBe(false);
     }
     expect(await handle.db.transactions.count()).toBe(1);
+  });
+});
+
+describe('cash moves in a backup', () => {
+  it('are exported, counted, and restored by a replace', async () => {
+    await seed();
+    await handle.db.cashMoves.put(cashMove());
+    const doc = await buildExport(handle.db, NOW);
+    expect(doc.counts.cashMoves).toBe(1);
+    expect(doc.data.cashMoves).toEqual([cashMove()]);
+
+    await handle.db.cashMoves.clear();
+    const result = await importDocument(handle.db, JSON.parse(JSON.stringify(doc)), {
+      mode: 'replace',
+      now: NOW,
+    });
+    expect(result).toMatchObject({ ok: true, applied: { cashMoves: 1 } });
+    expect(await handle.db.cashMoves.get('m1')).toEqual(cashMove());
+  });
+
+  it('merge by the newer edit, like every other row', async () => {
+    await seed();
+    await handle.db.cashMoves.put(cashMove());
+    const doc = await buildExport(handle.db, NOW);
+    await handle.db.cashMoves.put(cashMove({ amountMinor: 40_000, updatedAt: NOW }));
+
+    await importDocument(handle.db, doc, { mode: 'merge', now: NOW });
+    expect((await handle.db.cashMoves.get('m1'))?.amountMinor).toBe(40_000);
+  });
+
+  it('are left alone by a file from before the cash tab, which still imports', async () => {
+    await seed();
+    const doc = await buildExport(handle.db, NOW);
+    const { cashMoves: _moves, ...data } = doc.data;
+    const { cashMoves: _count, ...counts } = doc.counts;
+    await handle.db.cashMoves.put(cashMove());
+
+    const merged = await importDocument(handle.db, { ...doc, counts, data }, { mode: 'merge', now: NOW });
+    expect(merged).toMatchObject({ ok: true, applied: { cashMoves: 0 } });
+    expect(await handle.db.cashMoves.count()).toBe(1);
+  });
+
+  it('are converted into this device’s currency when a merge converts the rest', async () => {
+    await seed();
+    const doc = await buildExport(handle.db, NOW);
+    // As if this file came from a household that keeps its money in shekels.
+    const shekels = {
+      ...doc,
+      defaultCurrency: 'ILS',
+      settings: { ...doc.settings, defaultCurrency: 'ILS' },
+      counts: { ...doc.counts, transactions: 0, cashMoves: 1 },
+      data: { ...doc.data, transactions: [], cashMoves: [cashMove({ id: 'm.ils', amountMinor: 100_000 })] },
+    };
+    // A rate for each day, so a move converted at any day but its own comes out wrong.
+    const lookup: RateLookup = (from, to, on) =>
+      from === 'ILS' && to === 'USD'
+        ? { rate: on === '2026-10-01' ? '0.327965' : '0.25', rateDate: on, source: 'frankfurter' }
+        : undefined;
+
+    const result = await importDocument(handle.db, shekels, { mode: 'merge', now: NOW, rateLookup: lookup });
+    expect(result).toMatchObject({ ok: true, reconverted: 1 });
+    // ₪1,000.00 at its own day's 0.327965, rounded half away from zero, once.
+    expect((await handle.db.cashMoves.get('m.ils'))?.amountMinor).toBe(32_797);
+
+    const refused = await importDocument(handle.db, shekels, {
+      mode: 'merge',
+      now: NOW,
+      rateLookup: () => undefined,
+    });
+    expect(refused).toMatchObject({ ok: false, reason: 'base_mismatch' });
   });
 });

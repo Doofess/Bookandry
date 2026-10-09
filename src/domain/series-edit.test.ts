@@ -411,3 +411,74 @@ describe('a 30+ purchase', () => {
     expect(noteOnly?.deferral).toEqual({ rate: '15.5' });
   });
 });
+
+describe('the income destination', () => {
+  const salary = (over: Partial<Transaction> = {}): Transaction =>
+    monthly({ kind: 'income', categoryId: 'cat.salary', destinationId: 'pm.leumi', ...over });
+
+  it('sends one payment to cash as an override, leaving the series where it was', () => {
+    const result = plan({
+      transaction: salary(),
+      scope: 'one',
+      at: d('2026-06-10'),
+      patch: { destinationId: 'pm.cash' },
+    });
+    expect(result.transactions).toEqual([]);
+    expect(result.overrides[0]).toMatchObject({
+      action: 'modify',
+      occurrenceDate: '2026-06-10',
+      patch: { destinationId: 'pm.cash' },
+    });
+  });
+
+  it('moves the whole series, and clears it with null', () => {
+    const moved = plan({
+      transaction: salary(),
+      scope: 'all',
+      at: d('2026-06-10'),
+      patch: { destinationId: 'pm.cash' },
+    });
+    expect(moved.transactions[0]?.destinationId).toBe('pm.cash');
+
+    const cleared = plan({
+      transaction: salary(),
+      scope: 'all',
+      at: d('2026-06-10'),
+      patch: { destinationId: null },
+    });
+    expect(cleared.transactions[0]?.destinationId).toBeUndefined();
+  });
+
+  it('sends this and later payments to cash through the split, and keeps the earlier ones', () => {
+    const result = plan({
+      transaction: salary(),
+      scope: 'future',
+      at: d('2026-06-10'),
+      patch: { destinationId: 'pm.cash' },
+    });
+    const [original, continuation] = result.transactions;
+    expect(original?.destinationId).toBe('pm.leumi');
+    expect(continuation?.destinationId).toBe('pm.cash');
+  });
+
+  it('keeps a recount’s tag through an edit of its note', () => {
+    const recount = makeTx({
+      id: 'rc',
+      date: d('2026-06-10'),
+      recurrence: { type: 'one_time' },
+      paymentMethodId: 'pm.cash',
+      cashCount: true,
+    });
+    const result = plan({
+      transaction: recount,
+      scope: 'all',
+      at: d('2026-06-10'),
+      patch: { note: 'wallet' },
+    });
+    expect(result.transactions[0]).toMatchObject({
+      cashCount: true,
+      paymentMethodId: 'pm.cash',
+      note: 'wallet',
+    });
+  });
+});

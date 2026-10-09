@@ -40,6 +40,22 @@ function Probe() {
       <button
         type="button"
         onClick={() => {
+          sheet.openAdd('expense', { cash: true });
+        }}
+      >
+        cash expense
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          sheet.openAdd('income', { cash: true });
+        }}
+      >
+        cash income
+      </button>
+      <button
+        type="button"
+        onClick={() => {
           sheet.openDuplicate(fakeOccurrence);
         }}
       >
@@ -79,6 +95,22 @@ describe('useTransactionSheet add', () => {
     await user.click(screen.getByRole('button', { name: 'income' }));
     expect(screen.getByTestId('search')).toHaveTextContent('?add=income');
     expect(target()).toEqual({ mode: 'add', kind: 'income' });
+  });
+
+  it('writes a cash preset into the URL, and reads it back', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Probe />);
+
+    await user.click(screen.getByRole('button', { name: 'cash expense' }));
+    expect(screen.getByTestId('search')).toHaveTextContent('?add=expense&cash=1');
+    expect(target()).toEqual({ mode: 'add', kind: 'expense', cash: true });
+
+    await user.click(screen.getByRole('button', { name: 'cash income' }));
+    expect(target()).toEqual({ mode: 'add', kind: 'income', cash: true });
+
+    await user.click(screen.getByRole('button', { name: 'plain' }));
+    expect(screen.getByTestId('search')).toHaveTextContent('?add=expense');
+    expect(screen.getByTestId('search')).not.toHaveTextContent('cash');
   });
 
   it('defaults to an expense', async () => {
