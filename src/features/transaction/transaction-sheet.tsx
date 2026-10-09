@@ -575,8 +575,13 @@ function TransactionForm({
   const changeKind = useCallback(
     (next: Kind) => {
       setValue('kind', next);
-      // Opened from the cash tab: cash income goes to cash, and a cash expense is paid with it.
-      if (cash) setValue(next === 'income' ? 'destinationId' : 'paymentMethodId', CASH_METHOD_ID);
+      // Opened from the cash tab: cash income goes to cash, and a cash expense is
+      // paid with it - unless that field was already picked by hand, which a
+      // round trip through the other kind must not undo.
+      if (cash) {
+        const field = next === 'income' ? 'destinationId' : 'paymentMethodId';
+        if ((form.getValues(field) ?? '') === '') setValue(field, CASH_METHOD_ID);
+      }
       // Switched to income on a new row with nowhere chosen yet: where this person's income usually goes.
       if (
         next === 'income' &&

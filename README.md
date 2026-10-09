@@ -462,10 +462,11 @@ Deleting a person and moving their rows to someone else moves their cash into
 that person's pot: when both have a start, the incoming start becomes a
 withdrawal of the same amount, which adds to the pot just as the start did,
 and their rows dated before the pot's own start stop counting. Linked accounts
-share one pot - every row keeps its person, so the pot always splits back, and unlinking takes the other person's moves off
-the device with their space. Not modelled: per-account balances, cash in a
-foreign currency, notes and coins by denomination, a cash move recorded on a
-device that was offline while the default currency changed. The design is in
+share one pot - every row keeps its person, so the pot always splits back, and
+unlinking takes the other person's moves off the device with their space. Not
+modelled: per-account balances, cash in a foreign currency, notes and coins by
+denomination, a cash move recorded on a device that was offline while the
+default currency changed. The design is in
 `docs/superpowers/specs/2026-10-09-cash-deposit-design.md`.
 
 **Banks, card companies and networks show their real logos, on white tiles.**
