@@ -453,3 +453,82 @@ describe('referential integrity', () => {
     }
   });
 });
+
+describe('where income went, and what a recount wrote', () => {
+  const salary = {
+    id: 'cat.salary',
+    kind: 'income',
+    icon: 'Wallet',
+    sortOrder: 0,
+    isArchived: 0,
+    source: 'builtin',
+    nameKey: 'categories:builtin.salary',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  function withRow(row: Record<string, unknown>, overrides: unknown[] = []): unknown {
+    const doc = envelope() as ExportEnvelope;
+    return {
+      ...doc,
+      counts: { ...doc.counts, categories: 2, overrides: overrides.length },
+      data: {
+        ...doc.data,
+        categories: [...doc.data.categories, salary],
+        transactions: [{ ...doc.data.transactions[0]!, ...row }],
+        overrides,
+      },
+    };
+  }
+
+  const income = { kind: 'income', categoryId: 'cat.salary', paymentMethodId: undefined };
+
+  it('accepts income that went to cash, or to an account the file does not have', () => {
+    // A destination that names nothing is shown as "not assigned": never an error.
+    for (const destinationId of ['pm.cash', 'pm.gone']) {
+      expect(validateEnvelope(withRow({ ...income, destinationId })).ok, destinationId).toBe(true);
+    }
+  });
+
+  it('refuses a destination on an expense', () => {
+    const result = validateEnvelope(withRow({ destinationId: 'pm.cash' }));
+    expect(result).toMatchObject({ ok: false, reason: 'invalid' });
+    if (!result.ok && result.reason === 'invalid') {
+      expect(result.issues.map((i) => i.path)).toContain('transactions.tx1.destinationId');
+    }
+  });
+
+  it('refuses a destination an override gives one payment of an expense', () => {
+    const override = {
+      id: 'o1',
+      transactionId: 'tx1',
+      occurrenceDate: '2026-03-12',
+      action: 'modify',
+      patch: { destinationId: 'pm.cash' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const result = validateEnvelope(withRow({}, [override]));
+    expect(result).toMatchObject({ ok: false, reason: 'invalid' });
+    if (!result.ok && result.reason === 'invalid') {
+      expect(result.issues.map((i) => i.path)).toContain('overrides.o1.patch.destinationId');
+    }
+    // The same override on income is fine.
+    expect(validateEnvelope(withRow(income, [override])).ok).toBe(true);
+  });
+
+  it('keeps a recount’s tag', () => {
+    const result = validateEnvelope(withRow({ cashCount: true }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.data.transactions[0]?.cashCount).toBe(true);
+  });
+
+  it('reads a file from before either existed exactly as before', () => {
+    const result = validateEnvelope(envelope());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('destinationId');
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('cashCount');
+    }
+  });
+});
