@@ -143,6 +143,7 @@
     "cardsFrom": "חיובי כרטיסים שיורדים מהחשבון",
     "chargeOn": "ב־{{date}}",
     "noCharge": "אין חיוב קרוב",
+    "incoming": "הכנסה צפויה",
     "archivedCard": "בארכיון",
     "edit": {
       "open": "עריכת החשבון",

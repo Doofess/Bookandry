@@ -5,7 +5,13 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { CARD_FEE_PREFIX } from '@/domain/cards';
 import { MONEY, d, makeTx } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
-import type { Category, Occurrence, PaymentMethod, Profile } from '@/types/domain';
+import {
+  CASH_METHOD_ID,
+  type Category,
+  type Occurrence,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 
 import { DayHeader, TransactionRow, type RowContext } from './feed-rows';
 
@@ -506,5 +512,65 @@ describe('the card an expense was paid with', () => {
   it('shows nothing for cash, or for money in', () => {
     paidWith(card({ id: 'pm.cash', type: 'cash', label: 'Cash' }));
     expect(screen.queryByTestId('row-card')).not.toBeInTheDocument();
+  });
+});
+
+describe('where income went', () => {
+  const at = '2026-01-01T00:00:00.000Z' as PaymentMethod['createdAt'];
+  const leumi: PaymentMethod = {
+    id: 'leumi',
+    profileId: 'p1',
+    type: 'bank_account',
+    label: 'Leumi current',
+    account: { bank: '10', holding: 'personal' },
+    isArchived: 0,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const cash: PaymentMethod = {
+    ...leumi,
+    id: CASH_METHOD_ID,
+    profileId: '*',
+    type: 'cash',
+    label: 'Cash',
+    account: undefined,
+  };
+  const income = (destinationId: string | undefined, kind: 'income' | 'expense' = 'income') =>
+    occurrence({
+      transaction: makeTx({ id: 't1', kind, date: d('2026-09-10'), recurrence: { type: 'one_time' } }),
+      ...(destinationId === undefined ? {} : { destinationId }),
+    });
+  const show = (o: Occurrence) =>
+    render(
+      <TransactionRow
+        occurrence={o}
+        context={context({ methods: new Map([leumi, cash].map((m) => [m.id, m])) })}
+        position={1}
+        setSize={1}
+      />,
+    );
+
+  it('shows the bank’s mark and the account, and says so', () => {
+    show(income('leumi'));
+    const chip = screen.getByTestId('row-destination');
+    expect(chip).toHaveTextContent('Leumi current');
+    expect(chip.querySelector('img[data-brand="bank-10"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /^Sep 10, 2026.*, Into Leumi current$/ })).toBeInTheDocument();
+  });
+
+  it('shows the cash icon for cash', () => {
+    show(income(CASH_METHOD_ID));
+    const chip = screen.getByTestId('row-destination');
+    expect(chip).toHaveTextContent('Cash');
+    expect(chip.querySelector('svg')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /^Sep 10, 2026.*, Into Cash$/ })).toBeInTheDocument();
+  });
+
+  it('shows nothing when it is not assigned, names an account that is gone, or is on an expense', () => {
+    for (const o of [income(undefined), income('gone'), income('leumi', 'expense')]) {
+      const { unmount } = show(o);
+      expect(screen.queryByTestId('row-destination')).toBeNull();
+      unmount();
+    }
   });
 });

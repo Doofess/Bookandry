@@ -65,3 +65,17 @@ describe('a bank’s mark', () => {
     expect(container.querySelectorAll('[data-slot="neutral-mark"] svg')).toHaveLength(1);
   });
 });
+
+describe('the small mark', () => {
+  it('fits a line of small print: a bank under an amount', () => {
+    const { container } = render(<BankMark code="10" size="xs" />);
+    expect(container.querySelector('[data-slot="brand-mark"]')).toHaveClass('h-4');
+    expect(container.querySelector('img')).toHaveClass('h-3');
+
+    const neutral = render(<BankMark code="54" size="xs" />).container.querySelector(
+      '[data-slot="neutral-mark"]',
+    );
+    expect(neutral).toHaveClass('h-4');
+    expect(neutral?.querySelector('svg')).toHaveClass('size-3');
+  });
+});

@@ -82,3 +82,22 @@ export function defaultDestination(
   }
   return best?.id ?? '';
 }
+
+/**
+ * The income still to come into each destination: for every account (and
+ * cash), its earliest payment strictly after today. Today's has already
+ * arrived; it is not "expected".
+ */
+export function nextIncoming(
+  occurrences: readonly Occurrence[],
+  today: LocalDate,
+): ReadonlyMap<string, Occurrence> {
+  const next = new Map<string, Occurrence>();
+  for (const o of occurrences) {
+    if (o.transaction.kind !== 'income' || o.isSkipped || o.destinationId === undefined) continue;
+    if (compareLocal(o.date, today) <= 0) continue;
+    const seen = next.get(o.destinationId);
+    if (seen === undefined || compareLocal(o.date, seen.date) < 0) next.set(o.destinationId, o);
+  }
+  return next;
+}

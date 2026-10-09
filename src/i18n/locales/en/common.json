@@ -177,7 +177,8 @@
     "typeMonthly": "Monthly",
     "typeYearly": "Yearly",
     "cardEnding": "Card ending {{digits}}",
-    "paidWith": "Paid with {{name}}"
+    "paidWith": "Paid with {{name}}",
+    "into": "Into {{name}}"
   },
   "breakdown": {
     "balanceBody": "Everything counted since {{date}}.",
