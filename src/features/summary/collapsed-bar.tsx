@@ -112,9 +112,11 @@ export function CollapsedSummaryBar({
         'fixed inset-x-0 top-0 z-30 bg-night text-on-night shadow-md',
         'pt-[env(safe-area-inset-top,0px)]',
         // The figure it stands in for lives inside `main`, which clears the
-        // 256px desktop rail. Without this the collapsed balance jumps ~128px to
+        // 256px desktop rail. The bar starts after the rail (not under it, which put
+        // night behind the transparent rail), so the balance keeps its place and
+        // the mark and Add stay on the paper. Without this it jumps ~128px to
         // the inline-start of the column it replaced.
-        'lg:ps-64',
+        'lg:start-64',
       )}
     >
       {opens ? (

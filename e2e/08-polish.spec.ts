@@ -436,6 +436,20 @@ test.describe('@collapse on the desktop rail', () => {
 
     expect(Math.abs(columnCentre - rowCentre)).toBeLessThanOrEqual(2);
   });
+
+  test('starts after the rail, so the transparent rail never sits on the night bar', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.evaluate(() => {
+      window.scrollTo(0, 600);
+    });
+    const bar = page.getByTestId('collapsed-summary');
+    await expect(bar).toBeVisible();
+    const box = await bar.boundingBox();
+    const rail = await page.locator('nav').first().boundingBox();
+    if (box === null || rail === null) throw new Error('nothing to measure');
+    // Logical start edge: the bar must not extend under the rail.
+    expect(box.x).toBeGreaterThanOrEqual(rail.x + rail.width - 1);
+  });
 });
 
 test.describe('@collapse the collapsed bar’s pop-out', () => {
