@@ -111,14 +111,18 @@ export async function addCashMove(
 ): Promise<UndoableAction> {
   const { fields, optional } = checked(draft);
 
-  if (fields.kind === 'start') {
-    const existing = await startRowOf(db, fields.profileId);
-    if (existing !== undefined) return rewrite(db, existing, fields, optional, now);
-  }
+  // One transaction around the lookup and the write: two starts saved at once
+  // (a double tap, two tabs) are serialised, so the second finds the first.
+  return db.transaction('rw', db.cashMoves, async () => {
+    if (fields.kind === 'start') {
+      const existing = await startRowOf(db, fields.profileId);
+      if (existing !== undefined) return rewrite(db, existing, fields, optional, now);
+    }
 
-  const row: CashMove = { id, ...fields, ...optional, isDeleted: 0, createdAt: now, updatedAt: now };
-  return undoableWrite(db, [{ table: 'cashMoves', ids: [id] }], async () => {
-    await db.cashMoves.add(row);
+    const row: CashMove = { id, ...fields, ...optional, isDeleted: 0, createdAt: now, updatedAt: now };
+    return undoableWrite(db, [{ table: 'cashMoves', ids: [id] }], async () => {
+      await db.cashMoves.add(row);
+    });
   });
 }
 
@@ -142,8 +146,10 @@ function rewrite(
 
 /**
  * Change a live move. Throws `Error('gone')` when it is missing or deleted,
- * and `Error('start_exists')` when it would become a second live start for
- * its person.
+ * and `Error('start_exists')` when the edit makes a start (a move becomes
+ * one, or a start moves to another person) for someone who already has a
+ * live one. Changing an existing start's amount or date always goes through,
+ * even when a sync has brought in a second start for the same person.
  */
 export async function editCashMove(
   db: BookandryDB,
@@ -152,21 +158,27 @@ export async function editCashMove(
   now: IsoInstant,
 ): Promise<UndoableAction> {
   const { fields, optional } = checked(draft);
-  const existing = await db.cashMoves.get(id);
-  if (existing === undefined || existing.isDeleted === 1) throw new Error('gone');
-  if (fields.kind === 'start') {
-    const start = await startRowOf(db, fields.profileId);
-    if (start !== undefined && start.id !== id && start.isDeleted === 0) throw new Error('start_exists');
-  }
-  return rewrite(db, existing, fields, optional, now);
+  return db.transaction('rw', db.cashMoves, async () => {
+    const existing = await db.cashMoves.get(id);
+    if (existing === undefined || existing.isDeleted === 1) throw new Error('gone');
+    const makesStart =
+      fields.kind === 'start' && (existing.kind !== 'start' || existing.profileId !== fields.profileId);
+    if (makesStart) {
+      const start = await startRowOf(db, fields.profileId);
+      if (start !== undefined && start.id !== id && start.isDeleted === 0) throw new Error('start_exists');
+    }
+    return rewrite(db, existing, fields, optional, now);
+  });
 }
 
 /** A soft delete: the row stays, so Undo and a later sync can bring it back. */
 export async function deleteCashMove(db: BookandryDB, id: string, now: IsoInstant): Promise<UndoableAction> {
-  const existing = await db.cashMoves.get(id);
-  if (existing === undefined || existing.isDeleted === 1) throw new Error('gone');
-  return undoableWrite(db, [{ table: 'cashMoves', ids: [id] }], async () => {
-    await db.cashMoves.put({ ...existing, isDeleted: 1, deletedAt: now, updatedAt: now });
+  return db.transaction('rw', db.cashMoves, async () => {
+    const existing = await db.cashMoves.get(id);
+    if (existing === undefined || existing.isDeleted === 1) throw new Error('gone');
+    return undoableWrite(db, [{ table: 'cashMoves', ids: [id] }], async () => {
+      await db.cashMoves.put({ ...existing, isDeleted: 1, deletedAt: now, updatedAt: now });
+    });
   });
 }
 
