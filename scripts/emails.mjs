@@ -11,7 +11,7 @@
  *
  * Images are served from bookandry.com, so a deploy must go out before the
  * templates are pasted. Colours come from src/index.css, so the emails follow
- * the app if its greens ever change. Rendered in Playwright's Chromium, which
+ * the app whenever its colours change. Rendered in Playwright's Chromium, which
  * is what reads the oklch() values and draws the PNGs.
  *
  * Each email is written twice, English and Hebrew, and picks one by the
@@ -126,7 +126,7 @@ await browser.close();
 
 const ink = '#18181b';
 const muted = '#52525b';
-const page_ = '#f1f4f2';
+const page_ = '#f4f4f5';
 const body = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
 /** Escapes text for HTML. Template tags ({{ }}) pass through untouched. */
