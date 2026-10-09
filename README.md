@@ -440,16 +440,29 @@ bank and the wallet - a withdrawal, a deposit, the amount someone started with -
 moves only the cash. Those moves are a table of their own (`cashMoves`), not a
 new transaction kind or payment-method type: an older build syncing alongside
 this one rejects, forever, a row carrying an enum value it does not know, while
-a table it does not know it simply never reads. For the same reason a move's
+a table it does not know it pulls and drops. Its pull cursor still moves past
+those rows, so a device that later updates would never fetch them: the v4
+upgrade therefore resets every pull cursor once, which costs each device one
+full re-download on its first launch. For the same reason a move's
 `kind` is a free string and every sum ignores a kind it does not know. Income
 says where it went in its own field, `destinationId` (a bank account, as a
 label, or cash), not in `paymentMethodId`, which older income forms drop on
 edit. A recount writes an ordinary cash income ("Cash found") or expense ("Cash
 missing") tagged `cashCount`, so an older build's balance is right too, or a
-zero `count` move when it matched. Each person's cash counts from their first
-`start`, so old cash spending cannot drive it negative; it can still go below
-zero, and says so. Linked accounts share one pot - every row keeps its person,
-so the pot always splits back, and unlinking takes the other person's moves off
+zero `count` move when it matched; during the rollout an older build names
+those two categories by their keys, "cashFound" and "cashMissing". Each person
+has one `start` and their cash counts from it, so old cash spending cannot
+drive it negative; it can still go below zero, and says so. On the start day
+itself only rows written after it count, since the amount typed already holds
+the rest. If two devices set up offline and both starts sync in, the earliest
+counts and the screen offers to keep it and remove the others. A withdrawal or
+deposit is dated from its person's start up to today, and the start stays on or
+before the first of them; outside that range a move would count for nothing.
+Deleting a person and moving their rows to someone else moves their cash into
+that person's pot: when both have a start, the incoming start becomes a
+withdrawal of the same amount, which adds to the pot just as the start did,
+and their rows dated before the pot's own start stop counting. Linked accounts
+share one pot - every row keeps its person, so the pot always splits back, and unlinking takes the other person's moves off
 the device with their space. Not modelled: per-account balances, cash in a
 foreign currency, notes and coins by denomination, a cash move recorded on a
 device that was offline while the default currency changed. The design is in
