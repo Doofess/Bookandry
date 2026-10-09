@@ -573,4 +573,27 @@ describe('where income went', () => {
       unmount();
     }
   });
+
+  it('still shows an archived account: the row keeps its label', () => {
+    const archived = { ...leumi, isArchived: 1 as const };
+    render(
+      <TransactionRow
+        occurrence={income('leumi')}
+        context={context({ methods: new Map([[archived.id, archived]]) })}
+        position={1}
+        setSize={1}
+      />,
+    );
+    expect(screen.getByTestId('row-destination')).toHaveTextContent('Leumi current');
+  });
+
+  it('says so in Hebrew', async () => {
+    await initTestI18n('he');
+    try {
+      show(income('leumi'));
+      expect(screen.getAllByRole('button', { name: /נכנס ל.*Leumi current$/ }).length).toBeGreaterThan(0);
+    } finally {
+      await initTestI18n('en');
+    }
+  });
 });

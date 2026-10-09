@@ -195,4 +195,21 @@ describe('the next income into each account', () => {
     // Arriving today is not "expected": it is already here.
     expect(next.has('Hapoalim')).toBe(false);
   });
+
+  it('does not choose a skipped earlier payment', () => {
+    const salary = makeTx({
+      id: 'salary',
+      kind: 'income',
+      categoryId: 'cat.salary',
+      date: d('2026-08-10'),
+      recurrence: { type: 'monthly', dayOfMonth: 10 },
+      destinationId: 'Leumi',
+    });
+    const all = expandOccurrences(salary, [skip('salary', d('2026-10-10'))], TODAY, d('2027-10-31'), {
+      today: TODAY,
+      includeSkipped: true,
+    });
+    expect(all.some((o) => o.isSkipped)).toBe(true);
+    expect(nextIncoming(all, TODAY).get('Leumi')?.date).toBe('2026-11-10');
+  });
 });
