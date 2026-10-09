@@ -913,3 +913,26 @@ describe('30+: a deferred purchase', () => {
     expect(recurrenceDefaults('one_time', deferred()).annualRate).toBe('');
   });
 });
+
+describe('where income went', () => {
+  it('is kept for income', () => {
+    expect(parse(values({ kind: 'income', destinationId: 'pm.cash' })).destinationId).toBe('pm.cash');
+  });
+
+  it('is stripped from an expense, which only says what paid for it', () => {
+    // Switching income -> expense leaves the old destination behind; saving it
+    // would count the expense as cash coming in, and a file would refuse it.
+    expect(parse(values({ kind: 'expense', destinationId: 'pm.cash' })).destinationId).toBeUndefined();
+  });
+
+  it('is undefined when not assigned, and starts that way', () => {
+    expect(defaultFormValues({ profileId: 'p1', currency: 'ILS', today: TODAY }).destinationId).toBe('');
+    expect(parse(values({ kind: 'income', destinationId: '' })).destinationId).toBeUndefined();
+  });
+
+  it('is never confused with a payment method switching the other way', () => {
+    const parsed = parse(values({ kind: 'income', paymentMethodId: 'pm.cash', destinationId: '' }));
+    expect(parsed.paymentMethodId).toBeUndefined();
+    expect(parsed.destinationId).toBeUndefined();
+  });
+});

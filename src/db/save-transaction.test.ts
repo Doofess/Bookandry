@@ -218,3 +218,21 @@ describe('saveNewTransaction', () => {
     });
   });
 });
+
+describe('where income went', () => {
+  it('is written for income, and never for an expense', async () => {
+    const income = form({
+      kind: 'income',
+      categoryId: 'cat.salary',
+      currency: 'ILS',
+      destinationId: 'pm.cash',
+    });
+    const saved = await saveNewTransaction(handle.db, input({ parsed: income, newId: () => 'in1' }));
+    expect(saved.transaction.destinationId).toBe('pm.cash');
+    expect((await handle.db.transactions.get('in1'))?.destinationId).toBe('pm.cash');
+
+    const expense = form({ currency: 'ILS', destinationId: 'pm.cash' });
+    await saveNewTransaction(handle.db, input({ parsed: expense, newId: () => 'out1' }));
+    expect(await handle.db.transactions.get('out1')).not.toHaveProperty('destinationId');
+  });
+});

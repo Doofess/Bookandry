@@ -101,6 +101,7 @@ export async function saveNewTransaction(db: BookandryDB, input: SaveInput): Pro
       kind: parsed.kind,
       categoryId: parsed.categoryId,
       ...(parsed.paymentMethodId === undefined ? {} : { paymentMethodId: parsed.paymentMethodId }),
+      ...(parsed.destinationId === undefined ? {} : { destinationId: parsed.destinationId }),
       money,
       recurrence: parsed.recurrence,
       date: parsed.date,

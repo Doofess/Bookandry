@@ -183,6 +183,13 @@ export const txFormSchema = z
     categoryId: z.string().min(1, 'category_required'),
     /** '' when none is chosen, and always '' for income. */
     paymentMethodId: z.string(),
+    /**
+     * Income only: where it went ("Goes to") - a bank account or cash. '' is
+     * "Not assigned". A default rather than a required key, so every caller
+     * that builds form values without it (import review, older tests) still
+     * parses.
+     */
+    destinationId: z.string().default(''),
 
     amount: z.string().min(1, 'amount_required'),
     currency: z.string().regex(/^[A-Z]{3}$/, 'currency_invalid'),
@@ -351,6 +358,14 @@ export const txFormSchema = z
        */
       paymentMethodId:
         values.kind === 'expense' && values.paymentMethodId !== '' ? values.paymentMethodId : undefined,
+      /*
+       * And the mirror image: an expense never says where money went.
+       * Stripped for the same reason - it is what toggling income -> expense
+       * leaves behind - and because an expense carrying it would be counted
+       * as cash coming in.
+       */
+      destinationId:
+        values.kind === 'income' && values.destinationId !== '' ? values.destinationId : undefined,
       // The credit total, where there is one: the money snapshot is what gets
       // split into payments and converted to the base currency, so pricing the
       // plan anywhere later would leave the base amount denominated in the
@@ -589,6 +604,7 @@ export function defaultFormValues(input: {
     kind: 'expense',
     categoryId: '',
     paymentMethodId: '',
+    destinationId: '',
     amount: '',
     currency: input.currency,
     date: input.today,
