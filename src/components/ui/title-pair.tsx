@@ -3,22 +3,29 @@ import type * as React from 'react';
 
 type Size = 'screen' | 'hero' | 'sheet' | 'question' | 'steps';
 
-/** §9.5. `screen` is Karantina on a phone and the 38/21 top bar from lg. */
+/**
+ * §9.5. `screen` is Karantina on a phone and the 38/21 top bar from lg.
+ *
+ * The sizes are written `text-(length:--text-*)`, not `text-title-sheet`: `cn`
+ * does not know our custom font-size utilities, so it reads them as text
+ * colours and drops them when a caller's `className` adds a real colour. The
+ * explicit length keeps them sizes to the merge, and still reads the theme token.
+ */
 const TITLE: Record<Size, string> = {
   screen:
-    'font-display text-screen-name leading-[0.85] lg:font-sans lg:text-title-screen lg:leading-[1.02] lg:font-semibold lg:tracking-[-0.01em]',
-  hero: 'text-title-hero font-semibold leading-[1.02] tracking-[-0.01em]',
-  sheet: 'text-title-sheet font-semibold leading-[1.02] tracking-[-0.01em]',
-  question: 'text-title-question font-semibold leading-[1.02] tracking-[-0.01em]',
-  steps: 'text-title-steps font-semibold leading-[1.05] tracking-[-0.01em]',
+    'font-display text-(length:--text-screen-name) leading-[0.85] lg:font-sans lg:text-(length:--text-title-screen) lg:leading-[1.02] lg:font-semibold lg:tracking-[-0.01em]',
+  hero: 'text-(length:--text-title-hero) font-semibold leading-[1.02] tracking-[-0.01em]',
+  sheet: 'text-(length:--text-title-sheet) font-semibold leading-[1.02] tracking-[-0.01em]',
+  question: 'text-(length:--text-title-question) font-semibold leading-[1.02] tracking-[-0.01em]',
+  steps: 'text-(length:--text-title-steps) font-semibold leading-[1.05] tracking-[-0.01em]',
 };
 
 const SUBTITLE: Record<Size, string> = {
-  screen: 'hidden lg:block lg:text-sub-screen',
-  hero: 'text-sub-hero',
-  sheet: 'text-sub-sheet',
-  question: 'text-sub-question',
-  steps: 'text-sub-steps',
+  screen: 'hidden lg:block lg:text-(length:--text-sub-screen)',
+  hero: 'text-(length:--text-sub-hero)',
+  sheet: 'text-(length:--text-sub-sheet)',
+  question: 'text-(length:--text-sub-question)',
+  steps: 'text-(length:--text-sub-steps)',
 };
 
 /**
