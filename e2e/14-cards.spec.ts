@@ -338,7 +338,7 @@ test.describe('@cards bank accounts', () => {
 
   /** From the account menu, where the household's setup lives. */
   const openAccounts = async (page: Page) => {
-    await page.getByRole('button', { name: 'חשבון והגדרות' }).click();
+    await page.getByRole('main').getByRole('button', { name: 'חשבון והגדרות' }).click();
     await page.getByRole('menuitem', { name: 'חשבונות בנק' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'חשבונות בנק' })).toBeVisible();
   };

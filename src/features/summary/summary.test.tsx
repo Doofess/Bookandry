@@ -310,7 +310,7 @@ describe('CollapsedSummaryBar on sapphire', () => {
     );
     const bar = screen.getByTestId('collapsed-summary');
 
-    expect(bar).toHaveClass('bg-brand-deep', 'text-brand-deep-foreground');
+    expect(bar).toHaveClass('bg-night', 'text-on-night');
     expect(bar.style.height).toBe('calc(48px + env(safe-area-inset-top, 0px))');
     expect(container.querySelector('[data-value]')).toHaveClass('text-lg', 'font-semibold');
     expect(container.querySelector('.font-display')).toBeNull();
