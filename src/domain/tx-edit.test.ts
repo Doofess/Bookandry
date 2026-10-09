@@ -610,3 +610,52 @@ describe('where income went, in the edit form', () => {
     ).toBe('');
   });
 });
+
+describe('the business type, in the edit form', () => {
+  const tx = rent({ mcc: '6513', mccSource: 'ai' });
+  const occurrence = occurrenceOf(tx, [], '2026-09-10');
+  const base = occurrenceToFormValues(occurrence, tx);
+  const patchFor = (over: Partial<TxFormValues>) =>
+    buildPatch({
+      parsed: parse({ ...base, ...over }),
+      occurrence,
+      transaction: tx,
+      scope: 'one',
+      money: occurrence.money,
+    });
+
+  it('opens with the series’ business type, and an unchanged one is no change', () => {
+    expect(base).toMatchObject({ mcc: '6513', mccSource: 'ai' });
+    expect(isEmptyPatch(patchFor({}))).toBe(true);
+  });
+
+  it('names a new business type, a new source, or a cleared one', () => {
+    expect(patchFor({ mcc: '7011', mccSource: 'user' })).toEqual({ mcc: '7011', mccSource: 'user' });
+    expect(patchFor({ mccSource: 'user' })).toEqual({ mcc: '6513', mccSource: 'user' });
+    expect(patchFor({ mcc: '', mccSource: '' })).toEqual({ mcc: null, mccSource: null });
+  });
+
+  it('leaves the series’ business type alone when the form switched the kind, which an edit does not save', () => {
+    const switched = patchFor({ kind: 'income', categoryId: 'cat.salary' });
+    expect(switched).not.toHaveProperty('mcc');
+    expect(switched).not.toHaveProperty('mccSource');
+  });
+
+  it('opens a row from before business types with none', () => {
+    expect(occurrenceToFormValues(occurrenceOf(rent(), [], '2026-09-10'), rent())).toMatchObject({
+      mcc: '',
+      mccSource: '',
+    });
+  });
+
+  it('is carried into a duplicate, which is another purchase from the same business', () => {
+    const copy = duplicateFormValues(
+      occurrence,
+      tx,
+      defaultFormValues({ profileId: 'p1', currency: 'ILS', today: TODAY }),
+      TODAY,
+      { profiles: [{ id: 'p1' }], methods: [] },
+    );
+    expect(copy).toMatchObject({ mcc: '6513', mccSource: 'ai' });
+  });
+});

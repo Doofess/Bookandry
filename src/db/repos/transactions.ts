@@ -2,6 +2,9 @@ import type { BookandryDB } from '@/db/db';
 import { LOCK_SWEEP, withLock } from '@/db/lock';
 import { materialize, type TransactionDraft } from '@/db/materialize';
 import { SYNC_CURSOR_KEY } from '@/db/sync/tables';
+import { isMcc } from '@/domain/mcc';
+import { defaultCategoryForMcc } from '@/domain/mcc-categories';
+import { merchantKey } from '@/domain/merchant-key';
 import { expandOccurrences } from '@/domain/occurrences';
 import { compareLocal, instantFromMs } from '@/lib/dates';
 import type { Occurrence, Override, Transaction } from '@/types/domain';
@@ -200,29 +203,71 @@ export async function removeOverride(
   await db.overrides.where('[transactionId+occurrenceDate]').equals([transactionId, occurrenceDate]).delete();
 }
 
+/** What the household's history says about a merchant. */
+export type MerchantHistory = {
+  /** The person's own choice for this merchant (spec §3 step 2), when there is one. */
+  readonly categoryId?: string;
+  /** The business type of the newest such expense that has one (spec §2 step 3). */
+  readonly mcc?: string;
+};
+
 /**
- * The category this name was last saved under, if it ever was: "Claude Max
- * Plan" goes where the person put it before, without asking anyone. What they
- * corrected stays corrected.
+ * Where this name was filed before, and its business type: "Claude Max Plan"
+ * goes where the person put it, without asking anyone. What they corrected
+ * stays corrected.
  *
- * Matched on the whole name, ignoring case and spacing - "netflix " is
- * Netflix - and newest first, so a later correction wins over the guess it
- * corrected. A scan, but one that stops at the first match, over a table a
- * household fills at a few rows a day.
+ * The same text first - ignoring case and spacing, so "netflix " is Netflix -
+ * then the same merchant printed another way (`merchantKey`): "שופרסל דיל 45
+ * ת"א" for "שופרסל דיל 123 ת"א". Newest first, every person's, live rows of
+ * this kind only.
+ *
+ * A row filed exactly where the default table files its own business type
+ * was filed by the table, not by the person: then there is no choice of
+ * theirs to follow, and the business type decides (spec point 5). Without
+ * that, a business type moved to another category would never reach a
+ * merchant already seen.
+ *
+ * ONE walk, newest first, that stops as soon as the same text - and, for an
+ * expense, the same text with a business type - is found. A name it has never
+ * seen reads to the end, as it always did. Callers memoise per import.
  */
-export async function categoryFromHistory(
-  db: BookandryDB,
-  kind: Kind,
-  name: string,
-): Promise<string | undefined> {
-  const wanted = sameName(name);
-  if (wanted === '') return undefined;
-  const found = await db.transactions
+export async function merchantHistory(db: BookandryDB, kind: Kind, name: string): Promise<MerchantHistory> {
+  const text = sameName(name);
+  if (text === '') return {};
+  const key = merchantKey(name);
+  const seen: {
+    byText?: Transaction;
+    byKey?: Transaction;
+    mccByText?: string;
+    mccByKey?: string;
+  } = {};
+  const done = (): boolean =>
+    seen.byText !== undefined && (kind === 'income' || seen.mccByText !== undefined);
+
+  await db.transactions
     .orderBy('updatedAt')
     .reverse()
-    .filter((tx) => tx.isDeleted === 0 && tx.kind === kind && sameName(tx.note ?? '') === wanted)
-    .first();
-  return found?.categoryId;
+    .until(done)
+    .each((tx) => {
+      if (tx.isDeleted !== 0 || tx.kind !== kind) return;
+      const note = tx.note ?? '';
+      const code = kind === 'expense' && isMcc(tx.mcc) ? tx.mcc : undefined;
+      if (sameName(note) === text) {
+        seen.byText ??= tx;
+        seen.mccByText ??= code;
+      } else if (key !== '' && merchantKey(note) === key) {
+        seen.byKey ??= tx;
+        seen.mccByKey ??= code;
+      }
+    });
+
+  const decider = seen.byText ?? seen.byKey;
+  const mcc = seen.mccByText ?? seen.mccByKey;
+  const tableChose = decider?.mcc !== undefined && decider.categoryId === defaultCategoryForMcc(decider.mcc);
+  return {
+    ...(decider === undefined || tableChose ? {} : { categoryId: decider.categoryId }),
+    ...(mcc === undefined ? {} : { mcc }),
+  };
 }
 
 const sameName = (name: string): string => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();

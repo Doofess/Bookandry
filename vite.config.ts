@@ -139,6 +139,10 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // The app's main chunk is precached whole, or it would not start offline. It
+        // passed Workbox's 2 MiB default once the business-type code (not its names,
+        // which are their own chunk) was added, so the limit leaves room to grow.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         // Images for the account's emails (scripts/emails.mjs): read by mail
         // clients from the site, never by the app, so not worth a download.
         globIgnores: ['email/**', 'assets/import-*'],

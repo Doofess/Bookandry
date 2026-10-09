@@ -92,7 +92,8 @@
     "total_mismatch": "Check it: the statement's total doesn't match.",
     "not_saveable": "Something is missing. Open it to finish.",
     "rate_missing": "No exchange rate for this date.",
-    "whose_unknown": "Choose whose this is."
+    "whose_unknown": "Choose whose this is.",
+    "cash_withdrawal": "Cash withdrawal: not counted as an expense. You can record it in the Cash tab."
   },
   "otherRead": "Other read: <amount></amount> on {{date}}",
   "plan": "Payment {{number}} of {{count}}",

@@ -4,6 +4,7 @@ import type { Currency, LocalDate } from '@/types/money';
 
 import { currencyFromText, type Flag, type FoundPlan, type FoundRow } from './import-check';
 import type { WireMap, WireRow } from './import-wire';
+import { isMcc } from './mcc';
 
 /**
  * Spreadsheets are read by code, not by the model.
@@ -19,7 +20,15 @@ import type { WireMap, WireRow } from './import-wire';
 
 export type Cell = string | number | boolean | null;
 
-export type ColumnMap = Omit<WireMap, 'mc' | 'hr'> & { readonly headerRow: number };
+/**
+ * A sheet's columns. `mcc` and `sector` come from the dictionary only - the
+ * model's map never names them - including on a header row the model found.
+ */
+export type ColumnMap = Omit<WireMap, 'mc' | 'hr'> & {
+  readonly headerRow: number;
+  readonly mcc: number | null;
+  readonly sector: number | null;
+};
 
 const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>, readonly string[]>> = {
   date: ['תאריך עסקה', 'תאריך העסקה', 'תאריך רכישה', 'תאריך', 'date', 'transaction date', 'purchase date'],
@@ -57,6 +66,8 @@ const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>
     'last 4 digits',
     'last four digits',
   ],
+  mcc: ['mcc', 'קוד ענף', 'merchant category code', 'sic'],
+  sector: ['ענף', 'ענף עסקי', 'תחום', 'קטגוריה', 'category', 'sector'],
 };
 
 const norm = (cell: Cell): string =>
@@ -110,6 +121,8 @@ export function mapByDictionary(rows: readonly (readonly Cell[])[], scan = 30): 
       chgDate: found.chgDate ?? null,
       plan: found.plan ?? null,
       card: found.card ?? null,
+      mcc: found.mcc ?? null,
+      sector: found.sector ?? null,
       dec: decimalOf(rows, r, found.amt ?? found.debit ?? found.credit ?? 0),
       df: 'dmy',
     };
@@ -133,10 +146,15 @@ function decimalOf(rows: readonly (readonly Cell[])[], header: number, column: n
   return '.';
 }
 
-/** A model's map, as a column map. */
-export function fromWireMap(map: WireMap): ColumnMap {
+/** A model's map, as a column map: with the MCC and sector columns its header row names, by the dictionary. */
+export function fromWireMap(map: WireMap, rows: readonly (readonly Cell[])[] = []): ColumnMap {
   const { hr, mc: _merchants, ...rest } = map;
-  return { ...rest, headerRow: hr };
+  const header = rows[hr] ?? [];
+  const column = (field: 'mcc' | 'sector'): number | null => {
+    const at = header.findIndex((cell) => fieldOf(cell) === field);
+    return at === -1 ? null : at;
+  };
+  return { ...rest, headerRow: hr, mcc: column('mcc'), sector: column('sector') };
 }
 
 const TOTAL_WORDS = /סה["״]?כ|סך הכל|total|יתרה|balance/i;
@@ -215,6 +233,21 @@ export function cardAbove(rows: readonly (readonly Cell[])[], headerRow: number)
   }
   const [only, ...more] = [...found];
   return only !== undefined && more.length === 0 ? only : '';
+}
+
+/**
+ * A business type from an MCC cell. Excel keeps a code as a number, so 742
+ * is "0742" and 5411.0 is "5411"; a text cell may carry spaces or ".0".
+ * Anything the list does not have is none - never a flag on the row.
+ */
+function mccFromCell(cell: Cell | undefined): string | undefined {
+  let code: string | undefined;
+  if (typeof cell === 'number') {
+    code = Number.isInteger(cell) && cell >= 0 && cell < 10_000 ? String(cell).padStart(4, '0') : undefined;
+  } else if (typeof cell === 'string') {
+    code = /^\s*(\d{1,4})(?:\.0+)?\s*$/.exec(cell)?.[1]?.padStart(4, '0');
+  }
+  return isMcc(code) ? code : undefined;
 }
 
 export type SheetRead = {
@@ -330,6 +363,8 @@ export function readSheet(
       pl: plan === undefined ? null : { md: plan.mode, n: plan.number, of: plan.count, tot: null },
       l4: (map.card === null ? '' : cardDigits(row[map.card])) || sheetCard,
     };
+    const fileMcc = map.mcc === null ? undefined : mccFromCell(row[map.mcc]);
+    const sector = map.sector === null ? '' : text(row[map.sector]);
     out.push({
       id: `${ctx.idPrefix}${String(i)}`,
       file: ctx.file,
@@ -351,6 +386,8 @@ export function readSheet(
       cardFee: description.includes('דמי כרטיס'),
       flags,
       wire,
+      ...(fileMcc === undefined ? {} : { fileMcc }),
+      ...(sector === '' ? {} : { sector }),
     });
   });
   return { rows: out, skipped, unreadable };

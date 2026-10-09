@@ -228,3 +228,23 @@ describe('the built-in categories on an older install', () => {
     expect(await handle.db.outbox.toArray()).toEqual([]);
   });
 });
+
+describe('business types moved into a category', () => {
+  it('survive a rename and an archive: every write spreads the stored row', async () => {
+    const custom = await createCategory(
+      handle.db,
+      'cat.custom',
+      { name: 'Coffee', kind: 'expense', icon: 'Circle' },
+      NOW,
+    );
+    await handle.db.categories.update(custom.id, { mccs: ['5814'] });
+
+    await renameCategory(handle.db, custom.id, 'Coffee out', NOW);
+    await setCategoryArchived(handle.db, custom.id, true, NOW);
+    expect(await handle.db.categories.get(custom.id)).toMatchObject({
+      name: 'Coffee out',
+      isArchived: 1,
+      mccs: ['5814'],
+    });
+  });
+});

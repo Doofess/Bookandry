@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { materialize } from '@/db/materialize';
+import { setCategoryArchived } from '@/db/repos/categories';
 import { updatePaymentMethod } from '@/db/repos/payment-methods';
+import { buildSeedCategories } from '@/db/seed';
 import { applySeriesEdit } from '@/db/series-edit';
 import { planSeriesEdit } from '@/domain/series-edit';
 import { d, MONEY } from '@/domain/test-factories';
@@ -160,5 +162,90 @@ describe('a transaction from this build, met by the sync apply path', () => {
       laterField: 'kept',
       destinationId: 'pm.cash',
     });
+  });
+});
+
+describe('business types, met by the sync apply path', () => {
+  const rev = makeRev({ ms: 1_000, counter: 0, deviceId: 'abcdefgh' });
+  const shop = materialize({
+    id: 'b1',
+    profileId: 'p1',
+    kind: 'expense',
+    categoryId: 'cat.groceries',
+    money: MONEY,
+    recurrence: { type: 'one_time' },
+    date: d('2026-10-01'),
+    mcc: '5411',
+    mccSource: 'user',
+    seriesRootId: 'b1',
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  const groceries = { ...buildSeedCategories(NOW).find((c) => c.id === 'cat.groceries')!, mccs: ['5499'] };
+  const pulled = (tbl: 'transactions' | 'categories', row: Record<string, unknown> & { id: string }) => ({
+    tbl,
+    id: row.id,
+    rev,
+    deleted: false,
+    row,
+  });
+
+  async function editNote(id: string): Promise<void> {
+    const transaction = (await handle.db.transactions.get(id))!;
+    const planned = planSeriesEdit({
+      transaction,
+      overrides: [],
+      scope: 'all',
+      at: transaction.date,
+      patch: { note: 'edited' },
+      today: d('2026-10-08'),
+      now: NOW,
+      newId: counterIdFactory('e'),
+    });
+    if (!planned.ok) throw new Error(planned.error.kind);
+    await applySeriesEdit(handle.db, planned.plan);
+  }
+
+  it('stores an expense’s business type and a category’s moved-in types, and edits here keep them', async () => {
+    const report = await applyPage(
+      handle.db,
+      [pulled('transactions', shop), pulled('categories', groceries)],
+      1,
+    );
+    expect(report).toEqual({ applied: 2, skipped: 0, rejected: 0 });
+
+    await editNote('b1');
+    await setCategoryArchived(handle.db, 'cat.groceries', true, NOW);
+    expect(await handle.db.transactions.get('b1')).toMatchObject({
+      mcc: '5411',
+      mccSource: 'user',
+      note: 'edited',
+    });
+    expect(await handle.db.categories.get('cat.groceries')).toMatchObject({ mccs: ['5499'], isArchived: 1 });
+  });
+
+  it('keeps a code a later list added and a source a later build added: shape only, here', async () => {
+    const later = { ...shop, mcc: '9999', mccSource: 'bank-feed' };
+    expect((await applyPage(handle.db, [pulled('transactions', later)], 1)).rejected).toBe(0);
+    expect(await handle.db.transactions.get('b1')).toMatchObject({ mcc: '9999', mccSource: 'bank-feed' });
+  });
+
+  it('refuses a row whose business type is not a code at all', async () => {
+    const report = await applyPage(handle.db, [pulled('transactions', { ...shop, mcc: '742' })], 1);
+    expect(report.rejected).toBe(1);
+  });
+
+  it('applies rows from before business types, which gain none', async () => {
+    const { mcc: _code, mccSource: _source, ...older } = shop;
+    const { mccs: _types, ...olderCategory } = groceries;
+    const report = await applyPage(
+      handle.db,
+      [pulled('transactions', older), pulled('categories', olderCategory)],
+      1,
+    );
+    expect(report.rejected).toBe(0);
+    await editNote('b1');
+    expect(await handle.db.transactions.get('b1')).not.toHaveProperty('mcc');
+    expect(await handle.db.categories.get('cat.groceries')).not.toHaveProperty('mccs');
   });
 });
