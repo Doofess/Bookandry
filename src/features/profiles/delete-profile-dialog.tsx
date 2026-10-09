@@ -103,7 +103,7 @@ export function DeleteProfileDialog({
                     className={
                       'flex min-h-11 items-center gap-2 rounded-xl border px-3 text-start transition ' +
                       'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ' +
-                      (selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted')
+                      (selected ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted')
                     }
                   >
                     <PersonAvatar person={other} size="sm" />

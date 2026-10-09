@@ -701,7 +701,7 @@ function Option({
       aria-checked={selected}
       onClick={onSelect}
       className={`flex min-h-11 items-center rounded-xl border px-3 text-start text-sm transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-        selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+        selected ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
       }`}
     >
       <span className="truncate">{label}</span>

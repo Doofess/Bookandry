@@ -347,7 +347,7 @@ function CategoryEditor({
                       setIcon(option);
                     }}
                     className={`flex size-11 items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                      option === icon ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                      option === icon ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                     }`}
                   >
                     <CategoryIcon name={option} className="size-4" />
@@ -452,7 +452,7 @@ function DeleteCategoryDialog({
                     setReassignTo(option.id);
                   }}
                   className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                    option.id === target ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                    option.id === target ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                   }`}
                 >
                   <CategoryIcon name={option.icon} className="size-4 shrink-0" />

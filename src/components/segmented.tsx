@@ -136,7 +136,7 @@ export function Segmented<T extends string>({
                     // Marks along a row line up at the top when one label wraps
                     // to two lines; a mark standing alone sits in the middle.
                     option.labelHidden === true ? 'justify-center' : 'justify-start',
-                    selected && 'inset-ring-2 inset-ring-primary',
+                    selected && 'inset-ring-2 inset-ring-primary-ink',
                   ),
             )}
           >

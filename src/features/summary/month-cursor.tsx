@@ -209,7 +209,7 @@ function MonthPicker({
                     : cn(
                         'hover:bg-accent',
                         cell.state === 'forecast' ? 'text-muted-foreground' : 'text-foreground',
-                        cell.isThisMonth ? 'ring-1 ring-primary' : null,
+                        cell.isThisMonth ? 'ring-1 ring-primary-ink' : null,
                       ),
                 )}
               >
@@ -222,7 +222,7 @@ function MonthPicker({
         <Button
           type="button"
           variant="ghost"
-          className="min-h-11 w-full text-primary sm:min-h-9"
+          className="min-h-11 w-full text-primary-ink sm:min-h-9"
           disabled={month === thisMonth}
           onClick={() => {
             pick(thisMonth);
