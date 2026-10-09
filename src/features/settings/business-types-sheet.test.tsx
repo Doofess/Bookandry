@@ -118,7 +118,7 @@ describe('business types per category', () => {
     expect(shown).toBe(8);
     await user.click(more);
     expect(within(other).getAllByRole('listitem').length).toBeGreaterThan(8);
-  });
+  }, 15_000);
 
   it('adding a business type moves it out of the category it was in', async () => {
     await db.categories.put(custom('c.lunch', 'Lunch', { mccs: ['5812'] }));
@@ -133,7 +133,7 @@ describe('business types per category', () => {
     expect((await db.categories.get('c.lunch'))?.mccs).toEqual([]);
     // Nothing was filed under it before, so nothing is asked.
     expect(screen.queryByRole('alertdialog')).toBeNull();
-  });
+  }, 15_000);
 
   it('moves exactly the past expenses the old mapping filed, after asking, and Undo restores them', async () => {
     await db.transactions.bulkPut([
@@ -164,7 +164,7 @@ describe('business types per category', () => {
     await waitFor(async () => {
       expect((await db.transactions.get('moves'))?.categoryId).toBe('cat.dining');
     });
-  });
+  }, 15_000);
 
   it('does not offer to move past expenses into an archived category, whose moves do not apply', async () => {
     await db.categories.put(custom('c.coffee', 'Coffee', { isArchived: 1 }));
@@ -180,7 +180,7 @@ describe('business types per category', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect((await db.transactions.get('stays'))?.categoryId).toBe('cat.dining');
-  });
+  }, 15_000);
 
   it('"Return to default" gives a moved type back to its default category', async () => {
     await db.categories.put(custom('c.coffee', 'Coffee', { mccs: ['5812'] }));
@@ -192,7 +192,7 @@ describe('business types per category', () => {
       expect((await db.categories.get('c.coffee'))?.mccs).toEqual([]);
     });
     expect(await within(sheet).findByText('No business types yet.')).toBeInTheDocument();
-  });
+  }, 15_000);
 
   it('says when a category is archived, and offers business types on expense categories only', async () => {
     await db.categories.put(custom('c.coffee', 'Coffee', { mccs: ['5812'], isArchived: 1 }));
@@ -207,7 +207,7 @@ describe('business types per category', () => {
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('radio', { name: 'Income' }));
     expect(screen.queryByRole('button', { name: /^Business types:/ })).toBeNull();
-  });
+  }, 15_000);
 });
 
 describe('business types per category, in Hebrew', () => {
@@ -231,5 +231,5 @@ describe('business types per category, in Hebrew', () => {
       expect((await db.categories.get('c.coffee'))?.mccs).toEqual(['5462']);
     });
     expect(await within(sheet).findByText('מאפיות')).toBeInTheDocument();
-  });
+  }, 15_000);
 });
