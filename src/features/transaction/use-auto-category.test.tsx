@@ -170,6 +170,7 @@ describe('choosing the category and the business type from the name', () => {
       hook.result.current.nameChanged('Claude Max Plan', 'expense');
     });
     await settle();
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
     act(() => {
       hook.result.current.choseManually();
     });
@@ -179,14 +180,24 @@ describe('choosing the category and the business type from the name', () => {
       await Promise.resolve();
     });
     expect(choose).not.toHaveBeenCalled();
+    expect(chooseMcc).toHaveBeenCalledTimes(1);
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '7372', source: 'ai' });
+    expect(hook.result.current.status).toBe('idle');
+  });
 
+  it('still looks the business type up when the category is picked within the typing pause', async () => {
+    const { choose, chooseMcc, hook } = setup();
     act(() => {
-      hook.result.current.nameChanged('Something else', 'expense');
+      hook.result.current.nameChanged('Claude Max Plan', 'expense');
+    });
+    act(() => {
+      hook.result.current.choseManually();
     });
     await settle();
-    expect(claude.suggestCategory).toHaveBeenCalledTimes(2);
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
     expect(choose).not.toHaveBeenCalled();
-    expect(chooseMcc).toHaveBeenLastCalledWith({ mcc: '7372', source: 'ai' });
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '7372', source: 'ai' });
+    expect(hook.result.current.status).toBe('idle');
   });
 
   it('files a loan under Loans, and holds it there while it stays a loan', async () => {

@@ -161,11 +161,13 @@ export function useAutoCategory({
     [run, currentMcc],
   );
 
-  /** The person picked a category themselves: it is theirs from here on. */
+  /**
+   * The person picked a category themselves: it is theirs from here on. A look-up
+   * already waiting or on its way is left alone: `run` reads `manual` before it
+   * sets the category, so it only goes on to fill the business type.
+   */
   const choseManually = useCallback((): void => {
     manual.current = true;
-    clearTimeout(timer.current);
-    latest.current++;
     setStatus('idle');
   }, []);
 
