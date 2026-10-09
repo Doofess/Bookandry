@@ -29,7 +29,7 @@ describe('AppShell', () => {
     await initTestI18n('en');
   });
 
-  it('renders one primary navigation landmark with its three tabs', () => {
+  it('renders one primary navigation landmark with its four tabs', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav).toBeInTheDocument();
@@ -39,7 +39,12 @@ describe('AppShell', () => {
     const tabs = within(nav)
       .getAllByRole('link')
       .filter((link) => link.textContent !== 'Bookandry');
-    expect(tabs.map((tab) => tab.textContent.replace('(current)', ''))).toEqual(['Feed', 'Chart', 'Cards']);
+    expect(tabs.map((tab) => tab.textContent.replace('(current)', ''))).toEqual([
+      'Feed',
+      'Chart',
+      'Cards',
+      'Cash',
+    ]);
   });
 
   it('has no tab for account linking: it is a page in Settings', () => {

@@ -2,6 +2,7 @@ export const ROUTES = {
   feed: '/',
   chart: '/chart',
   cards: '/cards',
+  cash: '/cash',
   /** The old Household tab, now Settings > Account linking: kept so its links still land. */
   household: '/household',
   settings: '/settings',
@@ -10,19 +11,21 @@ export const ROUTES = {
 export type RouteKey = keyof typeof ROUTES;
 
 /** The routes that are tabs. */
-export type NavKey = Extract<RouteKey, 'feed' | 'chart' | 'cards'>;
+export type NavKey = Extract<RouteKey, 'feed' | 'chart' | 'cards' | 'cash'>;
 
 /**
  * Order is the tab-bar / rail order, and the primary tab order.
  *
- * Three: the places the money is - and the cards it moves through, which
- * decide WHEN it leaves the account. Settings left the tabs for the account menu
- * at the top of every screen (the person's picture), where an account's and
- * an app's settings are looked for; account linking followed it there, as a
- * page in Settings - it is set up once, not visited daily. Every screen the app
- * grows does not earn a tab: a bar that scrolls is a bar nobody reads.
+ * Four: the places the money is - the feed, the chart, the cards it moves
+ * through, which decide WHEN it leaves the account, and the cash in the
+ * wallet, which is the one part of the balance no bank shows. Cash earned its
+ * slot the way the others did: it is a place you check, not an action you
+ * take. Settings left the tabs for the account menu at the top of every
+ * screen; account linking followed it, as a page in Settings - set up once,
+ * not visited daily. Every screen the app grows does not earn a tab: a bar
+ * that scrolls is a bar nobody reads.
  */
-export const NAV_ORDER: readonly NavKey[] = ['feed', 'chart', 'cards'];
+export const NAV_ORDER: readonly NavKey[] = ['feed', 'chart', 'cards', 'cash'];
 
 /**
  * Routes reachable by link rather than by tab: from the account menu, and

@@ -6,13 +6,18 @@ import { appRoutes } from './app-routes';
 import { LINKED_ROUTES, NAV_ORDER, ROUTES, SETTINGS_ROUTES } from './routes';
 
 /*
- * Account linking is a settings page, not a tab: three tabs, and every old
+ * Account linking is a settings page, not a tab: four tabs, and every old
  * address of the household lands on the page that took its place.
  */
 describe('the tabs', () => {
-  it('are the feed, the chart and the cards, and nothing else', () => {
-    expect(NAV_ORDER).toEqual(['feed', 'chart', 'cards']);
+  it('are the feed, the chart, the cards and cash, and nothing else', () => {
+    expect(NAV_ORDER).toEqual(['feed', 'chart', 'cards', 'cash']);
     expect(NAV_ORDER).not.toContain('household');
+  });
+
+  it('mounts Cash at its own address', () => {
+    expect(ROUTES.cash).toBe('/cash');
+    expect(appRoutes.find((r) => r.path === ROUTES.cash)?.element).toBeDefined();
   });
 });
 

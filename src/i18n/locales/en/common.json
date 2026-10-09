@@ -8,7 +8,8 @@
     "feed": "Feed",
     "chart": "Chart",
     "settings": "Settings",
-    "cards": "Cards"
+    "cards": "Cards",
+    "cash": "Cash"
   },
   "a11y": {
     "skipToContent": "Skip to content",
@@ -34,6 +35,28 @@
     "ai": "Smart import",
     "aiHint": "From a file or a photo of a statement",
     "aiUnavailable": "Needs a Bookandry account"
+  },
+  "cash": {
+    "title": "Cash",
+    "onHand": "Cash on hand",
+    "counted": "Counted {{date}}",
+    "negative": "More spent in cash than you have. Count your cash?",
+    "expected": "Expected this month: <in/> in, <out/> out",
+    "setupTitle": "How much cash do you have now?",
+    "setupBody": "Count what is in the wallet. Cash that comes in or goes out from today is counted from here.",
+    "setupSaved": "Cash on hand saved",
+    "activity": "Activity",
+    "activityEmpty": "Nothing yet. Withdrawals, deposits and cash payments show up here.",
+    "recount": "Recount",
+    "move": {
+      "start": "Cash when you started",
+      "withdraw": "Withdrawn from the ATM",
+      "deposit": "Deposited to the bank"
+    },
+    "someAccount": "A bank account",
+    "twoStarts": "Two starting amounts were recorded for {{name}}. Keep the earlier one?",
+    "keepEarlier": "Keep the earlier one",
+    "twoStartsFixed": "Kept the earlier starting amount"
   },
   "categoryPop": {
     "title": "Category",
