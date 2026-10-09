@@ -24,100 +24,123 @@
 @custom-variant ltr (&:where(:dir(ltr), [dir='ltr'], [dir='ltr'] *));
 
 /* ---------------------------------------------------------------------------
-   Design tokens.
+   Design tokens: Colour of money (docs/superpowers/specs/2026-10-09-colour-of-money-design.md).
 
-   Contrast-audited against WCAG 2.2 AA, and every pair the design depends on
-   is re-checked by src/lib/contrast.test.ts.
+   The house is ink on warm paper. Money comes as full-strength coloured
+   sheets (the next section), so colour always means a bank, a company, a card
+   or a category. Sapphire is the app's own colour - primary buttons, the
+   current step, focus, the month sheet - and never a bank's.
 
-   The brand is SAPPHIRE (#0F3A8A deep, #56A0FF vivid). Green survives only as
-   money coming in (--income, --chart-income); red is money going out.
-   --brand-vivid is for lines and the logo, never text on a light background
-   (it is 2.67:1 on white).
+   THE FIVE HOUSE COLOURS HOLD THE LITERAL VALUES; THE SHADCN NAMES ALIAS THEM.
+   A sheet retints `--foreground` to its own tint, and a paper sheet's tint is
+   the ink: `--on-fill: var(--ink)` works, `--on-fill: var(--foreground)` would
+   be a cycle and resolve to nothing.
 
-   --border (decorative) and --input (an affordance needing 3:1) are separate
-   tokens on purpose; shadcn ships them at the same value, which fails 1.4.11.
+   Every pair the design depends on is re-checked by src/lib/contrast.test.ts
+   and src/lib/money-colours.test.ts, which resolve var() and color-mix() the
+   way the browser does.
+
+   --border (decorative, 2px) and --input (an affordance needing 3:1) are
+   separate tokens on purpose (decision 15).
 --------------------------------------------------------------------------- */
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.004 285.8);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.004 285.8);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.004 285.8);
+  /* The house. */
+  --paper: oklch(0.962 0.012 85); /* #F6F2EA, the page */
+  --paper-sheet: oklch(0.992 0.006 85); /* #FEFCF8, a paper sheet and popovers */
+  --ink: oklch(0.2 0.018 265); /* #12161E: 16.22:1 on the page */
+  --ink-quiet: oklch(0.43 0.018 265); /* 7.26:1 on the page */
+  --box-fill: oklch(0.15 0.01 265); /* the black box behind a figure that matters */
+  --on-box: oklch(0.962 0.012 85); /* 17.62:1 */
+  --night: oklch(0.2 0.018 265); /* the ink sheet */
+  --on-night: oklch(0.962 0.012 85); /* 16.22:1 */
 
-  /* #1D4FB8 — white text 7.34:1; as text on white 7.34:1 */
-  --primary: oklch(0.462 0.175 262.6);
-  --primary-foreground: oklch(1 0 0);
-  --primary-hover: oklch(0.374 0.142 261.5); /* #0F3A8A */
+  /* The shadcn names, which every component already uses. */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper-sheet);
+  --card-foreground: var(--ink);
+  --popover: var(--paper-sheet);
+  --popover-foreground: var(--ink);
+  --muted-foreground: var(--ink-quiet);
 
-  --secondary: oklch(0.968 0.001 286.4);
-  --secondary-foreground: oklch(0.141 0.004 285.8);
-  --muted: oklch(0.968 0.001 286.4);
-  --muted-foreground: oklch(0.516 0.013 285.9); /* 5.61:1 */
-  --accent: oklch(0.959 0.019 260.2); /* #EAF2FF: icon tint, menu highlight */
-  --accent-foreground: oklch(0.374 0.142 261.5); /* #0F3A8A, 9.36:1 */
+  /* A sheet's box and pressed control; [data-sheet] redefines these. */
+  --box: var(--box-fill);
+  --box-text: var(--on-box);
+  --press: var(--ink);
+  --on-press: var(--paper);
 
-  --destructive: oklch(0.531 0.199 27.4); /* white text 5.81:1 */
-  --destructive-foreground: oklch(1 0 0);
+  /* Sapphire. */
+  --primary: oklch(0.462 0.175 263); /* #1F4FB8 */
+  --primary-foreground: oklch(0.97 0.02 263); /* 6.71:1 */
+  --primary-ink: var(--primary); /* sapphire as text: 6.57:1 on the page */
+  --primary-hi: oklch(0.82 0.1 263); /* lifted, in the box: 11.14:1 */
+  --focus-ring: var(--primary); /* the paper's focus colour; a sheet's --ring is its own tint */
+  --ring: var(--focus-ring);
 
-  --border: oklch(0.92 0.004 286.3);
-  --input: oklch(0.667 0.018 285.9); /* 3.04:1 — the field's only affordance */
-  --ring: oklch(0.546 0.215 262.9); /* #2563EB, 5.17:1 focus ring */
+  --secondary: oklch(0.93 0.012 85);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.93 0.012 85);
+  --accent: color-mix(in oklch, var(--foreground) 6%, transparent); /* a neutral highlight */
+  --accent-foreground: var(--ink);
 
-  --income: oklch(0.523 0.121 156.1);
+  --destructive: oklch(0.531 0.199 27.4); /* 5.21:1 on the page */
+  --destructive-foreground: oklch(1 0 none);
+
+  --border: color-mix(in oklch, var(--foreground) 14%, transparent); /* decorative, drawn 2px */
+  --input: oklch(0.6 0.018 265); /* 3.54:1 on the page, 3.86:1 on the sheet */
+
+  --income: oklch(0.47 0.12 155); /* 6.26:1 on the sheet */
   --expense: oklch(0.505 0.188 27.3);
   --chart-income: oklch(0.601 0.141 155.8);
   --chart-expense: oklch(0.531 0.199 27.4);
-  --chart-balance: oklch(0.516 0.013 285.9);
+  --chart-balance: var(--ink-quiet);
 
-  /* Lines and the logo ONLY. Never text on a light background. */
-  --brand-vivid: oklch(0.702 0.158 255.6); /* #56A0FF */
-  /* The engraved panel, the front door's and every screen's. Near-white text
-     on it measures 10.1:1. */
+  --scrim: oklch(0.2 0.018 265 / 0.5); /* behind a modal */
+  --shadow-pop: 0 40px 80px -30px oklch(0 0 none / 0.5); /* pop-outs only: sheets draw no shadow */
+
+  /* The front door only (decision 39): its engraved panel and links. */
+  --brand-vivid: oklch(0.702 0.158 255.6); /* #56A0FF: lines and the logo, never text on light */
   --brand-deep: oklch(0.374 0.142 261.5); /* #0F3A8A */
   --brand-deep-foreground: oklch(0.985 0.008 262);
 }
 
 .dark {
-  --background: oklch(0.141 0.004 285.8);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.9);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.231 0.007 285.8);
-  --popover-foreground: oklch(0.985 0 0);
+  --paper: oklch(0.2 0.012 70); /* #1A1510 */
+  --paper-sheet: oklch(0.255 0.012 70); /* #27221D */
+  --ink: oklch(0.95 0.012 85); /* #F2EEE6: 13.65:1 on the sheet */
+  --ink-quiet: oklch(0.77 0.012 85); /* 7.62:1 on the sheet */
+  --box-fill: oklch(0.11 0.006 70);
+  --on-box: oklch(0.95 0.012 85); /* 17.68:1 */
+  --night: oklch(0.13 0.006 70);
+  --on-night: oklch(0.95 0.012 85);
 
-  --primary: oklch(0.779 0.113 259.7); /* #8CB8FF, 9.87:1 on the page */
-  --primary-foreground: oklch(0.253 0.084 263); /* #0B1F4A deep navy, 7.96:1 */
-  --primary-hover: oklch(0.836 0.082 258.8); /* #A9CBFF */
+  --primary: oklch(0.42 0.165 263); /* #1743A5, a deep fill */
+  --primary-foreground: oklch(0.96 0.025 263); /* 7.79:1 */
+  --primary-ink: oklch(0.78 0.12 263); /* 8.93:1 on the page; the fill as text would be 2.06:1 */
+  --primary-hi: oklch(0.82 0.1 263);
+  --focus-ring: var(--primary-ink);
 
-  --secondary: oklch(0.254 0.005 286);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.254 0.005 286);
-  --muted-foreground: oklch(0.755 0.011 286.1); /* 7.23:1 on --muted, the tightest surface it lands on */
-  --accent: oklch(0.314 0.085 263.5); /* #1A2F5C, a deep sapphire tint */
-  --accent-foreground: oklch(0.779 0.113 259.7); /* #8CB8FF, 6.49:1 */
+  --secondary: oklch(0.27 0.012 70);
+  --muted: oklch(0.27 0.012 70);
 
-  /* Dark mode INVERTS the pair, exactly as --primary does: a light red with
-     dark text on it. Carrying the light-mode red over left `text-destructive`
-     at 3.03:1 on the dark page - the one axe violation the token audit missed,
-     because it checked white-on-fill and never destructive-as-TEXT. */
-  --destructive: oklch(0.667 0.167 22.7); /* 6.08:1 as text on --background */
-  --destructive-foreground: oklch(0.141 0.004 285.8);
+  /* Dark mode INVERTS the destructive pair: a light red with dark text on it.
+     Carrying the light red over left `text-destructive` at 3.03:1 once. */
+  --destructive: oklch(0.667 0.167 22.7); /* 5.54:1 as text on the page */
+  --destructive-foreground: oklch(0.14 0 none);
 
-  --border: oklch(0.315 0.007 286);
-  --input: oklch(0.53 0.017 285.8); /* 3.35:1 vs card */
-  --ring: oklch(0.779 0.113 259.7);
+  --input: oklch(0.56 0.012 70); /* 3.89:1 on the page, 3.39:1 on the sheet */
 
-  --income: oklch(0.773 0.167 157.5);
-  --expense: oklch(0.667 0.167 22.7); /* 5.42:1 on --card; spec's 0 63% 51% was 2.50:1 */
+  --income: oklch(0.8 0.15 155); /* 8.96:1 on the sheet */
+  --expense: oklch(0.667 0.167 22.7); /* 4.82:1 on the sheet */
   --chart-income: oklch(0.788 0.147 159.7);
   --chart-expense: oklch(0.667 0.167 22.7);
-  --chart-balance: oklch(0.755 0.011 286.1);
 
-  --brand-vivid: oklch(0.702 0.158 255.6);
-  --brand-deep: oklch(0.314 0.117 261.7); /* #0B2C6B, near-white text 12.7:1 */
+  --scrim: oklch(0.08 0 none / 0.6);
+
+  --brand-vivid: oklch(0.702 0.158 255.6); /* 6.80:1 as a link on the dark page */
+  --brand-deep: oklch(0.314 0.117 261.7); /* #0B2C6B */
   --brand-deep-foreground: oklch(0.985 0.008 262);
 }
 
@@ -130,7 +153,6 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -150,6 +172,19 @@
   --color-brand-vivid: var(--brand-vivid);
   --color-brand-deep: var(--brand-deep);
   --color-brand-deep-foreground: var(--brand-deep-foreground);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-box: var(--box);
+  --color-box-text: var(--box-text);
+  --color-on-box: var(--on-box);
+  --color-night: var(--night);
+  --color-on-night: var(--on-night);
+  --color-press: var(--press);
+  --color-on-press: var(--on-press);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-hi: var(--primary-hi);
+  --color-scrim: var(--scrim);
+  --shadow-pop: var(--shadow-pop);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
