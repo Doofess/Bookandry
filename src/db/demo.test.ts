@@ -203,7 +203,8 @@ describe('removeDemoData', () => {
     });
     await handle.db.cashMoves.bulkPut([
       move('m.dana', `${DEMO_PREFIX}profile.dana`),
-      move('m.yossi', `${DEMO_PREFIX}profile.yossi`),
+      // As if the demo itself had set cash up: its own rows claim no one.
+      move(`${DEMO_PREFIX}m.yossi`, `${DEMO_PREFIX}profile.yossi`),
     ]);
 
     const removal = await removeDemoData(handle.db);
@@ -214,6 +215,26 @@ describe('removeDemoData', () => {
     expect(await handle.db.transactions.get('mine-1')).toBeDefined();
     // A removed person's cash moves go with them; a kept person keeps theirs.
     expect((await handle.db.cashMoves.toArray()).map((m) => m.id)).toEqual(['m.dana']);
+  });
+
+  it('keeps a demo profile the user has set cash up for, with that cash', async () => {
+    await loadDemoData(handle.db, INPUT);
+    await handle.db.cashMoves.put({
+      id: 'mine-start',
+      profileId: `${DEMO_PREFIX}profile.yossi`,
+      kind: 'start',
+      amountMinor: 50_000,
+      date: TODAY,
+      isDeleted: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const removal = await removeDemoData(handle.db);
+
+    expect(removal.keptProfiles).toEqual([`${DEMO_PREFIX}profile.yossi`]);
+    expect(await handle.db.profiles.get(`${DEMO_PREFIX}profile.yossi`)).toBeDefined();
+    expect(await handle.db.cashMoves.get('mine-start')).toBeDefined();
   });
 
   it('clears a demo payment method off the user’s own row rather than orphaning it', async () => {
