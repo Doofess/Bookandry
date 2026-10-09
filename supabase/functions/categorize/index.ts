@@ -11,11 +11,15 @@
  * again. Sent: the typed name and the names of the person's categories.
  * Answered: one of the ids it was given, or null - Claude is made to choose
  * through a tool whose input is an enum of exactly those ids, and the answer
- * is checked against them anyway.
+ * is checked against them anyway - and, for an expense, the business type (a
+ * 4-digit Merchant Category Code) checked against the code list this function
+ * bundles (../_shared/mcc-codes.ts, a copy of the app's), or null.
  *
  * Deployed with the Supabase MCP / CLI: `supabase functions deploy categorize`.
  */
 import { createSupabaseContext } from 'npm:@supabase/server';
+
+import { isMcc } from '../_shared/mcc-codes.ts';
 
 const MODEL = Deno.env.get('CATEGORIZE_MODEL') ?? 'claude-haiku-4-5-20251001';
 const ORIGINS = new Set(['https://bookandry.com', 'http://localhost:4174']);
@@ -52,7 +56,14 @@ function parse(body: unknown): { name: string; kind: 'income' | 'expense'; choic
   return { name: name.trim(), kind, choices };
 }
 
-async function choose(name: string, kind: 'income' | 'expense', choices: Choice[], key: string) {
+type Answer = { categoryId: string | null; mcc: string | null };
+
+async function choose(
+  name: string,
+  kind: 'income' | 'expense',
+  choices: Choice[],
+  key: string,
+): Promise<Answer> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -68,15 +79,23 @@ async function choose(name: string, kind: 'income' | 'expense', choices: Choice[
         'Entries are short and may be in Hebrew or English: a product, a service, a shop, a brand, a bill. ' +
         'Pick the single category that fits best. Prefer a specific category over a general one ' +
         '(an AI tool subscription belongs in an AI or software category rather than a general subscriptions one, if there is one). ' +
-        'Choose the "other" category only when nothing else reasonably fits.',
+        'Choose the "other" category only when nothing else reasonably fits. ' +
+        'For an expense, also give the single most likely 4-digit merchant category code (MCC) of the business, ' +
+        'or "" when unsure; for income, always "".',
       tools: [
         {
           name: 'choose_category',
-          description: 'Record the category this entry belongs in.',
+          description: 'Record the category this entry belongs in, and its business type.',
           input_schema: {
             type: 'object',
-            properties: { category_id: { type: 'string', enum: choices.map((c) => c.id) } },
-            required: ['category_id'],
+            properties: {
+              category_id: { type: 'string', enum: choices.map((c) => c.id) },
+              mcc: {
+                type: 'string',
+                description: 'The 4-digit merchant category code (MCC) of the business, or "" when unsure.',
+              },
+            },
+            required: ['category_id', 'mcc'],
           },
         },
       ],
@@ -93,10 +112,16 @@ async function choose(name: string, kind: 'income' | 'expense', choices: Choice[
   });
   if (!response.ok) throw new Error(`anthropic ${response.status}`);
   const message = (await response.json()) as {
-    content?: { type: string; input?: { category_id?: unknown } }[];
+    content?: { type: string; input?: { category_id?: unknown; mcc?: unknown } }[];
   };
-  const picked = message.content?.find((block) => block.type === 'tool_use')?.input?.category_id;
-  return typeof picked === 'string' && choices.some((c) => c.id === picked) ? picked : null;
+  const input = message.content?.find((block) => block.type === 'tool_use')?.input;
+  const picked = input?.category_id;
+  const code = input?.mcc;
+  return {
+    categoryId: typeof picked === 'string' && choices.some((c) => c.id === picked) ? picked : null,
+    // Checked, not trusted: a code the list has, on an expense; anything else is no answer.
+    mcc: kind === 'expense' && isMcc(code) ? code : null,
+  };
 }
 
 export default {
@@ -119,8 +144,7 @@ export default {
     }
 
     try {
-      const categoryId = await choose(input.name, input.kind, input.choices, key);
-      return Response.json({ categoryId }, { headers });
+      return Response.json(await choose(input.name, input.kind, input.choices, key), { headers });
     } catch {
       return Response.json({ error: 'upstream' }, { status: 502, headers });
     }
