@@ -5,9 +5,17 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/db';
 import { materialize } from '@/db/materialize';
 import { findCandidates } from '@/db/repos/transactions';
+import { expandOccurrences } from '@/domain/occurrences';
 import { makeTx, MONEY } from '@/domain/test-factories';
 import { initTestI18n, renderWithProviders } from '@/test/render';
-import { SHARED_OWNER, type Category, type PaymentMethod, type Profile } from '@/types/domain';
+import {
+  CASH_METHOD_ID,
+  SHARED_OWNER,
+  type Category,
+  type Occurrence,
+  type PaymentMethod,
+  type Profile,
+} from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
 import { TransactionSheet } from './transaction-sheet';
@@ -553,5 +561,153 @@ describe('what an edit hands back', () => {
         false,
       );
     });
+  });
+});
+
+describe('where income goes', () => {
+  const salary: Category = {
+    ...groceries,
+    id: 'cat.salary',
+    kind: 'income',
+    nameKey: 'categories:builtin.salary',
+  };
+  const yossi = { ...profile, id: 'p2', name: 'Yossi' } as Profile;
+  const account = (id: string, label: string, over: Partial<PaymentMethod> = {}): PaymentMethod => ({
+    id,
+    profileId: 'p1',
+    type: 'bank_account',
+    label,
+    account: { bank: '10', holding: 'personal' },
+    isArchived: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...over,
+  });
+  const cash: PaymentMethod = {
+    id: CASH_METHOD_ID,
+    profileId: SHARED_OWNER,
+    type: 'cash',
+    label: 'Cash',
+    isArchived: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  const leumi = account('pm.leumi', 'Leumi current');
+  const discount = account('pm.discount', 'Discount savings');
+
+  function add(
+    target: Parameters<typeof TransactionSheet>[0]['target'],
+    {
+      profiles = [profile],
+      methods = [maxCard, leumi, discount, cash],
+      incomeHistory,
+    }: { profiles?: Profile[]; methods?: PaymentMethod[]; incomeHistory?: readonly Occurrence[] } = {},
+  ) {
+    const onSaved = vi.fn();
+    renderWithProviders(
+      <TransactionSheet
+        target={target}
+        onOpenChange={() => undefined}
+        profiles={profiles}
+        categories={[groceries, salary]}
+        paymentMethods={methods}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={onSaved}
+        {...(incomeHistory === undefined ? {} : { incomeHistory })}
+      />,
+    );
+    return { onSaved, user: userEvent.setup() };
+  }
+  const goesTo = () => screen.getByRole('combobox', { name: /Goes to/ });
+
+  it('offers the person’s accounts, then cash, then not assigned, and never a card', async () => {
+    const { user } = add({ mode: 'add', kind: 'income' });
+    expect(screen.queryByRole('combobox', { name: /Paid with/ })).toBeNull();
+
+    await user.click(goesTo());
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
+    expect(options[0]).toMatch(/^Discount savings/);
+    expect(options[1]).toMatch(/^Leumi current/);
+    expect(options[2]).toMatch(/^Cash/);
+    expect(options[3]).toMatch(/^Not assigned/);
+    expect(options.some((text) => text.includes('Max'))).toBe(false);
+  });
+
+  it('starts new income where this person’s income usually goes, or on not assigned', () => {
+    const history = expandOccurrences(
+      makeTx({
+        id: 'pay',
+        kind: 'income',
+        categoryId: 'cat.salary',
+        date: '2026-07-01' as LocalDate,
+        recurrence: { type: 'monthly', dayOfMonth: 1 },
+        destinationId: 'pm.leumi',
+      }),
+      [],
+      '2026-04-08' as LocalDate,
+      TODAY,
+      { today: TODAY },
+    );
+    add({ mode: 'add', kind: 'income' }, { incomeHistory: history });
+    expect(goesTo()).toHaveAccessibleName(/Leumi current/);
+  });
+
+  it('starts on not assigned with nothing to go by', () => {
+    add({ mode: 'add', kind: 'income' });
+    expect(goesTo()).toHaveAccessibleName(/Not assigned/);
+  });
+
+  it('saves where it went', async () => {
+    const { onSaved, user } = add({ mode: 'add', kind: 'income' });
+    await user.type(screen.getByLabelText('Amount'), '500');
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Cash/ }));
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ kind: 'income', destinationId: CASH_METHOD_ID });
+    expect(saved?.paymentMethodId).toBeUndefined();
+  });
+
+  it('lets go of an account the new person cannot use when Whose? moves, and keeps cash', async () => {
+    const { user } = add({ mode: 'add', kind: 'income' }, { profiles: [profile, yossi] });
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Leumi current/ }));
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    expect(goesTo()).toHaveAccessibleName(/Not assigned/);
+
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Cash/ }));
+    await user.click(screen.getByRole('radio', { name: 'Dana' }));
+    expect(goesTo()).toHaveAccessibleName(/Cash/);
+  });
+
+  it('opens a cash expense paid in cash, and cash income going to cash', () => {
+    add({ mode: 'add', kind: 'expense', cash: true });
+    expect(screen.getByRole('combobox', { name: /Paid with/ })).toHaveAccessibleName(/Cash/);
+  });
+
+  it('opens cash income going to cash', () => {
+    add({ mode: 'add', kind: 'income', cash: true });
+    expect(screen.getByRole('radio', { name: 'Income' })).toBeChecked();
+    expect(goesTo()).toHaveAccessibleName(/Cash/);
+  });
+
+  it('saves neither a destination nor a method when cash income is switched to an expense', async () => {
+    const { onSaved, user } = add({ mode: 'add', kind: 'income', cash: true });
+    await user.click(screen.getByRole('radio', { name: 'Expense' }));
+    await user.type(screen.getByLabelText('Amount'), '80');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ kind: 'expense' });
+    expect(saved).not.toHaveProperty('destinationId');
+    expect(saved?.paymentMethodId).toBeUndefined();
   });
 });
