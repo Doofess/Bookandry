@@ -67,6 +67,13 @@ export type Category = {
   readonly id: string;
   readonly kind: Kind;
   readonly icon: string;
+  /**
+   * The hue it shows (§1.4): a hue key with an optional tone, "teal" or
+   * "teal-2". Never a colour. Optional: a built-in without one takes
+   * BUILTIN_HUES, a custom one without one a hash of its id
+   * (src/domain/category-hue.ts). An older build keeps it untouched.
+   */
+  readonly hue?: string;
   readonly sortOrder: number;
   /** Numeric because IndexedDB cannot index booleans. */
   readonly isArchived: 0 | 1;
