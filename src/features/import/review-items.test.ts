@@ -219,6 +219,27 @@ describe('the review: business type and category', () => {
     ]);
   });
 
+  it('leaves a broad sector to Claude, and a code that only falls through to Other to the later steps (final review C1, C2)', async () => {
+    const items = await review([
+      // "מזון וצריכה" gives no code: Claude's 5814 files the delivery under Dining, not Groceries.
+      found({ m: 'FOODDASH DELIVERY', mcc: '5814', sec: 'מזון וצריכה' }),
+      found({ m: 'מסעדת הפינה', sec: 'מסעדות, קפה וברים' }),
+      // 9311 (tax payments) names no range: Claude's category wins, and the code is still kept.
+      found({ m: 'ארנונה עיריית דוגמה', cat: 'c1' }, { fileMcc: '9311' }),
+      // 6012 (financial institutions) does not beat the loan rule.
+      found({ m: 'פירעון הלוואה' }, { fileMcc: '6012' }),
+      // Nothing else known: Other, as before.
+      found({ m: 'Somewhere' }, { fileMcc: '9311' }),
+    ]);
+    expect(items.map(filed)).toEqual([
+      ['cat.dining', '5814', 'ai'],
+      ['cat.dining', '5812', 'sector'],
+      ['cat.groceries', '9311', 'file'],
+      ['cat.loans', '6012', 'file'],
+      ['cat.otherExpense', '9311', 'file'],
+    ]);
+  });
+
   it('gives income no business type, and keeps a refund a refund', async () => {
     const [refund] = await review([found({ m: 'Supermarket', a: '-50.00' }, { fileMcc: '5411' })]);
     expect(filed(refund)).toEqual(['cat.refund', '', '']);

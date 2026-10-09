@@ -50,6 +50,7 @@ import {
   type WireTotal,
 } from '@/domain/import-wire';
 import { isMcc } from '@/domain/mcc';
+import { tableFiles } from '@/domain/mcc-categories';
 import { sectorMcc } from '@/domain/sector-mcc';
 import { parseStatementDate } from '@/lib/dates';
 import type { RefuseReason, Job, PreparedFile } from '@/services/ai-import/prepare-files';
@@ -609,17 +610,23 @@ async function readWorkbook(
   return out;
 }
 
-/** Whether history, the file or the sector already says what every row of this merchant needs. */
+/**
+ * Whether history, the file or the sector already says what every row of
+ * this merchant needs. An expense's business type is the first of those, as
+ * `pickMcc` takes it - and only one the table files somewhere: a code that
+ * merely falls through to Other (9311, tax payments) places nothing, so
+ * Claude's own category is still asked for (final review C1). A code the
+ * person moved into a category is not seen here, and such a merchant is
+ * asked about too, at no extra call; the review still files it by the move.
+ */
 async function placed(rows: readonly FoundRow[], description: string, ctx: ImportContext): Promise<boolean> {
   for (const row of rows) {
     if (row.kind === 'income') {
       if ((await ctx.history('income', description)).categoryId === undefined) return false;
-    } else if (
-      row.fileMcc === undefined &&
-      sectorMcc(row.sector ?? '') === undefined &&
-      (await ctx.history('expense', description)).mcc === undefined
-    ) {
-      return false;
+    } else {
+      const code =
+        row.fileMcc ?? sectorMcc(row.sector ?? '') ?? (await ctx.history('expense', description)).mcc;
+      if (code === undefined || !tableFiles(code)) return false;
     }
   }
   return true;
