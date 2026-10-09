@@ -75,12 +75,13 @@
     "sheet": {
       "withdrawBody": "Money from the bank into the wallet. The balance does not change.",
       "depositBody": "Money from the wallet into the bank. The balance does not change.",
-      "startBody": "The cash you had when you started. Correct it if it was not right."
+      "startBody": "The cash you had when you started. Correct it if it was not right.",
+      "dateFuture": "Pick today or an earlier day.",
+      "dateBeforeStart": "The cash count starts on {{date}}. Pick that day or a later one."
     },
     "account": "Bank account",
     "note": "Note",
     "saved": "Saved",
-    "startExists": "{{name}} already has a starting amount.",
     "countBody": "Count what is in the wallet. Any difference is recorded as cash found or missing.",
     "countQuestion": "How much is in the wallet now?",
     "countRecorded": "Recorded: <amount/>",

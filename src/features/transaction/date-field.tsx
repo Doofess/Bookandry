@@ -46,6 +46,8 @@ export function DateField({
   describedBy,
   invalid,
   disabled,
+  min,
+  max,
 }: {
   readonly value: LocalDate;
   readonly onChange: (date: LocalDate) => void;
@@ -54,6 +56,10 @@ export function DateField({
   readonly describedBy?: string;
   readonly invalid?: boolean;
   readonly disabled?: boolean;
+  /** The first day the calendar offers. A typed day outside the range is the form's to refuse. */
+  readonly min?: LocalDate;
+  /** The last day the calendar offers. */
+  readonly max?: LocalDate;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -141,6 +147,10 @@ export function DateField({
               // previous day selected.
               selected={toPickerDate(value)}
               defaultMonth={toPickerDate(value)}
+              disabled={[
+                ...(min === undefined ? [] : [{ before: toPickerDate(min) }]),
+                ...(max === undefined ? [] : [{ after: toPickerDate(max) }]),
+              ]}
               onSelect={(next) => {
                 if (next === undefined) return;
                 onChange(fromPickerDate(next));

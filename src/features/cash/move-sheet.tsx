@@ -24,6 +24,7 @@ import { methodOwnedBy } from '@/domain/tx-options';
 import { DateField } from '@/features/transaction/date-field';
 import { PickerField } from '@/features/transaction/picker-field';
 import { systemClock } from '@/lib/clock';
+import { compareLocal, formatLocalDate } from '@/lib/dates';
 import { newId } from '@/lib/id';
 import { CASH_METHOD_ID, type CashMove, type PaymentMethod, type Profile } from '@/types/domain';
 import type { Currency, LocalDate, Minor } from '@/types/money';
@@ -36,6 +37,8 @@ type EditableKind = 'start' | 'withdraw' | 'deposit';
 
 type SheetProps = {
   readonly people: readonly Profile[];
+  /** Each person's start date: a withdrawal or deposit before it would count for nothing. */
+  readonly since: ReadonlyMap<string, LocalDate>;
   readonly defaultProfileId: string;
   readonly methods: readonly PaymentMethod[];
   readonly currency: Currency;
@@ -48,8 +51,6 @@ type Problems = {
   readonly amount?: string;
   readonly date?: string;
   readonly note?: string;
-  /** The start, moved to someone who already has one. */
-  readonly person?: string;
 };
 
 function kindOf(target: MoveTarget): EditableKind {
@@ -59,7 +60,7 @@ function kindOf(target: MoveTarget): EditableKind {
 
 /**
  * A withdrawal, a deposit, or the amount someone started with: its amount,
- * day, person, the bank account (a label only; not for the start) and a note.
+ * day, person and bank account (a label only; neither for the start) and a note.
  * Save, edit and delete each come back with Undo.
  */
 export function CashMoveSheet({
@@ -110,13 +111,14 @@ function MoveForm({
   editing,
   kind,
   people,
+  since,
   defaultProfileId,
   methods,
   currency,
   today,
   onDone,
 }: SheetProps & { readonly editing: CashMove | undefined; readonly kind: EditableKind }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [amount, setAmount] = useState<Minor | undefined>(editing?.amountMinor);
   const [date, setDate] = useState<LocalDate>(editing?.date ?? today);
   const [profileId, setProfileId] = useState(editing?.profileId ?? defaultProfileId);
@@ -131,15 +133,30 @@ function MoveForm({
   const dateId = useId();
   const dateErrorId = useId();
   const personId = useId();
-  const personErrorId = useId();
   const accountLabelId = useId();
   const noteId = useId();
   const noteErrorId = useId();
 
   // The person's accounts and the joint ones they hold; the one already on the move stays.
   const accounts = destinationsFor(methods, profileId, accountId).filter((m) => m.id !== CASH_METHOD_ID);
+  // A withdrawal or deposit counts only from the person's start to today:
+  // outside that it would be saved and then vanish from the figure and the list.
+  const from = kind === 'start' ? undefined : since.get(profileId);
+  const to = kind === 'start' ? undefined : today;
+  const outOfRange =
+    to !== undefined && compareLocal(date, to) > 0
+      ? t('cash.sheet.dateFuture')
+      : from !== undefined && compareLocal(date, from) < 0
+        ? t('cash.sheet.dateBeforeStart', {
+            date: formatLocalDate(from, i18n.language, { dateStyle: 'medium' }),
+          })
+        : undefined;
+  const dateProblem = outOfRange ?? problems.date;
   const valid =
-    amount !== undefined && Number.isSafeInteger(amount) && (kind === 'start' ? amount >= 0 : amount > 0);
+    amount !== undefined &&
+    Number.isSafeInteger(amount) &&
+    (kind === 'start' ? amount >= 0 : amount > 0) &&
+    outOfRange === undefined;
 
   const draft = (): CashMoveDraft => ({
     profileId,
@@ -163,10 +180,6 @@ function MoveForm({
         default:
           return undefined;
       }
-    }
-    if (error instanceof Error && error.message === 'start_exists') {
-      const name = people.find((p) => p.id === profileId)?.name ?? '';
-      return { person: t('cash.startExists', { name }) };
     }
     return undefined;
   };
@@ -233,13 +246,16 @@ function MoveForm({
             setProblems(({ date: _date, ...rest }) => rest);
           }}
           labelledBy={dateId}
-          invalid={problems.date !== undefined}
-          {...(problems.date === undefined ? {} : { describedBy: dateErrorId })}
+          invalid={dateProblem !== undefined}
+          {...(dateProblem === undefined ? {} : { describedBy: dateErrorId })}
+          {...(from === undefined ? {} : { min: from })}
+          {...(to === undefined ? {} : { max: to })}
         />
-        <FieldProblem id={dateErrorId} text={problems.date} />
+        <FieldProblem id={dateErrorId} text={dateProblem} />
       </div>
 
-      {people.length > 1 ? (
+      {/* A start stays with its person: everyone else listed already has one. */}
+      {kind !== 'start' && people.length > 1 ? (
         <div className="space-y-1.5">
           <Label id={personId}>{t('tx.profile')}</Label>
           <Segmented
@@ -248,7 +264,6 @@ function MoveForm({
             options={people.map((p) => ({ value: p.id, label: p.name }))}
             onChange={(next) => {
               setProfileId(next);
-              setProblems(({ person: _person, ...rest }) => rest);
               // An account the new person does not hold is let go, as the payment picker does.
               const account = methods.find((m) => m.id === accountId);
               if (account !== undefined && !methodOwnedBy(account, next)) setAccountId('');
@@ -256,7 +271,6 @@ function MoveForm({
           />
         </div>
       ) : null}
-      <FieldProblem id={personErrorId} text={problems.person} />
 
       {kind === 'start' ? null : (
         <div className="space-y-1.5">
