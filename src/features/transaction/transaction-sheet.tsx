@@ -275,6 +275,7 @@ export function TransactionSheet({
               // A fresh form for each kind and each source row.
               key={`add-${addKind}-${addCash ? 'cash' : 'any'}-${from === undefined ? 'new' : `${from.transactionId}@${from.at}`}`}
               initial={addInitial}
+              duplicate={from !== undefined}
               incomeHistory={incomeHistory}
               profiles={profiles}
               categories={categories}
@@ -384,6 +385,7 @@ function EditBody({
 
 function TransactionForm({
   initial,
+  duplicate = false,
   incomeHistory,
   editing,
   focusAmount = false,
@@ -396,6 +398,8 @@ function TransactionForm({
   onCancel,
 }: {
   readonly initial: TxFormValues;
+  /** Adding a copy of another row. */
+  readonly duplicate?: boolean;
   /** Adding only: where income goes when the kind is switched to income. */
   readonly incomeHistory?: readonly Occurrence[];
   /** Absent when adding. */
@@ -447,7 +451,8 @@ function TransactionForm({
   const profileLabelId = useId();
   const destinationLabelId = useId();
   // Whether the destination was chosen by hand (or preset to cash): a change of person then leaves it be.
-  const destinationChosen = useRef(initial.destinationId === CASH_METHOD_ID);
+  // A duplicated row's carried destination is never counted as chosen.
+  const destinationChosen = useRef(!duplicate && initial.destinationId === CASH_METHOD_ID);
 
   // Opened from "A different amount…": the amount is what the person came to change.
   useEffect(() => {
@@ -567,7 +572,12 @@ function TransactionForm({
     (next: Kind) => {
       setValue('kind', next);
       // Switched to income on a new row with nowhere chosen yet: where this person's income usually goes.
-      if (next === 'income' && editing === undefined && (form.getValues('destinationId') ?? '') === '') {
+      if (
+        next === 'income' &&
+        editing === undefined &&
+        !destinationChosen.current &&
+        (form.getValues('destinationId') ?? '') === ''
+      ) {
         setValue(
           'destinationId',
           defaultDestination(incomeHistory ?? [], form.getValues('profileId'), paymentMethods, today),

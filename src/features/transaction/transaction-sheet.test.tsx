@@ -819,4 +819,50 @@ describe('where income goes', () => {
     await user.click(screen.getByRole('radio', { name: 'Yossi' }));
     expect(goesTo()).toHaveAccessibleName(/Yossi current/);
   });
+
+  const twoPeople = () => ({
+    profiles: [profile, yossi],
+    methods: [maxCard, leumi, discount, cash, account('pm.yossi', 'Yossi current', { profileId: 'p2' })],
+    incomeHistory: [...historyTo('pm.leumi'), ...historyTo('pm.yossi', 'p2')],
+  });
+
+  it('keeps a hand-picked Not assigned through a change of person', async () => {
+    const { user } = add({ mode: 'add', kind: 'income' }, twoPeople());
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Not assigned/ }));
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    expect(goesTo()).toHaveAccessibleName(/Not assigned/);
+  });
+
+  it('keeps a hand-picked Not assigned when switched to expense and back to income', async () => {
+    const { user } = add({ mode: 'add', kind: 'expense' }, { incomeHistory: historyTo('pm.leumi') });
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    await user.click(goesTo());
+    await user.click(await screen.findByRole('option', { name: /^Not assigned/ }));
+    await user.click(screen.getByRole('radio', { name: 'Expense' }));
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(goesTo()).toHaveAccessibleName(/Not assigned/);
+  });
+
+  it('does not count a duplicated row’s carried destination as picked by hand', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'src',
+        kind: 'income',
+        categoryId: 'cat.salary',
+        date: '2026-10-01' as LocalDate,
+        recurrence: { type: 'one_time' },
+        destinationId: CASH_METHOD_ID,
+      }),
+    );
+    const { user } = add(
+      { mode: 'add', kind: 'income', from: { transactionId: 'src', at: '2026-10-01' as LocalDate } },
+      twoPeople(),
+    );
+    await waitFor(() => {
+      expect(goesTo()).toHaveAccessibleName(/Cash/);
+    });
+    await user.click(screen.getByRole('radio', { name: 'Yossi' }));
+    expect(goesTo()).toHaveAccessibleName(/Yossi current/);
+  });
 });
