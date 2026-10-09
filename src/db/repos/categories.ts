@@ -1,5 +1,6 @@
 import { withoutTracking, type BookandryDB } from '@/db/db';
 import { buildSeedCategories, FALLBACK_CATEGORY } from '@/db/seed';
+import { leastUsedHue } from '@/domain/category-hue';
 import { normalizeName } from '@/domain/validation';
 import { redirectId, type Category } from '@/types/domain';
 import type { IsoInstant, Kind } from '@/types/money';
@@ -47,6 +48,8 @@ export async function createCategory(
       id,
       kind: draft.kind,
       icon: draft.icon,
+      // The hue least used among its kind, so a new category stands apart.
+      hue: leastUsedHue(siblings),
       sortOrder,
       isArchived: 0,
       source: 'custom',

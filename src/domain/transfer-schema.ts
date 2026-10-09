@@ -117,6 +117,8 @@ const categorySchema = z.intersection(
     id: z.string().min(1),
     kind: z.enum(['income', 'expense']),
     icon: z.string().min(1),
+    // Loose on purpose: a newer build's hue key must survive an import here.
+    hue: z.string().min(1).max(40).optional(),
     sortOrder: z.number().int(),
     isArchived: z.union([z.literal(0), z.literal(1)]),
     archivedAt: isoInstant.optional(),
