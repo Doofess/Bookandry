@@ -1,4 +1,3 @@
-import { cn } from 'cn';
 import { Landmark, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -12,14 +11,13 @@ import { PanelSheet } from '@/components/brand-panel';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
-import { brandColor } from '@/data/brands';
 import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
 import { monthParam, PARAM } from '@/domain/feed-filters';
+import { methodKey } from '@/domain/money-key';
 import { methodOwnedBy } from '@/domain/tx-options';
-import { cardColorValue } from '@/features/cards/card-colors';
 import { MethodEditor } from '@/features/cards/method-editor';
 import { UnfinishedNotice } from '@/features/cards/unfinished-notice';
 import { useBranch } from '@/features/cards/use-branch';
@@ -135,14 +133,6 @@ function printedAccount(bank: string, branch: string | undefined, number: string
   return [bank.padStart(2, '0'), branch, number].filter((part) => part !== undefined).join('-');
 }
 
-/**
- * The colour an account is marked with: the one the person gave it, else its
- * bank's own. Undefined leaves it the app's own accent.
- */
-function accountAccent(account: PaymentMethod): string | undefined {
-  return cardColorValue(account.color) ?? brandColor(`bank-${account.account?.bank ?? ''}`);
-}
-
 function AccountPanel({
   account,
   cards,
@@ -171,7 +161,6 @@ function AccountPanel({
     .map((id) => profiles.get(id))
     .filter((profile) => profile !== undefined);
   const titleId = `account-${account.id}`;
-  const accent = accountAccent(account);
 
   return (
     <article
@@ -180,18 +169,14 @@ function AccountPanel({
     >
       {/*
         The bank's colour as an edge, the way its own cards and statements carry
-        it. Only an edge: the text stays on the app's surface, so its contrast is
-        never left to a brand's colour. In dark mode a faint outline keeps the
-        near-black brands (One Zero, the FIBI group) from vanishing into the surface.
+        it: the person's colour for it, else its bank's, else neutral (§1.5).
+        Phase 3 makes the whole account a sheet (§5.4).
       */}
       <span
         aria-hidden="true"
         data-slot="account-accent"
-        className={cn(
-          'absolute inset-y-0 start-0 w-1.5 dark:ring-1 dark:ring-white/15 dark:ring-inset',
-          accent === undefined && 'bg-primary',
-        )}
-        style={accent === undefined ? undefined : { backgroundColor: accent }}
+        data-money={methodKey(account)}
+        className="absolute inset-y-0 start-0 w-1.5 bg-fill"
       />
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
