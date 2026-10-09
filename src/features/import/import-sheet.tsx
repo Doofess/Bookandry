@@ -33,7 +33,7 @@ import {
 } from '@/db/import-drafts';
 import { redoImport, saveImported, undoImport, type ImportItem } from '@/db/import-transactions';
 import { quoteRate } from '@/db/rates-gateway';
-import { categoryFromHistory, findCandidates, findOverrides } from '@/db/repos/transactions';
+import { findCandidates, findOverrides, merchantHistory } from '@/db/repos/transactions';
 import type { ResolvedRate } from '@/db/save-transaction';
 import { cardFeeOccurrences, fxFeeFor } from '@/domain/cards';
 import { buildMethodReview, type MethodReviewItem } from '@/domain/import-cards';
@@ -314,8 +314,8 @@ export function ImportSheet(props: ImportSheetProps) {
               : minDate(todayLocal(new Date(modified)), props.today);
           },
           knownMerchant: async (description) =>
-            (await categoryFromHistory(db, 'expense', description)) !== undefined ||
-            (await categoryFromHistory(db, 'income', description)) !== undefined,
+            (await merchantHistory(db, 'expense', description)).categoryId !== undefined ||
+            (await merchantHistory(db, 'income', description)).categoryId !== undefined,
         },
         (request, signal) => accountController().extractTransactions(request, signal),
         {

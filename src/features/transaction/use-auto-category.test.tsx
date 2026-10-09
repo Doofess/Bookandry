@@ -17,7 +17,7 @@ const claude = vi.hoisted(() => ({
 }));
 
 vi.mock('@/db/repos/transactions', () => ({
-  categoryFromHistory: () => Promise.resolve(history.answer),
+  merchantHistory: () => Promise.resolve({ categoryId: history.answer }),
 }));
 vi.mock('@/app/account', () => ({ accountController: () => claude }));
 
