@@ -602,6 +602,93 @@ describe('a Max export', () => {
   });
 });
 
+describe('an export the app knows by its headers', () => {
+  it('reads Max exactly - the payment, one plan per deal - and leaves a sheet it does not know to the dictionary', async () => {
+    const header = [
+      'תאריך עסקה',
+      'שם בית העסק',
+      'קטגוריה',
+      '4 ספרות אחרונות של כרטיס האשראי',
+      'סוג עסקה',
+      'סכום חיוב',
+      'מטבע חיוב',
+      'סכום עסקה מקורי',
+      'מטבע עסקה מקורי',
+      'תאריך חיוב',
+      'הערות',
+    ];
+    // Invented: a deal of 600 in three payments of 200.
+    const pay = (n: number, charge: string) => [
+      '14-08-2026',
+      'חנות דמה',
+      'ריהוט',
+      '0400',
+      'תשלומים',
+      200,
+      '₪',
+      600,
+      '₪',
+      charge,
+      `תשלום ${String(n)} מתוך 3`,
+    ];
+    const workbook: PreparedFile = {
+      kind: 'sheet',
+      file: 0,
+      name: 'transaction-details_export.xlsx',
+      hash: 'max',
+      sheets: [
+        {
+          name: 'עסקאות במועד החיוב',
+          date1904: false,
+          rows: [header, pay(1, '02-09-2026'), pay(2, '02-10-2026')],
+        },
+        {
+          name: 'Sheet2',
+          date1904: false,
+          rows: [
+            ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה'],
+            ['03/10/2026', 'שופרסל', '120.50'],
+          ],
+        },
+      ],
+    };
+    const { result, calls } = await run([workbook], {});
+    // No call: no columns to name, and the sector and the household's history place both merchants.
+    expect(calls).toEqual([]);
+    expect(
+      result.rows.map((r) => [r.description, r.amountMinor, r.plan?.totalMinor ?? null, r.flags]),
+    ).toEqual([
+      // Equal payments on one date: noted as seen twice, as any repeat in a document is.
+      ['חנות דמה', 20_000, 60_000, ['twice_in_document']],
+      ['חנות דמה', 20_000, 60_000, ['plan_in_import', 'twice_in_document']],
+      ['שופרסל', 12_050, null, []],
+    ]);
+  });
+
+  it('gives nothing for a summary of monthly totals, and asks nothing', async () => {
+    const summary: PreparedFile = {
+      kind: 'sheet',
+      file: 0,
+      name: 'summary.xlsx',
+      hash: 'sum',
+      sheets: [
+        {
+          name: 'כרטיסי אשראי',
+          date1904: false,
+          rows: [
+            ['חודש חיוב', 'מספר עסקאות', 'סכום החיוב בש"ח'],
+            ['112025', '12 עסקאות', 1000],
+          ],
+        },
+      ],
+    };
+    const { result, calls, states } = await run([summary], {});
+    expect(calls).toEqual([]);
+    expect(result.rows).toEqual([]);
+    expect(states.at(-1)).toMatchObject({ status: 'empty' });
+  });
+});
+
 describe('files it refuses', () => {
   it('reports them and reads the rest', async () => {
     const { states } = await run([{ kind: 'refused', file: 0, name: 'a.zip', reason: 'unsupported' }], {});

@@ -33,6 +33,7 @@ import {
   type Cell,
   type ColumnMap,
 } from '@/domain/import-sheet-map';
+import { readKnownExport, type KnownBlock } from '@/domain/import-sheet-readers';
 import {
   cleanExtract,
   cleanMap,
@@ -550,36 +551,61 @@ function applyCorrections(
   return fixed ? swapped : settled;
 }
 
-/** Every sheet of a workbook, read by code - asking the model only for columns the dictionary does not know. */
+/** One sheet by the dictionary - or, when it does not know the sheet, by the columns the model names. */
+async function readGeneric(
+  sheet: Extract<PreparedFile, { kind: 'sheet' }>['sheets'][number],
+  s: number,
+  file: number,
+  ctx: ImportContext,
+  ask: (r: WireRequest) => Promise<unknown>,
+): Promise<KnownBlock> {
+  const readWith = (map: ColumnMap) =>
+    readSheet(sheet.rows, map, {
+      file,
+      base: ctx.base,
+      known: ctx.known,
+      anchor: ctx.anchorOf(file),
+      date1904: sheet.date1904,
+      idPrefix: `f${String(file)}s${String(s)}r`,
+    });
+  const known = mapByDictionary(sheet.rows);
+  const first = known === undefined ? undefined : readWith(known);
+  let map: ColumnMap;
+  let read: ReturnType<typeof readWith>;
+  if (known !== undefined && first !== undefined && mapHolds(first)) {
+    map = known;
+    read = first;
+  } else {
+    map = fromWireMap(await askMap(sheet.rows, [], ctx, ask), sheet.rows);
+    read = readWith(map);
+    if (!mapHolds(read)) throw new Error('sheet');
+  }
+  return { sheet: s, header: sheet.rows.slice(map.headerRow, map.headerRow + 3), rows: read.rows };
+}
+
+/**
+ * Every sheet of a workbook, read by code: by its exact reader when the app
+ * knows the export (`import-sheet-readers`), else by the dictionary - asking
+ * the model only for columns the dictionary does not know.
+ */
 async function readWorkbook(
   p: Extract<PreparedFile, { kind: 'sheet' }>,
   ctx: ImportContext,
   ask: (r: WireRequest) => Promise<unknown>,
 ): Promise<FoundRow[]> {
   const out: FoundRow[] = [];
+  const exact = readKnownExport(p.sheets, {
+    file: p.file,
+    base: ctx.base,
+    known: ctx.known,
+    anchor: ctx.anchorOf(p.file),
+  });
+  const known = new Map<number, KnownBlock>((exact?.blocks ?? []).map((b) => [b.sheet, b]));
+  const generic = new Set(exact === undefined ? p.sheets.map((_, s) => s) : exact.rest);
   for (const [s, sheet] of p.sheets.entries()) {
-    if (sheet.rows.length === 0) continue;
-    const readWith = (map: ColumnMap) =>
-      readSheet(sheet.rows, map, {
-        file: p.file,
-        base: ctx.base,
-        known: ctx.known,
-        anchor: ctx.anchorOf(p.file),
-        date1904: sheet.date1904,
-        idPrefix: `f${String(p.file)}s${String(s)}r`,
-      });
-    const known = mapByDictionary(sheet.rows);
-    const first = known === undefined ? undefined : readWith(known);
-    let map: ColumnMap;
-    let read: ReturnType<typeof readWith>;
-    if (known !== undefined && first !== undefined && mapHolds(first)) {
-      map = known;
-      read = first;
-    } else {
-      map = fromWireMap(await askMap(sheet.rows, [], ctx, ask), sheet.rows);
-      read = readWith(map);
-      if (!mapHolds(read)) throw new Error('sheet');
-    }
+    const exactBlock = known.get(s);
+    if (exactBlock === undefined && (!generic.has(s) || sheet.rows.length === 0)) continue;
+    const read = exactBlock ?? (await readGeneric(sheet, s, p.file, ctx, ask));
     /*
      * Merchants worth one cheap call, not one per row (spec point 9): an
      * expense with no business type from its file, its sector or its history,
@@ -597,9 +623,8 @@ async function readWorkbook(
     }
     let answers = new Map<string, { readonly mcc: string | null; readonly cat: string | null }>();
     if (unknown.length > 0) {
-      const header = sheet.rows.slice(map.headerRow, map.headerRow + 3);
       const cats = await askCategories(
-        header,
+        read.header,
         unknown.slice(0, LIMITS.merchants),
         sectors.slice(0, LIMITS.merchants),
         ctx,

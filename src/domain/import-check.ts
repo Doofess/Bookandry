@@ -33,6 +33,8 @@ export type Flag =
   | 'in_another_file'
   | 'already_added'
   | 'already_plan'
+  /** Another payment of a deal this import already adds as one plan, or a loan's own disbursement. */
+  | 'plan_in_import'
   | 'card_fee_counted'
   | 'total_estimated'
   | 'total_mismatch'
@@ -55,6 +57,7 @@ export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
   'in_another_file',
   'already_added',
   'already_plan',
+  'plan_in_import',
   'card_fee_counted',
   'not_saveable',
   'rate_missing',

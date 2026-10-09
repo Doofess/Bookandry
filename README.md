@@ -320,9 +320,17 @@ until the person says "Read"). Nothing is added before a review list: each
 row ticked or not, with its reason in words, and editable. Accuracy and
 cost come from doing as little as possible with the model:
 
-- **Code first.** Spreadsheets are read by code from a dictionary of the
-  headers Israeli exports use (`import-sheet-map.ts`); the model only names
-  the columns of one it does not know, from its first rows. A PDF with a
+- **Code first.** Spreadsheets are read by code. Exports the app knows by
+  their exact headers - Max's transaction details, Discount's bank-cards
+  months - have their own readers (`import-sheet-readers.ts`): the amount is
+  what the card charged, the original kept beside it only for a named foreign
+  currency (Discount prints that currency only in the cell's number format,
+  which is kept for it); an instalment or loan row is this payment, and a
+  deal's rows make one plan; Max's FX wallet gives each purchase once, at its
+  shekel cost. Discount's summary of monthly totals is refused, so no month
+  counts twice. Any other sheet is read from a dictionary of the headers
+  Israeli exports use (`import-sheet-map.ts`); the model only names the
+  columns of one it does not know, from its first rows. A PDF with a
   text layer goes as text. Only scans and screenshots go as images, sized to
   the largest the model reads without enlarging, long captures sliced.
 - **Transcribe, never compute.** The model copies amounts, dates and

@@ -38,7 +38,8 @@
     "pdf_pages": "More than 100 pages. Split it first.",
     "unreadable": "This file couldn't be opened.",
     "word97": "Word 97 files can't be read. Save it as .docx.",
-    "unsupported": "This kind of file can't be read."
+    "unsupported": "This kind of file can't be read.",
+    "totals_only": "This file has only monthly totals, not transactions: reading it would count each month twice. Add the monthly files instead."
   },
   "error": {
     "offline": "You're offline. Your files are still here.",
@@ -91,6 +92,7 @@
     "in_another_file": "Also in another file.",
     "already_added": "Looks already added.",
     "already_plan": "This plan is already added.",
+    "plan_in_import": "Another payment of a plan this import adds once.",
     "card_fee_counted": "Already counted as the card fee.",
     "total_estimated": "Plan total worked out from the payment.",
     "total_mismatch": "Check it: the statement's total doesn't match.",
