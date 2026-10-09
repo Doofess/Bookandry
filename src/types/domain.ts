@@ -393,6 +393,21 @@ export type Transaction = {
   readonly categoryId: string;
   /** Expenses only. */
   readonly paymentMethodId?: string;
+  /**
+   * Income only: where the money went - a `bank_account` payment method, or
+   * CASH_METHOD_ID. For an account it is a label; for cash it is what the
+   * cash tab counts.
+   *
+   * Its own field rather than `paymentMethodId`: an older build's income form
+   * drops a method from income when the row is edited there, while it keeps a
+   * field it does not know (edits spread the row; sync stores it as received).
+   */
+  readonly destinationId?: string;
+  /**
+   * Set on the income ("found") or expense ("missing") a cash recount wrote.
+   * Absent on every other row. To an older build it is an ordinary cash row.
+   */
+  readonly cashCount?: true;
   readonly money: MoneySnapshot;
   readonly recurrence: Recurrence;
   /** First occurrence of the series. */
@@ -443,6 +458,8 @@ export type OverridePatch = {
   readonly money?: MoneySnapshot;
   readonly categoryId?: string;
   readonly paymentMethodId?: string | null;
+  /** Income only: one payment's own destination. `null` clears it. */
+  readonly destinationId?: string | null;
   readonly note?: string | null;
   /** Moves the occurrence off its slot. */
   readonly date?: LocalDate;
@@ -494,6 +511,8 @@ export type Occurrence = {
   readonly money: MoneySnapshot;
   readonly categoryId: string;
   readonly paymentMethodId?: string;
+  /** Income only: the effective destination, after any override. */
+  readonly destinationId?: string;
   readonly note?: string;
   readonly isOverridden: boolean;
   readonly isMoved: boolean;
@@ -541,6 +560,36 @@ export type DealKind = (typeof DEAL_KINDS)[number];
 /** Rates a card carries beyond its deals. */
 export const EXTRA_RATE_KINDS = ['late', 'over_limit', 'cash'] as const;
 export type ExtraRateKind = (typeof EXTRA_RATE_KINDS)[number];
+
+/** The moves this build understands. Stored as a plain string, so a later build can add more. */
+export const CASH_MOVE_KINDS = ['start', 'withdraw', 'deposit', 'count'] as const;
+export type CashMoveKind = (typeof CASH_MOVE_KINDS)[number];
+
+/**
+ * Cash moving without the balance moving: the cash someone had when they
+ * started (`start`), money taken from the bank (`withdraw`) or put back
+ * (`deposit`), and a count that matched (`count`, always 0).
+ *
+ * `kind` is a string, not `CashMoveKind`: an older build rejects a row that
+ * carries an enum value it does not know, so this table is open from the
+ * start, and every sum ignores a kind it does not know.
+ */
+export type CashMove = {
+  readonly id: string;
+  /** The person whose cash this is. Never SHARED_OWNER. */
+  readonly profileId: string;
+  readonly kind: string;
+  /** Positive, in the household's base currency; 0 only for `count`. */
+  readonly amountMinor: Minor;
+  readonly date: LocalDate;
+  /** The bank account the money came from or went to. A label only. */
+  readonly accountId?: string;
+  readonly note?: string;
+  readonly isDeleted: 0 | 1;
+  readonly deletedAt?: IsoInstant;
+  readonly createdAt: IsoInstant;
+  readonly updatedAt: IsoInstant;
+};
 
 export type Settings = {
   readonly id: 'singleton';

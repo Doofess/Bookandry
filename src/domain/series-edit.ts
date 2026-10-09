@@ -31,6 +31,8 @@ export type TransactionPatch = {
   readonly categoryId?: string;
   /** `null` clears it; `undefined` leaves it alone. */
   readonly paymentMethodId?: string | null;
+  /** Income only. `null` clears it; `undefined` leaves it alone. */
+  readonly destinationId?: string | null;
   readonly note?: string | null;
   /** Moves this occurrence off its slot. Scope 'one' only. */
   readonly date?: LocalDate;
@@ -131,6 +133,7 @@ function applyToTransaction(tx: Transaction, patch: TransactionPatch, now: IsoIn
     ...(patch.money === undefined ? {} : { money: patch.money }),
     ...(patch.categoryId === undefined ? {} : { categoryId: patch.categoryId }),
     ...(patch.paymentMethodId === undefined ? {} : { paymentMethodId: patch.paymentMethodId ?? undefined }),
+    ...(patch.destinationId === undefined ? {} : { destinationId: patch.destinationId ?? undefined }),
     ...(patch.note === undefined ? {} : { note: patch.note ?? undefined }),
     ...(patch.recurrence === undefined ? {} : { recurrence: patch.recurrence }),
     updatedAt: now,
@@ -156,6 +159,7 @@ function overrideFor(
       ...(patch.money === undefined ? {} : { money: patch.money }),
       ...(patch.categoryId === undefined ? {} : { categoryId: patch.categoryId }),
       ...(patch.paymentMethodId === undefined ? {} : { paymentMethodId: patch.paymentMethodId }),
+      ...(patch.destinationId === undefined ? {} : { destinationId: patch.destinationId }),
       ...(patch.note === undefined ? {} : { note: patch.note }),
       ...(patch.date === undefined ? {} : { date: patch.date }),
     },
