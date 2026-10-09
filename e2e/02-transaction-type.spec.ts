@@ -235,7 +235,14 @@ for (const lang of ['en', 'he'] as const) {
       await expect(sheet).toHaveCount(0);
 
       // What the feed shows is what the card will charge, not the price typed.
-      await expect(page.getByText(/207\.06/).first()).toBeVisible();
+      // The summary reserves its width with an invisible copy of the final figure
+      // (summary-cards.tsx), so only a visible match counts.
+      await expect(
+        page
+          .getByText(/207\.06/)
+          .filter({ visible: true })
+          .first(),
+      ).toBeVisible();
     });
 
     test('pays back a loan, priced on a לוח שפיצר, filed under Loans', async ({ page }) => {

@@ -77,6 +77,10 @@ function preloadDisplayFont(): Plugin {
 
 export default defineConfig(({ mode }) => ({
   build: {
+    // Fontsource's tiny subsets (a few KB each) fall under Vite's 4KB inline
+    // limit and would become data: URIs, which font-src 'self' refuses
+    // (src/lib/security-headers.ts). Fonts are always files.
+    assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
     rollupOptions: {
       output: {
         chunkFileNames: (chunk) =>

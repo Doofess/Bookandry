@@ -57,6 +57,10 @@ implied, because a reader cannot otherwise tell a check that was done from one
 that was only described — and they need redoing whenever the shell, the focus
 order or the copy changes.
 
+The Colour of money screenshot matrix (`e2e/screens.spec.ts`: 8 routes at 390,
+1440 and 1920, in both languages and themes) was reviewed by eye for phase 1 on
+**2026-10-10**.
+
 The sapphire redesign's screenshot matrix (`e2e/screens.spec.ts`, now with
 Cards) was reviewed by eye on **2026-10-09**.
 
@@ -397,13 +401,16 @@ wrong. It says "Add" rather than showing a bare plus, and its menu presets the
 form to an expense or income (`?add=expense|income`; `add=1` from older links
 still means an expense).
 
-**The brand is sapphire; green means money coming in.** `--brand-deep`
-(#0F3A8A, #0B2C6B in dark mode) is the engraved panel at the top of every
-screen, carried in from the front door; `--income` stays green and `--expense`
-red, and no other brand colour is either. Every token pair is checked by
-`src/lib/contrast.test.ts`, and the colours that live outside the token file
-(the status bar's `theme-color`, the favicon, the PWA icon background) by
-`src/lib/brand-colours.test.ts`.
+**Ink on paper; money in colour.** The house is ink on warm paper (`--paper`,
+#F6F2EA, #1A1510 in dark). Colour always means money: a bank, a card company,
+a card or a category, each as a full-strength sheet keyed by data — a Masav
+code, an issuer, a card colour key, a hue key — never by a stored colour
+(`src/domain/money-key.ts`, `src/domain/category-hue.ts`). A sheet's text is a
+tint of its own hue. Sapphire is the app's own colour, for its actions only.
+Every pair is checked by `src/lib/contrast.test.ts` and
+`src/lib/money-colours.test.ts`, which resolve the token file's aliases and
+`color-mix()` the way a browser does; the colours outside it (the status bar,
+the manifest, the icons) by `src/lib/brand-colours.test.ts`.
 
 **Two faces: Plex for text and amounts, Karantina for display.** IBM Plex Sans
 Hebrew (300, 400, 500, 600) covers Latin, Hebrew and ₪, and its digits are
