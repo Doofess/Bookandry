@@ -71,3 +71,22 @@ for (const width of LAYOUT_WIDTHS) {
     });
   }
 }
+
+test.describe('@panel forced colours', () => {
+  test.use({ viewport: viewportFor(1440), locale: 'en' });
+
+  test('the panel keeps a visible edge in Windows High Contrast (§1.8)', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await completeFirstRun(page, 'en', { demo: false });
+    await openAddSheet(page);
+    const panel = page.locator('[data-slot="editor-panel"]');
+    await expect(panel).toBeVisible();
+    const edge = await panel.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { width: s.borderTopWidth, style: s.borderTopStyle, color: s.borderTopColor };
+    });
+    expect(edge.width).toBe('2px');
+    expect(edge.style).toBe('solid');
+    expect(edge.color).not.toBe('rgba(0, 0, 0, 0)');
+  });
+});

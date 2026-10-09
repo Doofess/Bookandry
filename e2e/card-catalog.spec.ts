@@ -66,7 +66,7 @@ test('links a Max card through Mizrahi, shows its real rates, and prices a Credi
   await expect(schedule).toContainText('146.17');
   await expect(schedule).toContainText('16.65%');
 
-  const sheet = page.locator('[data-slot="sheet-content"]');
+  const sheet = page.locator('[data-slot="editor-panel"]');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet).toHaveCount(0);
   const row = page.getByRole('listitem').filter({ has: page.getByTestId('row-card') });
