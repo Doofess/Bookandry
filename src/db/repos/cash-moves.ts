@@ -5,6 +5,7 @@ import {
   CASH_FOUND_CATEGORY_ID,
   CASH_MISSING_CATEGORY_ID,
   cashSince,
+  compareStarts,
   personCash,
   type CashInput,
 } from '@/domain/cash';
@@ -18,7 +19,6 @@ import {
   type CashMove,
   type CashMoveKind,
   type Override,
-  type Transaction,
 } from '@/types/domain';
 import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
@@ -95,8 +95,8 @@ async function startRowOf(db: BookandryDB, profileId: string): Promise<CashMove 
     .between([profileId, 0, ''], [profileId, 1, '￿'], true, true)
     .filter((m) => m.kind === 'start')
     .toArray();
-  // The index orders by isDeleted, then date: live before deleted, earliest first.
-  return rows[0];
+  // Live before deleted, and "earliest" in the figure's own order (`compareStarts`).
+  return rows.sort((a, b) => a.isDeleted - b.isDeleted || compareStarts(a, b))[0];
 }
 
 /**
@@ -188,19 +188,24 @@ export async function listCashMoves(db: BookandryDB): Promise<CashMove[]> {
   return db.cashMoves.filter((m) => m.isDeleted === 0).toArray();
 }
 
+type MethodFields = {
+  readonly paymentMethodId?: string | null | undefined;
+  readonly destinationId?: string | null | undefined;
+};
+
+/** A transaction or an override's patch that names cash: paid with it, or going to it. */
+function namesCash(row: MethodFields | undefined): boolean {
+  return row?.paymentMethodId === CASH_METHOD_ID || row?.destinationId === CASH_METHOD_ID;
+}
+
 /**
- * Whether a transaction can produce a cash occurrence: it names cash itself,
- * or one of its overrides does. An occurrence's method or destination is the
- * override's when it sets one and the series' otherwise, so a series where
- * neither names cash has no cash occurrence at all.
+ * The transactions an override sends to cash. Overrides exist only where
+ * someone edited one occurrence, so the table is small by construction and one
+ * pass over it is cheaper than fetching every candidate's overrides to ask.
  */
-function canBeCash(tx: Transaction, overrides: readonly Override[]): boolean {
-  if (tx.paymentMethodId === CASH_METHOD_ID || tx.destinationId === CASH_METHOD_ID) return true;
-  return overrides.some(
-    (o) =>
-      o.transactionId === tx.id &&
-      (o.patch?.paymentMethodId === CASH_METHOD_ID || o.patch?.destinationId === CASH_METHOD_ID),
-  );
+async function sentToCashByOverride(db: BookandryDB): Promise<Set<string>> {
+  const rows = await db.overrides.filter((o) => namesCash(o.patch)).toArray();
+  return new Set(rows.map((o) => o.transactionId));
 }
 
 /**
@@ -227,21 +232,24 @@ export async function loadCashInput(
 
   const to = endOfMonth(today);
   const candidates = await findCandidates(db, { profileId: query.profileId, from, to });
-  const overrides = await findOverrides(
+  // A transaction can produce a cash occurrence only when it names cash itself,
+  // or one of its overrides does: an occurrence's method or destination is the
+  // override's when it sets one and the series' otherwise. Only those are
+  // expanded, so only their overrides are fetched, grouped once.
+  const viaOverride = await sentToCashByOverride(db);
+  const cash = candidates.filter((tx) => namesCash(tx) || viaOverride.has(tx.id));
+  const byTransaction = new Map<string, Override[]>();
+  for (const o of await findOverrides(
     db,
-    candidates.map((t) => t.id),
+    cash.map((tx) => tx.id),
+  )) {
+    const list = byTransaction.get(o.transactionId);
+    if (list === undefined) byTransaction.set(o.transactionId, [o]);
+    else list.push(o);
+  }
+  const occurrences = cash.flatMap((tx) =>
+    expandOccurrences(tx, byTransaction.get(tx.id) ?? [], from, to, { today }),
   );
-  const occurrences = candidates
-    .filter((tx) => canBeCash(tx, overrides))
-    .flatMap((tx) =>
-      expandOccurrences(
-        tx,
-        overrides.filter((o) => o.transactionId === tx.id),
-        from,
-        to,
-        { today },
-      ),
-    );
   return { profileIds, moves, occurrences, today };
 }
 
@@ -276,45 +284,51 @@ export async function recordCount(
   const { profileId, countedMinor, currency, today, now, newId } = input;
   if (!Number.isSafeInteger(countedMinor) || countedMinor < 0) throw new InvalidCashMoveError('amount');
 
-  const loaded = await loadCashInput(db, { profileId, today });
-  const figure = personCash(profileId, loaded.moves, loaded.occurrences, today);
-  if (figure === undefined) throw new Error('not_set_up');
+  // The figure is read and the difference written in one transaction, over
+  // every table the read touches: two tabs counting at once are serialised, so
+  // the second measures against a figure that already holds the first's
+  // recount instead of recording the same difference twice.
+  return db.transaction('rw', [db.profiles, db.cashMoves, db.transactions, db.overrides], async () => {
+    const loaded = await loadCashInput(db, { profileId, today });
+    const figure = personCash(profileId, loaded.moves, loaded.occurrences, today);
+    if (figure === undefined) throw new Error('not_set_up');
 
-  const differenceMinor = countedMinor - figure.onHandMinor;
-  const id = newId();
+    const differenceMinor = countedMinor - figure.onHandMinor;
+    const id = newId();
 
-  if (differenceMinor === 0) {
-    const undo = await addCashMove(db, id, { profileId, kind: 'count', amountMinor: 0, date: today }, now);
-    return { undoable: undo, outcome: 'matched', differenceMinor };
-  }
+    if (differenceMinor === 0) {
+      const undo = await addCashMove(db, id, { profileId, kind: 'count', amountMinor: 0, date: today }, now);
+      return { undoable: undo, outcome: 'matched', differenceMinor };
+    }
 
-  const found = differenceMinor > 0;
-  const amountMinor = Math.abs(differenceMinor);
-  const row = materialize({
-    id,
-    profileId,
-    kind: found ? 'income' : 'expense',
-    categoryId: found ? CASH_FOUND_CATEGORY_ID : CASH_MISSING_CATEGORY_ID,
-    ...(found ? { destinationId: CASH_METHOD_ID } : { paymentMethodId: CASH_METHOD_ID }),
-    cashCount: true,
-    // In the household's own currency: the identity snapshot a same-currency save writes.
-    money: {
-      amountMinor,
-      currency,
-      baseCurrency: currency,
-      baseAmountMinor: amountMinor,
-      rateUsed: '1',
-      rateDate: today,
-      rateSource: 'manual',
-    },
-    recurrence: { type: 'one_time' },
-    date: today,
-    seriesRootId: id,
-    createdAt: now,
-    updatedAt: now,
+    const found = differenceMinor > 0;
+    const amountMinor = Math.abs(differenceMinor);
+    const row = materialize({
+      id,
+      profileId,
+      kind: found ? 'income' : 'expense',
+      categoryId: found ? CASH_FOUND_CATEGORY_ID : CASH_MISSING_CATEGORY_ID,
+      ...(found ? { destinationId: CASH_METHOD_ID } : { paymentMethodId: CASH_METHOD_ID }),
+      cashCount: true,
+      // In the household's own currency: the identity snapshot a same-currency save writes.
+      money: {
+        amountMinor,
+        currency,
+        baseCurrency: currency,
+        baseAmountMinor: amountMinor,
+        rateUsed: '1',
+        rateDate: today,
+        rateSource: 'manual',
+      },
+      recurrence: { type: 'one_time' },
+      date: today,
+      seriesRootId: id,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const undo = await undoableWrite(db, [{ table: 'transactions', ids: [id] }], async () => {
+      await db.transactions.add(row);
+    });
+    return { undoable: undo, outcome: found ? 'found' : 'missing', differenceMinor };
   });
-  const undo = await undoableWrite(db, [{ table: 'transactions', ids: [id] }], async () => {
-    await db.transactions.add(row);
-  });
-  return { undoable: undo, outcome: found ? 'found' : 'missing', differenceMinor };
 }

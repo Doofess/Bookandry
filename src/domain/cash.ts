@@ -1,7 +1,7 @@
 import { compareLocal, endOfMonth, startOfMonth } from '@/lib/dates';
 import { add, sum } from '@/lib/money';
 import { CASH_METHOD_ID, type CashMove, type Occurrence, type Transaction } from '@/types/domain';
-import type { LocalDate, Minor } from '@/types/money';
+import type { IsoInstant, LocalDate, Minor } from '@/types/money';
 
 /**
  * How much of the balance is cash on hand (docs/superpowers/specs/2026-10-09-cash-deposit-design.md, section 2).
@@ -21,7 +21,9 @@ import type { LocalDate, Minor } from '@/types/money';
  * it: a second start a sync brought in counts for nothing, date or amount,
  * until the cash screen's fix-up removes it. Cash rows from before they set
  * up the tab never count, so years of old cash spending cannot drive the
- * figure negative. Amounts are each occurrence's base amount, as the balance
+ * figure negative. On the start day itself only rows written after the start
+ * count: the amount typed already holds the rest. Amounts are each
+ * occurrence's base amount, as the balance
  * uses.
  */
 
@@ -93,12 +95,66 @@ export function cashSince(moves: readonly CashMove[], profileId: string): LocalD
   return earliestStart(moves, profileId)?.date;
 }
 
+/**
+ * One of a merged person's moves, joining the pot of the person they were
+ * merged into (`to`, whose own earliest live start is `targetStart`).
+ *
+ * The merged person's start, when the target already has one, would be a
+ * second start and count for nothing: it becomes a withdrawal of the same
+ * amount instead, which adds to the pot exactly as the start did (both are
+ * +amount, and neither touches the balance). It is dated no earlier than the
+ * target's start, so it counts, and written `now`, so it counts on that start
+ * day too. `note` (say "Cash from Dad") goes on it when it has none of its own.
+ *
+ * Anything else follows its person as it is: a deleted start, a later start
+ * that already counted for nothing, every other move.
+ *
+ * Accepted: the merged person's moves and cash rows dated before the target's
+ * start stop counting, since the pot counts only from its own start.
+ */
+export function joinPot(
+  move: CashMove,
+  to: string,
+  starts: { readonly mine: CashMove | undefined; readonly target: CashMove | undefined },
+  note: string | undefined,
+  now: IsoInstant,
+): CashMove {
+  const { mine, target } = starts;
+  if (target === undefined || move.id !== mine?.id) {
+    return { ...move, profileId: to, updatedAt: now };
+  }
+  const kept = move.note ?? note;
+  const { note: _note, ...rest } = move;
+  return {
+    ...rest,
+    profileId: to,
+    kind: 'withdraw',
+    date: compareLocal(move.date, target.date) < 0 ? target.date : move.date,
+    ...(kept === undefined || kept === '' ? {} : { note: kept }),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 /** A live start that is not the person's earliest: it counts for nothing, and is not listed. */
 const isLaterStart = (m: CashMove, first: CashMove | undefined): boolean =>
   m.kind === 'start' && m.id !== first?.id;
 
 const within = (date: LocalDate, from: LocalDate, to: LocalDate): boolean =>
   compareLocal(date, from) >= 0 && compareLocal(date, to) <= 0;
+
+/**
+ * Whether a row counts toward the cash of someone who started at `first`:
+ * dated from the start through today, and, on the start day itself, written
+ * after the start. The setup card asks how much is in the wallet now, so a
+ * coffee recorded that morning, or a recurring cash payment due that day (an
+ * occurrence carries its series' `createdAt`), is already in the amount typed.
+ * The start itself always counts.
+ */
+function counts(date: LocalDate, written: string, first: CashMove, today: LocalDate): boolean {
+  if (!within(date, first.date, today)) return false;
+  return compareLocal(date, first.date) !== 0 || written > first.createdAt;
+}
 
 export type PersonCash = {
   readonly profileId: string;
@@ -129,14 +185,15 @@ export function personCash(
   let countedOn = since;
 
   for (const m of moves) {
-    if (m.isDeleted !== 0 || m.profileId !== profileId || !within(m.date, since, today)) continue;
-    if (isLaterStart(m, first)) continue;
+    if (m.isDeleted !== 0 || m.profileId !== profileId) continue;
+    if (m.id !== first.id && (isLaterStart(m, first) || !counts(m.date, m.createdAt, first, today))) continue;
     onHand = add(onHand, moveSigned(m));
     if (m.kind === 'count' && compareLocal(m.date, countedOn) > 0) countedOn = m.date;
   }
 
   for (const o of occurrences) {
-    if (o.isSkipped || o.transaction.profileId !== profileId || !within(o.date, since, today)) continue;
+    if (o.isSkipped || o.transaction.profileId !== profileId) continue;
+    if (!counts(o.date, o.transaction.createdAt, first, today)) continue;
     if (!isCashIn(o) && !isCashOut(o)) continue;
     onHand = add(onHand, cashSigned(o));
     if (o.transaction.cashCount === true && compareLocal(o.date, countedOn) > 0) countedOn = o.date;
@@ -236,22 +293,21 @@ const LISTED_MOVES: ReadonlySet<string> = new Set(['start', 'withdraw', 'deposit
  * their own start to today. Ties on a day go newest-written first.
  */
 export function cashActivity(input: CashInput): CashActivity[] {
-  const since = new Map<string, LocalDate>();
   const firsts = new Map<string, CashMove>();
   for (const id of input.profileIds) {
     const first = earliestStart(input.moves, id);
     if (first === undefined || compareLocal(first.date, input.today) > 0) continue;
-    since.set(id, first.date);
     firsts.set(id, first);
   }
-  const shown = (profileId: string, date: LocalDate): boolean => {
-    const from = since.get(profileId);
-    return from !== undefined && within(date, from, input.today);
+  // The same rows `personCash` counts, so the list adds up to the figure.
+  const shown = (profileId: string, date: LocalDate, written: string): boolean => {
+    const first = firsts.get(profileId);
+    return first !== undefined && counts(date, written, first, input.today);
   };
 
   const rows: { readonly entry: CashActivity; readonly written: string }[] = [];
   for (const o of input.occurrences) {
-    if (o.isSkipped || !shown(o.transaction.profileId, o.date)) continue;
+    if (o.isSkipped || !shown(o.transaction.profileId, o.date, o.transaction.createdAt)) continue;
     if (!isCashIn(o) && !isCashOut(o)) continue;
     rows.push({
       written: o.transaction.createdAt,
@@ -267,8 +323,9 @@ export function cashActivity(input: CashInput): CashActivity[] {
     });
   }
   for (const m of input.moves) {
-    if (m.isDeleted !== 0 || !LISTED_MOVES.has(m.kind) || !shown(m.profileId, m.date)) continue;
-    if (isLaterStart(m, firsts.get(m.profileId))) continue;
+    if (m.isDeleted !== 0 || !LISTED_MOVES.has(m.kind) || !firsts.has(m.profileId)) continue;
+    const first = firsts.get(m.profileId);
+    if (m.id !== first?.id && (isLaterStart(m, first) || !shown(m.profileId, m.date, m.createdAt))) continue;
     rows.push({
       written: m.createdAt,
       entry: {

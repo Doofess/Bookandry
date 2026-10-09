@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { materialize } from '@/db/materialize';
+import { personCash } from '@/domain/cash';
 import { MAX_PROFILES, PROFILE_PALETTE } from '@/domain/palette';
 import { MONEY, d } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
@@ -9,6 +10,7 @@ import type { CashMove, PaymentMethod } from '@/types/domain';
 import { SHARED_OWNER } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
+import { loadCashInput } from './cash-moves';
 import {
   ColorTakenError,
   createProfile,
@@ -207,6 +209,111 @@ describe('deleteProfile', () => {
     await addTx('t1', 'p1');
     await expect(deleteProfile(handle.db, 'p1', { reassignTo: 'nope' }, NOW)).rejects.toThrow();
     await expect(deleteProfile(handle.db, 'p1', { reassignTo: 'p1' }, NOW)).rejects.toThrow();
+  });
+
+  describe('merging a person with cash into someone who has cash', () => {
+    const TODAY = d('2026-10-09');
+    const MERGED = '2026-10-09T10:00:00.000Z' as IsoInstant;
+    const start = (
+      id: string,
+      profileId: string,
+      amountMinor: number,
+      date: string,
+      over: Partial<CashMove> = {},
+    ) =>
+      ({
+        id,
+        profileId,
+        kind: 'start',
+        amountMinor,
+        date: d(date),
+        isDeleted: 0,
+        createdAt: `${date}T09:00:00.000Z` as IsoInstant,
+        updatedAt: NOW,
+        ...over,
+      }) satisfies CashMove;
+    const cashOf = async (profileId: string) => {
+      const input = await loadCashInput(handle.db, { profileId, today: TODAY });
+      return personCash(profileId, input.moves, input.occurrences, TODAY)?.onHandMinor;
+    };
+    const liveStarts = async (profileId: string) =>
+      (await handle.db.cashMoves.toArray()).filter(
+        (m) => m.profileId === profileId && m.kind === 'start' && m.isDeleted === 0,
+      );
+
+    beforeEach(async () => {
+      await createProfile(handle.db, 'mom', draft('Mom'), NOW);
+      await createProfile(handle.db, 'dad', draft('Dad'), NOW);
+    });
+
+    it('adds his 300 to her 500: his start joins her pot as cash taken out, and she has one start', async () => {
+      await handle.db.cashMoves.bulkPut([
+        start('s-mom', 'mom', 50_000, '2026-10-01'),
+        start('s-dad', 'dad', 30_000, '2026-09-20'),
+      ]);
+      expect([await cashOf('mom'), await cashOf('dad')]).toEqual([50_000, 30_000]);
+
+      await deleteProfile(handle.db, 'dad', { reassignTo: 'mom' }, MERGED);
+
+      expect(await cashOf('mom')).toBe(80_000);
+      expect((await liveStarts('mom')).map((m) => m.id)).toEqual(['s-mom']);
+      // On her start day, so it counts from there; written at the merge, so it counts on that day too.
+      expect(await handle.db.cashMoves.get('s-dad')).toMatchObject({
+        profileId: 'mom',
+        kind: 'withdraw',
+        amountMinor: 30_000,
+        date: '2026-10-01',
+        note: 'Cash from Dad',
+        createdAt: MERGED,
+      });
+    });
+
+    it('keeps a later date and his own note, and leaves a doubled start and a deleted one as they were', async () => {
+      await handle.db.cashMoves.bulkPut([
+        start('s-mom', 'mom', 50_000, '2026-10-01'),
+        start('s-dad', 'dad', 30_000, '2026-10-03', { note: 'Wallet' }),
+        // A second start a sync brought in: it counted for nothing before, and still does.
+        start('s-dad-2', 'dad', 7_000, '2026-10-05'),
+        { ...start('s-dad-old', 'dad', 1_000, '2026-09-01'), isDeleted: 1, deletedAt: NOW },
+      ]);
+
+      await deleteProfile(handle.db, 'dad', { reassignTo: 'mom' }, MERGED);
+
+      expect(await handle.db.cashMoves.get('s-dad')).toMatchObject({
+        kind: 'withdraw',
+        date: '2026-10-03',
+        note: 'Wallet',
+      });
+      expect(await handle.db.cashMoves.get('s-dad-2')).toMatchObject({ profileId: 'mom', kind: 'start' });
+      expect(await handle.db.cashMoves.get('s-dad-old')).toMatchObject({
+        profileId: 'mom',
+        kind: 'start',
+        isDeleted: 1,
+      });
+      expect(await cashOf('mom')).toBe(80_000);
+    });
+
+    it('writes the note in Hebrew for a Hebrew household', async () => {
+      await writeSettings(handle.db, { language: 'he' }, NOW);
+      await handle.db.cashMoves.bulkPut([
+        start('s-mom', 'mom', 50_000, '2026-10-01'),
+        start('s-dad', 'dad', 30_000, '2026-09-20'),
+      ]);
+      await deleteProfile(handle.db, 'dad', { reassignTo: 'mom' }, MERGED);
+      expect((await handle.db.cashMoves.get('s-dad'))?.note).toBe('מזומן מ־Dad');
+    });
+
+    it('makes his start hers when she has none', async () => {
+      await handle.db.cashMoves.put(start('s-dad', 'dad', 30_000, '2026-09-20'));
+      await deleteProfile(handle.db, 'dad', { reassignTo: 'mom' }, MERGED);
+      expect(await handle.db.cashMoves.get('s-dad')).toMatchObject({
+        profileId: 'mom',
+        kind: 'start',
+        date: '2026-09-20',
+      });
+      expect(await handle.db.cashMoves.get('s-dad')).not.toHaveProperty('note');
+      expect(await cashOf('mom')).toBe(30_000);
+    });
   });
 
   it('moves the person’s cash moves with their transactions, or deletes them with no one to go to', async () => {
