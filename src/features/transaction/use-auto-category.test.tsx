@@ -1,27 +1,26 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MccPick } from '@/domain/mcc-categories';
+import type { Suggestion } from '@/services/supabase/categorize';
 import type { Category } from '@/types/domain';
-import type { IsoInstant } from '@/types/money';
+import type { IsoInstant, Kind } from '@/types/money';
 
-const history = vi.hoisted(() => ({ answer: undefined as string | undefined }));
+const history = vi.hoisted(() => ({ answer: {} }));
 const claude = vi.hoisted(() => ({
   suggestCategory:
     vi.fn<
-      (
-        name: string,
-        kind: string,
-        choices: readonly { id: string; name: string }[],
-      ) => Promise<string | undefined>
+      (name: string, kind: string, choices: readonly { id: string; name: string }[]) => Promise<Suggestion>
     >(),
 }));
 
 vi.mock('@/db/repos/transactions', () => ({
-  merchantHistory: () => Promise.resolve({ categoryId: history.answer }),
+  merchantHistory: () => Promise.resolve(history.answer),
 }));
 vi.mock('@/app/account', () => ({ accountController: () => claude }));
 
 const { useAutoCategory } = await import('./use-auto-category');
+type FormMcc = { readonly code: string; readonly source: string };
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 const category = (id: string, kind: 'income' | 'expense' = 'expense', sortOrder = 0): Category => ({
@@ -39,15 +38,34 @@ const CATEGORIES = [
   category('cat.subscriptions', 'expense', 1),
   category('cat.aiSoftware', 'expense', 2),
   category('cat.loans', 'expense', 3),
+  category('cat.dining', 'expense', 4),
   category('cat.salary', 'income'),
 ];
 
-function setup(chosenByPerson = false) {
+function setup(
+  options: {
+    chosenByPerson?: boolean;
+    mcc?: FormMcc;
+    opening?: { readonly name: string; readonly kind: Kind };
+  } = {},
+) {
   const choose = vi.fn<(id: string) => void>();
+  let current: FormMcc = options.mcc ?? { code: '', source: '' };
+  const chooseMcc = vi.fn((pick: MccPick | undefined) => {
+    current = { code: pick?.mcc ?? '', source: pick?.source ?? '' };
+  });
   const hook = renderHook(() =>
-    useAutoCategory({ categories: CATEGORIES, translate: (c) => c.id, choose, chosenByPerson }),
+    useAutoCategory({
+      categories: CATEGORIES,
+      translate: (c) => c.id,
+      choose,
+      chosenByPerson: options.chosenByPerson ?? false,
+      currentMcc: () => current,
+      chooseMcc,
+      ...(options.opening === undefined ? {} : { opening: options.opening }),
+    }),
   );
-  return { choose, hook };
+  return { choose, chooseMcc, hook, mcc: () => current };
 }
 
 async function settle(): Promise<void> {
@@ -58,16 +76,16 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  history.answer = undefined;
-  claude.suggestCategory.mockReset().mockResolvedValue('cat.aiSoftware');
+  history.answer = {};
+  claude.suggestCategory.mockReset().mockResolvedValue({ categoryId: 'cat.aiSoftware', mcc: '7372' });
 });
 afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('choosing the category from the name', () => {
-  it('asks once typing pauses, offering only that kind of category, and fills it in', async () => {
-    const { choose, hook } = setup();
+describe('choosing the category and the business type from the name', () => {
+  it('asks once typing pauses, offering only that kind of category, and fills both in', async () => {
+    const { choose, chooseMcc, hook } = setup();
     act(() => {
       hook.result.current.nameChanged('Claude', 'expense');
       hook.result.current.nameChanged('Claude Max Plan', 'expense');
@@ -79,14 +97,16 @@ describe('choosing the category from the name', () => {
       { id: 'cat.subscriptions', name: 'cat.subscriptions' },
       { id: 'cat.aiSoftware', name: 'cat.aiSoftware' },
       { id: 'cat.loans', name: 'cat.loans' },
+      { id: 'cat.dining', name: 'cat.dining' },
     ]);
     expect(choose).toHaveBeenCalledWith('cat.aiSoftware');
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '7372', source: 'ai' });
     expect(hook.result.current.status).toBe('chosen');
   });
 
-  it('goes by where the name was filed before, without asking', async () => {
-    history.answer = 'cat.subscriptions';
-    const { choose, hook } = setup();
+  it('goes by history without asking, when it has both the category and the business type', async () => {
+    history.answer = { categoryId: 'cat.subscriptions', mcc: '5968' };
+    const { choose, chooseMcc, hook } = setup();
     act(() => {
       hook.result.current.nameChanged('Claude Max Plan', 'expense');
     });
@@ -94,12 +114,58 @@ describe('choosing the category from the name', () => {
 
     expect(claude.suggestCategory).not.toHaveBeenCalled();
     expect(choose).toHaveBeenCalledWith('cat.subscriptions');
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '5968', source: 'history' });
   });
 
-  it('never overrides a category the person chose, even with an answer already on its way', async () => {
-    let answer: (id: string) => void = () => undefined;
-    claude.suggestCategory.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  it('asks Claude for the business type alone when history has only the category, which still wins', async () => {
+    history.answer = { categoryId: 'cat.subscriptions' };
+    const { choose, chooseMcc, hook } = setup();
+    act(() => {
+      hook.result.current.nameChanged('Claude Max Plan', 'expense');
+    });
+    await settle();
+
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(choose).toHaveBeenCalledWith('cat.subscriptions');
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '7372', source: 'ai' });
+  });
+
+  it('files by the business type before Claude’s category', async () => {
+    claude.suggestCategory.mockResolvedValue({ categoryId: 'cat.subscriptions', mcc: '5812' });
     const { choose, hook } = setup();
+    act(() => {
+      hook.result.current.nameChanged('Cafe Nero', 'expense');
+    });
+    await settle();
+    expect(choose).toHaveBeenCalledWith('cat.dining');
+  });
+
+  it('drops a business type that a name rule says is wrong (Review Focus 2)', async () => {
+    claude.suggestCategory.mockResolvedValue({ categoryId: 'cat.dining', mcc: '5411' });
+    const { choose, chooseMcc, hook } = setup();
+    act(() => {
+      hook.result.current.nameChanged('Netflix', 'expense');
+    });
+    await settle();
+    expect(choose).toHaveBeenCalledWith('cat.subscriptions');
+    expect(chooseMcc).not.toHaveBeenCalledWith(expect.objectContaining({ mcc: '5411' }));
+  });
+
+  it('never replaces the person’s own business type, and files by it', async () => {
+    const { choose, chooseMcc, hook } = setup({ mcc: { code: '5812', source: 'user' } });
+    act(() => {
+      hook.result.current.nameChanged('Somewhere new', 'expense');
+    });
+    await settle();
+    expect(chooseMcc).not.toHaveBeenCalled();
+    expect(claude.suggestCategory).not.toHaveBeenCalled();
+    expect(choose).toHaveBeenCalledWith('cat.dining');
+  });
+
+  it('never overrides a category the person chose, even with an answer on its way, but still fills the business type', async () => {
+    let answer: (s: Suggestion) => void = () => undefined;
+    claude.suggestCategory.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { choose, chooseMcc, hook } = setup();
     act(() => {
       hook.result.current.nameChanged('Claude Max Plan', 'expense');
     });
@@ -107,21 +173,24 @@ describe('choosing the category from the name', () => {
     act(() => {
       hook.result.current.choseManually();
     });
+    expect(hook.result.current.categoryByPerson()).toBe(true);
     await act(async () => {
-      answer('cat.aiSoftware');
+      answer({ categoryId: 'cat.aiSoftware', mcc: '7372' });
       await Promise.resolve();
     });
-
     expect(choose).not.toHaveBeenCalled();
+
     act(() => {
       hook.result.current.nameChanged('Something else', 'expense');
     });
     await settle();
-    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(2);
+    expect(choose).not.toHaveBeenCalled();
+    expect(chooseMcc).toHaveBeenLastCalledWith({ mcc: '7372', source: 'ai' });
   });
 
   it('files a loan under Loans, and holds it there while it stays a loan', async () => {
-    claude.suggestCategory.mockResolvedValue('cat.subscriptions');
+    claude.suggestCategory.mockResolvedValue({ categoryId: 'cat.subscriptions' });
     const { choose, hook } = setup();
     act(() => {
       hook.result.current.typeChosen('cat.loans', 'Car loan', 'expense');
@@ -138,10 +207,9 @@ describe('choosing the category from the name', () => {
 
     // No longer a loan: the name is looked at again.
     act(() => {
-      hook.result.current.typeChosen(undefined, 'Car loan from the bank', 'expense');
+      hook.result.current.typeChosen(undefined, 'Netflix', 'expense');
     });
     await settle();
-    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
     expect(choose).toHaveBeenLastCalledWith('cat.subscriptions');
   });
 
@@ -161,21 +229,61 @@ describe('choosing the category from the name', () => {
     expect(fresh.choose).not.toHaveBeenCalled();
   });
 
-  it('leaves a saved row alone, and takes nothing it was not offered', async () => {
-    const editing = setup(true);
-    act(() => {
-      editing.hook.result.current.nameChanged('Claude Max Plan', 'expense');
-    });
-    await settle();
-    expect(claude.suggestCategory).not.toHaveBeenCalled();
-
-    claude.suggestCategory.mockResolvedValue('cat.salary');
+  it('takes nothing it was not offered, and looks for no business type on income', async () => {
+    claude.suggestCategory.mockResolvedValue({ categoryId: 'cat.salary', mcc: '9999' });
     const adding = setup();
     act(() => {
       adding.hook.result.current.nameChanged('Claude Max Plan', 'expense');
     });
     await settle();
     expect(adding.choose).not.toHaveBeenCalled();
+    expect(adding.mcc()).toEqual({ code: '', source: '' });
     expect(adding.hook.result.current.status).toBe('idle');
+
+    const income = setup();
+    act(() => {
+      income.hook.result.current.nameChanged('Refund from Amazon', 'income');
+    });
+    await settle();
+    expect(income.chooseMcc).not.toHaveBeenCalled();
+  });
+});
+
+describe('an edit', () => {
+  it('opening one with no business type looks it up from history only, and leaves the category alone', async () => {
+    history.answer = { categoryId: 'cat.subscriptions', mcc: '5812' };
+    const { choose, chooseMcc } = setup({
+      chosenByPerson: true,
+      opening: { name: 'Cafe Nero', kind: 'expense' },
+    });
+    await settle();
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '5812', source: 'history' });
+    expect(claude.suggestCategory).not.toHaveBeenCalled();
+    expect(choose).not.toHaveBeenCalled();
+  });
+
+  it('opening one that has a business type, or is income, looks nothing up', async () => {
+    history.answer = { mcc: '5812' };
+    const kept = setup({
+      chosenByPerson: true,
+      mcc: { code: '5411', source: 'ai' },
+      opening: { name: 'Cafe', kind: 'expense' },
+    });
+    const income = setup({ chosenByPerson: true, opening: { name: 'Cafe', kind: 'income' } });
+    await settle();
+    expect(kept.chooseMcc).not.toHaveBeenCalled();
+    expect(income.chooseMcc).not.toHaveBeenCalled();
+  });
+
+  it('typing a new name asks Claude for the business type only', async () => {
+    const { choose, chooseMcc, hook } = setup({ chosenByPerson: true });
+    act(() => {
+      hook.result.current.nameChanged('Claude Max Plan', 'expense');
+    });
+    await settle();
+    expect(claude.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(choose).not.toHaveBeenCalled();
+    expect(chooseMcc).toHaveBeenCalledWith({ mcc: '7372', source: 'ai' });
+    expect(hook.result.current.status).toBe('idle');
   });
 });

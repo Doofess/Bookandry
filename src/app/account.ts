@@ -14,7 +14,7 @@ import type { WireRequest } from '@/domain/import-wire';
 import type { Language } from '@/i18n/boot';
 import { systemClock } from '@/lib/clock';
 import type { AuthFailure, AuthResult, Enrollment, Passkey, SecondStep } from '@/services/supabase/auth';
-import type { CategoryChoice } from '@/services/supabase/categorize';
+import type { CategoryChoice, Suggestion } from '@/services/supabase/categorize';
 import {
   accountsAvailable,
   getSupabase,
@@ -1013,22 +1013,19 @@ export class AccountController {
   }
 
   /**
-   * Which of `choices` the typed name belongs in, by asking Claude through the
-   * account's server (services/supabase/categorize.ts). Only while signed in -
-   * the server answers nobody else - and undefined whenever there is no
-   * answer: the person chooses, as they always could.
+   * Which of `choices` the typed name belongs in, and an expense's business
+   * type, by asking Claude through the account's server
+   * (services/supabase/categorize.ts). Only while signed in - the server
+   * answers nobody else - and `{}` whenever there is no answer: the person
+   * chooses, as they always could.
    */
-  async suggestCategory(
-    name: string,
-    kind: Kind,
-    choices: readonly CategoryChoice[],
-  ): Promise<string | undefined> {
-    if (this.view.status !== 'signed_in') return undefined;
+  async suggestCategory(name: string, kind: Kind, choices: readonly CategoryChoice[]): Promise<Suggestion> {
+    if (this.view.status !== 'signed_in') return {};
     try {
       const { suggestCategory } = await import('@/services/supabase/categorize');
       return await suggestCategory(await getSupabase(), name, kind, choices);
     } catch {
-      return undefined;
+      return {};
     }
   }
 

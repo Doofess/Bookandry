@@ -33,6 +33,7 @@ import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
 import { defaultDestination } from '@/domain/income-destination';
+import type { MccPick } from '@/domain/mcc-categories';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
 import {
   buildPatch,
@@ -560,6 +561,12 @@ function TransactionForm({
    */
   const translateCategory = useCallback((category: Category) => categoryDisplayName(category, t), [t]);
 
+  // An edit's name and kind, to look its business type up from history once it opens.
+  const opening = useMemo(
+    () => (editing === undefined ? undefined : { name: initial.note, kind: initial.kind }),
+    [editing, initial.note, initial.kind],
+  );
+
   const auto = useAutoCategory({
     categories,
     translate: translateCategory,
@@ -570,6 +577,18 @@ function TransactionForm({
       [setValue],
     ),
     chosenByPerson: editing !== undefined,
+    currentMcc: useCallback(
+      () => ({ code: form.getValues('mcc') ?? '', source: form.getValues('mccSource') ?? '' }),
+      [form],
+    ),
+    chooseMcc: useCallback(
+      (pick: MccPick | undefined) => {
+        setValue('mcc', pick?.mcc ?? '');
+        setValue('mccSource', pick?.source ?? '');
+      },
+      [setValue],
+    ),
+    ...(opening === undefined ? {} : { opening }),
   });
 
   const changeKind = useCallback(
