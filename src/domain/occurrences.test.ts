@@ -514,3 +514,35 @@ describe('a long credit that follows prime', () => {
     expect(all(tx)[19]?.money).toBe(later?.money);
   });
 });
+
+describe('the income destination', () => {
+  const salary = {
+    date: d('2026-01-10'),
+    recurrence: { type: 'monthly' as const, dayOfMonth: 10 },
+    kind: 'income' as const,
+    categoryId: 'cat.salary',
+  };
+
+  it('inherits the series’ destination', () => {
+    const tx = makeTx({ ...salary, destinationId: 'pm.leumi' });
+    const o = expandOccurrences(tx, [], d('2026-02-10'), d('2026-02-10'), opts)[0]!;
+    expect(o.destinationId).toBe('pm.leumi');
+  });
+
+  it('carries no destination when the series has none', () => {
+    const o = expandOccurrences(makeTx(salary), [], d('2026-02-10'), d('2026-02-10'), opts)[0]!;
+    expect(o).not.toHaveProperty('destinationId');
+  });
+
+  it('takes one payment’s own destination from its override, and clears it with null', () => {
+    const ov = [
+      modify('tx1', d('2026-02-10'), { destinationId: 'pm.cash' }),
+      modify('tx1', d('2026-03-10'), { destinationId: null }),
+    ];
+    const tx = makeTx({ ...salary, destinationId: 'pm.leumi' }, ov);
+    const [feb, mar, apr] = expandOccurrences(tx, ov, d('2026-02-01'), d('2026-04-30'), opts);
+    expect(feb?.destinationId).toBe('pm.cash');
+    expect(mar?.destinationId).toBeUndefined();
+    expect(apr?.destinationId).toBe('pm.leumi');
+  });
+});

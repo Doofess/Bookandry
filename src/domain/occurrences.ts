@@ -176,6 +176,8 @@ function effectiveOccurrence(
   // express - so clearing a note or a payment method was unrepresentable.
   const paymentMethodId =
     patch && 'paymentMethodId' in patch ? (patch.paymentMethodId ?? undefined) : tx.paymentMethodId;
+  const destinationId =
+    patch && 'destinationId' in patch ? (patch.destinationId ?? undefined) : tx.destinationId;
   const note = patch && 'note' in patch ? (patch.note ?? undefined) : tx.note;
 
   return {
@@ -189,6 +191,7 @@ function effectiveOccurrence(
     money: patch?.money ?? scheduledMoney(tx, slot),
     categoryId: patch?.categoryId ?? tx.categoryId,
     ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
+    ...(destinationId === undefined ? {} : { destinationId }),
     ...(note === undefined ? {} : { note }),
     isOverridden: override !== undefined,
     isMoved: patch?.date !== undefined && patch.date !== slot,

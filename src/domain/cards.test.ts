@@ -94,6 +94,24 @@ describe('the billing day', () => {
     expect(settleDate({ date: d('2026-10-05'), paymentMethodId: undefined }, all)).toBe('2026-10-05');
     expect(settleDate({ date: d('2026-10-05'), paymentMethodId: 'gone' }, all)).toBe('2026-10-05');
   });
+
+  it('never moves income, even one that names a billing card', () => {
+    const all = methods(card());
+    const salary = makeTx({
+      id: 's',
+      kind: 'income',
+      categoryId: 'cat.salary',
+      date: d('2026-10-05'),
+      recurrence: { type: 'one_time' },
+      paymentMethodId: 'visa',
+    });
+    const [o] = expandOccurrences(salary, [], d('2026-10-01'), d('2026-10-31'), { today: TODAY });
+    expect(settleDate(o!, all)).toBe('2026-10-05');
+    // An expense on the same card still waits for its bill.
+    expect(
+      settleDate({ date: d('2026-10-05'), paymentMethodId: 'visa', transaction: { kind: 'expense' } }, all),
+    ).toBe('2026-11-10');
+  });
 });
 
 describe('a card’s rates', () => {
