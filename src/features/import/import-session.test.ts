@@ -13,6 +13,8 @@ const empty = {
   drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId: 'p1' },
+  kind: 'expense',
+  leftOutShown: false,
   note: '',
 } as ImportSession;
 

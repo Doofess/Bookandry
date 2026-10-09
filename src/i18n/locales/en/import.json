@@ -15,6 +15,12 @@
   "readNone": "Read",
   "whose": "Whose spending and income is this?",
   "whoseHint": "Where a file shows whose it is, that's filled in for you. The rest is added for whoever you pick here.",
+  "kindLabel": "What to import",
+  "kindChoice": {
+    "expense": "Expenses",
+    "income": "Income",
+    "both": "Both"
+  },
   "noteLabel": "Anything we should know about these files?",
   "notePlaceholder": "e.g. These are all my Max card transactions for September",
   "noteHint": "Optional. It helps the reader; what the files show always comes first.",
@@ -57,6 +63,18 @@
   "retry": "Try again",
   "nothing": "We didn't find any transactions, cards or bank accounts in these files.",
   "chooseOther": "Choose other files",
+  "emptyKind": {
+    "expense": "No expenses in these files.",
+    "income": "No income in these files."
+  },
+  "leftOut": {
+    "expense_one": "1 expense left out",
+    "expense_other": "{{count}} expenses left out",
+    "income_one": "1 income left out",
+    "income_other": "{{count}} incomes left out",
+    "show": "Show",
+    "hide": "Hide"
+  },
   "addManually": "Add manually",
   "groups": {
     "check_one": "Check this (1)",
