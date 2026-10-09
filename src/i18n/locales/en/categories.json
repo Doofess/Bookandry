@@ -77,5 +77,23 @@
     "methodDeleteMove": "Move them to",
     "methodRate": "Annual credit interest",
     "methodRateHint": "Used to price עסקת קרדיט on this card. Leave empty for interest-free."
+  },
+  "businessTypes": {
+    "open": "Business types",
+    "title": "Business types: {{name}}",
+    "body": "Expenses with these business types are filed here, unless you filed the business somewhere yourself.",
+    "archived": "This category is archived, so meanwhile these business types are filed by default.",
+    "none": "No business types yet.",
+    "add": "Add a business type",
+    "more_one": "and {{count}} more",
+    "more_other": "and {{count}} more",
+    "moved": "Moved here",
+    "returnDefault": "Return to default",
+    "movePast_one": "Move the 1 past expense with this business type here too?",
+    "movePast_other": "Move the {{count}} past expenses with this business type here too?",
+    "movePastYes": "Move them",
+    "movePastNo": "Not now",
+    "movedPast_one": "Moved 1 expense",
+    "movedPast_other": "Moved {{count}} expenses"
   }
 }

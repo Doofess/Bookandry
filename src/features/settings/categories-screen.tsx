@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Archive, ArchiveRestore, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Pencil, Plus, Store, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -31,6 +31,8 @@ import { newId } from '@/lib/id';
 import type { Category } from '@/types/domain';
 import type { Kind } from '@/types/money';
 
+import { BusinessTypesSheet } from './business-types-sheet';
+
 /**
  * The category manager.
  *
@@ -46,6 +48,8 @@ export function CategoriesScreen() {
   const [kind, setKind] = useState<Kind>('expense');
   const [editing, setEditing] = useState<Category | 'new' | undefined>(undefined);
   const [deleting, setDeleting] = useState<Category | undefined>(undefined);
+  /** The category whose business types are open, by id, so the sheet follows live edits. */
+  const [typesOf, setTypesOf] = useState<string | undefined>(undefined);
   const kindId = useId();
 
   const data = useLiveQuery(async () => {
@@ -104,6 +108,9 @@ export function CategoriesScreen() {
                 onDelete={() => {
                   setDeleting(category);
                 }}
+                onBusinessTypes={() => {
+                  setTypesOf(category.id);
+                }}
               />
             ))}
           </ul>
@@ -137,6 +144,14 @@ export function CategoriesScreen() {
             if (!open) setDeleting(undefined);
           }}
         />
+
+        <BusinessTypesSheet
+          category={all.find((c) => c.id === typesOf)}
+          categories={all}
+          onOpenChange={(open) => {
+            if (!open) setTypesOf(undefined);
+          }}
+        />
       </PanelSheet>
     </section>
   );
@@ -146,10 +161,12 @@ function CategoryRow({
   category,
   onEdit,
   onDelete,
+  onBusinessTypes,
 }: {
   readonly category: Category;
   readonly onEdit: () => void;
   readonly onDelete: () => void;
+  readonly onBusinessTypes: () => void;
 }) {
   const { t } = useTranslation(['common', 'categories']);
   const name = categoryDisplayName(category, t);
@@ -172,6 +189,20 @@ function CategoryRow({
           {isArchived ? t('categories:manage.archived') : null}
         </span>
       </span>
+
+      {/* Every expense category, built-in or the person's own, has business types (spec point 12). */}
+      {category.kind === 'expense' ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-11"
+          aria-label={`${t('categories:businessTypes.open')}: ${name}`}
+          onClick={onBusinessTypes}
+        >
+          <Store className="size-4" aria-hidden="true" />
+        </Button>
+      ) : null}
 
       <Button
         type="button"
