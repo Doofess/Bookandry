@@ -106,8 +106,13 @@ function open(methods: readonly PaymentMethod[] = [maxCard, plainCard]) {
   return { onSaved, user: userEvent.setup() };
 }
 
+/**
+ * The amount is pasted, not typed: each keystroke re-renders the whole form,
+ * and what these tests are about is the card, not the typing.
+ */
 async function fill(user: ReturnType<typeof userEvent.setup>, amount: string, card: string) {
-  await user.type(screen.getByLabelText('Amount'), amount);
+  await user.click(screen.getByLabelText('Amount'));
+  await user.paste(amount);
   await user.click(screen.getByRole('combobox', { name: /Paid with/ }));
   await user.click(await screen.findByRole('option', { name: new RegExp(card) }));
 }
@@ -162,6 +167,9 @@ describe('a purchase on a card linked to the catalog', () => {
     });
   });
 
+  // A longer timeout, on this test alone: it renders the whole purchase form and
+  // then the card's whole editor over it, about 1s alone and 2-3s in a full run,
+  // which crossed the default 5s once with coverage on.
   it('opens the card to give the rate, and comes back with it filled in, the purchase unsaved', async () => {
     await db.paymentMethods.put(maxCard);
     const { user, onSaved } = open();
@@ -171,7 +179,10 @@ describe('a purchase on a card linked to the catalog', () => {
 
     // The card's rate table, its קרדיט פלוס row asking for the rate.
     const row = within(await screen.findByTestId('rate-long_credit'));
-    await user.type(row.getByRole('textbox'), '10.75');
+    // Pasted: each keystroke re-renders the card's whole rate table, which made
+    // this the slowest test in the suite under load.
+    await user.click(row.getByRole('textbox'));
+    await user.paste('10.75');
     const cardSheet = screen.getByRole('dialog', { name: 'Edit payment method' });
     await user.click(within(cardSheet).getByRole('button', { name: 'Save' }));
 
@@ -183,7 +194,7 @@ describe('a purchase on a card linked to the catalog', () => {
     });
     expect(onSaved).not.toHaveBeenCalled();
     expect(await db.transactions.count()).toBe(0);
-  });
+  }, 15_000);
 
   it('saves a 30+ purchase a month later, with its month of interest and its rate', async () => {
     const { user, onSaved } = open();
