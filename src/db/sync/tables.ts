@@ -42,16 +42,6 @@ export function isSyncedTable(name: string): name is SyncedTable {
 }
 
 /**
- * The settings row syncs ONE field.
- *
- * `defaultCurrency` defines what every stored base amount means, so every
- * device must agree on it. Language, theme and the active profile are how this
- * person likes this screen; syncing them would let a theme change on the phone
- * carry a stale currency along and undo a currency change made on the laptop.
- */
-export const SYNCED_SETTINGS_FIELDS = ['defaultCurrency'] as const;
-
-/**
  * Where the next pull resumes, in `meta`. Written with the page it follows.
  *
  * Its presence also means "this device syncs", which is what the sweeper asks

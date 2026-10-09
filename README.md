@@ -58,8 +58,10 @@ that was only described — and they need redoing whenever the shell, the focus
 order or the copy changes.
 
 The Colour of money screenshot matrix (`e2e/screens.spec.ts`: 8 routes at 390,
-1440 and 1920, in both languages and themes) was reviewed by eye for phase 1 on
-**2026-10-10**.
+1440 and 1920, in both languages and themes) passes its overflow and console
+assertions in all 96 cases. On **2026-10-10** a sample of 23 of the 96 images was
+opened and reviewed by eye, covering every route, both languages, both themes
+and all three widths; the other 73 were not opened.
 
 The sapphire redesign's screenshot matrix (`e2e/screens.spec.ts`, now with
 Cards) was reviewed by eye on **2026-10-09**.
