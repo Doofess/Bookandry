@@ -38,6 +38,13 @@ export type TransactionPatch = {
   readonly date?: LocalDate;
   /** Scope 'future' and 'all' only: a per-occurrence rule change is meaningless. */
   readonly recurrence?: Recurrence;
+  /**
+   * The series' business type, at every scope - a series carries one, so even
+   * an edit of one occurrence writes it to the transaction. `null` clears it.
+   */
+  readonly mcc?: string | null;
+  /** Where the business type came from; `null` clears it. */
+  readonly mccSource?: string | null;
 };
 
 export type SeriesEditInput = {
@@ -118,6 +125,32 @@ export function previousSlot(
   return slots.at(-1)?.originalDate;
 }
 
+/** The patch's business type on `tx`, or `tx` as it is when the patch does not name one. */
+function withBusinessType(tx: Transaction, patch: TransactionPatch): Transaction {
+  if (patch.mcc === undefined) return tx;
+  // Destructured away, so a cleared code leaves no key behind for sync to carry.
+  const { mcc: _code, mccSource: _source, ...rest } = tx;
+  if (patch.mcc === null) return rest;
+  const source = patch.mccSource;
+  return {
+    ...rest,
+    mcc: patch.mcc,
+    ...(source === null || source === undefined ? {} : { mccSource: source }),
+  };
+}
+
+/** Whether a patch changes anything an occurrence's override can hold. */
+function touchesOccurrence(patch: TransactionPatch): boolean {
+  return (
+    patch.money !== undefined ||
+    patch.categoryId !== undefined ||
+    patch.paymentMethodId !== undefined ||
+    patch.destinationId !== undefined ||
+    patch.note !== undefined ||
+    patch.date !== undefined
+  );
+}
+
 /** Apply a patch's transaction-level fields. Per-occurrence fields are ignored. */
 function applyToTransaction(tx: Transaction, patch: TransactionPatch, now: IsoInstant): Transaction {
   /*
@@ -128,16 +161,19 @@ function applyToTransaction(tx: Transaction, patch: TransactionPatch, now: IsoIn
   const { deferral, ...rest } = tx;
   const recurrence = patch.recurrence ?? tx.recurrence;
   const base = deferral === undefined || recurrence.type !== 'one_time' ? rest : tx;
-  return {
-    ...base,
-    ...(patch.money === undefined ? {} : { money: patch.money }),
-    ...(patch.categoryId === undefined ? {} : { categoryId: patch.categoryId }),
-    ...(patch.paymentMethodId === undefined ? {} : { paymentMethodId: patch.paymentMethodId ?? undefined }),
-    ...(patch.destinationId === undefined ? {} : { destinationId: patch.destinationId ?? undefined }),
-    ...(patch.note === undefined ? {} : { note: patch.note ?? undefined }),
-    ...(patch.recurrence === undefined ? {} : { recurrence: patch.recurrence }),
-    updatedAt: now,
-  };
+  return withBusinessType(
+    {
+      ...base,
+      ...(patch.money === undefined ? {} : { money: patch.money }),
+      ...(patch.categoryId === undefined ? {} : { categoryId: patch.categoryId }),
+      ...(patch.paymentMethodId === undefined ? {} : { paymentMethodId: patch.paymentMethodId ?? undefined }),
+      ...(patch.destinationId === undefined ? {} : { destinationId: patch.destinationId ?? undefined }),
+      ...(patch.note === undefined ? {} : { note: patch.note ?? undefined }),
+      ...(patch.recurrence === undefined ? {} : { recurrence: patch.recurrence }),
+      updatedAt: now,
+    },
+    patch,
+  );
 }
 
 function overrideFor(
@@ -258,8 +294,9 @@ export function planSeriesEdit(input: SeriesEditInput): SeriesEditResult {
     return {
       ok: true,
       plan: {
-        transactions: [],
-        overrides: [overrideFor(tx.id, at, patch, existing, now, newId)],
+        // The business type is the series': written to it even from one occurrence.
+        transactions: patch.mcc === undefined ? [] : [withBusinessType({ ...tx, updatedAt: now }, patch)],
+        overrides: touchesOccurrence(patch) ? [overrideFor(tx.id, at, patch, existing, now, newId)] : [],
         deleteOverrideIds: [],
         warnings,
         effectiveScope: 'one',
@@ -291,11 +328,14 @@ function planSplit(input: SeriesEditInput, warnings: SeriesEditWarning[]): Serie
   // continuation billed forever regardless of when the series was meant to end.
   const inheritedEnd = endDateOf(tx.recurrence);
 
-  const original: Transaction = {
-    ...tx,
-    recurrence: withEndDate(tx.recurrence, closeAt),
-    updatedAt: now,
-  };
+  const original: Transaction = withBusinessType(
+    {
+      ...tx,
+      recurrence: withEndDate(tx.recurrence, closeAt),
+      updatedAt: now,
+    },
+    patch,
+  );
 
   const continuationId = newId();
   const continuation: Transaction = {

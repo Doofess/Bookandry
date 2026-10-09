@@ -33,6 +33,7 @@ import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
 import { defaultDestination } from '@/domain/income-destination';
+import { categoryForMcc, type MccPick } from '@/domain/mcc-categories';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
 import {
   buildPatch,
@@ -63,6 +64,7 @@ import {
   standingViaOf,
   type StandingVia,
 } from '@/domain/tx-options';
+import { BusinessTypeField } from '@/features/business-type/business-type-picker';
 import { MethodForm } from '@/features/cards/method-editor';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
@@ -448,6 +450,7 @@ function TransactionForm({
   const amountId = useId();
   const currencyId = useId();
   const categoryId = useId();
+  const businessTypeId = useId();
   const methodId = useId();
   const dateId = useId();
   const noteId = useId();
@@ -560,6 +563,12 @@ function TransactionForm({
    */
   const translateCategory = useCallback((category: Category) => categoryDisplayName(category, t), [t]);
 
+  // An edit's name and kind, to look its business type up from history once it opens.
+  const opening = useMemo(
+    () => (editing === undefined ? undefined : { name: initial.note, kind: initial.kind }),
+    [editing, initial.note, initial.kind],
+  );
+
   const auto = useAutoCategory({
     categories,
     translate: translateCategory,
@@ -570,7 +579,33 @@ function TransactionForm({
       [setValue],
     ),
     chosenByPerson: editing !== undefined,
+    currentMcc: useCallback(
+      () => ({ code: form.getValues('mcc') ?? '', source: form.getValues('mccSource') ?? '' }),
+      [form],
+    ),
+    chooseMcc: useCallback(
+      (pick: MccPick | undefined) => {
+        setValue('mcc', pick?.mcc ?? '');
+        setValue('mccSource', pick?.source ?? '');
+      },
+      [setValue],
+    ),
+    ...(opening === undefined ? {} : { opening }),
   });
+
+  /**
+   * The person picked a business type, or cleared it. A pick is theirs
+   * ('user': the auto step never replaces it), and the category follows it -
+   * unless the person picked the category too, or this is an edit, whose
+   * category is theirs (spec point 10).
+   */
+  const pickBusinessType = (code: string): void => {
+    setValue('mcc', code);
+    setValue('mccSource', code === '' ? '' : 'user');
+    if (code === '' || auto.categoryByPerson()) return;
+    const id = categoryForMcc(code, categories);
+    if (id !== undefined) setValue('categoryId', id, { shouldValidate: true });
+  };
 
   const changeKind = useCallback(
     (next: Kind) => {
@@ -1081,6 +1116,17 @@ function TransactionForm({
             <p className="text-xs text-destructive">{errors.categoryId}</p>
           )}
         </div>
+
+        {values.kind === 'expense' ? (
+          <div className="space-y-1.5">
+            <Label id={businessTypeId}>{t('businessType.label')}</Label>
+            <BusinessTypeField
+              value={values.mcc ?? ''}
+              onChange={pickBusinessType}
+              labelledBy={businessTypeId}
+            />
+          </div>
+        ) : null}
 
         {values.kind === 'expense' && values.mode === 'standing_order' ? (
           <div className="space-y-1.5">

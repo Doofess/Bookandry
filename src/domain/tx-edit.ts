@@ -132,6 +132,12 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
     primeRate: '',
     // A saved rule's first month is behind it: nothing to split.
     partialFirst: false,
+    /*
+     * The SERIES' business type: a series carries one, and an occurrence
+     * never has its own (`OverridePatch` has no field for it).
+     */
+    mcc: transaction.mcc ?? '',
+    mccSource: transaction.mccSource ?? '',
   };
 }
 
@@ -177,6 +183,9 @@ export function duplicateFormValues(
       ? from.destinationId
       : '',
     note: from.note,
+    // Another purchase from the same business: the same business type.
+    mcc: from.mcc,
+    mccSource: from.mccSource,
     date: today,
     mode: 'one_time',
   };
@@ -215,6 +224,8 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
     note?: string | null;
     date?: LocalDate;
     recurrence?: Recurrence;
+    mcc?: string | null;
+    mccSource?: string | null;
   } = {};
 
   if (!sameMoney(money, occurrence.money)) patch.money = money;
@@ -234,6 +245,18 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
 
   if ((parsed.note ?? '') !== (occurrence.note ?? '')) {
     patch.note = parsed.note ?? null;
+  }
+
+  // Not when the kind was switched: an edit does not save a switch of kind today, and the form
+  // strips the business type from income, so the comparison would wipe the series' own.
+  if (
+    parsed.kind === transaction.kind &&
+    ((parsed.mcc ?? '') !== (transaction.mcc ?? '') ||
+      (parsed.mccSource ?? '') !== (transaction.mccSource ?? ''))
+  ) {
+    // Compared with the SERIES, not the occurrence; `null` clears it.
+    patch.mcc = parsed.mcc ?? null;
+    patch.mccSource = parsed.mccSource ?? null;
   }
 
   if (scopeAllowsMove(scope) && parsed.date !== occurrence.date) {

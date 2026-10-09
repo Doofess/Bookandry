@@ -63,6 +63,12 @@ export type MapRequest = {
   readonly rows: readonly (readonly string[])[];
   /** Merchant names the household's history could not place. */
   readonly merchants: readonly string[];
+  /**
+   * Each merchant's business sector as its file printed it, '' for none -
+   * parallel to `merchants`. A hint for its business type. Absent from an
+   * app from before business types.
+   */
+  readonly sectors?: readonly string[];
   readonly maxTokens: number;
 };
 
@@ -123,6 +129,14 @@ export type WireRow = {
   readonly l4: string;
   /** Whose it is - a person's alias - when the document prints their name as its holder. */
   readonly w?: string;
+  /**
+   * An expense's business type: the 4-digit Merchant Category Code printed
+   * beside it, or the model's single most likely one. Four digits; whether
+   * the list has it is the app's to check. Absent on income, and when none.
+   */
+  readonly mcc?: string;
+  /** The business sector (ענף) printed beside an expense, as printed. Absent when none. */
+  readonly sec?: string;
 };
 
 /**
@@ -201,7 +215,7 @@ export type WireMap = {
   readonly card: number | null;
   readonly dec: '.' | ',';
   readonly df: 'dmy' | 'mdy' | 'ymd';
-  readonly mc: readonly { readonly m: string; readonly cat: string | null }[];
+  readonly mc: readonly { readonly m: string; readonly mcc: string | null; readonly cat: string | null }[];
 };
 
 export type WireUsage = {
@@ -352,7 +366,7 @@ export function parseWireRequest(body: unknown): WireRequest | undefined {
   }
 
   if (body.mode === 'map') {
-    const { rows, merchants } = body;
+    const { rows, merchants, sectors } = body;
     if (!Array.isArray(rows) || rows.length === 0 || rows.length > LIMITS.sheetRows) return undefined;
     const cleanRows: string[][] = [];
     for (const row of rows) {
@@ -362,7 +376,11 @@ export function parseWireRequest(body: unknown): WireRequest | undefined {
     }
     if (!Array.isArray(merchants) || merchants.length > LIMITS.merchants) return undefined;
     if (!merchants.every((m) => isText(m, LIMITS.description))) return undefined;
-    return { mode: 'map', ctx, rows: cleanRows, merchants, maxTokens };
+    if (sectors === undefined) return { mode: 'map', ctx, rows: cleanRows, merchants, maxTokens };
+    // A hint per merchant, or none at all: a list that does not line up is no hint.
+    if (!Array.isArray(sectors) || sectors.length !== merchants.length) return undefined;
+    if (!sectors.every((s) => isText(s, LIMITS.field))) return undefined;
+    return { mode: 'map', ctx, rows: cleanRows, merchants, sectors, maxTokens };
   }
 
   if (body.mode === 'verify') {
@@ -472,6 +490,9 @@ export function cleanRow(v: unknown, sourceCount: number, ctx: WireContext): Wir
   // A category of the other kind is no answer at all.
   const catKind = ctx.cats.find((c) => c.a === cat)?.k;
   const w = alias(v.w, ctx.ppl ?? []);
+  // An expense's business type and sector; a stray one on income is no answer.
+  const mcc = k === 'e' ? wireMcc(v.mcc) : undefined;
+  const sec = k === 'e' ? cleanText(v.sec, LIMITS.field) : undefined;
   return {
     s: v.s,
     p: isInt(v.p, 0, 10_000) ? v.p : null,
@@ -491,6 +512,8 @@ export function cleanRow(v: unknown, sourceCount: number, ctx: WireContext): Wir
     pl: cleanPlan(v.pl),
     l4: lastFour(v.l4),
     ...(w === null ? {} : { w }),
+    ...(mcc === undefined ? {} : { mcc }),
+    ...(sec === undefined || sec === '' ? {} : { sec }),
   };
 }
 
@@ -499,6 +522,13 @@ function lastFour(v: unknown): string {
   if (typeof v !== 'string') return '';
   const digits = v.replace(/[^\d]/g, '');
   return digits.length === 4 ? digits : '';
+}
+
+/** Four digits, as printed or trimmed of spaces; anything else is none. */
+function wireMcc(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const code = v.trim();
+  return /^\d{4}$/.test(code) ? code : undefined;
 }
 
 /** A run of digits as printed, without its dashes and spaces - or '' if it is not one of 1 to `max` digits. */
@@ -649,8 +679,8 @@ export function cleanMerchantCats(
   v: unknown,
   ctx: WireContext,
   merchants: readonly string[] = [],
-): { m: string; cat: string | null }[] {
-  const mc: { m: string; cat: string | null }[] = [];
+): { m: string; mcc: string | null; cat: string | null }[] {
+  const mc: { m: string; mcc: string | null; cat: string | null }[] = [];
   if (!isObject(v)) return mc;
   for (const entry of Array.isArray(v.mc) ? v.mc.slice(0, LIMITS.merchants) : []) {
     if (!isObject(entry)) continue;
@@ -658,7 +688,7 @@ export function cleanMerchantCats(
       ? merchants[entry.i]
       : cleanText(entry.m, LIMITS.description);
     if (m === undefined || m === '') continue;
-    mc.push({ m, cat: alias(entry.cat, ctx.cats) });
+    mc.push({ m, mcc: wireMcc(entry.mcc) ?? null, cat: alias(entry.cat, ctx.cats) });
   }
   return mc;
 }
@@ -675,6 +705,7 @@ st: "pending" when marked pending or authorisation only (ממתין, בקליט�
 pl: for instalments ("תשלום 3 מתוך 6"): n=3, of=6, md "installments", "credit" for קרדיט, or "loan" for a loan's repayment (הלוואה). a is this payment. tot: the deal's whole amount if printed.
 fee: true for the card's own monthly fee (דמי כרטיס).
 m: the merchant or counterparty as printed, short.
+mcc: for an expense, the 4-digit merchant category code (MCC) of the business - printed beside the row if it is, else the single most likely one; "" for income or when unsure. sec: the business sector (ענף) printed beside the row, as printed, else "".
 cat: the best category alias from the list for the row's kind, or null. A loan's repayment (הלוואה, פירעון, loan) - a card company's own loan too, such as מקס איט פיננסים - takes the loans category; a card company or a bank is never a restaurant or a shop. pm: the payment method alias only when the document clearly names it, else null.
 l4: the last four digits of the card the row was charged to, when the document shows them, else "". A statement for one card, or a card's section of one, shows them once in its header: every row in it takes them.
 k: cards the documents describe - a card company's list of cards, a card's terms or rates page, a statement's card header - even when there are no transactions. n: the card's name as printed; l4: its last four digits; nw: its network (Visa, Mastercard...); is: the company that issued it; cr: its קרדיט annual rate as printed, the nominal one (תעריפית) when both are shown; lim: its credit limit (מסגרת); bd: its billing day (מועד חיוב). "" for anything not printed.
@@ -738,6 +769,8 @@ function rowProperties(ctx: WireContext): Record<string, unknown> {
       additionalProperties: false,
     }),
     l4: text,
+    mcc: text,
+    sec: text,
     // Asked only of a household: alone, every row is the one person's.
     ...(ctx.ppl === undefined || ctx.ppl.length === 0 ? {} : { w: aliasSchema(ctx.ppl.map((p) => p.a)) }),
   };
@@ -765,6 +798,8 @@ const ROW_KEYS = [
   'pm',
   'pl',
   'l4',
+  'mcc',
+  'sec',
 ];
 
 /** A card's fields: plain strings, '' for absent - no unions, which the schema can only have so many of. */
@@ -869,8 +904,12 @@ export function mapSchema(ctx: WireContext): Record<string, unknown> {
         type: 'array',
         items: {
           type: 'object',
-          properties: { i: { type: 'integer' }, cat: aliasSchema(ctx.cats.map((c) => c.a)) },
-          required: ['i', 'cat'],
+          properties: {
+            i: { type: 'integer' },
+            mcc: { type: 'string' },
+            cat: aliasSchema(ctx.cats.map((c) => c.a)),
+          },
+          required: ['i', 'mcc', 'cat'],
           additionalProperties: false,
         },
       },
@@ -904,8 +943,13 @@ export function mapTask(request: MapRequest): string {
   const merchants =
     request.merchants.length === 0
       ? 'none'
-      : request.merchants.map((m, i) => `${String(i)}: ${JSON.stringify(m)}`).join('\n');
-  return `These are the first rows of a spreadsheet block (row index: cells by column index):\n${table}\n\nGive the header row's index and the column index of each field (null when absent): date = transaction date, desc = merchant, amt = amount (one signed column), or debit/credit columns, cur = currency, chg = charged amount, chgCur, chgDate = debit date, plan = instalment text, card = the card's number or last digits. dec: the decimal mark the amounts use. df: date order.\nmc: for each merchant below, by its number i, the best category alias for what the business or payment is, or null when unsure. A streaming, music or software service (Spotify, Netflix, Apple, Google) is a subscription; a card company or a bank (מקס איט פיננסים, ישראכרט, כאל) is never a restaurant, a shop or rent.\n${merchants}`;
+      : request.merchants
+          .map((m, i) => {
+            const sector = request.sectors?.[i] ?? '';
+            return `${String(i)}: ${JSON.stringify(m)}${sector === '' ? '' : ` (sector ${JSON.stringify(sector)})`}`;
+          })
+          .join('\n');
+  return `These are the first rows of a spreadsheet block (row index: cells by column index):\n${table}\n\nGive the header row's index and the column index of each field (null when absent): date = transaction date, desc = merchant, amt = amount (one signed column), or debit/credit columns, cur = currency, chg = charged amount, chgCur, chgDate = debit date, plan = instalment text, card = the card's number or last digits. dec: the decimal mark the amounts use. df: date order.\nmc: for each merchant below, by its number i: mcc, the single most likely 4-digit merchant category code (MCC) of the business, using its sector when one is given, or "" when unsure; and cat, the best category alias for what the business or payment is, or null when unsure. A streaming, music or software service (Spotify, Netflix, Apple, Google) is a subscription; a card company or a bank (מקס איט פיננסים, ישראכרט, כאל) is never a restaurant, a shop or rent.\n${merchants}`;
 }
 
 /** The instruction for a verify call: re-read only these rows. */
