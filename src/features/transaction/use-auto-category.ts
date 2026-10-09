@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { accountController } from '@/app/account';
 import { db } from '@/db/db';
-import { categoryFromHistory } from '@/db/repos/transactions';
+import { merchantHistory } from '@/db/repos/transactions';
 import { categoriesFor } from '@/domain/tx-options';
 import type { Category } from '@/types/domain';
 import type { Kind } from '@/types/money';
@@ -59,7 +59,9 @@ export function useAutoCategory({
       const fits = (id: string | undefined): id is string =>
         id !== undefined && choices.some((category) => category.id === id);
 
-      let id = await categoryFromHistory(db, kind, name).catch(() => undefined);
+      let id = await merchantHistory(db, kind, name)
+        .then((history) => history.categoryId)
+        .catch(() => undefined);
       if (!fits(id)) {
         id = await suggest(
           name,

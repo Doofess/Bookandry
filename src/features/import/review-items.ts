@@ -1,5 +1,5 @@
 import { db } from '@/db/db';
-import { categoryFromHistory } from '@/db/repos/transactions';
+import { merchantHistory } from '@/db/repos/transactions';
 import { categoryFromText, knownCategory } from '@/domain/import-categories';
 import { BLOCKING, withFlags, type Flag, type FoundRow } from '@/domain/import-check';
 import { draftOf } from '@/domain/import-review';
@@ -67,7 +67,7 @@ export async function buildReview(
 ): Promise<ReviewItem[]> {
   const items: ReviewItem[] = [];
   for (const row of rows) {
-    const fromHistory = await categoryFromHistory(db, row.kind, row.description);
+    const fromHistory = (await merchantHistory(db, row.kind, row.description)).categoryId;
     const suggested = row.categoryAlias === null ? undefined : ctx.aliases.categories.get(row.categoryAlias);
     const suggestedFits = ctx.categories.some(
       (c) => c.id === suggested && c.kind === row.kind && c.isArchived === 0,
