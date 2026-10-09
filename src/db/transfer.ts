@@ -3,7 +3,6 @@ import { planReconversion, type RateLookup } from '@/domain/reconvert';
 import { planMerge, type Timestamped } from '@/domain/transfer-merge';
 import { CURRENT_DOC_VERSION, type ExportEnvelope } from '@/domain/transfer-schema';
 import { validateEnvelope, type ValidationIssue } from '@/domain/transfer-validate';
-import { convertMinor } from '@/lib/money';
 import type { CashMove, Override, Transaction } from '@/types/domain';
 import type { Currency, IsoInstant } from '@/types/money';
 
@@ -139,7 +138,13 @@ function redenominate(
   | undefined {
   const transactions = doc.data.transactions as unknown as Transaction[];
   const overrides = doc.data.overrides as unknown as Override[];
+  const moves = doc.data.cashMoves as unknown as CashMove[];
 
+  /*
+   * A cash move is in the file's base currency, which is exactly what is
+   * changing - so the planner converts it at its own date's rate, and the whole
+   * merge is refused rather than half-converted when a rate is missing.
+   */
   const plan = planReconversion(
     {
       oldBase: doc.defaultCurrency,
@@ -147,29 +152,16 @@ function redenominate(
       transactions,
       overrides,
       profiles: doc.data.profiles as unknown as never,
+      cashMoves: moves,
     },
     lookup,
   );
 
   if (plan.unresolved.length > 0) return undefined;
 
-  /*
-   * A cash move is in the file's base currency, which is exactly what is
-   * changing - converted at its own date's rate, like a transaction, and the
-   * whole merge refused rather than half-converted when a rate is missing.
-   */
-  const cashMoves: CashMove[] = [];
-  for (const move of doc.data.cashMoves as unknown as CashMove[]) {
-    const quote = lookup(doc.defaultCurrency, localCurrency, move.date);
-    if (quote === undefined) return undefined;
-    cashMoves.push({
-      ...move,
-      amountMinor: convertMinor(move.amountMinor, doc.defaultCurrency, localCurrency, quote.rate),
-    });
-  }
-
   const txById = new Map(plan.transactions.map((t) => [t.id, t.money]));
   const ovById = new Map(plan.overrides.map((o) => [o.id, o.money]));
+  const moveAmount = new Map(plan.cashMoves.map((m) => [m.id, m.amountMinor]));
 
   return {
     transactions: transactions.map((t) => {
@@ -180,8 +172,11 @@ function redenominate(
       const money = ovById.get(o.id);
       return money && o.action === 'modify' ? { ...o, patch: { ...o.patch, money } } : o;
     }),
-    cashMoves,
-    converted: plan.transactions.length + plan.overrides.length + cashMoves.length,
+    cashMoves: moves.map((m) => {
+      const amountMinor = moveAmount.get(m.id);
+      return amountMinor === undefined ? m : { ...m, amountMinor };
+    }),
+    converted: plan.transactions.length + plan.overrides.length + plan.cashMoves.length,
   };
 }
 
