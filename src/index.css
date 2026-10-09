@@ -880,7 +880,6 @@
   --spacing-sheet: var(--gap-sheet);
 
   --font-sans: var(--font-stack-sans);
-  --font-display: var(--font-stack-display);
 
   --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-soft: cubic-bezier(0.3, 0, 0.8, 0.15);
@@ -892,30 +891,62 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Typography.
+   Typography (§2).
 
-   THE ORDER OF THIS STACK IS LOAD-BEARING. Font fallback is per-glyph:
-   ASCII digits resolve to Inter (which has tabular figures), Hebrew letters
-   fall through to Heebo (which does NOT ship tnum). Putting Heebo first, or
-   adding a `:lang(he) { font-family: Heebo }` rule, silently breaks
-   `tabular-nums` alignment in every amount column in Hebrew.
+   IBM Plex Sans Hebrew 300 / 400 / 500 / 600 for text, Karantina 700 for
+   display and big numerals. Both self-hosted from Fontsource, precached with
+   the app, because the app works offline.
+
+   THE ORDER OF THIS STACK IS LOAD-BEARING. Plex covers Latin, Hebrew and ₪ by
+   itself, and its digits are fixed-width by default (600 units in every
+   weight), which is what lines up an amount column. Putting a face without
+   fixed-width digits before Plex, or adding a :lang(he) font rule, breaks
+   amount alignment.
+
+   Karantina's digits are proportional (243-383 units) and it has no tnum, so
+   it is never used below 28px or for figures that line up or count (decision
+   20). The `font-display` utility sets weight 700 itself: Karantina is never
+   seen at any other weight.
+
+   `font-synthesis: none`: every weight used is loaded, and a weight that is
+   not (Plex 700) must never be faked. `b`, `strong` and `th` default to bold,
+   so the base layer sets them to 600.
 
    Do not declare font-family anywhere outside this file.
 --------------------------------------------------------------------------- */
-/*
- * The display face: the brand's wordmark and the front door's headline, and
- * nothing else. A ledger serif with Hebrew of its own, so the headline keeps
- * its character in both languages. Amounts and UI text stay in the sans stack
- * above, for its tabular figures.
- */
-:root {
-  --font-stack-display: 'Frank Ruhl Libre Variable', 'Heebo Variable', Georgia, serif;
-}
-
 :root {
   --font-stack-sans:
-    'Inter Variable', 'Heebo Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    'Noto Sans Hebrew', Arial, sans-serif;
+    'IBM Plex Sans Hebrew', 'Plex Fallback', system-ui, -apple-system, 'Segoe UI', 'Noto Sans Hebrew', Arial,
+    sans-serif;
+  --font-stack-display: 'Karantina', 'Karantina Fallback', 'Plex Fallback', sans-serif;
+  font-synthesis: none;
+}
+
+/* Fallback faces with the real faces' metrics, measured against Windows Arial
+   with fontTools on 2026-10-09 (§2.4). font-size-adjust is not used: it
+   normalises by x-height, which Hebrew letters do not follow (decision 22). */
+@font-face {
+  font-family: 'Plex Fallback';
+  src: local('Arial'), local('ArialMT'), local('Roboto');
+  size-adjust: 103%; /* Latin text 1.019, Hebrew text 1.044 */
+  ascent-override: 99.5%; /* 1.025 / 1.03 */
+  descent-override: 26.7%; /* 0.275 / 1.03 */
+  line-gap-override: 0%;
+}
+
+/* Sized for figure width, so a balance in the fallback takes the same room. */
+@font-face {
+  font-family: 'Karantina Fallback';
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Roboto Bold');
+  size-adjust: 60%; /* digits 0.584, Hebrew 0.672: sized for figures */
+  ascent-override: 143%; /* 0.859 / 0.60 */
+  descent-override: 25.5%; /* 0.153 / 0.60 */
+  line-gap-override: 0%;
+}
+
+@utility font-display {
+  font-family: var(--font-stack-display);
+  font-weight: 700;
 }
 
 @layer base {
@@ -954,6 +985,13 @@
     color: var(--foreground);
     font-family: var(--font-stack-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Bold would ask for Plex 700, which is not loaded (decision 19). */
+  b,
+  strong,
+  th {
+    font-weight: 600;
   }
 
   h1,

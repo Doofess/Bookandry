@@ -218,7 +218,7 @@ test.describe('@rtl boot', () => {
     expect(errors).toEqual([]);
   });
 
-  test('renders Hebrew glyphs in Heebo, not a fallback', async ({ page }) => {
+  test('renders Hebrew glyphs and digits in Plex, not a fallback', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('gb.boot', JSON.stringify({ lang: 'he', theme: 'light' }));
     });
@@ -226,8 +226,8 @@ test.describe('@rtl boot', () => {
     // document.fonts.ready resolves before a lazily-triggered subset arrives, so
     // load the exact faces for the exact text first.
     await page.evaluate(async () => {
-      await document.fonts.load('400 96px "Heebo Variable"', 'שלוםעולם');
-      await document.fonts.load('400 96px "Inter Variable"', '0123456789');
+      await document.fonts.load('400 96px "IBM Plex Sans Hebrew"', 'שלוםעולם');
+      await document.fonts.load('400 96px "IBM Plex Sans Hebrew"', '0123456789');
       await document.fonts.ready;
     });
 
@@ -252,22 +252,22 @@ test.describe('@rtl boot', () => {
       const stack = getComputedStyle(document.body).fontFamily;
       return {
         viaStack: measure(stack, 'שלוםעולם'),
-        viaHeebo: measure('"Heebo Variable", monospace', 'שלוםעולם'),
+        viaPlex: measure('"IBM Plex Sans Hebrew", monospace', 'שלוםעולם'),
         viaFallback: measure('monospace', 'שלוםעולם'),
         // Width of 1111 must equal 8888 or the amount columns will not align.
         tabular1: measure(stack, '1111', true),
         tabular8: measure(stack, '8888', true),
-        // The stack's digits MUST come from Inter: Heebo ships no tabular figures,
-        // so if the order ever flips, every amount column silently misaligns in Hebrew.
+        // The stack's digits MUST come from Plex, whose digits are fixed-width:
+        // if the order ever flips, every amount column silently misaligns in Hebrew.
         digitsViaStack: measure(stack, '0123456789'),
-        digitsViaInter: measure('"Inter Variable", monospace', '0123456789'),
+        digitsViaPlex: measure('"IBM Plex Sans Hebrew", monospace', '0123456789'),
       };
     });
 
-    expect(Math.abs(result.viaStack - result.viaHeebo)).toBeLessThan(1);
+    expect(Math.abs(result.viaStack - result.viaPlex)).toBeLessThan(1);
     expect(Math.abs(result.viaStack - result.viaFallback)).toBeGreaterThan(1);
     expect(result.tabular1).toBeCloseTo(result.tabular8, 1);
-    expect(Math.abs(result.digitsViaStack - result.digitsViaInter)).toBeLessThan(1);
+    expect(Math.abs(result.digitsViaStack - result.digitsViaPlex)).toBeLessThan(1);
   });
 });
 

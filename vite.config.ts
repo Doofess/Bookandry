@@ -8,6 +8,7 @@ import { loadEnv, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 
+import { fontPreloadTags } from './src/lib/font-preload';
 import { headersFile, inlineScripts } from './src/lib/security-headers';
 
 /**
@@ -62,6 +63,18 @@ function securityHeaders(supabaseUrl: string | undefined): Plugin {
   };
 }
 
+/** Adds the Karantina preloads to the built index.html (src/lib/font-preload.ts). */
+function preloadDisplayFont(): Plugin {
+  return {
+    name: 'bookandry:preload-display-font',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler: (_html, context) => fontPreloadTags(Object.keys(context.bundle ?? {})),
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
@@ -79,6 +92,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
+    preloadDisplayFont(),
     securityHeaders(loadEnv(mode, process.cwd(), 'VITE_')['VITE_SUPABASE_URL']),
     VitePWA({
       registerType: 'autoUpdate',
@@ -146,7 +160,9 @@ export default defineConfig(({ mode }) => ({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         // Images for the account's emails (scripts/emails.mjs): read by mail
         // clients from the site, never by the app, so not worth a download.
-        globIgnores: ['email/**', 'assets/import-*'],
+        // Cyrillic-ext font files: neither face covers basic Cyrillic anyway,
+        // and a page that needs the extended block fetches it online (§2.4).
+        globIgnores: ['email/**', 'assets/import-*', 'assets/*-cyrillic-ext-*.woff2'],
         // Runs before Workbox's own routes: it answers the Share menu's POST and nothing else.
         importScripts: ['share-target-sw.js'],
         cleanupOutdatedCaches: true,

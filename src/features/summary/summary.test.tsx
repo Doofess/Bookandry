@@ -269,7 +269,7 @@ describe('the panel figures', () => {
     expect(screen.getByText(/Needs a rate for EUR/)).not.toHaveClass('text-destructive');
   });
 
-  it('sets the forecast in the serif at 1rem, and opens its pop-out', async () => {
+  it('sets the forecast in Plex at 1rem, and opens its pop-out', async () => {
     renderWithProviders(
       <ForecastLine
         expense={{ total: 381_652, spentSoFar: 361_700, remaining: 19_952 }}
@@ -282,7 +282,8 @@ describe('the panel figures', () => {
     );
     const button = screen.getByRole('button', { name: /Expected this month/ });
 
-    expect(button.querySelector('.font-display')).toHaveClass('text-base');
+    expect(button.querySelector('.text-base')).toHaveClass('font-medium');
+    expect(button.querySelector('.font-display')).toBeNull();
     await userEvent.setup().click(button);
     expect(await screen.findByTestId('forecast-popout')).toBeInTheDocument();
   });
@@ -303,7 +304,7 @@ describe('MonthCursor on the panel', () => {
 });
 
 describe('CollapsedSummaryBar on sapphire', () => {
-  it('is a slim deep bar with the balance in the serif, at the same height', () => {
+  it('is a slim deep bar with the balance in Plex, at the same height', () => {
     const { container } = renderWithProviders(
       <CollapsedSummaryBar state={ready(5_325_874)} currency="ILS" />,
     );
@@ -311,7 +312,8 @@ describe('CollapsedSummaryBar on sapphire', () => {
 
     expect(bar).toHaveClass('bg-brand-deep', 'text-brand-deep-foreground');
     expect(bar.style.height).toBe('calc(48px + env(safe-area-inset-top, 0px))');
-    expect(container.querySelector('[data-value]')).toHaveClass('font-display');
+    expect(container.querySelector('[data-value]')).toHaveClass('text-lg', 'font-semibold');
+    expect(container.querySelector('.font-display')).toBeNull();
   });
 
   it('opens the balance pop-out from the collapsed bar too', async () => {

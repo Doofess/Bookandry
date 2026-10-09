@@ -88,32 +88,27 @@ test.describe('@rtl the mobile tab bar', () => {
 });
 
 test.describe('@rtl fonts', () => {
-  test('renders Hebrew in Heebo and digits in Inter', async ({ page }) => {
+  test('renders Hebrew and digits in Plex, ahead of every fallback', async ({ page }) => {
     await completeFirstRun(page, 'he');
     await page.evaluate(() => document.fonts.ready);
 
-    const result = await page.evaluate(() => {
-      const stack = getComputedStyle(document.body).fontFamily;
-
+    const result = await page.evaluate(() => ({
+      stack: getComputedStyle(document.body).fontFamily.replace(/["']/g, ''),
       // `document.fonts.check` answers "can this family render this text with a
-      // LOADED face", which is the question - a family declared but never
-      // downloaded silently falls through to a system font.
-      return {
-        stack,
-        heebo: document.fonts.check('400 16px "Heebo Variable"', 'שלום'),
-        inter: document.fonts.check('400 16px "Inter Variable"', '0123456789'),
-      };
-    });
+      // LOADED face": a family declared but never downloaded falls through silently.
+      hebrew: document.fonts.check('400 16px "IBM Plex Sans Hebrew"', 'שלום'),
+      digits: document.fonts.check('400 16px "IBM Plex Sans Hebrew"', '0123456789'),
+    }));
 
     /*
-     * ORDER IS LOAD-BEARING. Font fallback is per-glyph: ASCII digits resolve
-     * to Inter (which ships tnum) while Hebrew letters fall through to Heebo
-     * (which does not). Putting Heebo first breaks every amount column in
-     * Hebrew, and nothing else in the suite would notice.
+     * ORDER IS LOAD-BEARING. Plex's digits are fixed-width; a face ahead of it
+     * without them breaks every amount column, and nothing else in the suite
+     * would notice.
      */
-    expect(result.stack.indexOf('Inter Variable')).toBeLessThan(result.stack.indexOf('Heebo Variable'));
-    expect(result.heebo).toBe(true);
-    expect(result.inter).toBe(true);
+    expect(result.stack.indexOf('IBM Plex Sans Hebrew')).toBe(0);
+    expect(result.stack.indexOf('IBM Plex Sans Hebrew')).toBeLessThan(result.stack.indexOf('Plex Fallback'));
+    expect(result.hebrew).toBe(true);
+    expect(result.digits).toBe(true);
   });
 });
 

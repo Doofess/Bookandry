@@ -6,9 +6,13 @@ import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
-import '@fontsource-variable/inter';
-import '@fontsource-variable/heebo';
-import '@fontsource-variable/frank-ruhl-libre';
+// Per-weight CSS: each carries `unicode-range` per subset, so a page
+// downloads only the subsets its text uses (§2.4).
+import '@fontsource/karantina/700.css';
+import '@fontsource/ibm-plex-sans-hebrew/300.css';
+import '@fontsource/ibm-plex-sans-hebrew/400.css';
+import '@fontsource/ibm-plex-sans-hebrew/500.css';
+import '@fontsource/ibm-plex-sans-hebrew/600.css';
 import './index.css';
 
 import { initAccount } from '@/app/account';

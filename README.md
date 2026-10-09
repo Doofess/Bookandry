@@ -405,9 +405,13 @@ red, and no other brand colour is either. Every token pair is checked by
 (the status bar's `theme-color`, the favicon, the PWA icon background) by
 `src/lib/brand-colours.test.ts`.
 
-**The panel's figures are in the serif, and still tabular.** Frank Ruhl Libre's
-Latin subset ships `tnum`, so the counting-up balance never jitters. Amount
-columns stay in the sans stack, whose order is load-bearing (below).
+**Two faces: Plex for text and amounts, Karantina for display.** IBM Plex Sans
+Hebrew (300, 400, 500, 600) covers Latin, Hebrew and ₪, and its digits are
+fixed-width, so amount columns line up in both languages. Karantina 700 draws
+screen names and the big numerals; its digits are proportional, so it is never
+used below 28px, in a column, or for a figure that counts without a box reserved
+from its final value. Both are self-hosted from Fontsource and precached; only
+Karantina is preloaded.
 
 **A pop-out in the feed is one instance at screen level, anchored to its row.**
 The feed is virtualised: a menu per row would unmount mid-gesture when its row
@@ -499,10 +503,11 @@ puts the symbol after the number; left to inherit page direction, a leading
 minus jumps to the far end. Every test asserts the integer, never the formatted
 string — pinning `"$1,234.50"` breaks the next time ICU moves a separator.
 
-**The font stack order is load-bearing.** `'Inter Variable', 'Heebo Variable', …`
-— fallback is per-glyph, so digits resolve to Inter (which ships tabular
-figures) while Hebrew falls through to Heebo (which does not). Putting Heebo
-first silently breaks every amount column in Hebrew.
+**The font stack order is load-bearing.** `'IBM Plex Sans Hebrew', 'Plex Fallback', …`
+— a face without fixed-width digits ahead of Plex, or a `:lang(he)` font rule,
+breaks amount alignment. `font-synthesis: none` means a weight that is not
+loaded is never faked, which is why `font-bold` (Plex 700) is banned by
+`src/lib/fonts.test.ts`.
 
 ## The card catalog
 
