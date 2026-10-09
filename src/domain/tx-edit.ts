@@ -3,6 +3,7 @@ import { toDecimalString } from '@/lib/money';
 import type { Occurrence, PaymentMethod, Recurrence, Transaction } from '@/types/domain';
 import type { Kind, LocalDate, MoneySnapshot } from '@/types/money';
 
+import { destinationsFor } from './income-destination';
 import type { EditScope, TransactionPatch } from './series-edit';
 import type { RecurrenceMode, StandingOrderFrequency, TxFormParsed, TxFormValues } from './tx-form';
 import { methodOwnedBy } from './tx-options';
@@ -100,6 +101,7 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
     kind: transaction.kind,
     categoryId: occurrence.categoryId,
     paymentMethodId: occurrence.paymentMethodId ?? '',
+    destinationId: occurrence.destinationId ?? '',
     amount: toDecimalString(occurrence.money.amountMinor, occurrence.money.currency),
     currency: occurrence.money.currency,
     // The EFFECTIVE date, so a moved occurrence opens on the day it is shown.
@@ -145,6 +147,7 @@ export function occurrenceToFormValues(occurrence: Occurrence, transaction: Tran
  * at. And the card goes only where that person can pay with it. A card the
  * form's person does not own or share is dropped, never kept: the picker
  * cannot show it, so it would sit behind "Not specified" and be saved anyway.
+ * Where income went is kept by the same rule.
  */
 export function duplicateFormValues(
   occurrence: Occurrence,
@@ -169,6 +172,10 @@ export function duplicateFormValues(
     amount: from.amount,
     currency: from.currency,
     paymentMethodId: method !== undefined && methodOwnedBy(method, profileId) ? method.id : '',
+    // Where the income went, when the form's person can say it went there too.
+    destinationId: destinationsFor(owners.methods, profileId).some((m) => m.id === from.destinationId)
+      ? from.destinationId
+      : '',
     note: from.note,
     date: today,
     mode: 'one_time',
@@ -204,6 +211,7 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
     money?: MoneySnapshot;
     categoryId?: string;
     paymentMethodId?: string | null;
+    destinationId?: string | null;
     note?: string | null;
     date?: LocalDate;
     recurrence?: Recurrence;
@@ -217,6 +225,11 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
     // and `Partial<>` cannot say it - which is why the Override patch type
     // distinguishes the two in the first place.
     patch.paymentMethodId = parsed.paymentMethodId ?? null;
+  }
+
+  if ((parsed.destinationId ?? '') !== (occurrence.destinationId ?? '')) {
+    // `null` clears it, exactly as for a payment method.
+    patch.destinationId = parsed.destinationId ?? null;
   }
 
   if ((parsed.note ?? '') !== (occurrence.note ?? '')) {

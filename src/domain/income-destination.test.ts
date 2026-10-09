@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  CASH_METHOD_ID,
+  SHARED_OWNER,
+  type Occurrence,
+  type PaymentMethod,
+  type Transaction,
+} from '@/types/domain';
+import type { IsoInstant } from '@/types/money';
+
+import { defaultDestination, destinationsFor, isDestinationType } from './income-destination';
+import { expandOccurrences } from './occurrences';
+import { d, makeTx, MONEY } from './test-factories';
+
+const AT = '2026-01-01T00:00:00.000Z' as IsoInstant;
+const TODAY = d('2026-10-09');
+
+const method = (id: string, over: Partial<PaymentMethod> = {}): PaymentMethod => ({
+  id,
+  profileId: 'p1',
+  type: 'bank_account',
+  label: id,
+  account: { bank: '10', holding: 'personal' },
+  isArchived: 0,
+  createdAt: AT,
+  updatedAt: AT,
+  ...over,
+});
+const cash = method(CASH_METHOD_ID, {
+  profileId: SHARED_OWNER,
+  type: 'cash',
+  label: 'Cash',
+  account: undefined,
+});
+const card = method('visa', { type: 'credit_card', account: undefined });
+const leumi = method('Leumi');
+const hapoalim = method('Hapoalim');
+const joint = method('Joint', {
+  profileId: SHARED_OWNER,
+  account: { bank: '12', holding: 'joint', holders: ['p1', 'p2'] },
+});
+const parents = method('Parents', {
+  profileId: SHARED_OWNER,
+  account: { bank: '12', holding: 'joint', holders: ['p2', 'p3'] },
+});
+const yossis = method('Yossi', { profileId: 'p2' });
+const closed = method('Closed', { isArchived: 1 });
+const ALL = [cash, card, leumi, hapoalim, joint, parents, yossis, closed];
+
+describe('where income can go', () => {
+  it('is a bank account or cash, never a card', () => {
+    expect(isDestinationType(leumi)).toBe(true);
+    expect(isDestinationType(cash)).toBe(true);
+    expect(isDestinationType(card)).toBe(false);
+    expect(isDestinationType(method('wallet', { type: 'digital_wallet' }))).toBe(false);
+  });
+
+  it('is the person’s own accounts and the joint ones they hold, by name, then cash', () => {
+    expect(destinationsFor(ALL, 'p1').map((m) => m.id)).toEqual([
+      'Hapoalim',
+      'Joint',
+      'Leumi',
+      CASH_METHOD_ID,
+    ]);
+    expect(destinationsFor(ALL, 'p2').map((m) => m.id)).toEqual([
+      'Joint',
+      'Parents',
+      'Yossi',
+      CASH_METHOD_ID,
+    ]);
+  });
+
+  it('keeps an archived account already on the row, and offers it to no one else', () => {
+    expect(destinationsFor(ALL, 'p1', 'Closed').map((m) => m.id)).toContain('Closed');
+    expect(destinationsFor(ALL, 'p1').map((m) => m.id)).not.toContain('Closed');
+  });
+});
+
+describe('where new income goes by default', () => {
+  const income = (
+    id: string,
+    date: string,
+    destinationId: string | undefined,
+    over: Partial<Transaction> = {},
+  ) =>
+    makeTx({
+      id,
+      kind: 'income',
+      categoryId: 'cat.salary',
+      date: d(date),
+      recurrence: { type: 'one_time' },
+      money: MONEY,
+      ...(destinationId === undefined ? {} : { destinationId }),
+      ...over,
+    });
+  const history = (...txs: Transaction[]): Occurrence[] =>
+    txs.flatMap((tx) => expandOccurrences(tx, [], d('2025-01-01'), TODAY, { today: TODAY }));
+
+  it('is where this person’s income went most often in the last six months, counted by payment', () => {
+    const salary = income('salary', '2026-05-01', 'Leumi', {
+      recurrence: { type: 'monthly', dayOfMonth: 1 },
+    });
+    const gifts = [income('g1', '2026-09-01', CASH_METHOD_ID), income('g2', '2026-09-02', CASH_METHOD_ID)];
+    expect(defaultDestination(history(salary, ...gifts), 'p1', ALL, TODAY)).toBe('Leumi');
+  });
+
+  it('goes to the more recent of two equally frequent', () => {
+    const txs = [income('a', '2026-06-01', 'Leumi'), income('b', '2026-08-01', 'Hapoalim')];
+    expect(defaultDestination(history(...txs), 'p1', ALL, TODAY)).toBe('Hapoalim');
+  });
+
+  it('is not assigned when nothing in six months said where it went', () => {
+    const txs = [income('old', '2026-03-01', 'Leumi'), income('blank', '2026-09-01', undefined)];
+    expect(defaultDestination(history(...txs), 'p1', ALL, TODAY)).toBe('');
+  });
+
+  it('counts only this person’s income, and only somewhere they can still use', () => {
+    const txs = [
+      income('theirs', '2026-09-01', 'Yossi', { profileId: 'p2' }),
+      income('archived', '2026-09-02', 'Closed'),
+      income('gone', '2026-09-03', 'pm.deleted'),
+    ];
+    expect(defaultDestination(history(...txs), 'p1', ALL, TODAY)).toBe('');
+  });
+});
