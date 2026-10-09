@@ -29,12 +29,16 @@ const CARD = 'card';
 const VIA = 'via';
 /** An edit opened from "A different amount…": `amount`, the field the form puts the caret in. */
 const FOCUS = 'focus';
+/** The add form preset to cash: Paid with = Cash for an expense, Goes to = Cash for income. `1`. */
+const CASH = 'cash';
 
 export type SheetTarget =
   | { readonly mode: 'closed' }
   | {
       readonly mode: 'add';
       readonly kind: Kind;
+      /** From the cash tab: preset to cash, either way round. */
+      readonly cash?: true;
       /** Duplicate: the row the form is prefilled from. */
       readonly from?: { readonly transactionId: string; readonly at: LocalDate };
     }
@@ -59,7 +63,7 @@ export type SheetTarget =
 
 export type TransactionSheetApi = {
   readonly target: SheetTarget;
-  readonly openAdd: (kind?: Kind) => void;
+  readonly openAdd: (kind?: Kind, preset?: { readonly cash?: boolean }) => void;
   readonly openEdit: (occurrence: Occurrence, options?: { readonly focus?: 'amount' }) => void;
   /** The add form, prefilled from this row (see `duplicateFormValues`). */
   readonly openDuplicate: (occurrence: Occurrence) => void;
@@ -102,9 +106,10 @@ export function useTransactionSheet(): TransactionSheetApi {
       const fromAt = params.get(AT);
       // Both halves or neither, as for an edit: without its slot the source
       // row cannot be found, and the form is a plain add.
+      const cash = params.get(CASH) === '1' ? ({ cash: true } as const) : {};
       return fromId !== null && fromId !== '' && fromAt !== null && isLocalDate(fromAt)
         ? { mode: 'add', kind, from: { transactionId: fromId, at: fromAt } }
-        : { mode: 'add', kind };
+        : { mode: 'add', kind, ...cash };
     }
     const importing = params.get(IMPORT);
     if (importing === '1' || importing === 'shared') {
@@ -148,9 +153,11 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(CARD);
       updated.delete(VIA);
       updated.delete(FOCUS);
+      updated.delete(CASH);
 
       if (next.mode === 'add') {
         updated.set(ADD, next.kind);
+        if (next.cash === true) updated.set(CASH, '1');
         if (next.from !== undefined) {
           updated.set(FROM, next.from.transactionId);
           updated.set(AT, next.from.at);
@@ -190,8 +197,8 @@ export function useTransactionSheet(): TransactionSheetApi {
   return useMemo(
     () => ({
       target,
-      openAdd: (kind: Kind = 'expense') => {
-        write({ mode: 'add', kind });
+      openAdd: (kind: Kind = 'expense', preset: { readonly cash?: boolean } = {}) => {
+        write({ mode: 'add', kind, ...(preset.cash === true ? { cash: true as const } : {}) });
       },
       openEdit: (occurrence: Occurrence, options: { readonly focus?: 'amount' } = {}) => {
         // Keyed on the ORIGINAL slot, not the visible date: that is what the

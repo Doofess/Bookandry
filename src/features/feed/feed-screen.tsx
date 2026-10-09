@@ -44,6 +44,7 @@ import { useBreakdowns } from '../summary/use-breakdowns';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
 import { SplitPurchaseSheet } from '../transaction/split-purchase';
 import { TransactionSheet } from '../transaction/transaction-sheet';
+import { useIncomeHistory } from '../transaction/use-income-history';
 import { useSplitOffer, type SplitOffer } from '../transaction/use-split-offer';
 import { useTransactionSheet } from '../transaction/use-transaction-sheet';
 
@@ -130,6 +131,7 @@ export function FeedScreen() {
   );
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);
+  const incomeHistory = useIncomeHistory(today);
 
   // The summary cards use the UNFILTERED window: "expected this month" must not
   // change because the user searched for "pizza".
@@ -319,6 +321,7 @@ export function FeedScreen() {
           activeProfileId={filters.profileId}
           baseCurrency={settings.defaultCurrency}
           today={today}
+          incomeHistory={incomeHistory}
           onSaved={(date, undone, onlyAmount) => {
             // A save from "not counted yet" is offered back, like the pop-out's
             // other two choices: "Amount changed" when that is all it was, a
