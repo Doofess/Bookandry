@@ -38,7 +38,9 @@ export type Flag =
   | 'total_mismatch'
   | 'not_saveable'
   | 'rate_missing'
-  | 'whose_unknown';
+  | 'whose_unknown'
+  /** Cash taken out (6010, 6011): not an expense in an import. Left out until the person keeps it. */
+  | 'cash_withdrawal';
 
 /** Flags that leave a row unticked: it is not added unless the person says so. */
 export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
@@ -57,6 +59,7 @@ export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
   'not_saveable',
   'rate_missing',
   'whose_unknown',
+  'cash_withdrawal',
 ]);
 
 export type FoundPlan = {

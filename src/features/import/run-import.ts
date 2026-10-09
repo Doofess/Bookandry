@@ -1,3 +1,4 @@
+import type { MerchantHistory } from '@/db/repos/transactions';
 import {
   combineAccountReads,
   combineCardReads,
@@ -48,11 +49,13 @@ import {
   type WireRow,
   type WireTotal,
 } from '@/domain/import-wire';
+import { isMcc } from '@/domain/mcc';
+import { sectorMcc } from '@/domain/sector-mcc';
 import { parseStatementDate } from '@/lib/dates';
 import type { RefuseReason, Job, PreparedFile } from '@/services/ai-import/prepare-files';
 import { planJobs } from '@/services/ai-import/prepare-files';
 import type { ExtractError, ExtractOutcome } from '@/services/supabase/extract';
-import type { Currency, LocalDate } from '@/types/money';
+import type { Currency, Kind, LocalDate } from '@/types/money';
 
 /**
  * "Smart import", start to finish: every prepared file read, checked and,
@@ -106,8 +109,11 @@ export type ImportContext = {
   readonly today: LocalDate;
   /** When each file was made, for dates printed without a year. */
   readonly anchorOf: (file: number) => LocalDate;
-  /** Whether the household's history already places this merchant. */
-  readonly knownMerchant: (description: string) => Promise<boolean>;
+  /**
+   * What the household's history says about a merchant (`merchantHistory`):
+   * its category, and its business type. The caller memoises it per import.
+   */
+  readonly history: (kind: Kind, description: string) => Promise<MerchantHistory>;
 };
 
 export type ImportResult = {
@@ -556,26 +562,67 @@ async function readWorkbook(
       map = known;
       read = first;
     } else {
-      map = fromWireMap(await askMap(sheet.rows, [], ctx, ask));
+      map = fromWireMap(await askMap(sheet.rows, [], ctx, ask), sheet.rows);
       read = readWith(map);
       if (!mapHolds(read)) throw new Error('sheet');
     }
-    let merchantCats = new Map<string, string | null>();
-    // Merchants the household has not filed before: named in one cheap call, not one per row.
+    /*
+     * Merchants worth one cheap call, not one per row (spec point 9): an
+     * expense with no business type from its file, its sector or its history,
+     * and an income its history does not place. A sector the table does not
+     * know goes along as a hint.
+     */
     const unknown: string[] = [];
+    const sectors: string[] = [];
     for (const description of new Set(read.rows.map((r) => r.description))) {
-      if (description !== '' && !(await ctx.knownMerchant(description))) unknown.push(description);
+      if (description === '') continue;
+      const rows = read.rows.filter((r) => r.description === description);
+      if (await placed(rows, description, ctx)) continue;
+      unknown.push(description);
+      sectors.push((rows.find((r) => r.sector !== undefined)?.sector ?? '').slice(0, LIMITS.field));
     }
+    let answers = new Map<string, { readonly mcc: string | null; readonly cat: string | null }>();
     if (unknown.length > 0) {
       const header = sheet.rows.slice(map.headerRow, map.headerRow + 3);
-      const cats = await askCategories(header, unknown.slice(0, LIMITS.merchants), ctx, ask);
-      merchantCats = new Map(cats.map((m) => [m.m, m.cat]));
+      const cats = await askCategories(
+        header,
+        unknown.slice(0, LIMITS.merchants),
+        sectors.slice(0, LIMITS.merchants),
+        ctx,
+        ask,
+      );
+      answers = new Map(cats.map((m) => [m.m, m]));
     }
     out.push(
-      ...read.rows.map((row) => ({ ...row, categoryAlias: merchantCats.get(row.description) ?? null })),
+      ...read.rows.map((row) => {
+        const answer = answers.get(row.description);
+        const code = answer?.mcc;
+        return {
+          ...row,
+          categoryAlias: answer?.cat ?? null,
+          // Claude's business type, for an expense, when the list has it.
+          ...(row.kind === 'expense' && isMcc(code) ? { aiMcc: code } : {}),
+        };
+      }),
     );
   }
   return out;
+}
+
+/** Whether history, the file or the sector already says what every row of this merchant needs. */
+async function placed(rows: readonly FoundRow[], description: string, ctx: ImportContext): Promise<boolean> {
+  for (const row of rows) {
+    if (row.kind === 'income') {
+      if ((await ctx.history('income', description)).categoryId === undefined) return false;
+    } else if (
+      row.fileMcc === undefined &&
+      sectorMcc(row.sector ?? '') === undefined &&
+      (await ctx.history('expense', description)).mcc === undefined
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -588,14 +635,17 @@ const NO_RETRY: ReadonlySet<ExtractError> = new Set(['aborted', 'quota', 'unauth
 async function askCategories(
   header: readonly (readonly Cell[])[],
   merchants: readonly string[],
+  sectors: readonly string[],
   ctx: ImportContext,
   ask: (r: WireRequest) => Promise<unknown>,
-): Promise<{ m: string; cat: string | null }[]> {
+): Promise<{ m: string; mcc: string | null; cat: string | null }[]> {
   const request: WireRequest = {
     mode: 'map',
     ctx: ctx.wire,
     rows: sampleRows(header),
     merchants,
+    // Only when one was printed: an older function ignores the key either way.
+    ...(sectors.some((sector) => sector !== '') ? { sectors } : {}),
     maxTokens: tokensForRows(10 + merchants.length / 2),
   };
   for (let attempt = 0; attempt < 2; attempt += 1) {

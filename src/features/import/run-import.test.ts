@@ -21,7 +21,8 @@ const ctx: ImportContext = {
   known: new Set(['ILS', 'USD']),
   today: '2026-10-04' as LocalDate,
   anchorOf: () => '2026-10-04' as LocalDate,
-  knownMerchant: (m) => Promise.resolve(m === 'שופרסל'),
+  history: (kind, m) =>
+    Promise.resolve(m === 'שופרסל' && kind === 'expense' ? { categoryId: 'c.mine', mcc: '5411' } : {}),
 };
 const usage = { in: 100, out: 50, cacheRead: 0, cacheWrite: 0 };
 const ok = (result: unknown): ExtractOutcome => ({ ok: true, result, usage });
@@ -348,6 +349,108 @@ describe('a spreadsheet', () => {
       { map: [ok({ nonsense: true })] },
     );
     expect(states).toContainEqual({ file: 0, name: 'max.xlsx', status: 'failed', error: 'upstream' });
+  });
+});
+
+describe('a spreadsheet’s business types', () => {
+  const sheet = (rows: (string | number | null)[][]): PreparedFile => ({
+    kind: 'sheet',
+    file: 0,
+    name: 'max.xlsx',
+    hash: 's',
+    sheets: [{ name: 'Sheet1', rows, date1904: false }],
+  });
+  const header = ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה', 'MCC', 'ענף'];
+
+  it('asks only about expenses with no business type from the file, the sector or history - sending the sector as a hint', async () => {
+    const { result, calls } = await run(
+      [
+        sheet([
+          header,
+          ['01/10/2026', 'Vet clinic', '100.00', '0742', null],
+          ['02/10/2026', 'Cafe Landwer', '58.00', null, 'מסעדות'],
+          ['03/10/2026', 'שופרסל', '120.50', null, null],
+          ['04/10/2026', 'Mystery Shop', '20.00', null, 'שונות'],
+          ['05/10/2026', 'Plain Shop', '30.00', null, null],
+        ]),
+      ],
+      {
+        map: [
+          ok({
+            mc: [
+              { m: 'Mystery Shop', mcc: '5999', cat: null },
+              { m: 'Plain Shop', mcc: '9999', cat: 'c1' },
+            ],
+          }),
+        ],
+      },
+    );
+    const asked = calls[0];
+    expect(asked?.mode === 'map' && asked.merchants).toEqual(['Mystery Shop', 'Plain Shop']);
+    expect(asked?.mode === 'map' && asked.sectors).toEqual(['שונות', '']);
+    expect(result.rows.map((r) => [r.description, r.fileMcc, r.sector, r.aiMcc, r.categoryAlias])).toEqual([
+      ['Vet clinic', '0742', undefined, undefined, null],
+      ['Cafe Landwer', undefined, 'מסעדות', undefined, null],
+      ['שופרסל', undefined, undefined, undefined, null],
+      ['Mystery Shop', undefined, 'שונות', '5999', null],
+      // A code the list does not have is dropped; its category answer is kept.
+      ['Plain Shop', undefined, undefined, undefined, 'c1'],
+    ]);
+  });
+
+  it('asks about income only when history does not place it, and never gives it a business type', async () => {
+    const { result, calls } = await run(
+      [
+        sheet([
+          ['תאריך', 'תיאור', 'חובה', 'זכות'],
+          ['01/10/2026', 'Employer Ltd', null, '9000.00'],
+        ]),
+      ],
+      { map: [ok({ mc: [{ m: 'Employer Ltd', mcc: '5812', cat: null }] })] },
+    );
+    expect(calls.map((c) => c.mode)).toEqual(['map']);
+    expect(result.rows[0]).toMatchObject({ kind: 'income' });
+    expect(result.rows[0]).not.toHaveProperty('aiMcc');
+    // Sent no sectors at all: none was printed.
+    expect(calls[0]?.mode === 'map' && calls[0]).not.toHaveProperty('sectors');
+  });
+
+  it('reads the MCC and sector columns of a sheet the model mapped, too (the model’s map gets the rows)', async () => {
+    const { result, calls } = await run(
+      [
+        sheet([
+          ['when', 'what', 'how much', 'MCC', 'ענף'],
+          ['03/10/2026', 'Vet clinic', '100.00', '0742', null],
+          ['04/10/2026', 'Cafe Landwer', '58.00', null, 'מסעדות'],
+        ]),
+      ],
+      {
+        map: [
+          ok({
+            hr: 0,
+            date: 0,
+            desc: 1,
+            amt: 2,
+            debit: null,
+            credit: null,
+            cur: null,
+            chg: null,
+            chgCur: null,
+            chgDate: null,
+            plan: null,
+            dec: '.',
+            df: 'dmy',
+            mc: [],
+          }),
+        ],
+      },
+    );
+    // One call, for the columns: both merchants were placed by the file's own columns.
+    expect(calls).toHaveLength(1);
+    expect(result.rows.map((r) => [r.description, r.fileMcc, r.sector])).toEqual([
+      ['Vet clinic', '0742', undefined],
+      ['Cafe Landwer', undefined, 'מסעדות'],
+    ]);
   });
 });
 
