@@ -297,15 +297,17 @@
 --------------------------------------------------------------------------- */
 /* The front door shows one blue. Its filled buttons and links take the
    engraved panel's deep sapphire, not the app's brighter primary beside it:
-   on white, the deep sapphire measures 10.1:1. */
+   on white, the deep sapphire measures 10.1:1. --primary-ink is resolved where
+   it is declared, so it is restated here or the app's would come through. */
 .front-door {
   --primary: var(--brand-deep);
+  --primary-ink: var(--brand-deep);
   --primary-foreground: var(--brand-deep-foreground);
 }
 /* On a near-black page deep sapphire text would vanish; links there take the
    logo's vivid blue, the same family, at 7.45:1. Fills keep the panel's. */
-.dark .front-door .text-primary {
-  color: var(--brand-vivid);
+.dark .front-door {
+  --primary-ink: var(--brand-vivid);
 }
 
 /* The sign-in form changing step (features/account/morph.ts): each part it

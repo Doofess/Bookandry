@@ -789,7 +789,7 @@ function Picker({
       <div
         className={cn(
           'flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border p-6 text-center transition-colors',
-          dragging && 'border-primary bg-primary/5',
+          dragging && 'border-primary-ink bg-primary/5',
         )}
         onDragOver={(event) => {
           event.preventDefault();
@@ -1236,7 +1236,7 @@ function ReviewRow({
       <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
         <input
           type="checkbox"
-          className="size-4 accent-primary"
+          className="size-4 accent-primary-ink"
           checked={item.ticked}
           disabled={values === undefined || !saveable(values)}
           onChange={(event) => {

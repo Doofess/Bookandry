@@ -66,7 +66,7 @@ describe('AppShell', () => {
 
     expect(nav).toHaveClass('lg:bg-brand-deep', 'lg:text-brand-deep-foreground');
     expect(nav.querySelector('svg.engraving')).not.toBeNull();
-    expect(active).toHaveClass('text-primary', 'lg:bg-white/15');
+    expect(active).toHaveClass('text-primary-ink', 'lg:bg-white/15');
     // On a phone the active icon sits on the soft accent pill.
     expect(active.querySelector('[data-slot="tab-pill"]')).toHaveClass('bg-accent');
   });

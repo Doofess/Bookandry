@@ -174,7 +174,7 @@ export function AccountFields({
                         });
                       }}
                       className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                        on ? 'border-primary bg-accent font-medium' : 'border-border hover:bg-muted'
+                        on ? 'border-primary-ink bg-accent font-medium' : 'border-border hover:bg-muted'
                       }`}
                     >
                       {on ? <Check className="size-4" aria-hidden="true" /> : null}

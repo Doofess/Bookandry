@@ -79,7 +79,7 @@ function PrimaryNav() {
                 'rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                 'lg:flex-none lg:flex-row lg:justify-start lg:gap-3 lg:rounded-full lg:px-3 lg:py-2 lg:text-sm lg:focus-visible:ring-white/60',
                 isActive
-                  ? 'text-primary lg:bg-white/15 lg:text-brand-deep-foreground'
+                  ? 'text-primary-ink lg:bg-white/15 lg:text-brand-deep-foreground'
                   : 'text-muted-foreground hover:text-foreground lg:text-brand-deep-foreground/75 lg:hover:bg-white/10 lg:hover:text-brand-deep-foreground',
               )
             }
