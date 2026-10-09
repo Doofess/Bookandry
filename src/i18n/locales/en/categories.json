@@ -6,6 +6,7 @@
     "investment": "Investment",
     "refund": "Refund",
     "otherIncome": "Other income",
+    "cashFound": "Cash found",
     "rent": "Rent",
     "groceries": "Groceries",
     "utilities": "Utilities",
@@ -28,6 +29,7 @@
     "currencyExchange": "Currency exchange",
     "loans": "Loans",
     "cardFees": "Card fees",
+    "cashMissing": "Cash missing",
     "otherExpense": "Other"
   },
   "manage": {

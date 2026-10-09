@@ -175,7 +175,7 @@ describe('the built-in categories on an older install', () => {
     await ensureBuiltinCategories(handle.db, NOW);
 
     const names = (await listCategories(handle.db, { kind: 'expense' })).map((c) => c.id);
-    expect(names.slice(-10)).toEqual([
+    expect(names.slice(-11)).toEqual([
       'cat.aiSoftware',
       'cat.phoneInternet',
       'cat.travel',
@@ -185,6 +185,7 @@ describe('the built-in categories on an older install', () => {
       'cat.currencyExchange',
       'cat.loans',
       'cat.cardFees',
+      'cat.cash_missing',
       'cat.otherExpense',
     ]);
     expect(await handle.db.outbox.toArray()).toEqual([]);
@@ -205,5 +206,25 @@ describe('the built-in categories on an older install', () => {
       source: 'builtin',
       isArchived: 0,
     });
+  });
+
+  it('adds the two cash categories to an install from before the cash tab, before "Other"', async () => {
+    await handle.db.categories.bulkDelete(['cat.cash_found', 'cat.cash_missing']);
+    await handle.db.outbox.clear();
+
+    await ensureBuiltinCategories(handle.db, NOW);
+
+    expect(await handle.db.categories.get('cat.cash_found')).toMatchObject({
+      kind: 'income',
+      source: 'builtin',
+      nameKey: 'categories:builtin.cashFound',
+    });
+    expect(await handle.db.categories.get('cat.cash_missing')).toMatchObject({
+      kind: 'expense',
+      nameKey: 'categories:builtin.cashMissing',
+    });
+    const income = (await listCategories(handle.db, { kind: 'income' })).map((c) => c.id);
+    expect(income.slice(-2)).toEqual(['cat.cash_found', 'cat.otherIncome']);
+    expect(await handle.db.outbox.toArray()).toEqual([]);
   });
 });

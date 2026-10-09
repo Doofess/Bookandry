@@ -5,7 +5,7 @@ import { MAX_PROFILES, PROFILE_PALETTE } from '@/domain/palette';
 import { MONEY, d } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import type { PaymentMethod } from '@/types/domain';
+import type { CashMove, PaymentMethod } from '@/types/domain';
 import { SHARED_OWNER } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
@@ -207,5 +207,27 @@ describe('deleteProfile', () => {
     await addTx('t1', 'p1');
     await expect(deleteProfile(handle.db, 'p1', { reassignTo: 'nope' }, NOW)).rejects.toThrow();
     await expect(deleteProfile(handle.db, 'p1', { reassignTo: 'p1' }, NOW)).rejects.toThrow();
+  });
+
+  it('moves the person’s cash moves with their transactions, or deletes them with no one to go to', async () => {
+    const move = (id: string, profileId: string): CashMove => ({
+      id,
+      profileId,
+      kind: 'withdraw',
+      amountMinor: 20_000,
+      date: d('2026-10-01'),
+      isDeleted: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await handle.db.cashMoves.bulkPut([move('m1', 'p1'), move('m2', 'p2')]);
+
+    await deleteProfile(handle.db, 'p1', { reassignTo: 'p2' }, NOW);
+    expect((await handle.db.cashMoves.get('m1'))?.profileId).toBe('p2');
+
+    await createProfile(handle.db, 'p3', draft('Noa'), NOW);
+    await handle.db.cashMoves.put(move('m3', 'p3'));
+    await deleteProfile(handle.db, 'p3', {}, NOW);
+    expect(await handle.db.cashMoves.get('m3')).toBeUndefined();
   });
 });

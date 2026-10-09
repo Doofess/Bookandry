@@ -6,6 +6,7 @@
     "investment": "השקעות",
     "refund": "החזר",
     "otherIncome": "הכנסה אחרת",
+    "cashFound": "מזומן שנמצא",
     "rent": "שכר דירה",
     "groceries": "מצרכים",
     "utilities": "חשבונות בית",
@@ -28,6 +29,7 @@
     "currencyExchange": "רכישת מט\"ח",
     "loans": "הלוואות",
     "cardFees": "דמי כרטיס",
+    "cashMissing": "מזומן חסר",
     "otherExpense": "הוצאה אחרת"
   },
   "manage": {

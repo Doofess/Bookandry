@@ -22,7 +22,7 @@ const MAX_REPORTED_ISSUES = 20;
 
 function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const { profiles, categories, paymentMethods, transactions, overrides } = doc.data;
+  const { profiles, categories, paymentMethods, transactions, overrides, cashMoves } = doc.data;
 
   const profileIds = new Set(profiles.map((p) => p.id));
   const categoryById = new Map(categories.map((c) => [c.id, c]));
@@ -113,12 +113,19 @@ function crossEntityIssues(doc: ExportEnvelope): ValidationIssue[] {
     slots.add(slot);
   }
 
+  for (const m of cashMoves) {
+    if (!profileIds.has(m.profileId)) {
+      issues.push({ path: `cashMoves.${m.id}.profileId`, message: `No profile ${m.profileId}` });
+    }
+  }
+
   const actual = {
     profiles: profiles.length,
     categories: categories.length,
     paymentMethods: paymentMethods.length,
     transactions: transactions.length,
     overrides: overrides.length,
+    cashMoves: cashMoves.length,
   };
   for (const [key, count] of Object.entries(doc.counts)) {
     const got = actual[key as keyof typeof actual];

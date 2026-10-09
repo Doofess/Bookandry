@@ -93,7 +93,7 @@ export type DemoRemoval = {
 export async function removeDemoData(db: BookandryDB): Promise<DemoRemoval> {
   return db.transaction(
     'rw',
-    [db.profiles, db.paymentMethods, db.transactions, db.overrides, db.settings],
+    [db.profiles, db.paymentMethods, db.transactions, db.overrides, db.cashMoves, db.settings],
     async () => {
       const demoTxIds = new Set(
         (await db.transactions.where('id').startsWith(DEMO_PREFIX).primaryKeys()).map(String),
@@ -110,6 +110,9 @@ export async function removeDemoData(db: BookandryDB): Promise<DemoRemoval> {
       const claimed = new Set(survivors.map((t) => t.profileId).filter(isDemoRow));
       const removableProfiles = demoProfiles.map(String).filter((id) => !claimed.has(id));
       await db.profiles.bulkDelete(removableProfiles);
+      // A removed person's cash moves go with them.
+      const gone = new Set(removableProfiles);
+      await db.cashMoves.filter((m) => gone.has(m.profileId)).delete();
 
       const demoMethods = (await db.paymentMethods.where('id').startsWith(DEMO_PREFIX).primaryKeys()).map(
         String,

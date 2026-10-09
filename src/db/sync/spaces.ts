@@ -28,17 +28,24 @@ export async function rememberSpaces(db: BookandryDB, spaces: readonly string[])
 
 /**
  * A space this device has never pulled from: the household's structure goes
- * there too. Queues every row of the shared tables, and every card and
- * account, to be sent again; the push files each where it lives (a personal
- * card only in its owner's space), and a rev the space already holds is
- * taken as stored.
+ * there too. Queues every row of the shared tables, and every card, account
+ * and cash move, to be sent again; the push files each where it lives (a
+ * personal card only in its owner's space), and a rev the space already holds
+ * is taken as stored.
  */
 export async function shareWith(db: BookandryDB, space: string): Promise<boolean> {
   const seen = await db.meta.get(cursorKeyOf(space));
   if (seen !== undefined) return false;
   await db.transaction('rw', [db.syncState, db.outbox], async () => {
     const rows = await db.syncState
-      .filter((s) => REPLICATED_TABLES.has(s.tbl) || s.tbl === 'paymentMethods' || s.home === EVERYWHERE)
+      .filter(
+        (s) =>
+          REPLICATED_TABLES.has(s.tbl) ||
+          s.tbl === 'paymentMethods' ||
+          // A person's cash moves too: the push files each in its owner's space only.
+          s.tbl === 'cashMoves' ||
+          s.home === EVERYWHERE,
+      )
       .toArray();
     await db.outbox.bulkPut(rows.map((r): OutboxRow => ({ tbl: r.tbl, id: r.id })));
   });

@@ -66,6 +66,16 @@ describe("this account's own person", () => {
       person('dana', '2026-02-01T00:00:00.000Z', '#16794a'),
     ]);
     await db.transactions.bulkPut([tx('t1', 'dana'), tx('t2', 'kid')]);
+    await db.cashMoves.put({
+      id: 'm1',
+      profileId: 'dana',
+      kind: 'start',
+      amountMinor: 50_000,
+      date: d('2026-10-01'),
+      isDeleted: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
     await db.settings.update(SETTINGS_ID, { activeProfileId: 'dana' });
 
     expect(await ensureMember(db, ME, 'ignored', NOW, TODAY)).toBe('merged');
@@ -74,6 +84,7 @@ describe("this account's own person", () => {
     expect(me).toMatchObject({ name: 'dana', color: '#16794a', openingBalanceMinor: 500 });
     expect(await db.profiles.get('dana')).toBeUndefined();
     expect((await db.transactions.get('t1'))?.profileId).toBe(ME);
+    expect((await db.cashMoves.get('m1'))?.profileId).toBe(ME);
     // Anyone else from before stays as they were, until given to someone.
     expect((await db.transactions.get('t2'))?.profileId).toBe('kid');
     expect((await db.settings.get(SETTINGS_ID))?.activeProfileId).toBe(ME);

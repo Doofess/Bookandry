@@ -1,6 +1,8 @@
 import {
   ArrowLeftRight,
   Baby,
+  Banknote,
+  BanknoteX,
   Bot,
   Building2,
   Bus,
@@ -47,6 +49,8 @@ export const ICONS: Readonly<Record<string, LucideIcon>> = {
   // icon name this build does not ship.
   Circle,
   Wallet,
+  Banknote,
+  BanknoteX,
   Laptop,
   Gift,
   TrendingUp,

@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 
 import { systemClock } from '@/lib/clock';
 import type {
+  CashMove,
   Category,
   Override,
   PaymentMethod,
@@ -33,6 +34,7 @@ export class BookandryDB extends Dexie {
   declare settings: Table<Settings, string>;
   declare meta: Table<MetaRow, string>;
   declare redirects: Table<Redirect, string>;
+  declare cashMoves: Table<CashMove, string>;
   declare syncState: Table<SyncStateRow, [string, string]>;
   declare outbox: Table<OutboxRow, [string, string]>;
 
