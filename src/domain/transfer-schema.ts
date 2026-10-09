@@ -386,6 +386,8 @@ export const envelopeSchema = z.object({
     paymentMethods: z.number().int().nonnegative(),
     transactions: z.number().int().nonnegative(),
     overrides: z.number().int().nonnegative(),
+    // Absent from every file made before the cash tab: read as none.
+    cashMoves: z.number().int().nonnegative().default(0),
   }),
   settings: settingsSchema,
   data: z.object({
@@ -394,6 +396,7 @@ export const envelopeSchema = z.object({
     paymentMethods: z.array(paymentMethodSchema),
     transactions: z.array(transactionSchema),
     overrides: z.array(overrideSchema),
+    cashMoves: z.array(cashMoveSchema).default([]),
   }),
 });
 

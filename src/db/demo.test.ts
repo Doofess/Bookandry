@@ -191,6 +191,20 @@ describe('removeDemoData', () => {
         profileId: `${DEMO_PREFIX}profile.dana`,
       }),
     );
+    const move = (id: string, profileId: string) => ({
+      id,
+      profileId,
+      kind: 'withdraw' as const,
+      amountMinor: 20_000,
+      date: TODAY,
+      isDeleted: 0 as const,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await handle.db.cashMoves.bulkPut([
+      move('m.dana', `${DEMO_PREFIX}profile.dana`),
+      move('m.yossi', `${DEMO_PREFIX}profile.yossi`),
+    ]);
 
     const removal = await removeDemoData(handle.db);
 
@@ -198,6 +212,8 @@ describe('removeDemoData', () => {
     expect(await handle.db.profiles.get(`${DEMO_PREFIX}profile.dana`)).toBeDefined();
     expect(await handle.db.profiles.get(`${DEMO_PREFIX}profile.yossi`)).toBeUndefined();
     expect(await handle.db.transactions.get('mine-1')).toBeDefined();
+    // A removed person's cash moves go with them; a kept person keeps theirs.
+    expect((await handle.db.cashMoves.toArray()).map((m) => m.id)).toEqual(['m.dana']);
   });
 
   it('clears a demo payment method off the user’s own row rather than orphaning it', async () => {

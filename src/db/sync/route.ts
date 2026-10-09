@@ -10,7 +10,7 @@ import { EVERYWHERE, NOWHERE, REPLICATED_TABLES, type SyncedTable } from './tabl
  * Each account keeps its own data in its own space; linking lets the others
  * read and write it there. So a row goes where the person it belongs to is:
  *
- * - a transaction, a card or an account: its `profileId`'s space - a member's
+ * - a transaction, a cash move, a card or an account: its `profileId`'s space - a member's
  *   profileId IS their account's id;
  * - an override: wherever its transaction is;
  * - a member's own row: their space;
@@ -38,6 +38,9 @@ export async function homeOf(db: BookandryDB, tbl: SyncedTable, row: unknown, sp
     case 'paymentMethods':
       return r['profileId'] === SHARED_OWNER ? EVERYWHERE : personHome(db, r['profileId'], spaces);
     case 'transactions':
+      return personHome(db, r['profileId'], spaces);
+    case 'cashMoves':
+      // Like a transaction: the person's own space, never everywhere.
       return personHome(db, r['profileId'], spaces);
     case 'profiles':
       return personHome(db, r['id'], spaces);

@@ -14,6 +14,7 @@ export const SYNCED_TABLES = [
   'paymentMethods',
   'transactions',
   'overrides',
+  'cashMoves',
   'settings',
   'redirects',
 ] as const;

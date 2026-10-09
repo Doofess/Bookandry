@@ -135,7 +135,8 @@ export type DeleteProfileResult = {
 /**
  * Delete a profile, atomically, taking nothing with it by accident.
  *
- * One transaction covering profiles, transactions, payment methods and settings.
+ * One transaction covering profiles, transactions, payment methods, cash moves
+ * and settings.
  * Four writes that must all land or none: a crash between "reassign the
  * transactions" and "delete the profile" leaves rows pointing at a profile that
  * still exists, which looks fine; a crash the other way round leaves them
@@ -153,7 +154,7 @@ export async function deleteProfile(
 ): Promise<DeleteProfileResult> {
   return db.transaction(
     'rw',
-    [db.profiles, db.transactions, db.paymentMethods, db.settings, db.redirects],
+    [db.profiles, db.transactions, db.paymentMethods, db.cashMoves, db.settings, db.redirects],
     async () => {
       const profile = await db.profiles.get(id);
       if (!profile) throw new Error(`No such profile: ${id}`);
@@ -186,6 +187,18 @@ export async function deleteProfile(
           methods.map((m) => ({ ...m, profileId: reassignTo, updatedAt: now })),
         );
         moved = methods.length;
+      }
+
+      // A person's cash goes where their transactions go. With nowhere to go it
+      // is deleted: a move never changed the balance, so no money leaves it.
+      const moves = await db.cashMoves
+        .where('[profileId+isDeleted+date]')
+        .between([id, 0, ''], [id, 1, '￿'])
+        .toArray();
+      if (reassignTo === undefined) {
+        await db.cashMoves.bulkDelete(moves.map((m) => m.id));
+      } else {
+        await db.cashMoves.bulkPut(moves.map((m) => ({ ...m, profileId: reassignTo, updatedAt: now })));
       }
 
       await db.profiles.delete(id);

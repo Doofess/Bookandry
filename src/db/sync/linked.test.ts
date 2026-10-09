@@ -9,11 +9,11 @@ import { d, MONEY, skip } from '@/domain/test-factories';
 import { instantFromMs } from '@/lib/dates';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import { MemorySyncServer } from '@/test/memory-sync-server';
-import { SHARED_OWNER, type PaymentMethod, type Transaction } from '@/types/domain';
+import { SHARED_OWNER, type CashMove, type PaymentMethod, type Transaction } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { syncOnce, type SyncSpaces } from './engine';
-import { forgetSpace } from './spaces';
+import { forgetSpace, shareWith } from './spaces';
 
 /*
  * Two linked accounts, each with its own space on the server, each on its own
@@ -265,5 +265,58 @@ describe('unlinking', () => {
     expect(await alice.db.outbox.count()).toBe(0);
     await sync(alice);
     expect(held(ALICE, 'transactions')).toEqual([]);
+  });
+});
+
+describe('cash moves', () => {
+  const cashMove = (id: string, profileId: string): CashMove => ({
+    id,
+    profileId,
+    kind: 'withdraw',
+    amountMinor: 20_000,
+    date: d('2026-10-01'),
+    isDeleted: 0,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  const moveIds = async (db: BookandryDB) => (await db.cashMoves.toArray()).map((m) => m.id).sort();
+
+  it("live in their person's space, show to both, and leave with the other's space on unlinking", async () => {
+    await alice.db.cashMoves.put(cashMove('ma', ALICE));
+    await bob.db.cashMoves.put(cashMove('mb', BOB));
+    await everyoneSyncs();
+
+    expect(held(ALICE, 'cashMoves')).toEqual(['ma']);
+    expect(held(BOB, 'cashMoves')).toEqual(['mb']);
+    expect(await moveIds(alice.db)).toEqual(['ma', 'mb']);
+    expect(await moveIds(bob.db)).toEqual(['ma', 'mb']);
+
+    alice.linked = false;
+    bob.linked = false;
+    await forgetSpace(alice.db, BOB);
+    await forgetSpace(bob.db, ALICE);
+
+    // The pot shrinks back to each person's own cash; nothing was deleted from anyone's space.
+    expect(await moveIds(alice.db)).toEqual(['ma']);
+    expect(await moveIds(bob.db)).toEqual(['mb']);
+    expect(held(BOB, 'cashMoves')).toEqual(['mb']);
+  });
+
+  it('follow a move given to the other person into their space', async () => {
+    await alice.db.cashMoves.put(cashMove('ma', ALICE));
+    await everyoneSyncs();
+    tick();
+    await alice.db.cashMoves.update('ma', { profileId: BOB, updatedAt: now() });
+    await everyoneSyncs();
+
+    expect(held(ALICE, 'cashMoves')).toEqual([]);
+    expect(held(BOB, 'cashMoves')).toEqual(['ma']);
+  });
+
+  it('are queued again for a space this device has never pulled from', async () => {
+    await alice.db.cashMoves.put(cashMove('ma', ALICE));
+    await alice.db.outbox.clear();
+    expect(await shareWith(alice.db, 'carol-uid')).toBe(true);
+    expect(await alice.db.outbox.get(['cashMoves', 'ma'])).toBeDefined();
   });
 });

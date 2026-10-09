@@ -47,7 +47,7 @@ export async function ensureMember(
   if (first !== undefined) {
     await db.transaction(
       'rw',
-      [db.profiles, db.transactions, db.paymentMethods, db.settings, db.redirects],
+      [db.profiles, db.transactions, db.paymentMethods, db.cashMoves, db.settings, db.redirects],
       async () => {
         await db.profiles.put({ ...first, id: me, updatedAt: now });
         const active = (await db.settings.get(SETTINGS_ID))?.activeProfileId;

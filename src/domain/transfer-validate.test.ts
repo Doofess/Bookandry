@@ -532,3 +532,34 @@ describe('where income went, and what a recount wrote', () => {
     }
   });
 });
+
+describe('cash moves in a file', () => {
+  const move = {
+    id: 'm1',
+    profileId: 'p1',
+    kind: 'withdraw',
+    amountMinor: 20_000,
+    date: '2026-10-01',
+    isDeleted: 0,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+  };
+  const withMoves = (moves: unknown[], count = moves.length): unknown => {
+    const doc = envelope() as ExportEnvelope;
+    return { ...doc, counts: { ...doc.counts, cashMoves: count }, data: { ...doc.data, cashMoves: moves } };
+  };
+
+  it('are read, and a file without any reads as having none', () => {
+    const result = validateEnvelope(withMoves([move]));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.data.cashMoves).toHaveLength(1);
+    const older = validateEnvelope(envelope());
+    expect(older.ok).toBe(true);
+    if (older.ok) expect(older.doc.data.cashMoves).toEqual([]);
+  });
+
+  it('refuses a move whose person is not in the file, and a header that miscounts them', () => {
+    expect(validateEnvelope(withMoves([{ ...move, profileId: 'ghost' }])).ok).toBe(false);
+    expect(validateEnvelope(withMoves([move], 2)).ok).toBe(false);
+  });
+});

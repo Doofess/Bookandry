@@ -3,7 +3,8 @@ import { planReconversion, type RateLookup } from '@/domain/reconvert';
 import { planMerge, type Timestamped } from '@/domain/transfer-merge';
 import { CURRENT_DOC_VERSION, type ExportEnvelope } from '@/domain/transfer-schema';
 import { validateEnvelope, type ValidationIssue } from '@/domain/transfer-validate';
-import type { Override, Transaction } from '@/types/domain';
+import { convertMinor } from '@/lib/money';
+import type { CashMove, Override, Transaction } from '@/types/domain';
 import type { Currency, IsoInstant } from '@/types/money';
 
 import { LOCK_IMPORT, LOCK_SYNC, LockBusyError, withLock } from './lock';
@@ -17,6 +18,7 @@ type AppliedCounts = {
   paymentMethods: number;
   transactions: number;
   overrides: number;
+  cashMoves: number;
 };
 
 /** The minimal surface planMerge needs, so the tables share one call signature. */
@@ -33,14 +35,16 @@ type MergeableTable = {
  * shipped file is a liability rather than a feature.
  */
 export async function buildExport(db: BookandryDB, now: IsoInstant): Promise<ExportEnvelope> {
-  const [profiles, categories, paymentMethods, transactions, overrides, settings] = await Promise.all([
-    db.profiles.toArray(),
-    db.categories.toArray(),
-    db.paymentMethods.toArray(),
-    db.transactions.toArray(),
-    db.overrides.toArray(),
-    db.settings.get(SETTINGS_ID),
-  ]);
+  const [profiles, categories, paymentMethods, transactions, overrides, cashMoves, settings] =
+    await Promise.all([
+      db.profiles.toArray(),
+      db.categories.toArray(),
+      db.paymentMethods.toArray(),
+      db.transactions.toArray(),
+      db.overrides.toArray(),
+      db.cashMoves.toArray(),
+      db.settings.get(SETTINGS_ID),
+    ]);
 
   return {
     app: 'bookandry',
@@ -55,6 +59,7 @@ export async function buildExport(db: BookandryDB, now: IsoInstant): Promise<Exp
       paymentMethods: paymentMethods.length,
       transactions: transactions.length,
       overrides: overrides.length,
+      cashMoves: cashMoves.length,
     },
     settings: {
       defaultCurrency: settings?.defaultCurrency ?? 'USD',
@@ -68,6 +73,7 @@ export async function buildExport(db: BookandryDB, now: IsoInstant): Promise<Exp
       paymentMethods,
       transactions,
       overrides,
+      cashMoves,
     },
   };
 }
@@ -95,6 +101,7 @@ export type ImportResult =
         paymentMethods: number;
         transactions: number;
         overrides: number;
+        cashMoves: number;
       };
       readonly conflicts: readonly { entity: string; id: string }[];
       readonly reconverted: number;
@@ -127,7 +134,9 @@ function redenominate(
   doc: ExportEnvelope,
   localCurrency: Currency,
   lookup: RateLookup,
-): { transactions: Transaction[]; overrides: Override[]; converted: number } | undefined {
+):
+  | { transactions: Transaction[]; overrides: Override[]; cashMoves: CashMove[]; converted: number }
+  | undefined {
   const transactions = doc.data.transactions as unknown as Transaction[];
   const overrides = doc.data.overrides as unknown as Override[];
 
@@ -144,6 +153,21 @@ function redenominate(
 
   if (plan.unresolved.length > 0) return undefined;
 
+  /*
+   * A cash move is in the file's base currency, which is exactly what is
+   * changing - converted at its own date's rate, like a transaction, and the
+   * whole merge refused rather than half-converted when a rate is missing.
+   */
+  const cashMoves: CashMove[] = [];
+  for (const move of doc.data.cashMoves as unknown as CashMove[]) {
+    const quote = lookup(doc.defaultCurrency, localCurrency, move.date);
+    if (quote === undefined) return undefined;
+    cashMoves.push({
+      ...move,
+      amountMinor: convertMinor(move.amountMinor, doc.defaultCurrency, localCurrency, quote.rate),
+    });
+  }
+
   const txById = new Map(plan.transactions.map((t) => [t.id, t.money]));
   const ovById = new Map(plan.overrides.map((o) => [o.id, o.money]));
 
@@ -156,7 +180,8 @@ function redenominate(
       const money = ovById.get(o.id);
       return money && o.action === 'modify' ? { ...o, patch: { ...o.patch, money } } : o;
     }),
-    converted: plan.transactions.length + plan.overrides.length,
+    cashMoves,
+    converted: plan.transactions.length + plan.overrides.length + cashMoves.length,
   };
 }
 
@@ -200,6 +225,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
 
   let transactions = doc.data.transactions as unknown as Transaction[];
   let overrides = doc.data.overrides as unknown as Override[];
+  let cashMoves = doc.data.cashMoves as unknown as CashMove[];
   let reconverted = 0;
 
   /**
@@ -234,6 +260,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
 
     transactions = redone.transactions;
     overrides = redone.overrides;
+    cashMoves = redone.cashMoves;
     reconverted = redone.converted;
   }
 
@@ -241,7 +268,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
 
   const applied = await db.transaction(
     'rw',
-    [db.profiles, db.categories, db.paymentMethods, db.transactions, db.overrides, db.settings],
+    [db.profiles, db.categories, db.paymentMethods, db.transactions, db.overrides, db.cashMoves, db.settings],
     async (): Promise<AppliedCounts> => {
       if (options.mode === 'replace') {
         await Promise.all([
@@ -250,6 +277,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
           db.paymentMethods.clear(),
           db.transactions.clear(),
           db.overrides.clear(),
+          db.cashMoves.clear(),
         ]);
 
         await db.profiles.bulkAdd(doc.data.profiles as never);
@@ -257,6 +285,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
         await db.paymentMethods.bulkAdd(doc.data.paymentMethods as never);
         await db.transactions.bulkAdd(transactions);
         await db.overrides.bulkAdd(overrides);
+        await db.cashMoves.bulkAdd(cashMoves);
 
         // Settings ride along on replace, which is the only reason a replace of
         // a differently-based file is coherent at all.
@@ -274,6 +303,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
           paymentMethods: doc.data.paymentMethods.length,
           transactions: transactions.length,
           overrides: overrides.length,
+          cashMoves: cashMoves.length,
         };
       }
 
@@ -284,6 +314,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
         ['paymentMethods', db.paymentMethods, doc.data.paymentMethods],
         ['transactions', db.transactions, transactions],
         ['overrides', db.overrides, overrides],
+        ['cashMoves', db.cashMoves, cashMoves],
       ];
 
       const counts: AppliedCounts = {
@@ -292,6 +323,7 @@ async function runImport(db: BookandryDB, input: unknown, options: ImportOptions
         paymentMethods: 0,
         transactions: 0,
         overrides: 0,
+        cashMoves: 0,
       };
 
       for (const [name, table, incoming] of pairs) {
