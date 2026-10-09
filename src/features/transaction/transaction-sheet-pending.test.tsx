@@ -93,7 +93,7 @@ describe('a purchase on a linked card whose catalog entry is still loading', () 
   it('does not save an interest-bearing deal at 0% before the card’s rate is known', async () => {
     renderWithProviders(
       <TransactionSheet
-        target={{ mode: 'add' }}
+        target={{ mode: 'add', kind: 'expense' }}
         onOpenChange={() => undefined}
         profiles={[profile]}
         categories={[groceries]}

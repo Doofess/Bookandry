@@ -1,14 +1,15 @@
-import { cn } from 'cn';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { useCountUp } from '@/components/count-up';
 import { Money } from '@/components/money';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { BalanceBreakdown, ForecastBreakdown } from '@/domain/breakdown';
 import type { MonthlyExpenseResult } from '@/domain/calculators';
 import { formatMoney } from '@/i18n/money-format';
 import { formatLocalDate, compareLocal, startOfMonth } from '@/lib/dates';
 import type { Currency, LocalDate } from '@/types/money';
 
+import { BalancePopover, ForecastPopover } from './breakdown-popouts';
 import type { BalanceState } from './use-balance';
 
 /**
@@ -24,159 +25,159 @@ import type { BalanceState } from './use-balance';
  * bank account invites "that is not how much money I have"; saying what it
  * counts from turns that into a fact rather than a bug report.
  */
-export function BalanceCard({
+export function BalanceFigure({
   state,
   currency,
-  onOpenBreakdown,
+  breakdown,
+  onFullBreakdown,
 }: {
-  state: BalanceState;
-  currency: Currency;
-  onOpenBreakdown?: () => void;
+  readonly state: BalanceState;
+  readonly currency: Currency;
+  readonly breakdown?: BalanceBreakdown;
+  readonly onFullBreakdown?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const target = state.status === 'ready' ? state.minor : 0;
   const animated = useCountUp(target);
+  const title = t('summary.balance');
 
   if (state.status === 'loading') {
-    return <CardShell title={t('summary.balance')}>{<Skeleton className="h-9 w-40" />}</CardShell>;
+    return (
+      <div>
+        <p className="text-sm text-brand-deep-foreground/80">{title}</p>
+        <Skeleton className="mt-1 h-11 w-48 bg-white/15" />
+      </div>
+    );
   }
 
   if (state.status === 'blocked') {
     return (
-      <CardShell title={t('summary.balance')}>
-        <p className="text-sm text-destructive">
+      <div>
+        <p className="text-sm text-brand-deep-foreground/80">{title}</p>
+        {/* Red on the deep blue fails contrast; the words carry the problem. */}
+        <p className="mt-1 text-sm text-brand-deep-foreground">
           {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
         </p>
-      </CardShell>
+      </div>
     );
   }
 
   const settled = formatMoney(state.minor, currency, { locale: i18n.language });
+  const since = t('summary.balanceSince', {
+    date: formatLocalDate(state.since, i18n.language, { dateStyle: 'medium' }),
+  });
 
-  return (
-    <CardShell
-      title={t('summary.balance')}
-      subtitle={t('summary.balanceSince', {
-        date: formatLocalDate(state.since, i18n.language, { dateStyle: 'medium' }),
-      })}
-      onClick={onOpenBreakdown}
-    >
+  const figure = (
+    <>
+      {/* Two spans, so "Balance" is still its own text for anything that finds it by name. */}
+      <span className="block text-sm text-brand-deep-foreground/80">
+        <span>{title}</span> · <span>{since}</span>
+      </span>
       {/*
         The animating figure is hidden from assistive tech and ONE live region
         carries the settled value. Announcing every frame turns a balance into
         ~39 interruptions; announcing nothing leaves a number that changed
-        silently.
+        silently. Frank Ruhl Libre has tabular figures, so the count-up never
+        makes the line jitter.
       */}
-      <p className="text-3xl font-semibold tracking-tight" data-testid="balance-amount">
+      <span
+        className="mt-1 block font-display text-[2.75rem] leading-none font-bold tracking-tight max-[359px]:text-[2.25rem]"
+        data-testid="balance-amount"
+      >
         <Money minor={animated} currency={currency} announce={false} />
-      </p>
+      </span>
+    </>
+  );
+
+  return (
+    <>
+      {breakdown === undefined || onFullBreakdown === undefined ? (
+        <div>{figure}</div>
+      ) : (
+        <BalancePopover
+          breakdown={breakdown}
+          since={state.since}
+          currency={currency}
+          onFullBreakdown={onFullBreakdown}
+          triggerClassName={PANEL_FIGURE}
+          triggerLabel={t('summary.breakdownOf', { title })}
+        >
+          {figure}
+        </BalancePopover>
+      )}
       <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="balance-announced">
-        {t('summary.balance')}: {settled.aria}
+        {title}: {settled.aria}
       </p>
-    </CardShell>
+    </>
   );
 }
 
-export function ExpectedCard({
+export function ForecastLine({
   expense,
   currency,
   month,
   today,
-  onOpenBreakdown,
+  breakdown,
+  onFullBreakdown,
 }: {
-  expense: MonthlyExpenseResult | undefined;
-  currency: Currency;
-  month: LocalDate;
-  today: LocalDate;
-  onOpenBreakdown?: () => void;
+  readonly expense: MonthlyExpenseResult | undefined;
+  readonly currency: Currency;
+  readonly month: LocalDate;
+  readonly today: LocalDate;
+  readonly breakdown?: ForecastBreakdown;
+  readonly onFullBreakdown?: () => void;
 }) {
   const { t } = useTranslation();
 
-  if (expense === undefined) {
-    return <CardShell title={t('summary.expected')}>{<Skeleton className="h-9 w-32" />}</CardShell>;
-  }
+  if (expense === undefined) return <Skeleton className="h-5 w-56 bg-white/15" />;
 
   // A month already over has nothing "still due"; saying so would be wrong, and
   // saying nothing is right. The label changes too: "Spent" reads as history.
   const isPast = compareLocal(month, startOfMonth(today)) < 0;
+  const title = isPast ? t('summary.spent') : t('summary.expected');
 
-  return (
-    <CardShell title={isPast ? t('summary.spent') : t('summary.expected')} onClick={onOpenBreakdown}>
-      <p className="text-3xl font-semibold tracking-tight">
-        <Money minor={expense.total} currency={currency} />
-      </p>
+  const line = (
+    <>
+      <span className="block font-display text-base">
+        {title} <Money minor={expense.total} currency={currency} className="font-bold" />
+      </span>
       {isPast ? null : (
-        <p className="mt-1 text-sm text-muted-foreground">
+        <span className="mt-0.5 block text-xs text-brand-deep-foreground/80">
           {/*
-            ONE key, not three fragments joined in JSX.
-            "X spent so far / Y still due" is a sentence, and Hebrew reverses
-            its clause order. Concatenating in code fixes the order in English
-            and leaves the translator no way to change it - and the separator is
-            bidi-neutral, so where it lands is decided by its neighbours rather
-            than by anyone's intent.
-          */}
+          ONE key, not three fragments joined in JSX.
+          "X spent so far / Y still due" is a sentence, and Hebrew reverses
+          its clause order. Concatenating in code fixes the order in English
+          and leaves the translator no way to change it - and the separator is
+          bidi-neutral, so where it lands is decided by its neighbours rather
+          than by anyone's intent.
+        */}
           <Trans
             i18nKey="summary.splitLine"
             components={{
-              spent: (
-                <Money
-                  minor={expense.spentSoFar}
-                  currency={currency}
-                  className="font-medium text-foreground"
-                />
-              ),
-              due: (
-                <Money
-                  minor={expense.remaining}
-                  currency={currency}
-                  className="font-medium text-foreground"
-                />
-              ),
+              spent: <Money minor={expense.spentSoFar} currency={currency} className="font-medium" />,
+              due: <Money minor={expense.remaining} currency={currency} className="font-medium" />,
             }}
           />
-        </p>
+        </span>
       )}
-    </CardShell>
-  );
-}
-
-function CardShell({
-  title,
-  subtitle,
-  children,
-  onClick,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  onClick?: () => void;
-}) {
-  const { t } = useTranslation();
-  const interactive = onClick !== undefined;
-
-  const body = (
-    <>
-      <p className="text-sm font-medium text-muted-foreground">{title}</p>
-      {children}
-      {subtitle === undefined ? null : <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
     </>
   );
 
-  if (!interactive) {
-    return <div className="rounded-2xl border border-border bg-card p-4">{body}</div>;
-  }
-
+  if (breakdown === undefined || onFullBreakdown === undefined) return <div>{line}</div>;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={t('summary.breakdownOf', { title })}
-      className={cn(
-        'rounded-2xl border border-border bg-card p-4 text-start transition',
-        'hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-      )}
+    <ForecastPopover
+      breakdown={breakdown}
+      month={month}
+      currency={currency}
+      onFullBreakdown={onFullBreakdown}
+      triggerClassName={PANEL_FIGURE}
+      triggerLabel={t('summary.breakdownOf', { title })}
     >
-      {body}
-    </button>
+      {line}
+    </ForecastPopover>
   );
 }
+
+/** The classes of a figure on the panel that opens what it is made of. */
+const PANEL_FIGURE =
+  '-mx-2 block min-h-11 rounded-xl px-2 py-1 text-start transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none';

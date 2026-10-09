@@ -2,10 +2,10 @@
   <!-- Favicon variant: corner marks removed and the portrait enlarged, because at
        16px the master's 0.9-unit marks render at ~0.6 device px and vanish. -->
   <style>
-    .bg { fill: #16794a; }
+    .bg { fill: #0F3A8A; }
     .paper { fill: #ffffff; }
     @media (prefers-color-scheme: dark) {
-      .bg { fill: #2fb877; }
+      .bg { fill: #56A0FF; }
       .paper { fill: #0b0b0d; }
     }
   </style>

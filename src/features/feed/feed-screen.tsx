@@ -5,9 +5,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
+import { ScreenPanel } from '@/app/screen-panel';
 import { pendingShares, sweepShared } from '@/app/shared-files';
+import { PanelSheet } from '@/components/brand-panel';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
+import { changeCategory, moveOccurrence } from '@/db/occurrence-actions';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
@@ -15,25 +18,29 @@ import { hasActiveFilters } from '@/domain/feed-filters';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
-import { startOfMonth } from '@/lib/dates';
-import { ALL_PROFILES, type Occurrence } from '@/types/domain';
+import { formatLocalDate, startOfMonth } from '@/lib/dates';
+import { newId } from '@/lib/id';
+import { ALL_PROFILES } from '@/types/domain';
 
 import { AddMenu } from './add-menu';
+import { CategoryPopout, type CategoryTarget } from './category-popout';
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
 import { FilterBar } from './filter-bar';
 import { ProfileSwitcher } from './profile-switcher';
-import { RowActionsSheet } from './row-actions-sheet';
+import { ProjectedPopout, type ProjectedTarget } from './projected-popout';
+import { RowActionsMenu, type RowMenuTarget } from './row-actions-menu';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
-import { useRowActions } from './use-row-actions';
+import { offerUndo, useRowActions, useUndoableWrite } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
-import { PrimeStrip } from '../summary/prime-strip';
-import { BalanceCard, ExpectedCard } from '../summary/summary-cards';
+import { PrimePill } from '../summary/prime-pill';
+import { BalanceFigure, ForecastLine } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
+import { useBreakdowns } from '../summary/use-breakdowns';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
 import { SplitPurchaseSheet } from '../transaction/split-purchase';
 import { TransactionSheet } from '../transaction/transaction-sheet';
@@ -46,7 +53,7 @@ const ImportSheet = lazy(() => import('../import/import-sheet').then((m) => ({ d
 type Breakdown = 'balance' | 'expense' | undefined;
 
 export function FeedScreen() {
-  const { t } = useTranslation(['common', 'categories', 'profiles']);
+  const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
   const today = useToday();
   const settings = useSettings();
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
@@ -59,10 +66,16 @@ export function FeedScreen() {
    *
    * Unlike the edit sheet, this is not somewhere you navigated to: it is a
    * transient menu, and pushing a history entry for it would make the back
-   * button walk through every menu the user opened and dismissed.
+   * button walk through every menu the user opened and dismissed. It carries
+   * the row's ⋯ button, which the menu is anchored to.
    */
-  const [menuFor, setMenuFor] = useState<Occurrence | undefined>(undefined);
+  const [menuFor, setMenuFor] = useState<RowMenuTarget | undefined>(undefined);
   const runAction = useRowActions();
+  /** The row whose category pop-out is open, with its chip: transient, like the menu. */
+  const [categoryFor, setCategoryFor] = useState<CategoryTarget | undefined>(undefined);
+  const undoable = useUndoableWrite();
+  /** The row whose "not counted yet" pop-out is open, with its chip: transient, like the menu. */
+  const [projectedFor, setProjectedFor] = useState<ProjectedTarget | undefined>(undefined);
   /** The purchase being split into payments, kept once its menu has closed. */
   const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
   const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
@@ -74,7 +87,7 @@ export function FeedScreen() {
   const candidates = useCandidates(filters.profileId, window);
   const occurrences = useOccurrences(candidates, window, today, filters.profileId, settings.defaultCurrency);
   const lookups = useFeedLookups();
-  const splitMenu = useSplitOffer(menuFor, lookups?.paymentMethods);
+  const splitMenu = useSplitOffer(menuFor?.occurrence, lookups?.paymentMethods);
 
   /*
    * Files shared from the phone wait in the service worker's cache: open the
@@ -132,6 +145,7 @@ export function FeedScreen() {
         : groupMonthlyExpenses(occurrences.filter((o) => o.date >= window.from && o.date <= window.to)),
     [occurrences, window.from, window.to],
   );
+  const breakdowns = useBreakdowns(balance, expenseGroups);
 
   const context = useMemo<RowContext | undefined>(
     () =>
@@ -153,11 +167,11 @@ export function FeedScreen() {
   const reason = isLoading ? undefined : emptyReason(windowCount, rows.length, hasAnyTransactions);
 
   return (
-    // The FAB floats above the tab bar, so the list needs clearance for BOTH or
+    // The Add pill floats above the tab bar, so the list needs clearance for BOTH or
     // the last row of every month sits under a button. The shell already pads
-    // for the tab bar; this is the FAB's share.
+    // for the tab bar; this is the Add pill's share.
     <section
-      className="mx-auto max-w-2xl px-4 pt-4 pb-24 lg:pb-8"
+      className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8"
       /*
        * The day headers pin against this. A fixed bar cannot set it for them.
        *
@@ -176,7 +190,7 @@ export function FeedScreen() {
       {/*
         FIRST in the DOM, and deliberately so.
 
-        The FAB is `position: fixed`, so where it sits in the markup does not
+        The Add pill is `position: fixed`, so where it sits in the markup does not
         move it on screen - but it does decide where it sits in the TAB ORDER,
         and rendered last it came after every transaction row. With sixty rows,
         each carrying its own actions menu, reaching the app's primary action by
@@ -191,7 +205,7 @@ export function FeedScreen() {
       <AddMenu
         disabled={(lookups?.profiles.length ?? 0) === 0}
         aiAvailable={account.status !== 'unavailable'}
-        onAddManually={sheet.openAdd}
+        onAdd={sheet.openAdd}
         onAddWithAi={() => {
           sheet.openImport();
         }}
@@ -201,77 +215,99 @@ export function FeedScreen() {
         <CollapsedSummaryBar
           state={balance}
           currency={settings.defaultCurrency}
-          onOpenBreakdown={() => {
+          breakdown={breakdowns.balance}
+          onFullBreakdown={() => {
             setBreakdown('balance');
           }}
         />
       ) : null}
 
       <div ref={measureHeader} data-testid="feed-header">
-        <MonthCursor month={filters.month} today={today} onStep={stepMonth} />
-
-        {lookups === undefined ? null : (
-          <ProfileSwitcher
-            profiles={lookups.profiles}
-            active={filters.profileId}
-            onSelect={setProfile}
-            className="mt-3"
-          />
-        )}
-
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <BalanceCard
-            state={balance}
-            currency={settings.defaultCurrency}
-            onOpenBreakdown={() => {
-              setBreakdown('balance');
-            }}
-          />
-          <ExpectedCard
-            expense={expense}
-            currency={settings.defaultCurrency}
-            month={filters.month}
-            today={today}
-            onOpenBreakdown={() => {
-              setBreakdown('expense');
-            }}
-          />
-        </div>
-
-        <PrimeStrip />
+        <ScreenPanel>
+          {/*
+            At most two lines on a phone: below sm the profile pill is faces
+            only and prime drops its icon. 375: month + profile, then prime.
+            320: month, then profile + prime. One row from sm up.
+          */}
+          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="panel-pills">
+            <MonthCursor
+              month={filters.month}
+              today={today}
+              onStep={stepMonth}
+              onPick={setMonth}
+              tone="panel"
+            />
+            {lookups === undefined ? null : (
+              <ProfileSwitcher
+                profiles={lookups.profiles}
+                active={filters.profileId}
+                onSelect={setProfile}
+                tone="panel"
+              />
+            )}
+            <PrimePill />
+          </div>
+          <div className="mt-5">
+            <BalanceFigure
+              state={balance}
+              currency={settings.defaultCurrency}
+              breakdown={breakdowns.balance}
+              onFullBreakdown={() => {
+                setBreakdown('balance');
+              }}
+            />
+          </div>
+          <div className="mt-2">
+            <ForecastLine
+              expense={expense}
+              currency={settings.defaultCurrency}
+              month={filters.month}
+              today={today}
+              breakdown={breakdowns.forecast}
+              onFullBreakdown={() => {
+                setBreakdown('expense');
+              }}
+            />
+          </div>
+        </ScreenPanel>
       </div>
 
-      <div className="mt-4">
+      <PanelSheet className="px-4 pt-4">
         <FilterBar filters={filters} onChange={set} onClear={clear} />
-      </div>
 
-      <div className="mt-3">
-        {reason !== undefined ? (
-          <EmptyState
-            reason={reason}
-            month={filters.month}
-            onClearFilters={hasActiveFilters(filters) ? clear : undefined}
-          />
-        ) : context === undefined ? null : (
-          <VirtualFeed
-            rows={rows}
-            context={context}
-            // Both the row body and its always-present menu open the editor.
-            // The menu will grow skip/delete next; until it does, pointing it
-            // at the same place is honest, where a dead button is not.
-            // A card's fee is worked out from the card, not a row anyone saved:
-            // it is changed where the card is, so it opens the Cards screen.
-            onOpen={(occurrence) => {
-              if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-              else sheet.openEdit(occurrence);
-            }}
-            onMenu={(occurrence) => {
-              if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-              else setMenuFor(occurrence);
-            }}
-          />
-        )}
-      </div>
+        <div className="mt-3">
+          {reason !== undefined ? (
+            <EmptyState
+              reason={reason}
+              month={filters.month}
+              onClearFilters={hasActiveFilters(filters) ? clear : undefined}
+            />
+          ) : context === undefined ? null : (
+            <VirtualFeed
+              rows={rows}
+              context={context}
+              // The row body opens the editor; its always-present ⋯ opens the
+              // row menu, anchored to that button.
+              // A card's fee is worked out from the card, not a row anyone saved:
+              // it is changed where the card is, so it opens the Cards screen.
+              onOpen={(occurrence) => {
+                if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+                else sheet.openEdit(occurrence);
+              }}
+              onMenu={(occurrence, anchor) => {
+                if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+                else setMenuFor({ occurrence, anchor });
+              }}
+              onCategory={(occurrence, anchor) => {
+                setCategoryFor({ occurrence, anchor });
+              }}
+              onProjected={(occurrence, anchor) => {
+                setProjectedFor({ occurrence, anchor });
+              }}
+            />
+          )}
+        </div>
+      </PanelSheet>
 
       {lookups === undefined ? null : (
         <TransactionSheet
@@ -283,13 +319,19 @@ export function FeedScreen() {
           activeProfileId={filters.profileId}
           baseCurrency={settings.defaultCurrency}
           today={today}
-          onSaved={(date) => {
+          onSaved={(date, undone, onlyAmount) => {
+            // A save from "not counted yet" is offered back, like the pop-out's
+            // other two choices: "Amount changed" when that is all it was, a
+            // plain "Saved" otherwise. Every other save is as before.
+            const fromChip = sheet.target.mode === 'edit' && sheet.target.focus === 'amount';
             sheet.close();
             // Jump to the month the row landed in, so a bill dated next month
             // does not save into apparent nothingness - and so an edit that
             // MOVED an occurrence follows it. liveQuery brings the data; this
             // is only about which window is on screen.
             setMonth(startOfMonth(date));
+            if (fromChip && undone !== undefined)
+              offerUndo(t(onlyAmount === true ? 'projected.amountSaved' : 'projected.saved'), undone, t);
           }}
         />
       )}
@@ -315,11 +357,11 @@ export function FeedScreen() {
         </Suspense>
       )}
 
-      <RowActionsSheet
-        occurrence={menuFor}
+      <RowActionsMenu
+        target={menuFor}
         split={splitMenu?.kind}
-        onOpenChange={(open) => {
-          if (!open) setMenuFor(undefined);
+        onClose={() => {
+          setMenuFor(undefined);
         }}
         onAction={(action, occurrence) => {
           // Closed first, unconditionally: leaving it open over a toast covers
@@ -329,11 +371,77 @@ export function FeedScreen() {
             sheet.openEdit(occurrence);
             return;
           }
+          if (action === 'duplicate') {
+            sheet.openDuplicate(occurrence);
+            return;
+          }
           if (action === 'split') {
             if (splitMenu?.kind === 'offer') setSplitting(splitMenu.offer);
             return;
           }
           void runAction(action, occurrence);
+        }}
+      />
+
+      {context === undefined ? null : (
+        <CategoryPopout
+          target={categoryFor}
+          categories={context.categories}
+          today={today}
+          onClose={() => {
+            setCategoryFor(undefined);
+          }}
+          onChange={(occurrence, categoryId, scope) => {
+            // Closed first, so the toast's Undo is not under it.
+            setCategoryFor(undefined);
+            const category = context.categories.get(categoryId);
+            void undoable(
+              () =>
+                changeCategory(db, {
+                  occurrence,
+                  categoryId,
+                  scope,
+                  today,
+                  now: systemClock.nowIso(),
+                  newId,
+                }),
+              t('categoryPop.changed', {
+                name: category === undefined ? categoryId : categoryDisplayName(category, t),
+              }),
+            );
+          }}
+        />
+      )}
+
+      <ProjectedPopout
+        target={projectedFor}
+        today={today}
+        {...(lookups === undefined ? {} : { methods: lookups.paymentMethods })}
+        onClose={() => {
+          setProjectedFor(undefined);
+        }}
+        onMove={(occurrence, to) => {
+          // Closed first, so the toast's Undo is not under it.
+          setProjectedFor(undefined);
+          void undoable(
+            async () => {
+              const undoable = await moveOccurrence(db, {
+                occurrence,
+                to,
+                today,
+                now: systemClock.nowIso(),
+                newId,
+              });
+              // Follow the row to its new month, as a save from the sheet does.
+              setMonth(startOfMonth(to));
+              return undoable;
+            },
+            t('projected.moved', { date: formatLocalDate(to, i18n.language, { dateStyle: 'medium' }) }),
+          );
+        }}
+        onAmount={(occurrence) => {
+          setProjectedFor(undefined);
+          sheet.openEdit(occurrence, { focus: 'amount' });
         }}
       />
 
@@ -349,13 +457,13 @@ export function FeedScreen() {
         }}
       />
 
-      {balance.status === 'ready' ? (
+      {breakdowns.balance !== undefined && balance.status === 'ready' ? (
         <BalanceBreakdownSheet
           open={breakdown === 'balance'}
           onOpenChange={(open) => {
             setBreakdown(open ? 'balance' : undefined);
           }}
-          parts={balance.parts}
+          breakdown={breakdowns.balance}
           since={balance.since}
           currency={settings.defaultCurrency}
         />
@@ -367,7 +475,7 @@ export function FeedScreen() {
           onOpenChange={(open) => {
             setBreakdown(open ? 'expense' : undefined);
           }}
-          groups={expenseGroups}
+          breakdown={breakdowns.forecast}
           month={filters.month}
           currency={settings.defaultCurrency}
           categories={context.categories}

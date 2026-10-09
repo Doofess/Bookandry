@@ -3,8 +3,25 @@ import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { cn } from 'cn';
 import { ChevronRightIcon, CheckIcon } from 'lucide-react';
 
-function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
-  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+import {
+  ARROW_CLASS,
+  ArrowSvg,
+  CloseOnScroll,
+  POPUP_SURFACE,
+  PopupActionsContext,
+  PopupBackdrop,
+  type PopupActions,
+  anchoredPositioner,
+} from './popup-parts';
+
+function DropdownMenu({ actionsRef, ...props }: MenuPrimitive.Root.Props) {
+  const own = React.useRef<PopupActions | null>(null);
+  const actions = actionsRef ?? own;
+  return (
+    <PopupActionsContext value={actions}>
+      <MenuPrimitive.Root data-slot="dropdown-menu" actionsRef={actions} {...props} />
+    </PopupActionsContext>
+  );
 }
 
 function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
@@ -20,28 +37,65 @@ function DropdownMenuContent({
   alignOffset = 0,
   side = 'bottom',
   sideOffset = 4,
+  anchor,
+  arrow = false,
+  closeOnScroll = arrow,
+  backdrop = arrow,
   className,
+  children,
   ...props
 }: MenuPrimitive.Popup.Props &
-  Pick<MenuPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
+  Pick<MenuPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'anchor'> & {
+    /** Pixels between the anchor and the pop-out; the arrow adds its own 6. */
+    readonly sideOffset?: number;
+    /** A small arrow pointing at the anchor, for a pop-out whose anchor is not its own edge. */
+    readonly arrow?: boolean;
+    /** Close once the page scrolls; on for a pop-out with an arrow, which points at nothing after a scroll. */
+    readonly closeOnScroll?: boolean;
+    /** Catch a tap outside, so it closes this and presses nothing underneath; on with an arrow. */
+    readonly backdrop?: boolean;
+  }) {
   return (
     <MenuPrimitive.Portal>
-      <MenuPrimitive.Positioner
+      {backdrop ? <PopupBackdrop /> : null}
+      <AnchoredPositioner
         className="isolate z-50 outline-none"
+        anchor={anchor}
         align={align}
         alignOffset={alignOffset}
         side={side}
-        sideOffset={sideOffset}
+        sideOffset={arrow ? sideOffset + 6 : sideOffset}
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cn(
-            'z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-start-2 data-[side=inline-start]:slide-in-from-end-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+            'z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto bg-popover p-1 text-popover-foreground duration-100 outline-none data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-start-2 data-[side=inline-start]:slide-in-from-end-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+            POPUP_SURFACE,
+            // overflow-y-auto would clip the arrow, which sits outside the popup's box:
+            // the items scroll in a box of their own instead.
+            arrow ? 'flex flex-col overflow-visible' : null,
             className,
           )}
           {...props}
-        />
-      </MenuPrimitive.Positioner>
+        >
+          {closeOnScroll ? <CloseOnScroll /> : null}
+          {arrow ? (
+            <MenuPrimitive.Arrow data-slot="popup-arrow" className={ARROW_CLASS}>
+              <ArrowSvg />
+            </MenuPrimitive.Arrow>
+          ) : null}
+          {arrow ? (
+            <div
+              data-slot="popup-scroll"
+              className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain"
+            >
+              {children}
+            </div>
+          ) : (
+            children
+          )}
+        </MenuPrimitive.Popup>
+      </AnchoredPositioner>
     </MenuPrimitive.Portal>
   );
 }
@@ -82,7 +136,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
+        "group/dropdown-menu-item relative flex min-h-11 cursor-default items-center gap-1.5 rounded-lg px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive sm:min-h-8 dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
         className,
       )}
       {...props}
@@ -192,7 +246,7 @@ function DropdownMenuRadioItem({
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 ps-1.5 pe-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-7 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex min-h-11 cursor-default items-center gap-1.5 rounded-lg py-1 ps-1.5 pe-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-7 sm:min-h-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -232,6 +286,8 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'spa
     />
   );
 }
+
+const AnchoredPositioner = anchoredPositioner(MenuPrimitive.Positioner);
 
 export {
   DropdownMenu,

@@ -273,3 +273,39 @@ describe('the deal rules in Hebrew', () => {
     for (const text of rules) expect(text).not.toMatch(/דורש|דורשת|\sהוא\s|\sהיא\s|לא ניתן/);
   });
 });
+
+describe('account linking, by name', () => {
+  /*
+   * What was "the household" is "account linking", and the group it makes is
+   * "linked accounts": no string the app shows calls it a household, in either
+   * language. The keys keep their old names (`household.*`, `link.*`):
+   * only what a person reads changed. Values, not keys, are what is checked.
+   */
+  const HOUSEHOLD = /household|משק/i;
+
+  /**
+   * The one place "household" stays: the front door's line about the app,
+   * where it means a family's books, not the linked accounts.
+   */
+  const KEPT = new Set(['en common:account.welcome.headline']);
+
+  it.each(LOCALES)('%s says it nowhere', (lng) => {
+    const found = NAMESPACES.flatMap((ns) =>
+      Object.entries(FLAT[lng][ns])
+        .filter(([key, text]) => HOUSEHOLD.test(text) && !KEPT.has(`${lng} ${ns}:${key}`))
+        .map(([key, text]) => `${ns}:${key} = ${text}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it.each(LOCALES)('%s names the page and the settings entry for what they are', (lng) => {
+    const { common } = FLAT[lng];
+    const name = lng === 'en' ? 'Account linking' : 'קישור חשבונות';
+    expect(common['household.title']).toBe(name);
+    // Not a tab any more: the tab's label went with it.
+    expect(common['nav.household']).toBeUndefined();
+    expect(common['settings.sections.linkingHint']).toBe(
+      lng === 'en' ? 'Share your money with the people you live with' : 'שיתוף הכספים עם מי שגרים איתך',
+    );
+  });
+});

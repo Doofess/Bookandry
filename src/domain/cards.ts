@@ -5,6 +5,7 @@ import {
   monthsBetween,
   parseLocalDate,
   startOfMonth,
+  todayLocal,
 } from '@/lib/dates';
 import {
   addRates,
@@ -447,7 +448,8 @@ export function cardFeeFor(
  *
  * Only in a shekel base: the fee is in shekels and nothing converts it here.
  * A shared card's fee belongs to no one profile, so it is in the household's
- * view (`profileId` ALL) only. A waived month has no line at all.
+ * view (`profileId` ALL) only. A waived month has no line at all. An archived
+ * card's fee stops after the month it was archived (`lastFeeMonth`).
  */
 export function cardFeeOccurrences(input: {
   readonly cards: readonly PaymentMethod[];
@@ -466,13 +468,15 @@ export function cardFeeOccurrences(input: {
     if (input.profileId !== input.allProfiles && card.profileId !== input.profileId) continue;
     if (card.profileId === SHARED_OWNER && input.profileId !== input.allProfiles) continue;
     const fee = card.card?.monthlyFeeMinor;
-    if (card.type !== 'credit_card' || card.isArchived === 1 || fee === undefined || fee <= 0) continue;
+    if (card.type !== 'credit_card' || fee === undefined || fee <= 0) continue;
+    const lastMonth = lastFeeMonth(card);
 
     for (
       let month = startOfMonth(input.from);
       compareLocal(month, input.to) <= 0;
       month = addMonthsClamped(month, 1, 1)
     ) {
+      if (lastMonth !== undefined && compareLocal(month, lastMonth) > 0) break;
       const date = endOfMonth(month);
       if (compareLocal(date, input.from) < 0 || compareLocal(date, input.to) > 0) continue;
       const charge = cardFeeFor(card, month, input.occurrences);
@@ -481,6 +485,32 @@ export function cardFeeOccurrences(input: {
     }
   }
   return out;
+}
+
+/**
+ * The last month a card is charged its fee: for an archived card, the month
+ * it was archived in. Archiving puts a card out of sight; it never changes
+ * what was owed, so the months before it, and that month itself, keep their
+ * fee. An archived card with no date on record (an older file) is taken as
+ * archived when it last changed: the archive wrote `updatedAt` too, so that is
+ * never earlier than the archive, and unlike today it does not move on.
+ * Undefined for a card still in use.
+ */
+function lastFeeMonth(card: PaymentMethod): LocalDate | undefined {
+  if (card.isArchived !== 1) return undefined;
+  return startOfMonth(todayLocal(new Date(card.archivedAt ?? card.updatedAt)));
+}
+
+/**
+ * Whether the app charges this card a monthly fee for the month `date` is in:
+ * a credit card with a fee, still in use, or archived no earlier than that
+ * month. Without a date, only a card still in use.
+ */
+export function chargesFeeIn(card: PaymentMethod, date: LocalDate | undefined): boolean {
+  if (card.type !== 'credit_card' || (card.card?.monthlyFeeMinor ?? 0) <= 0) return false;
+  const lastMonth = lastFeeMonth(card);
+  if (lastMonth === undefined) return true;
+  return date !== undefined && compareLocal(startOfMonth(date), lastMonth) <= 0;
 }
 
 function feeOccurrence(card: PaymentMethod, date: LocalDate, feeMinor: number, today: LocalDate): Occurrence {

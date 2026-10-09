@@ -8,7 +8,70 @@ import { db } from '@/db/db';
 import { expandOccurrences } from '@/domain/occurrences';
 import { isLocalDate, maxDate, minDate } from '@/lib/dates';
 import type { CardCatalogLink, Occurrence, Override, PaymentMethod, Transaction } from '@/types/domain';
-import type { LocalDate } from '@/types/money';
+import type { Kind, LocalDate } from '@/types/money';
+
+/** The add form: `expense` or `income`. `1` (older links) and anything unknown mean an expense. */
+const ADD = 'add';
+const EDIT = 'edit';
+/** The ORIGINAL slot date - the Override key, not the moved date. */
+const AT = 'at';
+/** Duplicate: the transaction the add form is prefilled from; its slot is AT. */
+const FROM = 'from';
+/** "Smart import": `1`, or `shared` when files arrived from the phone's Share menu. */
+const IMPORT = 'import';
+/** Files shared to the app, waiting in the service worker's cache under this id. */
+const SHARED_ID = 'id';
+/** The found transaction being edited inside the import sheet, by its index. */
+const ROW = 'row';
+/** The found card or bank account being filled in inside the import sheet, by its id. */
+const CARD = 'card';
+/** Smart import for one card or account: its payment method id. */
+const VIA = 'via';
+/** An edit opened from "A different amount…": `amount`, the field the form puts the caret in. */
+const FOCUS = 'focus';
+
+export type SheetTarget =
+  | { readonly mode: 'closed' }
+  | {
+      readonly mode: 'add';
+      readonly kind: Kind;
+      /** Duplicate: the row the form is prefilled from. */
+      readonly from?: { readonly transactionId: string; readonly at: LocalDate };
+    }
+  | {
+      readonly mode: 'edit';
+      readonly transactionId: string;
+      readonly at: LocalDate;
+      /** Opened from "not counted yet" to change the amount: the form focuses it. */
+      readonly focus?: 'amount';
+    }
+  | {
+      readonly mode: 'import';
+      /** The share's id when files came from the Share menu. */
+      readonly sharedId?: string;
+      /** A found transaction open for editing, so Back returns to the list. */
+      readonly row?: number;
+      /** A found card or account open in its editor, likewise. */
+      readonly card?: string;
+      /** The card or account the statement is for ("Import a statement" on the Cards screen). */
+      readonly via?: string;
+    };
+
+export type TransactionSheetApi = {
+  readonly target: SheetTarget;
+  readonly openAdd: (kind?: Kind) => void;
+  readonly openEdit: (occurrence: Occurrence, options?: { readonly focus?: 'amount' }) => void;
+  /** The add form, prefilled from this row (see `duplicateFormValues`). */
+  readonly openDuplicate: (occurrence: Occurrence) => void;
+  readonly openImport: (sharedId?: string) => void;
+  /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
+  readonly openImportRow: (row: number | undefined) => void;
+  /** Open one found card or account in its editor inside the import sheet, or go back to the list. */
+  readonly openImportCard: (card: string | undefined) => void;
+  readonly close: () => void;
+  /** For `onOpenChange`, which a backdrop click or Escape also drives. */
+  readonly setOpen: (open: boolean) => void;
+};
 
 /**
  * Which transaction sheet is open, held in the URL.
@@ -28,62 +91,33 @@ import type { LocalDate } from '@/types/money';
  * Deliberately different from the filters, which use `replace: true`: a filter
  * chip is not somewhere you navigated to, but an open sheet is.
  */
-const ADD = 'add';
-const EDIT = 'edit';
-/** The ORIGINAL slot date - the Override key, not the moved date. */
-const AT = 'at';
-/** "Smart import": `1`, or `shared` when files arrived from the phone's Share menu. */
-const IMPORT = 'import';
-/** Files shared to the app, waiting in the service worker's cache under this id. */
-const SHARED_ID = 'id';
-/** The found transaction being edited inside the import sheet, by its index. */
-const ROW = 'row';
-/** The found card or bank account being filled in inside the import sheet, by its id. */
-const CARD = 'card';
-
-export type SheetTarget =
-  | { readonly mode: 'closed' }
-  | { readonly mode: 'add' }
-  | { readonly mode: 'edit'; readonly transactionId: string; readonly at: LocalDate }
-  | {
-      readonly mode: 'import';
-      /** The share's id when files came from the Share menu. */
-      readonly sharedId?: string;
-      /** A found transaction open for editing, so Back returns to the list. */
-      readonly row?: number;
-      /** A found card or account open in its editor, likewise. */
-      readonly card?: string;
-    };
-
-export type TransactionSheetApi = {
-  readonly target: SheetTarget;
-  readonly openAdd: () => void;
-  readonly openEdit: (occurrence: Occurrence) => void;
-  readonly openImport: (sharedId?: string) => void;
-  /** Open one found transaction inside the import sheet, or `undefined` to go back to the list. */
-  readonly openImportRow: (row: number | undefined) => void;
-  /** Open one found card or account in its editor inside the import sheet, or go back to the list. */
-  readonly openImportCard: (card: string | undefined) => void;
-  readonly close: () => void;
-  /** For `onOpenChange`, which a backdrop click or Escape also drives. */
-  readonly setOpen: (open: boolean) => void;
-};
-
 export function useTransactionSheet(): TransactionSheetApi {
   const [params, setParams] = useSearchParams();
 
   const target = useMemo<SheetTarget>(() => {
-    if (params.get(ADD) === '1') return { mode: 'add' };
+    const adding = params.get(ADD);
+    if (adding !== null) {
+      const kind = adding === 'income' ? 'income' : 'expense';
+      const fromId = params.get(FROM);
+      const fromAt = params.get(AT);
+      // Both halves or neither, as for an edit: without its slot the source
+      // row cannot be found, and the form is a plain add.
+      return fromId !== null && fromId !== '' && fromAt !== null && isLocalDate(fromAt)
+        ? { mode: 'add', kind, from: { transactionId: fromId, at: fromAt } }
+        : { mode: 'add', kind };
+    }
     const importing = params.get(IMPORT);
     if (importing === '1' || importing === 'shared') {
       const sharedId = importing === 'shared' ? (params.get(SHARED_ID) ?? undefined) : undefined;
       const row = Number(params.get(ROW) ?? '');
       const card = params.get(CARD) ?? '';
+      const via = params.get(VIA) ?? '';
       return {
         mode: 'import',
         ...(sharedId === undefined || sharedId === '' ? {} : { sharedId }),
         ...(params.get(ROW) !== null && Number.isInteger(row) && row >= 0 ? { row } : {}),
         ...(card === '' ? {} : { card }),
+        ...(via === '' ? {} : { via }),
       };
     }
     const transactionId = params.get(EDIT);
@@ -91,7 +125,12 @@ export function useTransactionSheet(): TransactionSheetApi {
     // Both halves or neither: an edit target without its slot cannot be
     // resolved to an occurrence, and guessing one would open the wrong row.
     if (transactionId !== null && at !== null && isLocalDate(at)) {
-      return { mode: 'edit', transactionId, at };
+      return {
+        mode: 'edit',
+        transactionId,
+        at,
+        ...(params.get(FOCUS) === 'amount' ? { focus: 'amount' as const } : {}),
+      };
     }
     return { mode: 'closed' };
   }, [params]);
@@ -102,21 +141,32 @@ export function useTransactionSheet(): TransactionSheetApi {
       updated.delete(ADD);
       updated.delete(EDIT);
       updated.delete(AT);
+      updated.delete(FROM);
       updated.delete(IMPORT);
       updated.delete(SHARED_ID);
       updated.delete(ROW);
       updated.delete(CARD);
+      updated.delete(VIA);
+      updated.delete(FOCUS);
 
-      if (next.mode === 'add') updated.set(ADD, '1');
+      if (next.mode === 'add') {
+        updated.set(ADD, next.kind);
+        if (next.from !== undefined) {
+          updated.set(FROM, next.from.transactionId);
+          updated.set(AT, next.from.at);
+        }
+      }
       if (next.mode === 'import') {
         updated.set(IMPORT, next.sharedId === undefined ? '1' : 'shared');
         if (next.sharedId !== undefined) updated.set(SHARED_ID, next.sharedId);
         if (next.row !== undefined) updated.set(ROW, String(next.row));
         if (next.card !== undefined) updated.set(CARD, next.card);
+        if (next.via !== undefined) updated.set(VIA, next.via);
       }
       if (next.mode === 'edit') {
         updated.set(EDIT, next.transactionId);
         updated.set(AT, next.at);
+        if (next.focus !== undefined) updated.set(FOCUS, next.focus);
       }
 
       /*
@@ -140,16 +190,24 @@ export function useTransactionSheet(): TransactionSheetApi {
   return useMemo(
     () => ({
       target,
-      openAdd: () => {
-        write({ mode: 'add' });
+      openAdd: (kind: Kind = 'expense') => {
+        write({ mode: 'add', kind });
       },
-      openEdit: (occurrence: Occurrence) => {
+      openEdit: (occurrence: Occurrence, options: { readonly focus?: 'amount' } = {}) => {
         // Keyed on the ORIGINAL slot, not the visible date: that is what the
         // Override row is keyed on, so a moved occurrence still finds itself.
         write({
           mode: 'edit',
           transactionId: occurrence.transaction.id,
           at: occurrence.originalDate,
+          ...options,
+        });
+      },
+      openDuplicate: (occurrence: Occurrence) => {
+        write({
+          mode: 'add',
+          kind: occurrence.transaction.kind,
+          from: { transactionId: occurrence.transaction.id, at: occurrence.originalDate },
         });
       },
       openImport: (sharedId?: string) => {

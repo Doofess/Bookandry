@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { cn } from 'cn';
 import { History, Sparkles } from 'lucide-react';
-import { useCallback, useId, useMemo, useState } from 'react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { useAccount } from '@/app/account';
@@ -28,12 +28,18 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
+import { applyUndoablePlan, withSeriesBounds, type UndoableAction } from '@/db/occurrence-actions';
 import { buildMoney, saveNewTransaction } from '@/db/save-transaction';
-import { applySeriesEdit } from '@/db/series-edit';
 import { CARD_CURRENCY, fxFeeFor } from '@/domain/cards';
 import { availableModes, dealRate, dealRuleFor } from '@/domain/deal-rules';
 import { planSeriesEdit, type EditScope, type SeriesEditError } from '@/domain/series-edit';
-import { buildPatch, isEmptyPatch, isInstallmentPlan, occurrenceToFormValues } from '@/domain/tx-edit';
+import {
+  buildPatch,
+  duplicateFormValues,
+  isEmptyPatch,
+  isInstallmentPlan,
+  occurrenceToFormValues,
+} from '@/domain/tx-edit';
 import {
   chargesInterest,
   defaultFormValues,
@@ -49,7 +55,13 @@ import {
   type TxFormParsed,
   type TxFormValues,
 } from '@/domain/tx-form';
-import { categoriesFor, methodFits, standingViaOf, type StandingVia } from '@/domain/tx-options';
+import {
+  categoriesFor,
+  methodFits,
+  methodOwnedBy,
+  standingViaOf,
+  type StandingVia,
+} from '@/domain/tx-options';
 import { MethodForm } from '@/features/cards/method-editor';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
@@ -96,6 +108,22 @@ function fallbackMode(mode: RecurrenceMode, offered: readonly RecurrenceMode[]):
   return undefined;
 }
 
+/** What the form's resolver is told about the edit: whether it is one payment, whose rule is not on show. */
+type TxFormContext = { readonly oneOccurrence: boolean };
+
+const schemaResolver = zodResolver(txFormSchema);
+
+/**
+ * The schema, minus the rule's end date when one payment is being edited.
+ *
+ * Moving one payment past its series' end is a move, not a rule change: the
+ * end-date field is not on screen in that scope, so an "ends before it starts"
+ * error on it would refuse the save without a word. The rule is not written
+ * in that scope either, so its end date has nothing to say about the move.
+ */
+const txFormResolver: Resolver<TxFormValues, TxFormContext, TxFormParsed> = (values, context, options) =>
+  schemaResolver(context?.oneOccurrence === true ? { ...values, endDate: '' } : values, context, options);
+
 /**
  * The add-transaction sheet.
  *
@@ -135,7 +163,7 @@ export function TransactionSheet({
   readonly activeProfileId: string;
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
 }) {
   const { t } = useTranslation(['common', 'categories', 'profiles']);
   const titleId = useId();
@@ -156,6 +184,7 @@ export function TransactionSheet({
     [profiles, activeProfileId, me],
   );
 
+  const addKind = target.mode === 'add' ? target.kind : 'expense';
   const adding = useMemo<TxFormValues>(
     () => ({
       ...defaultFormValues({
@@ -164,10 +193,29 @@ export function TransactionSheet({
         today,
         primeRate: prime.primeRate,
       }),
-      categoryId: categoriesFor(categories, 'expense')[0]?.id ?? '',
+      // Preset by the Add menu's choice; the kind control can still switch it.
+      kind: addKind,
+      categoryId: categoriesFor(categories, addKind)[0]?.id ?? '',
     }),
-    [defaultProfileId, baseCurrency, today, categories, prime.primeRate],
+    [defaultProfileId, baseCurrency, today, categories, prime.primeRate, addKind],
   );
+
+  // Duplicate: the row named by the URL, loaded exactly as the edit form loads one.
+  const from = target.mode === 'add' ? target.from : undefined;
+  const source = useEditTarget(
+    from === undefined
+      ? { mode: 'closed' }
+      : { mode: 'edit', transactionId: from.transactionId, at: from.at },
+    today,
+  );
+  // A source deleted meanwhile ('gone') leaves a plain add form of the same kind.
+  const addInitial =
+    from !== undefined && source.status === 'ready'
+      ? duplicateFormValues(source.target.occurrence, source.target.transaction, adding, today, {
+          profiles,
+          methods: paymentMethods,
+        })
+      : adding;
 
   const isAdd = target.mode === 'add';
   const open = target.mode === 'add' || target.mode === 'edit';
@@ -188,23 +236,29 @@ export function TransactionSheet({
          * and "add another", or opening a different row, silently inherits it.
          */}
         {isAdd ? (
-          <TransactionForm
-            key="add"
-            initial={adding}
-            profiles={profiles}
-            categories={categories}
-            paymentMethods={paymentMethods}
-            baseCurrency={baseCurrency}
-            today={today}
-            onSaved={onSaved}
-            onCancel={() => {
-              onOpenChange(false);
-            }}
-          />
+          from !== undefined && (source.status === 'loading' || source.status === 'idle') ? (
+            <FormSkeleton />
+          ) : (
+            <TransactionForm
+              // A fresh form for each kind and each source row.
+              key={`add-${addKind}-${from === undefined ? 'new' : `${from.transactionId}@${from.at}`}`}
+              initial={addInitial}
+              profiles={profiles}
+              categories={categories}
+              paymentMethods={paymentMethods}
+              baseCurrency={baseCurrency}
+              today={today}
+              onSaved={onSaved}
+              onCancel={() => {
+                onOpenChange(false);
+              }}
+            />
+          )
         ) : target.mode === 'edit' ? (
           <EditBody
             key={`${target.transactionId}#${target.at}`}
             state={editing}
+            focus={target.focus}
             profiles={profiles}
             categories={categories}
             paymentMethods={paymentMethods}
@@ -221,8 +275,20 @@ export function TransactionSheet({
   );
 }
 
+/** The form's place while the row it opens on loads. */
+function FormSkeleton() {
+  return (
+    <div className="space-y-3 px-4 pb-6" aria-busy="true">
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-11 w-full rounded-lg" />
+      ))}
+    </div>
+  );
+}
+
 function EditBody({
   state,
+  focus,
   profiles,
   categories,
   paymentMethods,
@@ -232,25 +298,19 @@ function EditBody({
   onCancel,
 }: {
   readonly state: EditTargetState;
+  /** Opened from "A different amount…": the field to put the caret in. */
+  readonly focus?: 'amount' | undefined;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
 
-  if (state.status === 'loading' || state.status === 'idle') {
-    return (
-      <div className="space-y-3 px-4 pb-6" aria-busy="true">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-11 w-full rounded-lg" />
-        ))}
-      </div>
-    );
-  }
+  if (state.status === 'loading' || state.status === 'idle') return <FormSkeleton />;
 
   if (state.status === 'gone') {
     /*
@@ -277,6 +337,7 @@ function EditBody({
     <TransactionForm
       initial={occurrenceToFormValues(state.target.occurrence, state.target.transaction)}
       editing={state.target}
+      focusAmount={focus === 'amount'}
       profiles={profiles}
       categories={categories}
       paymentMethods={paymentMethods}
@@ -291,6 +352,7 @@ function EditBody({
 function TransactionForm({
   initial,
   editing,
+  focusAmount = false,
   profiles,
   categories,
   paymentMethods,
@@ -302,12 +364,14 @@ function TransactionForm({
   readonly initial: TxFormValues;
   /** Absent when adding. */
   readonly editing?: EditTarget;
+  /** Put the caret in the amount once the form is up. */
+  readonly focusAmount?: boolean;
   readonly profiles: readonly Profile[];
   readonly categories: readonly Category[];
   readonly paymentMethods: readonly PaymentMethod[];
   readonly baseCurrency: Currency;
   readonly today: LocalDate;
-  readonly onSaved: (date: LocalDate) => void;
+  readonly onSaved: (date: LocalDate, undoable?: UndoableAction, onlyAmount?: boolean) => void;
   readonly onCancel: () => void;
 }) {
   const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
@@ -346,9 +410,22 @@ function TransactionForm({
   const partialId = useId();
   const profileLabelId = useId();
 
-  const form = useForm<TxFormValues, unknown, TxFormParsed>({
+  // Opened from "A different amount…": the amount is what the person came to change.
+  useEffect(() => {
+    if (!focusAmount) return;
+    // After the sheet's own initial focus, which would otherwise win.
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(amountId)?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [focusAmount, amountId]);
+
+  const form = useForm<TxFormValues, TxFormContext, TxFormParsed>({
     defaultValues: initial,
-    resolver: zodResolver(txFormSchema),
+    resolver: txFormResolver,
+    context: { oneOccurrence: editing !== undefined && effectiveScope === 'one' },
     // Errors appear once a field has been visited, not on the first keystroke:
     // an amount field that turns red at "4" on the way to "45" is telling the
     // user off for typing.
@@ -670,8 +747,15 @@ function TransactionForm({
 
       const { plan } = planned;
       const run = async (): Promise<void> => {
-        await applySeriesEdit(db, plan);
-        onSaved(patch.date ?? editing.occurrence.date);
+        // The same write, with what it overwrote kept, so the caller can offer
+        // Undo, and whether the amount was all that changed, so it can say so.
+        // The series row goes with it only when a moved payment shifts its bounds.
+        const undoable = await applyUndoablePlan(
+          db,
+          withSeriesBounds(editing.transaction, editing.overrides, plan),
+        );
+        const onlyAmount = Object.keys(patch).every((key) => key === 'money');
+        onSaved(patch.date ?? editing.occurrence.date, undoable, onlyAmount);
       };
 
       const dropped = plan.warnings.find((w) => w.kind === 'overrides_dropped')?.count ?? 0;
@@ -1001,7 +1085,16 @@ function TransactionForm({
                 <Segmented
                   value={field.value}
                   labelledBy={profileLabelId}
-                  onChange={field.onChange}
+                  onChange={(next) => {
+                    field.onChange(next);
+                    // A card the new person cannot pay with is let go: the
+                    // picker stops offering it, so it would be saved unseen.
+                    const method = paymentMethods.find((m) => m.id === form.getValues('paymentMethodId'));
+                    if (method !== undefined && !methodOwnedBy(method, next)) {
+                      setValue('paymentMethodId', '');
+                      changeMethod('');
+                    }
+                  }}
                   size="sm"
                   options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
                 />

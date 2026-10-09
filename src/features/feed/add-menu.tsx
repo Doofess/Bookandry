@@ -1,65 +1,99 @@
-import { Pencil, Sparkles } from 'lucide-react';
+import { HandCoins, type LucideIcon, ShoppingBag, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Fab } from '@/components/fab';
+import { AddButton } from '@/components/add-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { Kind } from '@/types/money';
 
 /**
- * The + button, and the two ways to add: by hand, or by handing over a file
- * for the AI to read.
+ * The Add pill, and the ways to add: an expense, income, or a file for the
+ * AI to read.
  *
- * The FAB is the menu's trigger, rendered through it so it keeps its fixed
- * place, its look and its test id while the menu adds the popup's ARIA state.
- * The menu opens above the button - it sits at the bottom of the screen - and
- * "Add manually" comes first, so Enter, Enter is still the quickest way to the
- * form.
+ * The pill is the menu's trigger, rendered through it so it keeps its fixed
+ * place and its test id while the menu adds the popup's ARIA state. The menu
+ * opens above it, and Expense comes first, so Enter, Enter is still the
+ * quickest way to the form.
  */
 export function AddMenu({
   disabled,
   aiAvailable,
-  onAddManually,
+  onAdd,
   onAddWithAi,
 }: {
   readonly disabled: boolean;
   /** False in a build without accounts: reading a file needs the account's server. */
   readonly aiAvailable: boolean;
-  readonly onAddManually: () => void;
+  readonly onAdd: (kind: Kind) => void;
   readonly onAddWithAi: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Fab />} disabled={disabled} />
+      <DropdownMenuTrigger render={<AddButton />} disabled={disabled} />
       <DropdownMenuContent
         side="top"
         align="center"
         sideOffset={10}
-        className="w-max min-w-60 p-1.5"
+        className="w-72 p-1.5"
         data-testid="add-menu"
       >
-        <DropdownMenuItem className="min-h-12 gap-3 px-3 text-base" onClick={onAddManually}>
-          <Pencil className="size-5" aria-hidden="true" />
-          {t('addMenu.manual')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="min-h-12 gap-3 px-3 text-base"
+        <AddItem
+          icon={ShoppingBag}
+          title={t('addMenu.expense')}
+          hint={t('addMenu.expenseHint')}
+          onClick={() => {
+            onAdd('expense');
+          }}
+        />
+        <AddItem
+          icon={HandCoins}
+          title={t('addMenu.income')}
+          hint={t('addMenu.incomeHint')}
+          onClick={() => {
+            onAdd('income');
+          }}
+        />
+        <DropdownMenuSeparator />
+        <AddItem
+          icon={Sparkles}
+          title={t('addMenu.ai')}
+          hint={aiAvailable ? t('addMenu.aiHint') : t('addMenu.aiUnavailable')}
           disabled={!aiAvailable}
           onClick={onAddWithAi}
-        >
-          <Sparkles className="size-5" aria-hidden="true" />
-          <span className="flex flex-col">
-            <span>{t('addMenu.ai')}</span>
-            <span className="text-xs text-muted-foreground">
-              {aiAvailable ? t('addMenu.aiHint') : t('addMenu.aiUnavailable')}
-            </span>
-          </span>
-        </DropdownMenuItem>
+        />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function AddItem({
+  icon: Icon,
+  title,
+  hint,
+  disabled,
+  onClick,
+}: {
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly hint: string;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <DropdownMenuItem className="min-h-12 gap-3 px-2.5 py-2" disabled={disabled} onClick={onClick}>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+        <Icon className="size-5" strokeWidth={1.75} aria-hidden="true" />
+      </span>
+      <span className="flex flex-col">
+        <span className="text-base font-medium">{title}</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </DropdownMenuItem>
   );
 }

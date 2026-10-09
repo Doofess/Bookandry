@@ -33,7 +33,7 @@
   "commitments": {
     "title": "Total commitments on the card",
     "householdTitle": "Total commitments on the cards",
-    "householdBody": "Everything the household's cards will still charge the bank: purchases waiting for their bill, and every payment still to come on instalments, credit and loans.",
+    "householdBody": "Everything these cards will still charge the bank: purchases waiting for their bill, and every payment still to come on instalments, credit and loans.",
     "total": "Still to be charged",
     "purchases": "Purchases not yet charged",
     "installments": "Instalments",
@@ -67,7 +67,6 @@
     "non_bank": "Non-bank card"
   },
   "edit": {
-    "open": "Edit card",
     "theCard": "The card",
     "issuer": "Card company (manual)",
     "network": "Network",
@@ -126,7 +125,7 @@
   "discountEnded": "The fee discount has ended.",
   "accounts": {
     "title": "Bank accounts",
-    "body": "The accounts the household's cards are paid from, and how far below zero each can go.",
+    "body": "The accounts the cards are paid from, and how far below zero each can go.",
     "add": "Add a bank account",
     "empty": "No bank accounts yet. Add one, and each card can say which account pays its bill.",
     "holding": {
@@ -142,6 +141,7 @@
     "cardsFrom": "Card bills paid from this account",
     "chargeOn": "on {{date}}",
     "noCharge": "Nothing coming up",
+    "archivedCard": "Archived",
     "edit": {
       "open": "Edit account",
       "theAccount": "The account",
@@ -165,8 +165,8 @@
       "numberInvalid": "Digits only, 2 to 13 of them.",
       "holding": "Type of account",
       "owner": "Account holder",
-      "holders": "Holders in the household",
-      "holdersHint": "Everyone in the household who is on the account.",
+      "holders": "Account holders",
+      "holdersHint": "Tick everyone here whose name is on the account.",
       "holdersInvalid": "Choose who the account belongs to.",
       "otherHolders": "Other holders",
       "otherHoldersPlaceholder": "e.g. a business partner",
@@ -174,6 +174,19 @@
       "overdraftHint": "How far below zero the bank lets the account go. Leave empty if it has none."
     },
     "open": "Banks, branches and overdraft limits"
+  },
+  "cardMenu": {
+    "label": "Options for {{name}}",
+    "edit": "Edit card",
+    "rates": "Interest table",
+    "transactions": "Transactions on this card",
+    "import": "Import a statement",
+    "archive": "Archive",
+    "archived": "{{name}} archived",
+    "restore": "Restore",
+    "restored": "{{name}} restored",
+    "archivedCards_one": "Archived cards ({{count}})",
+    "archivedCards_other": "Archived cards ({{count}})"
   },
   "menu": {
     "label": "Cards and payment methods",

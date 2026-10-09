@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import { useCallback, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
 /**
  * A segmented single-choice control.
@@ -27,6 +27,13 @@ export type SegmentedOption<T extends string> = {
   readonly label: string;
   /** Rendered under the label; also joined into the option's accessible name. */
   readonly hint?: string;
+  /**
+   * A mark above the label - a brand's logo. Decorative: the label stays the
+   * option's name, so the icon must be aria-hidden.
+   */
+  readonly icon?: ReactNode;
+  /** Only the icon shows; the label is still the name, read out but not seen. */
+  readonly labelHidden?: boolean;
 };
 
 export function Segmented<T extends string>({
@@ -120,9 +127,28 @@ export function Segmented<T extends string>({
               selected
                 ? 'bg-background font-medium text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',
+              // A logo's tile is white, as the selected option's surface is: an
+              // inset edge says which one is chosen when the fill cannot.
+              option.icon === undefined
+                ? undefined
+                : cn(
+                    'flex min-h-16 min-w-0 flex-col items-center gap-1 px-1.5',
+                    // Marks along a row line up at the top when one label wraps
+                    // to two lines; a mark standing alone sits in the middle.
+                    option.labelHidden === true ? 'justify-center' : 'justify-start',
+                    selected && 'inset-ring-2 inset-ring-primary',
+                  ),
             )}
           >
-            <span className="block whitespace-nowrap">{option.label}</span>
+            {option.icon}
+            <span
+              className={cn(
+                option.icon === undefined ? 'block whitespace-nowrap' : 'block leading-tight text-balance',
+                option.labelHidden === true && 'sr-only',
+              )}
+            >
+              {option.label}
+            </span>
             {option.hint === undefined ? null : (
               <span className="mt-0.5 block text-xs text-muted-foreground">{option.hint}</span>
             )}

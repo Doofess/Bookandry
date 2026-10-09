@@ -35,7 +35,7 @@ const COPY = {
     paidWith: 'Paid with',
     charged: /Charged to the bank with this card's bill on/,
     balance: 'Balance',
-    pending: 'Bought by card, not yet charged',
+    pending: 'Not in the balance yet: bought by card, not yet charged',
     nextBill: /Next charge/,
     // The browser's locale makes dollars the base here: not the card's
     // currency, so its 2.5% foreign-currency fee is on top.
@@ -62,7 +62,7 @@ const COPY = {
     paidWith: 'אמצעי תשלום',
     charged: /יחויב בבנק עם חיוב הכרטיס ב־/,
     balance: 'יתרה',
-    pending: 'נקנה בכרטיס, טרם חויב',
+    pending: 'עדיין לא ביתרה: נקנה בכרטיס, טרם חויב',
     nextBill: /החיוב הבא/,
     charge: '250.00',
     demoCards: ['מקס', 'כאל', 'ישראכרט'],
@@ -160,6 +160,93 @@ for (const lang of ['en', 'he'] as const) {
   });
 }
 
+test.describe('@cards archive', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'en', 'The menu is read in English; its Hebrew copy is unit-tested.');
+  });
+
+  test('archives a card from its menu, keeps it under Archived cards, and restores it', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.getByRole('link', { name: 'Cards' }).click();
+    const card = page.getByRole('article').filter({ hasText: 'Yossi card' });
+    await expect(card).toBeVisible();
+
+    await card.getByRole('button', { name: 'Options for Yossi card' }).click();
+    await page.getByRole('menuitem', { name: 'Archive' }).click();
+    await expect(page.locator('[data-sonner-toast]').first()).toContainText('Yossi card archived');
+    await expect(card).toHaveCount(0);
+
+    const archived = page.getByRole('button', { name: 'Archived cards (1)' });
+    await archived.click();
+    const list = page.getByRole('list', { name: 'Archived cards (1)' });
+    await list.getByRole('button', { name: 'Options for Yossi card' }).click();
+    await page.getByRole('menuitem', { name: 'Restore' }).click();
+
+    await expect(card).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Archived cards/ })).toHaveCount(0);
+  });
+});
+
+test.describe('@cards the brands’ logos', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'en',
+      'Logos are the same in every language; the pickers are unit-tested.',
+    );
+  });
+
+  /** Every logo on the page has loaded: bundled, precached and decodable, not a broken image. */
+  const allLoaded = (page: Page) =>
+    page
+      .locator('[data-slot="brand-mark"] img')
+      .evaluateAll((imgs) =>
+        imgs.map((img) => (img instanceof HTMLImageElement && img.complete ? img.naturalWidth : 0)),
+      );
+
+  test('shows each bank, card company and network by its own logo, and fits a 320px phone', async ({
+    page,
+  }) => {
+    await completeFirstRun(page, 'en', { demo: false });
+    await page.getByRole('link', { name: 'Cards' }).click();
+    await page.getByRole('button', { name: 'Add a card' }).click();
+    const dialog = page.getByRole('dialog');
+    const banks = dialog.getByRole('radiogroup', { name: 'Bank', exact: true });
+    await expect(banks.getByRole('radio', { name: 'Bank Leumi' })).toBeVisible();
+    await banks.getByRole('radio', { name: 'Bank Leumi' }).click();
+    await expect(dialog.getByRole('radiogroup', { name: 'Card company', exact: true })).toBeVisible();
+
+    const loaded = async () => {
+      await expect.poll(async () => (await allLoaded(page)).length).toBeGreaterThan(20);
+      await expect.poll(async () => (await allLoaded(page)).filter((width) => width === 0)).toEqual([]);
+    };
+    await loaded();
+    // Each network by its mark alone, still named for a screen reader.
+    for (const network of ['Visa', 'Mastercard', 'Amex', 'Diners', 'Isracard']) {
+      await expect(
+        dialog
+          .getByRole('radiogroup', { name: 'Network' })
+          .getByRole('radio', { name: network, exact: true }),
+      ).toBeVisible();
+    }
+
+    await page.setViewportSize({ width: 320, height: 720 });
+    await loaded();
+    const sideways = await dialog.evaluate((sheet) => {
+      const wide = [...sheet.querySelectorAll('[role="radiogroup"]')].filter(
+        (group) => group.scrollWidth > group.clientWidth + 1,
+      );
+      return {
+        page: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        sheet: sheet.scrollWidth > sheet.clientWidth + 1,
+        groups: wide.map((group) => group.getAttribute('aria-labelledby')),
+      };
+    });
+    expect(sideways).toEqual({ page: false, sheet: false, groups: [] });
+  });
+});
+
 test.describe('@cards the monthly fee', () => {
   // A shekel base: the fee is in shekels, so the Hebrew project is the one.
   // eslint-disable-next-line no-empty-pattern
@@ -185,7 +272,16 @@ test.describe('@cards the monthly fee', () => {
 
     // And in the feed, as a line on the card at the month's end.
     await page.getByRole('link', { name: 'תנועות' }).click();
-    await expect(page.getByRole('listitem').filter({ hasText: 'דמי כרטיס' })).toContainText('14.90');
+    const fee = page.getByRole('listitem').filter({ hasText: 'דמי כרטיס' });
+    await expect(fee).toContainText('14.90');
+
+    // Its category icon is not a button (a fee is changed where the card is),
+    // but a tap on it still opens what the row opens: the Cards screen.
+    const icon = await fee.locator('[data-slot="category-chip"]').boundingBox();
+    expect(icon).not.toBeNull();
+    if (icon === null) return;
+    await page.mouse.click(icon.x + icon.width / 2, icon.y + icon.height / 2);
+    await expect(page).toHaveURL(/\/cards$/);
   });
 });
 
@@ -288,6 +384,25 @@ test.describe('@cards bank accounts', () => {
     await openAccounts(page);
     await expect(account).toContainText('חיובי כרטיסים שיורדים מהחשבון');
     await expect(account).toContainText('Visa');
+  });
+
+  test('highlights one bank at a time in the picker', async ({ page }) => {
+    await completeFirstRun(page, 'he', { demo: false });
+    await openAccounts(page);
+    await page.getByRole('button', { name: 'הוספת חשבון בנק' }).click();
+    await page.getByRole('combobox', { name: /בנק/ }).click();
+    const options = page.getByRole('option');
+    await expect(options.first()).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    // Only the row the keyboard is on carries the highlight; every other row stays transparent.
+    // Polled: the rows carry a (near-zero) colour transition, so the computed colour lags the attribute by a tick.
+    await expect
+      .poll(() =>
+        options.evaluateAll(
+          (rows) => rows.filter((row) => getComputedStyle(row).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
+        ),
+      )
+      .toBe(1);
   });
 
   test('finds the Arab banks by their Arabic name', async ({ page }) => {

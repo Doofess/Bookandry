@@ -35,7 +35,9 @@ async function sweepAtPrime(): Promise<void> {
   try {
     const stored = await readStored();
     const fresh = !primeIsStale(stored, systemClock.nowMs(), systemClock.today());
-    await sweepLongCredit(db, primeView(stored).primeRate, systemClock.today(), { freeze: fresh });
+    await sweepLongCredit(db, primeView(stored).primeRate, systemClock.today(), systemClock.nowIso(), {
+      freeze: fresh,
+    });
     freezeHeld = !fresh;
   } catch {
     // Kept as it was; the next start, or the next change in prime, tries again.

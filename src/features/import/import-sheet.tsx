@@ -71,7 +71,7 @@ import {
   unfinishedItem,
 } from './found-methods';
 import { MethodPanel, MethodsGroup, UnfinishedGroup } from './found-methods-list';
-import { readSession, writeSession, type ImportSession } from './import-session';
+import { readSession, startSession, usableVia, writeSession, type ImportSession } from './import-session';
 import {
   applyBatch,
   buildReview,
@@ -168,8 +168,12 @@ export function ImportSheet(props: ImportSheetProps) {
     props.profiles.length < 2 || props.profiles.some((p) => p.id === props.activeProfileId)
       ? defaultProfileId
       : '';
-  const [session, setSession] = useState<ImportSession>(
-    () => readSession() ?? EMPTY_SESSION(presetProfileId),
+  const [session, setSession] = useState<ImportSession>(() =>
+    startSession(
+      readSession(),
+      EMPTY_SESSION(presetProfileId),
+      usableVia(props.target.via, props.paymentMethods, props.activeProfileId),
+    ),
   );
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -677,7 +681,8 @@ async function flagAgainstHousehold(
       { today },
     ),
   );
-  const cards = methods.filter((m) => m.type === 'credit_card' && m.isArchived === 0);
+  // Archived ones too: their fees up to the month they were archived are still the household's.
+  const cards = methods.filter((m) => m.type === 'credit_card');
   const fees = cardFeeOccurrences({
     cards,
     occurrences,

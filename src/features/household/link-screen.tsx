@@ -1,4 +1,4 @@
-import { Check, Users } from 'lucide-react';
+import { Check, Link2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { accountController, useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { ScreenPanel } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ReconvertDialog } from '@/features/settings/reconvert-dialog';
 import type { InvitePreview } from '@/services/supabase/household';
@@ -86,7 +88,7 @@ export function LinkScreen() {
       await accountController().acceptInvite(token, currency);
       forgetPendingInvite();
       toast(t('link.joined'));
-      void navigate(ROUTES.household, { replace: true });
+      void navigate(SETTINGS_ROUTES.linking, { replace: true });
     } catch (error) {
       const code = error instanceof ServerError ? error.code : undefined;
       toast.error(
@@ -189,7 +191,7 @@ export function LinkScreen() {
 
   // Every end state offers the way out, and forgets the token on the way, so
   // the app stops bringing the person back here. Unreachable, or already in
-  // the household, is one too: the link in the email still works later.
+  // linked with them, is one too: the link in the email still works later.
   const done =
     state.kind === 'invalid' ||
     state.kind === 'wrong_account' ||
@@ -199,30 +201,35 @@ export function LinkScreen() {
     token === '';
 
   return (
-    <section className="mx-auto max-w-lg space-y-4 px-4 py-10">
-      <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
-        <Users className="size-6" aria-hidden="true" />
-      </span>
-      <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
-      {body}
-      {done ? (
-        <Button type="button" variant="outline" onClick={leave}>
-          {t('link.home')}
-        </Button>
-      ) : null}
-      {state.kind === 'ready' ? (
-        <ReconvertDialog
-          open={converting}
-          onOpenChange={setConverting}
-          currentCurrency={settings.defaultCurrency}
-          today={today}
-          fixedTarget={state.preview.currency}
-          onDone={(currency) => {
-            setConverting(false);
-            void join(currency);
-          }}
-        />
-      ) : null}
-    </section>
+    <div className="mx-auto max-w-lg pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel />
+      <PanelSheet>
+        <section className="space-y-4 px-4 pt-8 pb-10">
+          <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
+            <Link2 className="size-6" aria-hidden="true" />
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
+          {body}
+          {done ? (
+            <Button type="button" variant="outline" onClick={leave}>
+              {t('link.home')}
+            </Button>
+          ) : null}
+          {state.kind === 'ready' ? (
+            <ReconvertDialog
+              open={converting}
+              onOpenChange={setConverting}
+              currentCurrency={settings.defaultCurrency}
+              today={today}
+              fixedTarget={state.preview.currency}
+              onDone={(currency) => {
+                setConverting(false);
+                void join(currency);
+              }}
+            />
+          ) : null}
+        </section>
+      </PanelSheet>
+    </div>
   );
 }

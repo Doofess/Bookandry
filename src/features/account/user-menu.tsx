@@ -66,9 +66,11 @@ export function UserMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={t('menu.label')}
-          className="rounded-full focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          // On the deep panel: a 44px target around the 34px picture, and a
+          // light ring so the picture's edge shows on the sapphire.
+          className="-me-1.5 flex size-11 items-center justify-center rounded-full focus-visible:ring-3 focus-visible:ring-white/60 focus-visible:outline-none"
         >
-          <AccountAvatar size={34} />
+          <AccountAvatar size={34} className="ring-2 ring-white/35" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={8} className="w-72 p-1.5">
           {signedIn ? (

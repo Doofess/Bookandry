@@ -1,8 +1,17 @@
-import type { Occurrence, Override } from '@/types/domain';
-import type { IsoInstant } from '@/types/money';
+import {
+  planSeriesEdit,
+  type EditScope,
+  type SeriesEditPlan,
+  type TransactionPatch,
+} from '@/domain/series-edit';
+import { compareLocal } from '@/lib/dates';
+import type { Occurrence, Override, Transaction } from '@/types/domain';
+import type { IsoInstant, LocalDate } from '@/types/money';
 
 import type { BookandryDB } from './db';
+import { materialize } from './materialize';
 import { restoreDeleted, softDelete } from './repos/transactions';
+import { applySeriesEdit } from './series-edit';
 
 /**
  * Skipping, restoring and deleting - the three destructive-ish row actions.
@@ -141,4 +150,202 @@ export async function deleteTransaction(
       await restoreDeleted(db, transactionId, undoneAt);
     },
   };
+}
+
+/**
+ * Apply a series-edit plan and keep what it overwrote, so Undo puts back
+ * every row it touched exactly as it was.
+ *
+ * A row that did not exist before (a split's continuation, a new override)
+ * is deleted on undo; every other row is written back whole, stamped with
+ * the undo instant so it wins a later merge. Both halves are one transaction.
+ *
+ * Undo refuses, whole, once any of those rows has changed since: the series
+ * deleted, or the same row saved again, inside the toast's window. Putting
+ * the old rows back then would silently overwrite that later change. Each
+ * row's `updatedAt` as the plan left it (or its absence) is the witness.
+ */
+export async function applyUndoablePlan(db: BookandryDB, plan: SeriesEditPlan): Promise<UndoableAction> {
+  const transactionIds = plan.transactions.map((t) => t.id);
+  const overrideIds = [...new Set([...plan.overrides.map((o) => o.id), ...plan.deleteOverrideIds])];
+  let transactionsBefore: readonly (Transaction | undefined)[] = [];
+  let overridesBefore: readonly (Override | undefined)[] = [];
+  let written: readonly (IsoInstant | undefined)[] = [];
+
+  const stamps = async (): Promise<readonly (IsoInstant | undefined)[]> => [
+    ...(await db.transactions.bulkGet(transactionIds)).map((row) => row?.updatedAt),
+    ...(await db.overrides.bulkGet(overrideIds)).map((row) => row?.updatedAt),
+  ];
+
+  await db.transaction('rw', [db.transactions, db.overrides], async () => {
+    transactionsBefore = await db.transactions.bulkGet(transactionIds);
+    overridesBefore = await db.overrides.bulkGet(overrideIds);
+    await applySeriesEdit(db, plan);
+    written = await stamps();
+  });
+
+  return {
+    undo: async (undoneAt: IsoInstant) => {
+      await db.transaction('rw', [db.transactions, db.overrides], async () => {
+        const now = await stamps();
+        // Thrown inside the transaction, so nothing below is written.
+        if (now.some((stamp, i) => stamp !== written[i])) throw new Error('changed_since');
+        for (const [i, id] of overrideIds.entries()) {
+          const before = overridesBefore[i];
+          if (before === undefined) await db.overrides.delete(id);
+          else await db.overrides.put({ ...before, updatedAt: undoneAt });
+        }
+        for (const [i, id] of transactionIds.entries()) {
+          const before = transactionsBefore[i];
+          if (before === undefined) await db.transactions.delete(id);
+          else await db.transactions.put({ ...before, updatedAt: undoneAt });
+        }
+      });
+    },
+  };
+}
+
+/**
+ * One edit of one occurrence, through exactly the path the edit form takes
+ * (`planSeriesEdit`, then `applySeriesEdit`), so overrides and splits behave
+ * as they do there. Throws when the plan is refused or the row is gone.
+ */
+export async function editOccurrence(
+  db: BookandryDB,
+  input: {
+    readonly occurrence: Occurrence;
+    readonly scope: EditScope;
+    readonly patch: TransactionPatch;
+    readonly today: LocalDate;
+    readonly now: IsoInstant;
+    readonly newId: () => string;
+  },
+): Promise<UndoableAction> {
+  const transaction = await db.transactions.get(input.occurrence.transaction.id);
+  if (transaction === undefined || transaction.isDeleted === 1) throw new Error('gone');
+  const overrides = await db.overrides.where('transactionId').equals(transaction.id).toArray();
+
+  const planned = planSeriesEdit({
+    transaction,
+    overrides,
+    scope: input.scope,
+    // The ORIGINAL slot, never the moved date: it is the override's key.
+    at: input.occurrence.originalDate,
+    patch: input.patch,
+    today: input.today,
+    now: input.now,
+    newId: input.newId,
+  });
+  if (!planned.ok) throw new Error(planned.error.kind);
+  return applyUndoablePlan(db, withSeriesBounds(transaction, overrides, planned.plan));
+}
+
+/**
+ * The category pop-out's write. "Only this time" is scope `one`; "from now on"
+ * is `future` for a plain series; "every payment" is `all` for a plan, which
+ * the domain never splits - the same choices the edit form's scope offers.
+ */
+export async function changeCategory(
+  db: BookandryDB,
+  input: {
+    readonly occurrence: Occurrence;
+    readonly categoryId: string;
+    readonly scope: 'one' | 'future' | 'all';
+    readonly today: LocalDate;
+    readonly now: IsoInstant;
+    readonly newId: () => string;
+  },
+): Promise<UndoableAction> {
+  const { categoryId, ...rest } = input;
+  return editOccurrence(db, { ...rest, patch: { categoryId } });
+}
+
+/**
+ * Move a projected occurrence to another day: "Charged today", or a date
+ * picked in the "not counted yet" pop-out.
+ *
+ * A series occurrence moves the way the edit form moves one: a `modify`
+ * override at scope `one`, which keeps any amount or note already changed on
+ * it. A one-time row is its own only occurrence and the planner never moves a
+ * date outside scope `one`, so its own date moves instead, and an override on
+ * that day moves with it; that also keeps `seriesStart` in step, so the feed
+ * still finds it. A series occurrence cannot move to before the series' own
+ * start: nothing would find it there.
+ *
+ * Only the date moves: the money keeps its snapshot, rate and all. A changed
+ * amount is the edit form's job ("A different amount…").
+ */
+export async function moveOccurrence(
+  db: BookandryDB,
+  input: {
+    readonly occurrence: Occurrence;
+    readonly to: LocalDate;
+    readonly today: LocalDate;
+    readonly now: IsoInstant;
+    readonly newId: () => string;
+  },
+): Promise<UndoableAction> {
+  const transaction = await db.transactions.get(input.occurrence.transaction.id);
+  if (transaction === undefined || transaction.isDeleted === 1) throw new Error('gone');
+
+  if (transaction.recurrence.type === 'one_time') {
+    const owned = await db.overrides.where('transactionId').equals(transaction.id).toArray();
+    return applyUndoablePlan(db, {
+      transactions: [{ ...transaction, date: input.to, updatedAt: input.now }],
+      overrides: owned
+        .filter((o) => o.occurrenceDate === transaction.date)
+        .map((o) => ({ ...o, occurrenceDate: input.to, updatedAt: input.now })),
+      deleteOverrideIds: [],
+      warnings: [],
+      effectiveScope: 'all',
+    });
+  }
+
+  if (compareLocal(input.to, transaction.date) < 0) throw new Error('before_series_start');
+  const overrides = await db.overrides.where('transactionId').equals(transaction.id).toArray();
+  const planned = planSeriesEdit({
+    transaction,
+    overrides,
+    scope: 'one',
+    // The ORIGINAL slot, never the moved date: it is the override's key.
+    at: input.occurrence.originalDate,
+    patch: { date: input.to },
+    today: input.today,
+    now: input.now,
+    newId: input.newId,
+  });
+  if (!planned.ok) throw new Error(planned.error.kind);
+  return applyUndoablePlan(db, withSeriesBounds(transaction, overrides, planned.plan));
+}
+
+/**
+ * A plan, plus its series row when the plan's overrides move the series' first
+ * or last day.
+ *
+ * Scope `one` writes the override alone. The series goes through with it
+ * only when the override changes what the series row stores: a payment
+ * moved past the series' end widens `seriesEnd` (or one moved back
+ * narrows it), and `applySeriesEdit` materialises the series against the new
+ * override, so the feed and the balance still find it in its new month.
+ *
+ * Otherwise the series is left alone, row and sync state both. Sync is
+ * whole-row last-write-wins: re-putting an unchanged series would push this
+ * device's copy over an edit to it that another device made and this one has
+ * not pulled yet. Undo restores only what the plan wrote, so it leaves the
+ * series alone too.
+ */
+export function withSeriesBounds(
+  transaction: Transaction,
+  overrides: readonly Override[],
+  plan: SeriesEditPlan,
+): SeriesEditPlan {
+  if (plan.transactions.some((t) => t.id === transaction.id)) return plan;
+  const written = new Set(plan.overrides.map((o) => o.id));
+  const dropped = new Set(plan.deleteOverrideIds);
+  const after = [...overrides.filter((o) => !written.has(o.id) && !dropped.has(o.id)), ...plan.overrides];
+  const rematerialized = materialize(transaction, after);
+  const changes =
+    rematerialized.seriesStart !== transaction.seriesStart ||
+    rematerialized.seriesEnd !== transaction.seriesEnd;
+  return changes ? { ...plan, transactions: [...plan.transactions, transaction] } : plan;
 }

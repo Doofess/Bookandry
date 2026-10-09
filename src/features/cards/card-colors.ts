@@ -41,3 +41,12 @@ export function issuerTint(issuer: CardIssuer | undefined): string {
 export function cardGradient(method: Pick<PaymentMethod, 'color' | 'card'>): string {
   return CARD_COLORS.find((c) => c.key === method.color)?.gradient ?? issuerTint(method.card?.issuer);
 }
+
+/**
+ * A colour as one value - its gradient's light end - for an accent that is not
+ * a card's face, such as a bank account's edge. Undefined for no colour or one
+ * this version does not know.
+ */
+export function cardColorValue(key: string | undefined): string | undefined {
+  return CARD_COLORS.find((c) => c.key === key)?.gradient.match(/to-\[(#[0-9a-f]{6})\]/i)?.[1];
+}

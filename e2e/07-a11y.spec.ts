@@ -36,7 +36,9 @@ type Combo = {
 const BLOCKING: readonly Combo[] = [
   { route: '/', name: 'feed', lang: 'en', theme: 'light' },
   { route: '/chart', name: 'chart', lang: 'he', theme: 'dark' },
-  { route: '/household', name: 'household', lang: 'he', theme: 'light' },
+  // Account linking left the tabs for a settings page, which needs an account
+  // this build does not have: Settings stands in its place, in Hebrew.
+  { route: '/settings', name: 'settings', lang: 'he', theme: 'light' },
   { route: '/settings', name: 'settings', lang: 'en', theme: 'dark' },
   { route: '/cards', name: 'cards', lang: 'he', theme: 'dark' },
   { route: '/cards', name: 'cards', lang: 'en', theme: 'light' },
@@ -49,11 +51,7 @@ const REPORTING: readonly Combo[] = [
   { route: '/chart', name: 'chart', lang: 'en', theme: 'light' },
   { route: '/chart', name: 'chart', lang: 'en', theme: 'dark' },
   { route: '/chart', name: 'chart', lang: 'he', theme: 'light' },
-  { route: '/household', name: 'household', lang: 'en', theme: 'light' },
-  { route: '/household', name: 'household', lang: 'en', theme: 'dark' },
-  { route: '/household', name: 'household', lang: 'he', theme: 'dark' },
   { route: '/settings', name: 'settings', lang: 'en', theme: 'light' },
-  { route: '/settings', name: 'settings', lang: 'he', theme: 'light' },
   { route: '/settings', name: 'settings', lang: 'he', theme: 'dark' },
 ];
 
@@ -104,3 +102,62 @@ for (const combo of REPORTING) {
     expect(results.violations.length).toBeGreaterThanOrEqual(0);
   });
 }
+
+test('@a11y BLOCKING the feed pop-outs, open', async ({ page }) => {
+  await completeFirstRun(page, 'he', { theme: 'dark' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  await expect(page.getByRole('main')).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+
+  const scanOpen = async (): Promise<void> => {
+    // Scan the pop-out once it is on screen, not the empty portal it mounts into.
+    await expect(
+      page.locator('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]').first(),
+    ).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags(TAGS)
+      .include('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]')
+      .analyze();
+    expect(results.violations, summarise(results)).toEqual([]);
+    await page.keyboard.press('Escape');
+  };
+
+  const openers = [
+    () => page.getByTestId('prime-pill').click(),
+    () => page.getByRole('heading', { level: 2 }).getByRole('button').first().click(),
+    () =>
+      page
+        .getByRole('button', { name: /^הצגת הפירוט של/ })
+        .first()
+        .click(),
+    () =>
+      page
+        .getByRole('button', { name: /^הצגת הפירוט של/ })
+        .nth(1)
+        .click(),
+    () =>
+      page
+        .getByRole('button', { name: /^פעולות עבור/ })
+        .first()
+        .click(),
+    () =>
+      page
+        .getByRole('button', { name: /^קטגוריה: / })
+        .first()
+        .click(),
+  ];
+  for (const open of openers) {
+    await open();
+    await scanOpen();
+  }
+
+  // The card's ⋯, opened from /cards.
+  await page.goto('/cards');
+  await expect(page.getByRole('main')).toBeVisible();
+  await page
+    .getByRole('button', { name: /^אפשרויות עבור/ })
+    .first()
+    .click();
+  await scanOpen();
+});

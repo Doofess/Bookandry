@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useBaseCurrency, useToday } from '@/app/app-context';
-import { CategoryIcon } from '@/components/category-icon';
+import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
+import { PanelSheet } from '@/components/brand-panel';
+import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/db/db';
@@ -55,65 +57,67 @@ export function CommitmentsScreen() {
   }, [today]);
 
   return (
-    <section className="mx-auto max-w-2xl space-y-4 px-4 py-6 pb-24 lg:pb-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('commitments.title')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('commitments.body')}</p>
-      </header>
+    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
+      <ScreenPanel>
+        <ScreenTitle>{t('commitments.title')}</ScreenTitle>
+      </ScreenPanel>
+      <PanelSheet className="space-y-4 px-4 pt-6">
+        <p className="text-sm text-muted-foreground">{t('commitments.body')}</p>
 
-      {data === undefined ? null : data.commitments.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('commitments.empty')}</p>
-      ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>{t('commitments.monthlyOut')}</CardDescription>
-                <CardTitle className="text-2xl">
-                  <Money minor={data.monthlyExpenseMinor} currency={baseCurrency} announce={false} />
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>{t('commitments.monthlyIn')}</CardDescription>
-                <CardTitle className="text-2xl">
-                  <Money minor={data.monthlyIncomeMinor} currency={baseCurrency} announce={false} />
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </div>
+        {data === undefined ? null : data.commitments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('commitments.empty')}</p>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>{t('commitments.monthlyOut')}</CardDescription>
+                  <CardTitle className="text-2xl">
+                    <Money minor={data.monthlyExpenseMinor} currency={baseCurrency} announce={false} />
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>{t('commitments.monthlyIn')}</CardDescription>
+                  <CardTitle className="text-2xl">
+                    <Money minor={data.monthlyIncomeMinor} currency={baseCurrency} announce={false} />
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            </div>
 
-          <Card>
-            <CardContent className="p-0">
-              <ul className="divide-y divide-border">
-                {data.commitments.map((commitment) => (
-                  <CommitmentRow
-                    key={commitment.transaction.id}
-                    commitment={commitment}
-                    category={data.categories.get(commitment.transaction.categoryId)}
-                    baseCurrency={baseCurrency}
-                    locale={i18n.language}
-                    onOpen={() => {
-                      /*
-                       * Straight into the edit sheet for the NEXT occurrence,
-                       * which is the one anybody wants to change. The feed owns
-                       * that sheet, so the link carries its parameters rather
-                       * than this screen growing a second copy of it.
-                       */
-                      const next = commitment.next;
-                      if (next === undefined) return;
-                      void navigate(
-                        `/?m=${next.date.slice(0, 7)}&edit=${commitment.transaction.id}&at=${next.originalDate}`,
-                      );
-                    }}
-                  />
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </>
-      )}
+            <Card>
+              <CardContent className="p-0">
+                <ul className="divide-y divide-border">
+                  {data.commitments.map((commitment) => (
+                    <CommitmentRow
+                      key={commitment.transaction.id}
+                      commitment={commitment}
+                      category={data.categories.get(commitment.transaction.categoryId)}
+                      baseCurrency={baseCurrency}
+                      locale={i18n.language}
+                      onOpen={() => {
+                        /*
+                         * Straight into the edit sheet for the NEXT occurrence,
+                         * which is the one anybody wants to change. The feed owns
+                         * that sheet, so the link carries its parameters rather
+                         * than this screen growing a second copy of it.
+                         */
+                        const next = commitment.next;
+                        if (next === undefined) return;
+                        void navigate(
+                          `/?m=${next.date.slice(0, 7)}&edit=${commitment.transaction.id}&at=${next.originalDate}`,
+                        );
+                      }}
+                    />
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </PanelSheet>
     </section>
   );
 }
@@ -147,9 +151,7 @@ function CommitmentRow({
         disabled={next === undefined}
         className="flex w-full items-center gap-3 p-3 text-start transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <CategoryIcon name={category?.icon ?? 'Circle'} className="size-4" />
-        </span>
+        <CategoryChip icon={category?.icon ?? 'Circle'} />
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{name}</span>
