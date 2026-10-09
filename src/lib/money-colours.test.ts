@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { contrastRatio, mixOklch, type Oklch } from './color';
+import { compositeOver, contrastRatio, contrastRatioRgb, mixOklch, oklchToSrgb, type Oklch } from './color';
 import { declarations, resolveTheme } from './css-tokens';
 
 /**
@@ -193,7 +193,33 @@ describe('the mapping (§1.5)', () => {
     expect(sheet.get('--on-press')).toBe('var(--box-text)');
   });
 
+  it('retints the paired foregrounds and washes with the sheet, so no ink lands on a dark fill', () => {
+    const sheet = rule('[data-sheet]');
+    for (const name of [
+      '--accent-foreground',
+      '--card-foreground',
+      '--popover-foreground',
+      '--secondary-foreground',
+    ]) {
+      expect(sheet.get(name), name).toBe('var(--on-fill)');
+    }
+    for (const name of ['--accent', '--secondary', '--muted']) {
+      expect(sheet.get(name), name).toBe('color-mix(in oklch, var(--on-fill) 12%, transparent)');
+    }
+  });
+
   it('paints every sheet and hue mark an edge that forced colours keep (§1.8)', () => {
     expect(CSS).toMatch(/\[data-sheet\],\s*\[data-hue\]\s*\{\s*border:\s*2px solid transparent;/);
+  });
+});
+
+describe.each(THEMES)('the wash a sheet puts under chips and hovers, %s', (_name, theme) => {
+  // The spec fixes the wash at 12% of the sheet's own text. That pulls the background toward the text, so
+  // 4.5:1 does not survive it on the mid-contrast fills (worst measured 3.79:1, light teal); 3:1 is the
+  // bar this wash is held to, and a chip that must carry small text sets its own surface.
+  it.each(MONEY_KEYS)('%s: the sheet text still reads at 3:1 on its own 12% wash', (key) => {
+    const fill = color(theme, `--money-${key}`);
+    const on = color(theme, `--money-${key}-on`);
+    expect(contrastRatioRgb(oklchToSrgb(on), compositeOver(on, 0.12, fill))).toBeGreaterThanOrEqual(3);
   });
 });

@@ -420,6 +420,15 @@
   --press: var(--box);
   --on-press: var(--box-text);
   --accent: color-mix(in oklch, var(--on-fill) 12%, transparent);
+
+  /* Every surface and pairing a component can reach for inside a sheet, so a
+     chip, a hover or a popover never sets ink on a dark fill. */
+  --accent-foreground: var(--on-fill);
+  --card-foreground: var(--on-fill);
+  --popover-foreground: var(--on-fill);
+  --secondary: color-mix(in oklch, var(--on-fill) 12%, transparent);
+  --secondary-foreground: var(--on-fill);
+  --muted: color-mix(in oklch, var(--on-fill) 12%, transparent);
 }
 
 /* Forced colours replace backgrounds, so sheets and hue marks would vanish:

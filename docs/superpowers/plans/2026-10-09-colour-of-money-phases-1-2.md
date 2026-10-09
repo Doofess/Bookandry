@@ -3153,7 +3153,7 @@ export function CardColorField({
               <span
                 data-sheet="money"
                 data-money={option.money}
-                className="peer-checked:ring-ink flex h-11 w-16 items-center justify-center rounded-md ring-offset-2 ring-offset-background forced-color-adjust-none peer-checked:ring-2 peer-focus-visible:ring-3 peer-focus-visible:ring-(--focus-ring)"
+                className="flex h-11 w-16 items-center justify-center rounded-md ring-offset-2 ring-offset-background forced-color-adjust-none peer-checked:ring-2 peer-checked:ring-ink peer-focus-visible:ring-3 peer-focus-visible:ring-(--focus-ring)"
               >
                 {checked ? <Check className="size-4" aria-hidden="true" /> : null}
                 {option.key === '' && !checked ? (
@@ -3219,7 +3219,7 @@ In `src/features/bank-accounts/bank-accounts-screen.tsx`:
   aria-hidden="true"
   data-slot="account-accent"
   data-money={methodKey(account)}
-  className="bg-fill absolute inset-y-0 start-0 w-1.5"
+  className="absolute inset-y-0 start-0 w-1.5 bg-fill"
 />;
 ```
 
@@ -4781,7 +4781,7 @@ export function Mark({ className, ...props }: React.ComponentProps<'span'>) {
     <span
       data-slot="mark"
       className={cn(
-        'rounded-mark bg-box text-box-text box-decoration-clone px-[0.28em] pt-[0.04em] pb-[0.1em] font-semibold whitespace-nowrap [unicode-bidi:isolate]',
+        'rounded-mark bg-box box-decoration-clone px-[0.28em] pt-[0.04em] pb-[0.1em] font-semibold whitespace-nowrap text-box-text [unicode-bidi:isolate]',
         className,
       )}
       {...props}
@@ -5148,7 +5148,7 @@ function EditorPanelContent({ className, children, ...props }: DialogPrimitive.P
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop
         data-slot="editor-panel-scrim"
-        className="bg-scrim fixed inset-0 z-50 transition-opacity duration-(--dur-panel) data-ending-style:opacity-0 data-starting-style:opacity-0"
+        className="fixed inset-0 z-50 bg-scrim transition-opacity duration-(--dur-panel) data-ending-style:opacity-0 data-starting-style:opacity-0"
       />
       <DialogPrimitive.Popup data-slot="editor-panel" className={cn(PANEL, className)} {...props}>
         {children}
@@ -5608,7 +5608,7 @@ function PopOutContent({
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop
         data-slot="popout-scrim"
-        className="bg-scrim fixed inset-0 z-50 transition-opacity duration-(--dur-panel) data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-sm"
+        className="fixed inset-0 z-50 bg-scrim transition-opacity duration-(--dur-panel) data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-sm"
       />
       <DialogPrimitive.Popup
         data-slot="popout"
@@ -5619,7 +5619,7 @@ function PopOutContent({
           'transition-[opacity,translate] duration-(--dur-panel) ease-out data-ending-style:opacity-0 data-starting-style:opacity-0',
           'motion-safe:data-ending-style:translate-y-2 motion-safe:data-starting-style:translate-y-2',
           // From sm: centred by auto margins, which leaves `translate` free for the rise.
-          'sm:rounded-dialog sm:shadow-pop sm:m-auto',
+          'sm:rounded-dialog sm:m-auto sm:shadow-pop',
           SIZE[size],
           className,
         )}
@@ -6518,7 +6518,7 @@ const PILL = cn(
   'flex min-h-11 items-center justify-center gap-2 rounded-full px-2 text-[0.84375rem]',
   'ease-fill hover-fine:bg-accent transition-[background-color,color] duration-(--dur-press)',
   'focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring',
-  'aria-[current=page]:bg-press aria-[current=page]:text-on-press aria-[current=page]:font-semibold',
+  'aria-[current=page]:bg-press aria-[current=page]:font-semibold aria-[current=page]:text-on-press',
   'lg:min-h-12 lg:justify-between lg:px-4.5 lg:text-[1.0625rem]',
 );
 
@@ -7999,7 +7999,7 @@ export function HueBars({
           <span aria-hidden="true" className="block h-7.5">
             <i
               data-hue={item.hue}
-              className="bg-hue block h-full w-[calc(var(--bp)*0.01%)] min-w-7.5 rounded-full"
+              className="block h-full w-[calc(var(--bp)*0.01%)] min-w-7.5 rounded-full bg-hue"
               style={{ '--bp': String(shares[index] ?? 0) } as CSSProperties}
             />
           </span>
@@ -8030,7 +8030,7 @@ export function MoneyStrip({
         <i
           key={item.id}
           data-hue={item.hue}
-          className="bg-hue block h-full basis-0"
+          className="block h-full basis-0 bg-hue"
           style={{ flexGrow: shares[index] ?? 0 }}
         />
       ))}
@@ -8624,7 +8624,7 @@ export function MoneyTile({
         'ease-fill transition-[box-shadow,scale] duration-(--dur-press) motion-safe:active:scale-98',
         'has-checked:shadow-[0_0_0_3px_var(--paper),0_0_0_6px_var(--ink)]',
         'has-focus-visible:outline-3 has-focus-visible:outline-offset-9 has-focus-visible:outline-(--focus-ring)',
-        notListed && 'inset-ring-ink inset-ring-2',
+        notListed && 'inset-ring-2 inset-ring-ink',
       )}
     >
       <input
