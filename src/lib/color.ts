@@ -10,13 +10,21 @@
  * The matrices are Björn Ottosson's published OKLab constants. They are
  * reproduced rather than approximated: a rounded matrix shifts a ratio by a
  * few hundredths, which is exactly the margin a 4.5:1 requirement is decided by.
+ *
+ * A hue written `none` (a grey, white or black that is mixed with something)
+ * is `Number.NaN` here, as CSS treats it: a missing component. It converts as
+ * hue 0, which with chroma 0 is the same colour, and a mix takes the other
+ * colour's hue instead of pulling toward red.
  */
 
 export type Oklch = { readonly l: number; readonly c: number; readonly h: number };
 
-/** `oklch(0.523 0.121 156.1)` -> its components. Returns undefined if unparseable. */
+/** Gamma-encoded sRGB, each channel 0..1. */
+export type Rgb = readonly [number, number, number];
+
+/** `oklch(0.523 0.121 156.1)` or `oklch(0.9 0 none / 0.5)` -> its components. Undefined if unparseable. */
 export function parseOklch(value: string): Oklch | undefined {
-  const match = /oklch\(\s*([\d.]+%?)\s+([\d.]+)\s+([\d.]+)/i.exec(value);
+  const match = /oklch\(\s*([\d.]+%?)\s+([\d.]+)\s+([\d.]+|none)/i.exec(value);
   if (match === null) return undefined;
 
   const [, rawL, rawC, rawH] = match;
@@ -27,12 +35,12 @@ export function parseOklch(value: string): Oklch | undefined {
     ? Number(rawL.slice(0, -1)) / 100 // money-allow: a CSS percentage, not an amount.
     : Number(rawL);
 
-  return { l, c: Number(rawC), h: Number(rawH) };
+  return { l, c: Number(rawC), h: rawH.toLowerCase() === 'none' ? Number.NaN : Number(rawH) };
 }
 
-/** Gamma-encoded sRGB, each channel 0..1, clipped into gamut. */
-export function oklchToSrgb({ l, c, h }: Oklch): readonly [number, number, number] {
-  const radians = (h * Math.PI) / 180;
+/** Gamma-encoded sRGB, each channel 0..1, clipped into gamut as a screen shows it. */
+export function oklchToSrgb({ l, c, h }: Oklch): Rgb {
+  const radians = Number.isNaN(h) ? 0 : (h * Math.PI) / 180;
   const a = c * Math.cos(radians);
   const b = c * Math.sin(radians);
 
@@ -46,7 +54,7 @@ export function oklchToSrgb({ l, c, h }: Oklch): readonly [number, number, numbe
     -0.0041960863 * lCone - 0.7034186147 * mCone + 1.707614701 * sCone,
   ];
 
-  return linear.map(encodeGamma) as unknown as readonly [number, number, number];
+  return linear.map(encodeGamma) as unknown as Rgb;
 }
 
 function encodeGamma(channel: number): number {
@@ -59,9 +67,19 @@ function decodeGamma(channel: number): number {
 }
 
 /** WCAG 2.2 relative luminance of a gamma-encoded sRGB triple. */
-export function relativeLuminance(rgb: readonly [number, number, number]): number {
+export function relativeLuminance(rgb: Rgb): number {
   const [r, g, b] = rgb.map(decodeGamma) as [number, number, number];
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG 2.2 contrast ratio between two sRGB colours, 1:1 to 21:1. */
+export function contrastRatioRgb(a: Rgb, b: Rgb): number {
+  const first = relativeLuminance(a);
+  const second = relativeLuminance(b);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 /**
@@ -71,10 +89,31 @@ export function relativeLuminance(rgb: readonly [number, number, number]): numbe
  * caller cannot get a different answer by passing the pair the other way round.
  */
 export function contrastRatio(a: Oklch, b: Oklch): number {
-  const first = relativeLuminance(oklchToSrgb(a));
-  const second = relativeLuminance(oklchToSrgb(b));
-  const lighter = Math.max(first, second);
-  const darker = Math.min(first, second);
+  return contrastRatioRgb(oklchToSrgb(a), oklchToSrgb(b));
+}
 
-  return (lighter + 0.05) / (darker + 0.05);
+/**
+ * `color-mix(in oklch, a <share>, b)` for two opaque colours: lightness and
+ * chroma linearly, the hue the shorter way round the wheel. A missing hue
+ * takes the other colour's, as CSS Color 4 says.
+ */
+export function mixOklch(a: Oklch, b: Oklch, share: number): Oklch {
+  const l = a.l * share + b.l * (1 - share);
+  const c = a.c * share + b.c * (1 - share);
+  if (Number.isNaN(a.h) && Number.isNaN(b.h)) return { l, c, h: Number.NaN };
+
+  const from = Number.isNaN(a.h) ? b.h : a.h;
+  const to = Number.isNaN(b.h) ? a.h : b.h;
+  let delta = to - from;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+
+  return { l, c, h: (((from + delta * (1 - share)) % 360) + 360) % 360 };
+}
+
+/** A translucent colour painted over an opaque one, the way the browser composites: in gamma-encoded sRGB. */
+export function compositeOver(top: Oklch, alpha: number, bottom: Oklch): Rgb {
+  const upper = oklchToSrgb(top);
+  const lower = oklchToSrgb(bottom);
+  return [0, 1, 2].map((i) => (upper[i] ?? 0) * alpha + (lower[i] ?? 0) * (1 - alpha)) as unknown as Rgb;
 }
