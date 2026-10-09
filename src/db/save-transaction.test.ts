@@ -236,3 +236,25 @@ describe('where income went', () => {
     expect(await handle.db.transactions.get('out1')).not.toHaveProperty('destinationId');
   });
 });
+
+describe('the business type', () => {
+  it('is saved with an expense, and never with income', async () => {
+    await saveNewTransaction(
+      handle.db,
+      input({ parsed: form({ currency: 'ILS', mcc: '5812', mccSource: 'user' }), newId: () => 'e1' }),
+    );
+    expect(await handle.db.transactions.get('e1')).toMatchObject({ mcc: '5812', mccSource: 'user' });
+
+    const income = form({
+      kind: 'income',
+      categoryId: 'cat.salary',
+      currency: 'ILS',
+      mcc: '5812',
+      mccSource: 'ai',
+    });
+    await saveNewTransaction(handle.db, input({ parsed: income, newId: () => 'i1' }));
+    const saved = await handle.db.transactions.get('i1');
+    expect(saved).not.toHaveProperty('mcc');
+    expect(saved).not.toHaveProperty('mccSource');
+  });
+});

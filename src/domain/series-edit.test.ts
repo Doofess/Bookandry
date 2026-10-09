@@ -482,3 +482,68 @@ describe('the income destination', () => {
     });
   });
 });
+
+describe('the business type: one per series', () => {
+  const tx = monthly({ mcc: '5411', mccSource: 'ai' });
+
+  it('at scope "one", is written to the series, and the occurrence’s override never carries it', () => {
+    const result = plan({
+      transaction: tx,
+      scope: 'one',
+      at: d('2026-06-10'),
+      patch: { note: 'One-off', mcc: '5499', mccSource: 'user' },
+    });
+    expect(result.transactions).toEqual([{ ...tx, mcc: '5499', mccSource: 'user', updatedAt: NOW }]);
+    expect(result.overrides).toHaveLength(1);
+    const patch = result.overrides[0]?.action === 'modify' ? result.overrides[0].patch : undefined;
+    expect(patch).toEqual({ note: 'One-off' });
+  });
+
+  it('at scope "one", writes no override when the business type was all that changed', () => {
+    const result = plan({
+      transaction: tx,
+      scope: 'one',
+      at: d('2026-06-10'),
+      patch: { mcc: '5499', mccSource: 'user' },
+    });
+    expect(result.overrides).toEqual([]);
+    expect(result.transactions.map((t) => t.mcc)).toEqual(['5499']);
+  });
+
+  it('across the whole series, and on both halves of a split', () => {
+    const all = plan({
+      transaction: tx,
+      scope: 'all',
+      at: d('2026-06-10'),
+      patch: { mcc: '5499', mccSource: 'user' },
+    });
+    expect(all.transactions.map((t) => [t.mcc, t.mccSource])).toEqual([['5499', 'user']]);
+
+    const split = plan({
+      transaction: tx,
+      scope: 'future',
+      at: d('2026-06-10'),
+      patch: { note: 'From June', mcc: '5499', mccSource: 'user' },
+    });
+    expect(split.transactions.map((t) => [t.id, t.mcc, t.mccSource])).toEqual([
+      ['rent', '5499', 'user'],
+      ['new-000001', '5499', 'user'],
+    ]);
+  });
+
+  it('is cleared with null, which leaves no key behind', () => {
+    const result = plan({
+      transaction: tx,
+      scope: 'all',
+      at: d('2026-06-10'),
+      patch: { mcc: null, mccSource: null },
+    });
+    expect(result.transactions[0]).not.toHaveProperty('mcc');
+    expect(result.transactions[0]).not.toHaveProperty('mccSource');
+  });
+
+  it('is left alone by an edit that does not name it', () => {
+    const result = plan({ transaction: tx, scope: 'all', at: d('2026-06-10'), patch: { note: 'x' } });
+    expect(result.transactions[0]).toMatchObject({ mcc: '5411', mccSource: 'ai' });
+  });
+});
