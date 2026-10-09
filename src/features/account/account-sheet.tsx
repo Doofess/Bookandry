@@ -6,9 +6,15 @@ import { toast } from 'sonner';
 
 import { accountController, useAccount } from '@/app/account';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { passkeysSupported, type AuthResult, type Enrollment } from '@/services/supabase/auth';
 
 import { morph } from './morph';
@@ -48,22 +54,22 @@ export function AccountSheet({
     flow === undefined ? '' : t(`account.flow.${flow.kind === 'signin' ? flow.mode : flow.kind}.body`);
 
   return (
-    <Sheet
+    <EditorPanel
       open={flow !== undefined}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{body}</SheetDescription>
-        </SheetHeader>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>{title}</EditorPanelTitle>
+          <EditorPanelDescription>{body}</EditorPanelDescription>
+        </EditorPanelHeader>
         <div className="space-y-4 px-4 pb-6">
           {flow === undefined ? null : <FlowBody key={flow.kind} flow={flow} onDone={onClose} />}
         </div>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 

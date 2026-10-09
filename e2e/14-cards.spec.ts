@@ -131,7 +131,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByLabel(copy.amount, { exact: true }).fill('250');
       await page.getByRole('combobox', { name: new RegExp(copy.paidWith) }).click();
       await page.getByRole('option', { name: /Visa/ }).click();
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(sheet.getByTestId('card-charge-note')).toContainText(copy.charged);
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(sheet).toHaveCount(0);
@@ -315,7 +315,7 @@ test.describe('@cards what a card is committed to', () => {
     await page.getByLabel('מספר תשלומים', { exact: true }).fill('6');
     await page.getByRole('combobox', { name: /אמצעי תשלום/ }).click();
     await page.getByRole('option', { name: /Visa/ }).click();
-    const sheet = page.locator('[data-slot="sheet-content"]');
+    const sheet = page.locator('[data-slot="editor-panel"]');
     await page.getByRole('button', { name: 'שמירה', exact: true }).click();
     await expect(sheet).toHaveCount(0);
 
