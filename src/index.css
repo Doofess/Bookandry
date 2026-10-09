@@ -424,7 +424,9 @@
   /* Every surface and pairing a component can reach for inside a sheet, so a
      chip, a hover or a popover never sets ink on a dark fill. */
   --accent-foreground: var(--on-fill);
+  --card: var(--fill);
   --card-foreground: var(--on-fill);
+  --popover: var(--fill);
   --popover-foreground: var(--on-fill);
   --secondary: color-mix(in oklch, var(--on-fill) 12%, transparent);
   --secondary-foreground: var(--on-fill);

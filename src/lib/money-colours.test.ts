@@ -208,6 +208,12 @@ describe('the mapping (§1.5)', () => {
     }
   });
 
+  it('makes a card or popover inside a sheet take the sheet’s own fill', () => {
+    const sheet = rule('[data-sheet]');
+    expect(sheet.get('--card')).toBe('var(--fill)');
+    expect(sheet.get('--popover')).toBe('var(--fill)');
+  });
+
   it('paints every sheet and hue mark an edge that forced colours keep (§1.8)', () => {
     expect(CSS).toMatch(/\[data-sheet\],\s*\[data-hue\]\s*\{\s*border:\s*2px solid transparent;/);
   });
@@ -221,5 +227,26 @@ describe.each(THEMES)('the wash a sheet puts under chips and hovers, %s', (_name
     const fill = color(theme, `--money-${key}`);
     const on = color(theme, `--money-${key}-on`);
     expect(contrastRatioRgb(oklchToSrgb(on), compositeOver(on, 0.12, fill))).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe.each(THEMES)('a card or popover inside a sheet, %s', (_name, theme) => {
+  // Follow the stylesheet's own chain: [data-sheet] --card -> var(--fill) -> the key's rule -> the token.
+  const sheet = declarations(CSS, '[data-sheet]');
+  const target = (value: string | undefined) => /^var\((--[\w-]+)\)$/.exec(value ?? '')![1]!;
+  const resolve = (key: string, property: string) => {
+    const keyRule = declarations(CSS, key === 'neutral' ? '[data-money]' : `[data-money='${key}']`);
+    return color(theme, target(keyRule.get(property)));
+  };
+
+  it.each([...MONEY_KEYS, 'neutral'])('%s: the card and popover text reach 4.5:1 on their surface', (key) => {
+    for (const [surfaceName, textName] of [
+      ['--card', '--card-foreground'],
+      ['--popover', '--popover-foreground'],
+    ] as const) {
+      const surface = resolve(key, target(sheet.get(surfaceName)));
+      const text = resolve(key, target(sheet.get(textName)));
+      expect(contrastRatio(text, surface), `${surfaceName} for ${key}`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
