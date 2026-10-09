@@ -13,6 +13,7 @@ const empty = {
   drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId: 'p1' },
+  note: '',
 } as ImportSession;
 
 describe('startSession', () => {

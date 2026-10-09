@@ -608,3 +608,81 @@ describe('files it refuses', () => {
     expect(states).toEqual([{ file: 0, name: 'a.zip', status: 'refused', reason: 'unsupported' }]);
   });
 });
+
+describe('the person’s note about the files', () => {
+  const NOTE = 'These are all my Max card transactions for September';
+  const noted: ImportContext = { ...ctx, note: NOTE };
+  async function runNoted(prepared: PreparedFile[], script: Record<string, ExtractOutcome[]>) {
+    const { call, calls } = reader(script);
+    await runImport(prepared, noted, call, { onFile: () => undefined });
+    return calls;
+  }
+
+  it('goes with an image’s reads, both of them, and every continuation', async () => {
+    const calls = await runNoted([imageFile()], {
+      'extract:primary': [extract([wireRow({ a: '120.50' })], { done: false }), extract([])],
+      'extract:check': [extract([wireRow({ a: '120.50' })])],
+    });
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls.every((c) => c.note === NOTE)).toBe(true);
+  });
+
+  it('goes with a text file’s read and the correction that follows it', async () => {
+    const calls = await runNoted([textFile('03/10/26 שופרסל 120.50')], {
+      'extract:primary': [extract([wireRow({ a: '125.50' })])],
+      verify: [ok({ r: [{ ...wireRow({ a: '120.50' }), id: 'j0r0' }] })],
+    });
+    expect(calls.map((c) => c.mode)).toEqual(['extract', 'verify']);
+    expect(calls.every((c) => c.note === NOTE)).toBe(true);
+  });
+
+  it('goes with a spreadsheet’s column map and its merchants’ categories', async () => {
+    const sheet: PreparedFile = {
+      kind: 'sheet',
+      file: 0,
+      name: 'strange.xlsx',
+      hash: 's',
+      sheets: [
+        {
+          name: 'Sheet1',
+          rows: [
+            ['x', 'y', 'z'],
+            ['03/10/2026', 'בית קפה חדש', '18.00'],
+          ],
+          date1904: false,
+        },
+      ],
+    };
+    const map = {
+      hr: 0,
+      date: 0,
+      desc: 1,
+      amt: 2,
+      debit: null,
+      credit: null,
+      cur: null,
+      chg: null,
+      chgCur: null,
+      chgDate: null,
+      plan: null,
+      dec: '.',
+      df: 'dmy',
+    };
+    const calls = await runNoted([sheet], {
+      map: [ok(map), ok({ mc: [{ i: 0, m: 'בית קפה חדש', cat: 'c1' }] })],
+    });
+    expect(calls.map((c) => c.mode)).toEqual(['map', 'map']);
+    expect(calls.every((c) => c.note === NOTE)).toBe(true);
+  });
+
+  it('is left out of every request when there is none, or it is blank', async () => {
+    for (const over of [{}, { note: '  ' }]) {
+      const { call, calls } = reader({ 'extract:primary': [extract([wireRow({ a: '120.50' })])] });
+      await runImport([textFile('03/10/26 שופרסל 120.50')], { ...ctx, ...over }, call, {
+        onFile: () => undefined,
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).not.toHaveProperty('note');
+    }
+  });
+});

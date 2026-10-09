@@ -23,7 +23,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
 import {
   dropUnfinished,
@@ -45,7 +47,7 @@ import { cardFeeOccurrences, fxFeeFor } from '@/domain/cards';
 import { buildMethodReview, type MethodReviewItem } from '@/domain/import-cards';
 import { BLOCKING, type Flag, type FoundRow } from '@/domain/import-check';
 import { flagCardFees, flagExisting } from '@/domain/import-review';
-import type { WireContext } from '@/domain/import-wire';
+import { LIMITS, type WireContext } from '@/domain/import-wire';
 import { expandOccurrences } from '@/domain/occurrences';
 import { txFormSchema, type TxFormValues } from '@/domain/tx-form';
 import { categoriesFor } from '@/domain/tx-options';
@@ -129,6 +131,9 @@ const EXISTING: ReadonlySet<Flag> = new Set<Flag>([
   'in_another_file',
 ]);
 
+/** The note's counter shows once it is getting long. */
+const NOTE_COUNT_FROM = 250;
+
 const EMPTY_SESSION = (profileId: string): ImportSession => ({
   stage: 'pick',
   files: [],
@@ -138,6 +143,7 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
   drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId },
+  note: '',
 });
 
 /**
@@ -332,6 +338,7 @@ export function ImportSheet(props: ImportSheetProps) {
               : minDate(todayLocal(new Date(modified)), props.today);
           },
           history,
+          ...(session.note.trim() === '' ? {} : { note: session.note.trim() }),
         },
         (request, signal) => accountController().extractTransactions(request, signal),
         {
@@ -589,6 +596,10 @@ export function ImportSheet(props: ImportSheetProps) {
                   onFiles={(files) => {
                     setSession((s) => ({ ...s, files }));
                   }}
+                  note={session.note}
+                  onNote={(note) => {
+                    setSession((s) => ({ ...s, note }));
+                  }}
                   onRead={() => void read(session.files)}
                 />
               ) : session.stage === 'reading' ? (
@@ -731,6 +742,8 @@ function Picker({
   whose,
   onWhose,
   onFiles,
+  note,
+  onNote,
   onRead,
 }: {
   readonly files: readonly File[];
@@ -741,10 +754,15 @@ function Picker({
   readonly whose: string;
   readonly onWhose: (profileId: string) => void;
   readonly onFiles: (files: File[]) => void;
+  /** What the person said about the files, for the whole batch. */
+  readonly note: string;
+  readonly onNote: (note: string) => void;
   readonly onRead: () => void;
 }) {
   const { t } = useTranslation('import');
   const whoseId = useId();
+  const noteId = useId();
+  const noteHintId = useId();
   const input = useRef<HTMLInputElement>(null);
   // Only a household asks; alone, it is always the one person's.
   const asks = profiles.length > 1;
@@ -862,6 +880,31 @@ function Picker({
           </ul>
         </div>
       )}
+
+      <div className="space-y-1.5">
+        <Label htmlFor={noteId}>{t('noteLabel')}</Label>
+        <Textarea
+          id={noteId}
+          dir="auto"
+          rows={2}
+          maxLength={LIMITS.note}
+          value={note}
+          placeholder={t('notePlaceholder')}
+          aria-describedby={noteHintId}
+          className="min-h-11"
+          onChange={(event) => {
+            onNote(event.target.value);
+          }}
+        />
+        <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+          <p id={noteHintId}>{t('noteHint')}</p>
+          {note.length > NOTE_COUNT_FROM ? (
+            <span className="shrink-0 tabular-nums">
+              {t('noteCount', { count: note.length, max: LIMITS.note })}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
