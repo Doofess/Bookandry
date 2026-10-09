@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { toDecimalString } from '@/lib/money';
 
-import { currencyName, formatMoney, formatRateSentence, MINUS_SIGN, signedMinor } from './money-format';
+import {
+  currencyName,
+  figureParts,
+  formatMoney,
+  formatRateSentence,
+  MINUS_SIGN,
+  signedMinor,
+} from './money-format';
 
 /**
  * Note what is and is not asserted here.
@@ -120,5 +127,30 @@ describe('currencyName', () => {
 
   it('falls back to the code for anything ICU does not know', () => {
     expect(currencyName('ZZZ', 'en')).toBe('ZZZ');
+  });
+});
+
+describe('figureParts: a big numeral’s pieces (§9.5)', () => {
+  it('splits the sign, the symbol and the digits', () => {
+    expect(figureParts(1_436_250, 'ILS', { locale: 'en' })).toEqual({
+      sign: '',
+      symbol: '₪',
+      digits: '14,362.50',
+    });
+    expect(figureParts(-1_436_200, 'USD', { locale: 'en' })).toEqual({
+      sign: '−',
+      symbol: '$',
+      digits: '14,362.00',
+    });
+  });
+
+  it('drops the fraction of a whole figure', () => {
+    expect(figureParts(1_436_200, 'ILS', { locale: 'en', whole: true }).digits).toBe('14,362');
+  });
+
+  it('keeps the symbol free of bidi marks in Hebrew', () => {
+    const parts = figureParts(1_436_200, 'ILS', { locale: 'he', whole: true });
+    expect(parts.symbol).toBe('₪');
+    expect(parts.digits).toBe('14,362');
   });
 });

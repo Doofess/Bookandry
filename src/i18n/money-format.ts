@@ -127,6 +127,39 @@ export function formatMoney(
   };
 }
 
+/**
+ * A figure's parts for the big numerals (§9.5): the sign, the currency symbol
+ * and the digits, so the symbol can be set at half size and raised before the
+ * digits in either language. `whole` drops the fraction: pass an amount that
+ * has none, or one rounded by `wholeMinor` (src/lib/money.ts).
+ */
+export function figureParts(
+  minor: Minor,
+  currency: Currency,
+  options: { readonly locale: string; readonly whole?: boolean },
+): { readonly sign: string; readonly symbol: string; readonly digits: string } {
+  const parts = partsOf(
+    formatter(options.locale, currency, 'symbol'),
+    toDecimalString(Math.abs(minor), currency),
+  );
+  const keep: ReadonlySet<string> = new Set(
+    options.whole === true ? ['integer', 'group'] : ['integer', 'group', 'decimal', 'fraction'],
+  );
+  return {
+    sign: minor < 0 ? MINUS_SIGN : '',
+    symbol: stripBidi(
+      parts
+        .filter((part) => part.type === 'currency')
+        .map((part) => part.value)
+        .join(''),
+    ),
+    digits: parts
+      .filter((part) => keep.has(part.type))
+      .map((part) => part.value)
+      .join(''),
+  };
+}
+
 /** The sign a calculator applies, given the row's kind. */
 export function signedMinor(kind: 'income' | 'expense', amountMinor: Minor): Minor {
   return kind === 'income' ? amountMinor : -amountMinor;
