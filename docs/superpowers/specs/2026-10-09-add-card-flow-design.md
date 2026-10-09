@@ -505,6 +505,12 @@ Isracard's `digital` type and Cal's `cashcal` clubs stay credit cards. That `dig
 - **Review:** values from the document carry "From your statement". Changing one removes its tag.
 - **A document that updates one of the household's cards:** the fill view shows the **edit summary** (section 7) for that card, with the document's values applied and tagged. Save writes it as an update.
 - **After Save:** the found row is linked to the saved card, the "saved" toast shows, and the next unfinished card opens, all as `import-sheet.tsx` does today.
+- **A card seen only on rows (amendment 2026-10-10, the user's request):** today a card is suggested only when the document describes it (a card list, a terms page, a statement's card header). Rows whose last four digits (`l4`) match none of the household's cards, and none of the found cards, are left on the batch's method and no card is suggested. From this spec on:
+  - Those digits become a found card of their own, "Card ending 1234", listed with the other found cards.
+  - It carries what the file shows: the last four digits, the issuer when the document is one company's statement, the network when printed, and how many rows it has.
+  - Being found only on rows, it is never tickable as it is: it always opens the flow to finish. Its rows link to it once it is saved.
+  - Declining it leaves its rows as today.
+- **Whose card:** a found card's owner is the person matched to the cardholder name the document prints (the row's or the header's `w`), when exactly one matches. Otherwise it is the person picked for the batch, as today. Owner (section 4.3) counts as answered only in the first case.
 
 ## 6. From the transaction form
 
