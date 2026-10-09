@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { openAddSheet } from './support/add';
+import { addTrigger, openAddSheet } from './support/add';
 import { bootAs, completeFirstRun } from './support/seed';
 
 /**
@@ -114,11 +114,13 @@ test.describe('@smoke0 app shell', () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test('has four tabs: account linking is a page in Settings, not a tab', async ({ page }) => {
+  test('has four tabs on a phone and eight places on the desktop rail; account linking is neither', async ({
+    page,
+  }) => {
     const nav = page.getByRole('navigation', { name: /primary|ניווט/i });
     // The rail's mark is a link home too, shown only on a wide screen.
-    const tabs = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
-    await expect(tabs).toHaveCount(4);
+    const places = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
+    await expect(places).toHaveCount((page.viewportSize()?.width ?? 0) >= 1024 ? 8 : 4);
     await expect(nav.getByRole('link', { name: /household|account linking|משק|קישור/i })).toHaveCount(0);
   });
 
@@ -340,7 +342,7 @@ test.describe('@fab the Add pill', () => {
   });
 
   test('renders as a labelled pill, at least 44px high', async ({ page }) => {
-    const pill = page.getByTestId('add-button');
+    const pill = addTrigger(page);
     await expect(pill).toBeVisible();
     await expect(pill).toHaveText(/Add|הוספה/);
 
@@ -350,25 +352,19 @@ test.describe('@fab the Add pill', () => {
     expect(box!.width).toBeGreaterThan(box!.height); // a pill, not a disc
   });
 
-  test('is centred on mobile, inline-end from lg, and mirrors only where it can', async ({ page }) => {
+  test('is centred above the tab bar on a phone, and at the top of the rail from lg', async ({ page }) => {
     /*
-     * The Add pill has TWO positions by design (§5.1, §8.2): bottom-centre above the
-     * tab bar on mobile, bottom-inline-end from `lg` where there is no tab bar.
-     *
-     * Asserting "inline-end, and mirrors" at every width was simply wrong, and
-     * it failed on the mobile project for the right reason - a centred element
-     * has nothing to mirror. Both halves are worth pinning: the centred case
-     * depends on `start-0 end-0 mx-auto`, which has already regressed once to
-     * `inset-inline-0` - a class that emits no CSS at all and left the button
-     * at its static position, looking deliberate enough to pass a screenshot
-     * review.
+     * Two places by design (§4.2): bottom-centre above the tab bar on a phone,
+     * the top of the rail from lg - at the inline start, so on the right in
+     * Hebrew. The centred case depends on `start-0 end-0 mx-auto`, which has
+     * regressed once to a class that emits no CSS at all.
      */
     const viewport = page.viewportSize()!;
     const centre = viewport.width / 2;
     const isDesktop = viewport.width >= 1024;
 
-    const ltr = (await page.getByTestId('add-button').boundingBox())!;
-    if (isDesktop) expect(ltr.x).toBeGreaterThan(centre);
+    const ltr = (await addTrigger(page).boundingBox())!;
+    if (isDesktop) expect(ltr.x + ltr.width).toBeLessThanOrEqual(256);
     else expect(ltr.x + ltr.width / 2).toBeCloseTo(centre, 0);
 
     await page.addInitScript(() => {
@@ -376,8 +372,8 @@ test.describe('@fab the Add pill', () => {
     });
     await page.reload();
 
-    const rtl = (await page.getByTestId('add-button').boundingBox())!;
-    if (isDesktop) expect(rtl.x).toBeLessThan(centre);
+    const rtl = (await addTrigger(page).boundingBox())!;
+    if (isDesktop) expect(rtl.x).toBeGreaterThanOrEqual(viewport.width - 256);
     else expect(rtl.x + rtl.width / 2).toBeCloseTo(centre, 0);
   });
 
@@ -399,7 +395,7 @@ test.describe('@fab the Add pill', () => {
   }) => {
     // This build has no account server, so the AI cannot be reached: the item
     // is there, disabled, with the reason in words rather than only greyed out.
-    await page.getByTestId('add-button').click();
+    await addTrigger(page).click();
     const menu = page.getByRole('menu');
     await expect(menu.getByRole('menuitem')).toHaveCount(3);
     const ai = menu.getByRole('menuitem', { name: /Smart import|ייבוא חכם/ });
@@ -445,7 +441,10 @@ test.describe('@nav the account menu', () => {
     const rtl = testInfo.project.name === 'he';
     await completeFirstRun(page, rtl ? 'he' : 'en');
 
-    const trigger = page.getByRole('button', { name: rtl ? 'חשבון והגדרות' : 'Account and settings' });
+    // The screen's own menu, in main: from lg the rail carries one at its foot too.
+    const trigger = page
+      .getByRole('main')
+      .getByRole('button', { name: rtl ? 'חשבון והגדרות' : 'Account and settings' });
     await expect(trigger).toBeVisible();
     const box = await trigger.boundingBox();
     const width = page.viewportSize()?.width ?? 0;

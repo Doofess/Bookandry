@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { ADD_EXPENSE, openAddSheet } from './support/add';
+import { ADD_EXPENSE, addTrigger, openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -697,7 +697,7 @@ test.describe('@keyboard walkthrough', () => {
       seen.push(focused.label);
       expect(focused.hasFocusRing, `no visible focus on "${focused.label}"`).toBe(true);
 
-      if (focused.testid === 'add-button') {
+      if (focused.testid === 'add-button' || focused.testid === 'rail-add') {
         reachedAddPill = true;
         break;
       }
@@ -719,7 +719,7 @@ test.describe('@keyboard walkthrough', () => {
     await completeFirstRun(page, 'en');
 
     // The + opens its menu with focus on the first item, "Expense".
-    const fab = page.getByTestId('add-button');
+    const fab = addTrigger(page);
     await fab.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
@@ -744,7 +744,7 @@ test.describe('@keyboard walkthrough', () => {
     // through the page behind it, with no way to know the sheet is there.
     await completeFirstRun(page, 'en');
 
-    await page.getByTestId('add-button').focus();
+    await addTrigger(page).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menuitem', { name: ADD_EXPENSE })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -910,7 +910,7 @@ test.describe('@popouts every item clears 44px on a phone', () => {
     await page.goto('/');
     await expect(page.getByTestId('feed-header')).toBeVisible();
 
-    await check(page, () => page.getByTestId('add-button').click(), 'add menu');
+    await check(page, () => addTrigger(page).click(), 'add menu');
     // The prime pop-out is a title, the rate and a date: nothing to tap.
     await check(page, () => page.getByTestId('prime-pill').click(), 'prime', 'none');
     await check(

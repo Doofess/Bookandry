@@ -7,6 +7,7 @@ import { useAccount } from '@/app/account';
 import { useAccountAvatar } from '@/app/account-avatar';
 import { useSettings } from '@/app/app-context';
 import { chooseLanguage, chooseTheme } from '@/app/preferences';
+import { useDesktop } from '@/app/use-desktop';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,15 +36,19 @@ import { AccountSheet, type Flow } from './account-sheet';
  * signing out, last. In a build without accounts it is the same menu less
  * the account.
  */
-export function UserMenu() {
+export function UserMenu({ placement = 'head' }: { readonly placement?: 'head' | 'rail' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const view = useAccount();
   const settings = useSettings();
   const { name, email } = useAccountAvatar();
+  const shown = name ?? email;
   const sections = useSettingsSections();
   const [flow, setFlow] = useState<Flow | undefined>(undefined);
   const signedIn = view.status === 'signed_in';
+  // Both menus are mounted from lg (the screen's head and the rail's foot): only one asks for the new password.
+  const desktop = useDesktop();
+  const asksForNewPassword = placement === 'rail' ? desktop : !desktop;
 
   const item = (section: SettingsSection) => {
     const Icon = section.icon;
@@ -65,14 +70,32 @@ export function UserMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label={t('menu.label')}
-          // On the deep panel: a 44px target around the 34px picture, and a
-          // light ring so the picture's edge shows on the sapphire.
-          className="-me-1.5 flex size-11 items-center justify-center rounded-full focus-visible:ring-3 focus-visible:ring-white/60 focus-visible:outline-none"
+          // The head's is a picture, so it is named; the rail's shows the name, so its visible text is in its name.
+          {...(placement === 'head' ? { 'aria-label': t('menu.label') } : {})}
+          className={
+            placement === 'rail'
+              ? 'flex min-h-14 w-full items-center gap-3 rounded-full px-3 text-start text-[0.9375rem] font-light focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring hover-fine:bg-accent'
+              : '-me-1.5 flex size-11 items-center justify-center rounded-full focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring'
+          }
         >
-          <AccountAvatar size={34} className="ring-2 ring-white/35" />
+          <AccountAvatar size={placement === 'rail' ? 36 : 34} className="shrink-0 ring-2 ring-border" />
+          {placement === 'rail' ? (
+            shown === undefined ? (
+              <span>{t('menu.label')}</span>
+            ) : (
+              <>
+                <span className="sr-only">{t('menu.label')}</span>
+                <span className="min-w-0 truncate">{shown}</span>
+              </>
+            )
+          ) : null}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={8} className="w-72 p-1.5">
+        <DropdownMenuContent
+          side={placement === 'rail' ? 'top' : 'bottom'}
+          align={placement === 'rail' ? 'start' : 'end'}
+          sideOffset={8}
+          className="w-72 p-1.5"
+        >
           {signedIn ? (
             <>
               {/* Who is signed in: read, not chosen, so not an item. */}
@@ -158,7 +181,11 @@ export function UserMenu() {
       {/* Here, mounted on every screen: back from a password-reset email, the
           new password is asked for wherever the link landed. */}
       <AccountSheet
-        flow={signedIn && view.passwordRecovery && flow === undefined ? { kind: 'newPassword' } : flow}
+        flow={
+          asksForNewPassword && signedIn && view.passwordRecovery && flow === undefined
+            ? { kind: 'newPassword' }
+            : flow
+        }
         onClose={() => {
           setFlow(undefined);
         }}

@@ -119,3 +119,28 @@ describe('the account menu', () => {
     expect(items).not.toContain('Sign out');
   });
 });
+
+describe('the account menu in the rail', () => {
+  it('shows who is signed in, with the menu’s name kept for screen readers', async () => {
+    vi.spyOn(controller, 'getView').mockReturnValue(signedIn);
+    renderWithProviders(
+      <SettingsProvider value={{ ...DEFAULT_SETTINGS, updatedAt: INSTANT }}>
+        <UserMenu placement="rail" />
+      </SettingsProvider>,
+    );
+    const trigger = await screen.findByRole('button', { name: /Account and settings/ });
+    expect(trigger).toHaveTextContent('Dana Levi');
+    expect(trigger).toHaveClass('w-full', 'min-h-14');
+  });
+
+  it('opens upward from the rail’s foot', async () => {
+    vi.spyOn(controller, 'getView').mockReturnValue(signedIn);
+    renderWithProviders(
+      <SettingsProvider value={{ ...DEFAULT_SETTINGS, updatedAt: INSTANT }}>
+        <UserMenu placement="rail" />
+      </SettingsProvider>,
+    );
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Account and settings/ }));
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+  });
+});

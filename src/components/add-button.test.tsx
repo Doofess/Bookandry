@@ -11,13 +11,13 @@ describe('AddButton', () => {
     await initTestI18n('en');
   });
 
-  it('is a labelled sapphire pill, 48px high', () => {
+  it('is a labelled solid sapphire pill, 48px high', () => {
     renderWithProviders(<AddButton />);
     const button = screen.getByRole('button', { name: 'Add' });
 
-    expect(button).toHaveClass('h-12', 'px-5', 'rounded-full', 'bg-brand-deep', 'text-brand-deep-foreground');
-    // Its edge on the near-black page.
-    expect(button).toHaveClass('dark:border', 'dark:border-brand-vivid');
+    expect(button).toHaveClass('h-12', 'px-5', 'rounded-full', 'bg-primary', 'text-primary-foreground');
+    // It fills with ink on a fine pointer's hover, and presses only when motion is welcome.
+    expect(button).toHaveClass('hover-fine:bg-ink', 'motion-safe:active:scale-[0.96]');
   });
 
   it('is centred above the tab bar on a phone and at the bottom-end corner on a desktop', () => {
