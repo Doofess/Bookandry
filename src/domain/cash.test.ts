@@ -8,6 +8,7 @@ import {
   cashSigned,
   cashSince,
   cashSummary,
+  earliestStart,
   isCashIn,
   isCashOut,
   moveSigned,
@@ -260,14 +261,52 @@ describe('a person’s cash', () => {
     expect(result.onHandMinor).toBe(50_000);
   });
 
-  it('starts at the earliest of two live starts', () => {
+  it('starts at the earliest of two live starts, and counts only its amount', () => {
     const moves = [
       start('2026-10-01', 10_000),
       start('2026-10-05', 3_000),
       move({ kind: 'withdraw', date: d('2026-10-02'), amountMinor: 500 }),
     ];
     const result = summary(moves);
-    expect(result.people[0]).toMatchObject({ since: '2026-10-01', onHandMinor: 13_500 });
+    expect(result.people[0]).toMatchObject({ since: '2026-10-01', onHandMinor: 10_500 });
+  });
+
+  it('counts 500 from two starts of 500 and 300: the later one is ignored until it is removed', () => {
+    const result = summary([start('2026-10-01', 50_000), start('2026-10-05', 30_000)]);
+    expect(result.onHandMinor).toBe(50_000);
+  });
+
+  it('keeps, of two starts on one day, the earlier written, then the lower id', () => {
+    const later = move({
+      id: 'a',
+      kind: 'start',
+      date: d('2026-10-01'),
+      amountMinor: 30_000,
+      createdAt: '2026-10-01T09:00:00.000Z' as IsoInstant,
+    });
+    const earlier = move({
+      id: 'b',
+      kind: 'start',
+      date: d('2026-10-01'),
+      amountMinor: 50_000,
+      createdAt: '2026-10-01T08:00:00.000Z' as IsoInstant,
+    });
+    expect(summary([later, earlier]).onHandMinor).toBe(50_000);
+    expect(earliestStart([later, earlier], 'p1')?.id).toBe('b');
+
+    const sameTime = { ...later, createdAt: earlier.createdAt };
+    expect(summary([earlier, sameTime]).onHandMinor).toBe(30_000);
+    expect(earliestStart([earlier, sameTime], 'p1')?.id).toBe('a');
+  });
+
+  it('leaves a later start out of the activity too, so the list adds up to the figure', () => {
+    const activity = cashActivity({
+      profileIds: ['p1'],
+      moves: [start('2026-10-01', 50_000), start('2026-10-05', 30_000)],
+      occurrences: [],
+      today: TODAY,
+    });
+    expect(activity.map((a) => a.signedMinor)).toEqual([50_000]);
   });
 
   it('follows the row’s person: a row given to someone else takes its cash with it', () => {

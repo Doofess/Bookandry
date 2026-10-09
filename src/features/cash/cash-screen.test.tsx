@@ -22,6 +22,7 @@ vi.mock('@/app/account', async (importOriginal) => ({
 vi.mock('sonner', async (importOriginal) => ({ ...(await importOriginal<object>()), ...toasts }));
 
 const { CashScreen } = await import('./cash-screen');
+const { CashSetupCard } = await import('./setup-card');
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
@@ -129,8 +130,84 @@ describe('setting up', () => {
     expect(await db.cashMoves.count()).toBe(0);
   });
 
+  it('starts from nothing, when that is what there is', async () => {
+    const user = userEvent.setup();
+    render();
+
+    const card = await screen.findByTestId('cash-setup');
+    await user.type(within(card).getByLabelText('Amount'), '0');
+    await user.click(within(card).getByRole('button', { name: 'Save' }));
+
+    expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '0');
+    expect(await db.cashMoves.toArray()).toMatchObject([{ kind: 'start', amountMinor: 0 }]);
+  });
+
+  it('says at the field when there is no amount, or one too large to keep', async () => {
+    const user = userEvent.setup();
+    render();
+
+    const card = await screen.findByTestId('cash-setup');
+    const field = within(card).getByLabelText('Amount');
+    await user.click(within(card).getByRole('button', { name: 'Save' }));
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(field).toHaveAccessibleDescription('Enter an amount.');
+
+    await user.type(field, '99999999999999999');
+    await user.click(within(card).getByRole('button', { name: 'Save' }));
+    expect(field).toHaveAccessibleDescription('That is not an amount Bookandry can read.');
+    expect(await db.cashMoves.count()).toBe(0);
+    expect(toasts.toast.error).not.toHaveBeenCalled();
+  });
+
+  it('shows an amount the save refused at the field, not in a toast', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(() => Promise.resolve('amount' as const));
+    renderWithProviders(
+      <CashSetupCard person={person('p1', 'Dana', '#16794a')} named={false} currency="USD" onSave={onSave} />,
+    );
+
+    const field = screen.getByLabelText('Amount');
+    await user.type(field, '500');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(onSave).toHaveBeenCalledWith(50_000);
+    await waitFor(() => {
+      expect(field).toHaveAccessibleDescription('That is not an amount Bookandry can read.');
+    });
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+
+    await user.type(field, '1');
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('sets up again on the start that was deleted, so there is still one start row', async () => {
+    await db.cashMoves.put(
+      move({
+        id: 'old',
+        kind: 'start',
+        amountMinor: 9_000,
+        date: d('2026-08-01'),
+        isDeleted: 1,
+        deletedAt: NOW,
+      }),
+    );
+    const user = userEvent.setup();
+    render();
+
+    const card = await screen.findByTestId('cash-setup');
+    await user.type(within(card).getByLabelText('Amount'), '500');
+    await user.click(within(card).getByRole('button', { name: 'Save' }));
+
+    expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '50000');
+    expect(await db.cashMoves.toArray()).toMatchObject([
+      { id: 'old', kind: 'start', amountMinor: 50_000, date: '2026-09-15', isDeleted: 0 },
+    ]);
+  });
+
   it('shows, for everyone, the pot of those who set up and asks those who have not', async () => {
     await db.cashMoves.put(move({ id: 's1', kind: 'start', amountMinor: 50_000, date: d('2026-09-01') }));
+    // Yossi has not set up: his cash spending is not in anyone's pot yet.
+    await db.transactions.put(cashRow('his', '2026-09-10', 7_000, { profileId: 'p2' }));
     render(ALL_PROFILES);
 
     expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '50000');
@@ -140,7 +217,7 @@ describe('setting up', () => {
   });
 });
 
-describe('two starting amounts', () => {
+describe('more than one starting amount', () => {
   beforeEach(async () => {
     // Two devices set up offline, then synced: two live starts for Dana.
     await db.cashMoves.bulkPut([
@@ -149,14 +226,30 @@ describe('two starting amounts', () => {
     ]);
   });
 
-  it('keeps the earlier one when asked, and can put the other back', async () => {
+  it('counts only the first meanwhile, and shows each amount and what stays', async () => {
+    render();
+
+    const fix = await screen.findByTestId('cash-two-starts');
+    expect(fix).toHaveTextContent('More than one starting amount was recorded for Dana. Keep the first one?');
+    const options = within(fix).getAllByTestId('cash-start-option');
+    expect(options.map((o) => o.querySelector('[data-value]')?.getAttribute('data-value'))).toEqual([
+      '50000',
+      '20000',
+    ]);
+    expect(options[0]).toHaveTextContent('Sep 1, 2026');
+    expect(options[0]).toHaveTextContent('Stays');
+    expect(options[1]).toHaveTextContent('Sep 3, 2026');
+    expect(options[1]).toHaveTextContent('Goes');
+    // The later start counts for nothing, so keeping the first does not move the figure.
+    expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '50000');
+  });
+
+  it('keeps the first one when asked, and can put the other back', async () => {
     const user = userEvent.setup();
     render();
 
     const fix = await screen.findByTestId('cash-two-starts');
-    expect(fix).toHaveTextContent('Two starting amounts were recorded for Dana. Keep the earlier one?');
-
-    await user.click(within(fix).getByRole('button', { name: 'Keep the earlier one' }));
+    await user.click(within(fix).getByRole('button', { name: 'Keep the first one' }));
 
     await waitFor(() => {
       expect(screen.queryByTestId('cash-two-starts')).toBeNull();
@@ -164,11 +257,42 @@ describe('two starting amounts', () => {
     expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '50000');
     expect(await db.cashMoves.get('s1')).toMatchObject({ isDeleted: 0 });
     expect(await db.cashMoves.get('s2')).toMatchObject({ isDeleted: 1 });
-    expect(toasts.toast).toHaveBeenLastCalledWith('Kept the earlier starting amount', expect.anything());
+    expect(toasts.toast).toHaveBeenLastCalledWith('Kept the first starting amount', expect.anything());
 
     lastUndo()();
     expect(await screen.findByTestId('cash-two-starts')).toBeInTheDocument();
     expect(await db.cashMoves.get('s2')).toMatchObject({ isDeleted: 0 });
+  });
+
+  it('keeps, of two on one day, the one written first', async () => {
+    await db.cashMoves.clear();
+    await db.cashMoves.bulkPut([
+      move({
+        id: 'a',
+        kind: 'start',
+        amountMinor: 20_000,
+        date: d('2026-09-01'),
+        createdAt: '2026-09-01T12:00:00.000Z' as IsoInstant,
+      }),
+      move({
+        id: 'b',
+        kind: 'start',
+        amountMinor: 50_000,
+        date: d('2026-09-01'),
+        createdAt: '2026-09-01T08:00:00.000Z' as IsoInstant,
+      }),
+    ]);
+    const user = userEvent.setup();
+    render();
+
+    expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '50000');
+    const fix = await screen.findByTestId('cash-two-starts');
+    await user.click(within(fix).getByRole('button', { name: 'Keep the first one' }));
+
+    await waitFor(async () => {
+      expect(await db.cashMoves.get('a')).toMatchObject({ isDeleted: 1 });
+    });
+    expect(await db.cashMoves.get('b')).toMatchObject({ isDeleted: 0 });
   });
 
   it('asks only about the person who has two', async () => {

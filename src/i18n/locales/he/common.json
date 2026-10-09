@@ -54,9 +54,11 @@
       "deposit": "הפקדה לבנק"
     },
     "someAccount": "חשבון בנק",
-    "twoStarts": "נרשמו שני סכומי פתיחה עבור {{name}}. להשאיר את המוקדם?",
-    "keepEarlier": "להשאיר את המוקדם",
-    "twoStartsFixed": "סכום הפתיחה המוקדם נשאר"
+    "manyStarts": "נרשם יותר מסכום פתיחה אחד עבור {{name}}. להשאיר את הראשון?",
+    "keepFirst": "להשאיר את הראשון",
+    "keptFirst": "סכום הפתיחה הראשון נשאר",
+    "startStays": "נשאר",
+    "startGoes": "יימחק"
   },
   "categoryPop": {
     "title": "קטגוריה",

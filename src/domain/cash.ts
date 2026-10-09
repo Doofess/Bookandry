@@ -13,13 +13,16 @@ import type { LocalDate, Minor } from '@/types/money';
  * balance is summed in here twice.
  *
  *   cash(person, today) =
- *       Σ start + Σ withdraw − Σ deposit            (live moves, start..today)
+ *         start + Σ withdraw − Σ deposit            (live moves, start..today)
  *     + Σ income occurrences that went to cash      (start..today)
  *     − Σ expense occurrences paid in cash          (start..today)
  *
- * "start" is the person's FIRST start move: cash rows from before they set up
- * the tab never count, so years of old cash spending cannot drive the figure
- * negative. Amounts are each occurrence's base amount, as the balance uses.
+ * "start" is the person's FIRST live start move (`earliestStart`), and only
+ * it: a second start a sync brought in counts for nothing, date or amount,
+ * until the cash screen's fix-up removes it. Cash rows from before they set
+ * up the tab never count, so years of old cash spending cannot drive the
+ * figure negative. Amounts are each occurrence's base amount, as the balance
+ * uses.
  */
 
 /** Where a recount files cash it found, and cash that was missing. */
@@ -62,15 +65,37 @@ export function moveSigned(move: Pick<CashMove, 'kind' | 'amountMinor'>): Minor 
   }
 }
 
-/** The day a person set up the cash tab: their earliest live start move. */
-export function cashSince(moves: readonly CashMove[], profileId: string): LocalDate | undefined {
-  let since: LocalDate | undefined;
+/**
+ * Which of two starts came first: by date, then by when it was written, then
+ * by id. The same order on every device, so two devices putting a doubled
+ * start right offline keep the same one.
+ */
+export function compareStarts(a: CashMove, b: CashMove): number {
+  return compareLocal(a.date, b.date) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+}
+
+/**
+ * A person's earliest live start: the one their cash counts from. Two devices
+ * set up offline can sync in a second; until it is removed, a later start
+ * counts for nothing - neither its date nor its amount.
+ */
+export function earliestStart(moves: readonly CashMove[], profileId: string): CashMove | undefined {
+  let first: CashMove | undefined;
   for (const m of moves) {
     if (m.isDeleted !== 0 || m.profileId !== profileId || m.kind !== 'start') continue;
-    if (since === undefined || compareLocal(m.date, since) < 0) since = m.date;
+    if (first === undefined || compareStarts(m, first) < 0) first = m;
   }
-  return since;
+  return first;
 }
+
+/** The day a person set up the cash tab: their earliest live start's date. */
+export function cashSince(moves: readonly CashMove[], profileId: string): LocalDate | undefined {
+  return earliestStart(moves, profileId)?.date;
+}
+
+/** A live start that is not the person's earliest: it counts for nothing, and is not listed. */
+const isLaterStart = (m: CashMove, first: CashMove | undefined): boolean =>
+  m.kind === 'start' && m.id !== first?.id;
 
 const within = (date: LocalDate, from: LocalDate, to: LocalDate): boolean =>
   compareLocal(date, from) >= 0 && compareLocal(date, to) <= 0;
@@ -96,14 +121,16 @@ export function personCash(
   occurrences: readonly Occurrence[],
   today: LocalDate,
 ): PersonCash | undefined {
-  const since = cashSince(moves, profileId);
-  if (since === undefined || compareLocal(since, today) > 0) return undefined;
+  const first = earliestStart(moves, profileId);
+  if (first === undefined || compareLocal(first.date, today) > 0) return undefined;
+  const since = first.date;
 
   let onHand: Minor = 0;
   let countedOn = since;
 
   for (const m of moves) {
     if (m.isDeleted !== 0 || m.profileId !== profileId || !within(m.date, since, today)) continue;
+    if (isLaterStart(m, first)) continue;
     onHand = add(onHand, moveSigned(m));
     if (m.kind === 'count' && compareLocal(m.date, countedOn) > 0) countedOn = m.date;
   }
@@ -210,9 +237,12 @@ const LISTED_MOVES: ReadonlySet<string> = new Set(['start', 'withdraw', 'deposit
  */
 export function cashActivity(input: CashInput): CashActivity[] {
   const since = new Map<string, LocalDate>();
+  const firsts = new Map<string, CashMove>();
   for (const id of input.profileIds) {
-    const from = cashSince(input.moves, id);
-    if (from !== undefined && compareLocal(from, input.today) <= 0) since.set(id, from);
+    const first = earliestStart(input.moves, id);
+    if (first === undefined || compareLocal(first.date, input.today) > 0) continue;
+    since.set(id, first.date);
+    firsts.set(id, first);
   }
   const shown = (profileId: string, date: LocalDate): boolean => {
     const from = since.get(profileId);
@@ -238,6 +268,7 @@ export function cashActivity(input: CashInput): CashActivity[] {
   }
   for (const m of input.moves) {
     if (m.isDeleted !== 0 || !LISTED_MOVES.has(m.kind) || !shown(m.profileId, m.date)) continue;
+    if (isLaterStart(m, firsts.get(m.profileId))) continue;
     rows.push({
       written: m.createdAt,
       entry: {

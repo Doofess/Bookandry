@@ -9,7 +9,7 @@ import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
 import { db } from '@/db/db';
 import type { UndoableAction } from '@/db/occurrence-actions';
-import { addCashMove, deleteCashMove } from '@/db/repos/cash-moves';
+import { addCashMove, deleteCashMove, InvalidCashMoveError } from '@/db/repos/cash-moves';
 import { writeSettings } from '@/db/repos/settings';
 import type { CashSummary } from '@/domain/cash';
 import { ProfileSwitcher } from '@/features/feed/profile-switcher';
@@ -19,13 +19,14 @@ import { TransactionSheet } from '@/features/transaction/transaction-sheet';
 import { useIncomeHistory } from '@/features/transaction/use-income-history';
 import { useTransactionSheet } from '@/features/transaction/use-transaction-sheet';
 import { systemClock } from '@/lib/clock';
+import { formatLocalDate } from '@/lib/dates';
 import { newId } from '@/lib/id';
-import { ALL_PROFILES, type Profile } from '@/types/domain';
+import { ALL_PROFILES, type CashMove, type Profile } from '@/types/domain';
 import type { Currency, IsoInstant, Minor } from '@/types/money';
 
 import { CashActivityList } from './activity-list';
 import { CashFigure } from './cash-figure';
-import { CashSetupCard } from './setup-card';
+import { CashSetupCard, type SetupProblem } from './setup-card';
 import { useCashData, type TwoStarts } from './use-cash-data';
 
 /**
@@ -53,7 +54,7 @@ export function CashScreen() {
   const setUp = data !== undefined && data.summary.people.length > 0;
   const everyone = whose === ALL_PROFILES;
 
-  const start = async (profileId: string, amountMinor: Minor): Promise<void> => {
+  const start = async (profileId: string, amountMinor: Minor): Promise<SetupProblem | undefined> => {
     try {
       // A start for someone who already has one (a deleted one, say) rewrites
       // that row rather than adding a second: the repo's rule, not this one's.
@@ -64,14 +65,18 @@ export function CashScreen() {
         systemClock.nowIso(),
       );
       offerUndo(t('cash.setupSaved'), undoable, t);
-    } catch {
+      return undefined;
+    } catch (error) {
+      // An amount the repo refuses is the field's to say, where it was typed.
+      if (error instanceof InvalidCashMoveError && error.reason === 'amount') return 'amount';
       toast.error(t('tx.toastFailed'));
+      return undefined;
     }
   };
 
-  const keepEarlier = async (found: TwoStarts): Promise<void> => {
+  const keepFirst = async (found: TwoStarts): Promise<void> => {
     try {
-      offerUndo(t('cash.twoStartsFixed'), await deleteLaterStarts(found, systemClock.nowIso()), t);
+      offerUndo(t('cash.keptFirst'), await deleteLaterStarts(found, systemClock.nowIso()), t);
     } catch {
       // One transaction: a failure (a start already gone elsewhere) changed nothing.
       toast.error(t('tx.toastFailed'));
@@ -108,7 +113,9 @@ export function CashScreen() {
             <TwoStartsNotice
               key={found.profileId}
               name={owner.name}
-              onKeepEarlier={() => keepEarlier(found)}
+              found={found}
+              currency={currency}
+              onKeepFirst={() => keepFirst(found)}
             />
           );
         })}
@@ -178,23 +185,45 @@ async function deleteLaterStarts(found: TwoStarts, now: IsoInstant): Promise<Und
 }
 
 /**
- * Two devices set up offline and both synced: one person, two starting
- * amounts. The figure already counts from the earlier one; this tidies the
- * other away, with Undo.
+ * Two devices set up offline and both synced: one person, more than one
+ * starting amount. The figure counts only the first (`compareStarts`), so
+ * keeping it does not move the number; this deletes the others, with Undo.
+ * Each amount and its date is shown, so it is plain what stays and what goes.
  */
 function TwoStartsNotice({
   name,
-  onKeepEarlier,
+  found,
+  currency,
+  onKeepFirst,
 }: {
   readonly name: string;
-  readonly onKeepEarlier: () => Promise<void>;
+  readonly found: TwoStarts;
+  readonly currency: Currency;
+  readonly onKeepFirst: () => Promise<void>;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
+  const starts: readonly [CashMove, boolean][] = [
+    [found.keep, true],
+    ...found.extra.map((m): [CashMove, boolean] => [m, false]),
+  ];
 
   return (
     <div className="space-y-3 rounded-2xl border border-border bg-muted/50 p-4" data-testid="cash-two-starts">
-      <p className="text-sm">{t('cash.twoStarts', { name })}</p>
+      <p className="text-sm">{t('cash.manyStarts', { name })}</p>
+      <ul className="space-y-1 text-sm">
+        {starts.map(([m, stays]) => (
+          <li key={m.id} className="flex items-center gap-2" data-testid="cash-start-option">
+            <Money minor={m.amountMinor} currency={currency} className="font-medium" />
+            <span className="text-muted-foreground">
+              {formatLocalDate(m.date, i18n.language, { dateStyle: 'medium' })}
+            </span>
+            <span className="ms-auto rounded-full bg-background px-2 py-0.5 text-xs text-muted-foreground">
+              {stays ? t('cash.startStays') : t('cash.startGoes')}
+            </span>
+          </li>
+        ))}
+      </ul>
       <Button
         type="button"
         variant="outline"
@@ -202,12 +231,12 @@ function TwoStartsNotice({
         disabled={busy}
         onClick={() => {
           setBusy(true);
-          void onKeepEarlier().finally(() => {
+          void onKeepFirst().finally(() => {
             setBusy(false);
           });
         }}
       >
-        {t('cash.keepEarlier')}
+        {t('cash.keepFirst')}
       </Button>
     </div>
   );
