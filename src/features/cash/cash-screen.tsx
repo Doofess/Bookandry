@@ -68,6 +68,7 @@ export function CashScreen() {
     return profile === undefined ? [] : [{ profile, onHandMinor: p.onHandMinor }];
   });
   const ids = figures.map((p) => p.profile.id);
+  const since = new Map((data?.summary.people ?? []).map((p) => [p.profileId, p.since]));
   const defaultPerson = ids.includes(whose)
     ? whose
     : me !== undefined && ids.includes(me)
@@ -210,6 +211,7 @@ export function CashScreen() {
             if (!open) setMoveTarget(undefined);
           }}
           people={figures.map((p) => p.profile)}
+          since={since}
           defaultProfileId={defaultPerson}
           methods={[...lookups.paymentMethods.values()]}
           currency={currency}
