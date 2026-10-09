@@ -247,9 +247,12 @@ export function buildPatch(input: BuildPatchInput): TransactionPatch {
     patch.note = parsed.note ?? null;
   }
 
+  // Not when the kind was switched: an edit does not save a switch of kind today, and the form
+  // strips the business type from income, so the comparison would wipe the series' own.
   if (
-    (parsed.mcc ?? '') !== (transaction.mcc ?? '') ||
-    (parsed.mccSource ?? '') !== (transaction.mccSource ?? '')
+    parsed.kind === transaction.kind &&
+    ((parsed.mcc ?? '') !== (transaction.mcc ?? '') ||
+      (parsed.mccSource ?? '') !== (transaction.mccSource ?? ''))
   ) {
     // Compared with the SERIES, not the occurrence; `null` clears it.
     patch.mcc = parsed.mcc ?? null;
