@@ -1,6 +1,6 @@
 # Add a card, step by step: design
 
-**Status:** Design approved in chat on 2026-10-09; amended 2026-10-10 for card kinds and the Cards restructure; awaits review.
+**Status:** Design approved in chat on 2026-10-09; amended 2026-10-10 for card kinds and the Cards restructure, and again on 2026-10-10 for the issuer, card company and network (section 21); awaits review.
 
 **Asked for by the user on 2026-10-09:**
 
@@ -46,7 +46,7 @@ So the amendment makes every card a card: one flow, one screen, and details for 
 
 1. **Scope.** The step-by-step flow is used for **adding** a card of any kind everywhere: the Cards screen, Smart import, and a new card from the transaction form. **Editing** an existing card becomes a summary page with a section for each group of its details. Tapping a section opens only that step. The "Interest table" deep link opens the fees step of a credit card. Bank accounts keep their current form for now.
 2. **Container.** A centred pop-out window on desktop, a full-height sheet on a phone. It has a progress bar and Back / Next. A step answered by one tap moves on by itself.
-3. **Company first.** For a credit card, Isracard / Cal / Max / Amex / Diners / Other, as logos. Then "Through which bank?", narrowed to that company's banks, plus "Not through a bank".
+3. **Company first.** _Superseded by section 21: the order is now kind, bank card or not, bank, card company, network._ For a credit card, Isracard / Cal / Max / Amex / Diners / Other, as logos. Then "Through which bank?", narrowed to that company's banks, plus "Not through a bank".
 4. **The steps.** Step 1 is always "What kind of card?" (decision 16). A credit card then has:
    1. What kind of card?
    2. Card company
@@ -70,9 +70,9 @@ So the amendment makes every card a card: one flow, one screen, and details for 
 
    Any escape makes the card unlinked, so the fees step shows editable fields. Each escape is a text field on the same step, never a new step.
 
-10. **Network.** Amex is set and not asked. Diners is set, except for the Diners Mastercard type. Isracard, Cal and Max ask it, as one row of logos in the "Your card" step.
+10. **Network.** _Superseded by section 21.3, step 5: the network is its own step, filtered by the card company and the bank._ Amex is set and not asked. Diners is set, except for the Diners Mastercard type. Isracard, Cal and Max ask it, as one row of logos in the "Your card" step.
 11. **Owner.** "Whose card?" in the "Your card" step defaults to the first person. Picking an account (a credit card's paying account, a debit card's account, or a prepaid card's loading account or card) makes the owner that account's holder, unless the owner was changed by hand. It is hidden in a one-person household.
-12. **Name.** Suggested from the answers: "Max Platinum ·1234", and for a bank card "Max · Leumi Platinum ·1234". It is shown and editable on review. It follows the answers until the person edits it. Section 4.2 gives each kind's pattern.
+12. **Name.** _The bank card pattern is superseded by section 21.6._ Suggested from the answers: "Max Platinum ·1234", and for a bank card "Max · Leumi Platinum ·1234". It is shown and editable on review. It follows the answers until the person edits it. Section 4.2 gives each kind's pattern.
 13. **Duplicates.** The same kind, company and last 4 digits as a live card: review warns "You already have Max ·1234" with "Open it". It does not block saving.
 14. **Closing.** On the first three screens, closing just closes. From the fourth screen on it asks "Discard this card?". Nothing is saved until Save. There are no drafts.
 15. **Build order.** The design is settled now. The screens are built **after** the app-wide colourful redesign, which is in progress separately, sets the new colours and fonts. All styling here uses tokens, and the visual layer follows that redesign.
@@ -90,6 +90,17 @@ The user made decisions 16 to 18. The user asked Claude to take its recommended 
 22. **Debit spending limits are not stored.** They are set by the bank, change "מעת לעת", and no figure uses them (research §2.2).
 23. **Never a voucher code or PIN.** A gift card's code, barcode or PIN spends it, so it is never asked for or kept. `gate:pci` gains the names `voucher_code`, `gift_code` and `redeem_code` (section 13.2). Every rule `gate:pci` enforces applies to every kind.
 24. **Prepaid and gift balances are pots.** Like the cash pot, a card's balance is not a field. It is a start amount, plus moves, minus spending with the card. This spec ships the table, the start amount from the flow, and the figure. Loading, unloading and recounting are a follow-up, "Card pots", with its boundary in section 12.
+
+### Decisions from the issuer amendment (2026-10-10)
+
+The user made decisions 25 and 26. Claude took its recommended answers for 27 to 30, as the user asked. Section 21 has the detail.
+
+25. **Three facts, all set on every card** (the user): the issuer (מנפיק: the bank, or the card company for a non-bank card), the network (רשת: Visa, Mastercard…) and the name on the card. A bank card always also has a card company that runs it. A non-bank card's card company is its issuer, so it has one question less.
+26. **The order, each list narrowed by every earlier answer** (the user): kind → bank card or not → which bank (bank cards only) → card company → network → the rest. A question with only one possible answer is shown as answered, with "Change", and not asked.
+27. **The matrix of who works with whom is catalog data with a status and a date per cell:** confirmed, varies, unverified or absent. An unverified combination is offered, tagged "Check your card". Only an absent one is hidden, and even that is one tap away behind "Another company" or "Another network". No real card is ever blocked.
+28. **The issuing bank gets its own field**, `card.issuerBank` (a Masav code). It is separate from the paying account, `accountId`. `card.issuer` keeps its key and means the card company. The overloaded `card.bank` text is still written, for older builds, but no longer read.
+29. **Smart import reads each document's real meaning.** Discount's "מנפיק" column is the card company. Its "כל הכרטיסים הבנקאיים" title makes Discount the issuer. Max's title row is the card's name. A Max file alone never decides bank or non-bank.
+30. **No acquirer or clearing party is modelled.** The cardholder never chooses or sees them.
 
 ## 1. Where the flow is used
 
@@ -181,6 +192,8 @@ From top to bottom:
 - Every colour, radius and shadow is a token: `--popover`, `--primary`, `--accent`, `--border`, `--muted-foreground` and so on. No colour is written into the flow. The colourful redesign changes the tokens, and the flow follows. Section 19 has the build order.
 
 ## 3. The steps
+
+> **Amended by section 21.** Section 21.3 replaces the credit card's steps 2 to 5, the debit card's steps 2 and 3, and the prepaid card's step 2. The other steps below stand.
 
 The flow keeps its answers in one `CardFlowState` (section 14). Everything a step shows is worked out from that state by pure functions in `src/domain/card-flow.ts`.
 
@@ -1289,3 +1302,383 @@ All new strings live under `cards:flow.*`, except where noted. The Hebrew uses t
 - Bank card fees in the catalog. A bank card's fee, and every debit card's, stays "Set by your bank", with a field.
 - Asking which bank a card not through a bank is paid from, when the account isn't in the app.
 - Archive or delete from the summary. The card menu has them.
+
+## 21. Issuer, card company and network (amendment, 2026-10-10)
+
+**Asked for by the user on 2026-10-10:**
+
+> "the [last four digits] max card is a bank card that Max, a credit company, manages for them; this is how it works in Israel. In Israel bank credit cards also have a provider which is usually a credit card company. Research the logic in Israel and make sure it is implemented in the app correctly and most accurately."
+
+Then, as binding rules for this design:
+
+> "you have 'מנפיק', 'רשת' which is visa/mastercard etc, and you have the brand, which is visually on the card: the bank's name or the credit company's name. All 3 are set on a card. We need to ask users first if it's a bank card, then the provider, then the network, because some providers don't work with all networks: check who works with who. I want the options in the adding-card menu to go down according to what you choose in earlier questions: credit/debit first (it changes the answers to choose from), then bank or non-bank, then, if bank, which bank, and then which provider and network; if non-bank, the 'which bank' question disappears and it skips to the provider question. A bank card has to have a provider, but the credit-card companies ARE the providers, so non-bank cards have one less question."
+
+The user also asked:
+
+- that every question filters its choices by **all** earlier answers, matching real combinations in Israel today;
+- that every matrix cell be sourced and dated;
+- that an unverified cell never hide a choice;
+- for a refresh path, and for tests that assert real combinations and that no step is ever empty.
+
+**Facts** come from the research note `docs/research/2026-10-10-israeli-card-issuers-and-operators.md` (branch `research/open-banking`), cited here as "issuer research §n".
+
+**What this section replaces:**
+
+- decisions 3, 10 and part of 12;
+- the credit card's steps 2 to 5 (3.1);
+- the debit card's steps 2 and 3 (3.2), and the prepaid card's step 2 (3.3);
+- the bank card and debit patterns in 4.2;
+- the copy keys `flow.company.*`, `flow.bank.*`, `flow.runBy.*`, `flow.issuedBy.*` and `flow.card.networkFixed`.
+
+Everything else in this spec stands.
+
+### 21.1 The model
+
+A card has five facts (issuer research §0). The app stores four of them and derives one:
+
+| Fact                 | Hebrew                        | Field                                                 | Meaning                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kind                 | סוג                           | `type` + `card.funding` (13.3)                        | Credit, debit, prepaid or gift. Unchanged.                                                                                                                                                                                                                                                                                                                             |
+| Bank card or not     | בנקאי / חוץ בנקאי             | `card.kind: 'bank' \| 'non_bank'`                     | Unchanged. Absent means not known.                                                                                                                                                                                                                                                                                                                                     |
+| **Issuing bank**     | הבנק המנפיק                   | **new** `card.issuerBank?: string`, a Masav code      | Only when `kind === 'bank'`. Its name comes from `src/domain/banks.ts` in the current language, never stored. On a linked card it equals `catalog.bank`.                                                                                                                                                                                                               |
+| **Card company**     | חברת האשראי / מתפעל ההנפקה    | `card.issuer` (the existing key)                      | The company that runs the card: Isracard, Cal, Max, Amex, Diners or other. For a non-bank card it is also the issuer. The key keeps its name on disk for sync and older builds. In code, `CardIssuer` gets an alias, `CardCompany`, and its comment changes from "Who issued the card" to "The card company that runs the card; for a non-bank card, also its issuer". |
+| Network              | רשת                           | `card.network`                                        | Unchanged.                                                                                                                                                                                                                                                                                                                                                             |
+| Product              | סוג הכרטיס, מועדון, שם הכרטיס | `card.tier`, `card.club`, **new** `card.productName?` | `productName` is the card's name as a document prints it, such as "Dream Card VIP" or "max ביחד בשבילך". At most 40 characters. It comes from Smart import, and can be edited on review and in the summary.                                                                                                                                                            |
+| Charged to           | מחויב מחשבון                  | `card.accountId`                                      | Unchanged. For a bank card, an account at `issuerBank` (21.3, step 8).                                                                                                                                                                                                                                                                                                 |
+| **Issuer** (derived) | מנפיק                         | `issuerOf(card)`                                      | `issuerBank` for a bank card, the card company otherwise. It is the big name on the card face. It is never stored.                                                                                                                                                                                                                                                     |
+
+- **`card.bank`, the old text field:** still written on every save so older builds read the card right. On a bank card it holds the issuing bank's name; on a non-bank card, the paying account's bank. This build never reads it, except once to migrate (21.8).
+- **Derived, never stored:**
+  - who sends the statement: always the card company;
+  - who gives the credit: the issuing bank on a bank card, the company otherwise (issuer research §1.6);
+  - the company group: Amex is in Isracard's group, Diners in Cal's (catalog `group`).
+- **Not modelled:** the acquirer and clearing (issuer research §1.3).
+
+### 21.2 The matrix is catalog data
+
+New in `src/data/card-catalog/types.ts`:
+
+```ts
+export type CardFunding = 'credit' | 'debit' | 'prepaid';
+export type CellStatus = 'confirmed' | 'varies' | 'unverified' | 'absent';
+export type MatrixCell = {
+  status: CellStatus;
+  checked: LocalDate; // when the source was read
+  source?: CatalogSource & { quote?: string }; // required unless status is 'unverified'
+  note?: string; // what is uncertain, in plain words
+};
+
+// CatalogIssuer (a card company) gains:
+group?: IssuerId; // amex → 'isracard', diners → 'cal'
+nonBank: Partial<Record<CardFunding, MatrixCell>>; // does it issue non-bank cards of this kind?
+networks: Partial<Record<CardFunding, Partial<Record<CardNetwork, MatrixCell>>>>;
+
+// CatalogBank gains:
+programmes: {
+  issuer: IssuerId;
+  funding: CardFunding;
+  cell: MatrixCell;
+  // only where the bank narrows the company's networks (One Zero: Mastercard)
+  networks?: Partial<Record<CardNetwork, MatrixCell>>;
+}[];
+
+// CatalogTier gains (optional): the networks the type exists on, where the catalog knows them.
+networks?: CardNetwork[];
+```
+
+- **The data is issuer research §4.1 and §4.2, cell for cell,** with each cell's status, date, source and note. A missing cell is read as `unverified`, never as `absent`. Only a source can make a cell `absent`.
+- **`CatalogBank.issuers` stays,** and `check.ts` asserts that it equals the bank's credit programmes whose status is not `absent`. `resolveCard` keeps working unchanged.
+- **New catalog banks:**
+  - Bank of Jerusalem (54): Cal credit, confirmed 2026-10-10;
+  - Postal Bank (9): Isracard debit only;
+  - Esh Israel (3): no cards, every cell `absent`.
+- **Every bank in `banks.ts`** (groups `israel` and `arab`, and merged codes through their `now`) is either in the catalog or falls to the default: every company `unverified` for every kind.
+- **`resolveCard`** links a bank card when the bank's programme for that company is anything but `absent`. Where the bank has rate rows for that company, they apply. Otherwise the company's rows apply with the caveat "Rates for this bank aren't published. Check your statement." An `absent` combination stays unlinked.
+- `CATALOG_VERSION` goes to **2**.
+
+### 21.3 The steps
+
+A step with exactly **one** possible answer is never its own screen. It is answered, and shown as a line at the top of the next screen ("Card company: Isracard · Change"); "Change" opens it. The progress total counts only the screens shown (2.3).
+
+**Credit card:**
+
+| #   | Question (en / he)                                                                                                                                       | Choices, in order                                                                                                                                                                                                                                                                                                                     | Filtered by                                                                                     | Not shown when                                              |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | What kind of card? / איזה סוג כרטיס?                                                                                                                     | Credit, Debit, Prepaid, Gift                                                                                                                                                                                                                                                                                                          | —                                                                                               | from a credit-only transaction mode (3, step 1)             |
+| 2   | Is it a bank card? / האם זה כרטיס בנקאי?                                                                                                                 | Bank card · Non-bank card · Not sure                                                                                                                                                                                                                                                                                                  | the kind                                                                                        | never, for credit                                           |
+| 3   | Which bank's name is on the card? / איזה בנק מופיע על הכרטיס?                                                                                            | **Your accounts**: the household's live accounts, grouped by bank (picking one sets `issuerBank` **and** `accountId`). Then banks with a non-absent programme for this kind: confirmed and varies first, then unverified under "Check your card". Then "Show all banks" (absent ones). Then "My bank isn't listed" with a name field. | the kind                                                                                        | non-bank, or "Not sure"                                     |
+| 4   | Bank card: Which card company runs it? / איזו חברת אשראי מתפעלת את הכרטיס? · Non-bank: Which card company issued it? / איזו חברת אשראי הנפיקה את הכרטיס? | Bank card: that bank's programmes for this kind. Non-bank: the companies whose `nonBank[kind]` is not absent. "Not sure": all five. Confirmed and varies first, unverified under "Check your card", then "Another company" (absent ones and Other with a name field).                                                                 | the kind, bank card or not, the bank                                                            | one possible company                                        |
+| 5   | Which network? / איזו רשת?                                                                                                                               | The company's `networks[kind]`, narrowed by the bank programme's `networks` where it has them. Same ordering and tags. Then "Another network" (all five).                                                                                                                                                                             | the kind, the bank, the company                                                                 | one possible network (Amex; One Zero's Isracard Mastercard) |
+| 6   | Which card is it? / איזה כרטיס זה?                                                                                                                       | `tiersOf` and `clubsOf` for the company and kind, narrowed by `CatalogTier.networks` where set. Then "Not in the list".                                                                                                                                                                                                               | the kind, the company, the network, the bank (a bank's own club, such as Mizrahi "כתום", later) | one type and no clubs                                       |
+| 7   | Your card                                                                                                                                                | Last 4, valid until, colour, whose card. **The network moves out**, to step 5.                                                                                                                                                                                                                                                        | —                                                                                               | —                                                           |
+| 8   | When is the card billed?                                                                                                                                 | Paid from: on a bank card, only accounts at `issuerBank`, already answered when step 3 picked an account. "An account at another bank" is behind a link and shows a warning. On a non-bank card, every account. Billing day and limit as 3.1.                                                                                         | the bank, bank card or not                                                                      | —                                                           |
+| 9   | Fees and interest                                                                                                                                        | As 3.1, step 7.                                                                                                                                                                                                                                                                                                                       | —                                                                                               | —                                                           |
+| 10  | Review                                                                                                                                                   | As 3.1, step 8, with the rows of 21.6.                                                                                                                                                                                                                                                                                                | —                                                                                               | —                                                           |
+
+So a bank credit card has at most 10 screens and a non-bank one at most 9. Each step answered alone takes one away.
+
+**Debit card** (a bank card by definition, issuer research §1.9):
+
+- **Step 2** is answered "Bank card" and shown as a line on step 3. "Change" there offers "Non-bank card", which leads to the companies whose `nonBank.debit` is not absent: Isracard only, tagged "Check your card".
+- **Step 3** is the old debit step 2, the account, merged with the bank. It shows "Your accounts" first; an account answers the bank and the account together. Then the banks with a non-absent debit programme. Then "Show all banks" and "My bank isn't listed".
+- **Steps 4 and 5** are the company and the network, filtered by `funding: 'debit'`. Amex and Diners are `absent` for debit everywhere, so they appear only behind "Another company". At Hapoalim the company is answered as Isracard (confirmed: "בשיתוף עם חברת ישראכרט בלבד").
+- **Then:** Type (6), Your card (7), Fees (8, as 3.2 step 5) and Review (9).
+
+**Prepaid card:**
+
+- **Step 2:** "From a bank" or "From a card company", with "Not sure". The same component as credit, with its own copy.
+- **Steps 3 to 6:** as credit, filtered by `funding: 'prepaid'`.
+- **Then:** Your card (7), Money in (8), Fees (9) and Review (10), as 3.3.
+
+**Gift card:** unchanged (3.4). It has no bank question, and its network stays an optional field.
+
+### 21.4 How a list is narrowed
+
+`choicesFor(step, state, catalog?)` in `src/domain/card-flow.ts` returns:
+
+```ts
+type Choice<T> = { value: T; status: CellStatus; checked?: LocalDate };
+type Choices<T> = {
+  main: Choice<T>[]; // confirmed and varies
+  checkYourCard: Choice<T>[]; // unverified: shown under a divider, each tagged
+  hidden: Choice<T>[]; // absent: shown only after the escape is tapped
+  escape: 'anotherCompany' | 'anotherNetwork' | 'showAllBanks'; // always present
+  only?: T; // exactly one choice across main and checkYourCard: answered for the person
+};
+```
+
+- **Every earlier answer narrows the list.** The kind narrows the banks, companies, networks and types. Bank card or not narrows the companies. The bank narrows the companies and networks. The company narrows the networks and types. The network narrows the types where the catalog knows a type's networks.
+- **Order inside each group:**
+  - the household's own banks first;
+  - then confirmed before varies;
+  - then the catalog's own order.
+- **Never empty.** If `main` and `checkYourCard` are both empty, `main` becomes every value of that step, each tagged "Check your card". This can only happen through a data gap; a test proves it doesn't in today's data (21.11). The escape is always there, so any real card can be entered.
+- **`only` and preselection.** The step is skipped as a screen only when `only` is set and its status is `confirmed`. An `unverified` single choice is still asked, so that "Check your card" is seen.
+- **Changing an earlier answer** clears each later answer that is now in `hidden`. Answers now in `checkYourCard` stay, with the tag. Answers still in `main` stay. "Keep the rates you entered?" (3.1, step 4) is asked first, as today.
+- **No catalog** (loading or failed): no narrowing and no tags. Every bank, the five companies and Other, and all five networks are offered.
+- **The tags follow the card.** An unverified combination is saved and works like any other. Review and the summary show "Check your card" beside it until the person confirms the row by tapping it (`card.checked?: true`, cleared by any later change to bank, company or network).
+
+### 21.5 Worked examples
+
+The networks and products are the user's real cards. The digits are invented.
+
+| Card                                                                  | Step 2    | Step 3 (bank) offers → answer                                        | Step 4 (company) offers → answer                                                                                             | Step 5 (network) offers → answer             | Saved                                                                                                                     |
+| --------------------------------------------------------------------- | --------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **A.** Discount Bank card run by Max ("Discount Basic International") | Bank card | Your accounts (the Discount account), then the banks → Discount (11) | Discount's credit programmes: Cal, Diners, Max (confirmed). Isracard and Amex are absent, behind "Another company" → **Max** | Max credit: Visa, Mastercard → **Visa**      | `kind: 'bank'`, `issuerBank: '11'`, `issuer: 'max'`, `network: 'visa'`, `accountId` = the Discount account, `productName` |
+| **B.** Discount Bank card run by Cal                                  | Bank card | → Discount (11)                                                      | Cal, Diners, Max → **Cal**                                                                                                   | Cal credit: Visa, Mastercard → **Visa**      | `kind: 'bank'`, `issuerBank: '11'`, `issuer: 'cal'`, `network: 'visa'`                                                    |
+| **C.** Max's own card ("max executive" / "Dream Card VIP")            | Non-bank  | not shown                                                            | Non-bank credit: Isracard, Amex, Cal, Diners, Max → **Max**                                                                  | Visa, Mastercard → **Mastercard** / **Visa** | `kind: 'non_bank'`, `issuer: 'max'`, the network, `accountId` = any account (here the Discount one)                       |
+| **D.** Isracard's own card                                            | Non-bank  | not shown                                                            | → **Isracard**                                                                                                               | Isracard, Mastercard, Visa → **Isracard**    | `kind: 'non_bank'`, `issuer: 'isracard'`, `network: 'isracard'`                                                           |
+| **E.** Mizrahi-Tefahot card run by Isracard                           | Bank card | → Mizrahi-Tefahot (20)                                               | Isracard, Amex, Cal, Diners, Max, all confirmed → **Isracard**                                                               | Isracard, Mastercard, Visa → **Mastercard**  | `kind: 'bank'`, `issuerBank: '20'`, `issuer: 'isracard'`, `network: 'mastercard'`                                         |
+| One Zero card                                                         | Bank card | → One Zero (18)                                                      | only Isracard: answered, shown as a line                                                                                     | only Mastercard: answered, shown as a line   | 8 screens, not 10                                                                                                         |
+
+### 21.6 How a card reads
+
+- **Suggested name** (replaces 4.2 for bank cards):
+  - A bank card: `{bank} {club | productName | type} · {company} ·{last4}`. For example "Discount Visa International · Max ·1234", or "דיסקונט International · מקס ·1234".
+  - A non-bank card: `{company} {club | productName | type} ·{last4}`. For example "Max Dream Card VIP ·1234".
+  - Debit: `{bank} {type} ·{last4}`, as before. Its company isn't part of its name.
+  - Prepaid: the bank or non-bank pattern, by step 2.
+- **Card face:** the issuer's mark is large (`BankMark` for a bank card, the company's `BrandMark` otherwise), and the network's mark is in the corner. A bank card adds a small line "Run by Max" / "בתפעול מקס".
+- **Review and summary rows** (group "The card"): Kind · Bank card or not · Issued by · Run by (bank cards only) · Network · Card type and club · Name on the card · Last 4 · Valid until · Colour · Whose.
+- **"Which card" in the summary** (7) opens steps 2 to 6 in order, with the current answers selected.
+- **Duplicates** (4.4): the same kind, last 4 and **card company**. Unchanged; the field always meant the company.
+- **The Hebrew word for the network** becomes "רשת" everywhere (`cards:edit.network`, the summary, the face's label). "מותג" is the name on the card, not the network.
+
+### 21.7 Smart import
+
+- **The wire.** The card record's `is` splits in three, and `bk` is added (`src/domain/import-wire.ts`, `CARD_KEYS`):
+  - `is`: the **issuer** as printed. For a card with a bank's name, the bank.
+  - `op`: the **card company** that runs it.
+  - `pn`: the card's **name as printed**.
+  - `bk`: the issuing bank's code when `is` names a bank (`bankFromName`).
+- **The prompt line** becomes: "is: who issued the card: a bank's name for a bank card (its name is on the card, e.g. דיסקונט, לאומי), else the card company; op: the card company that runs it (ישראכרט, כאל, מקס, אמריקן אקספרס, דיינרס), even when a column calls it מנפיק; pn: the card's name as printed (e.g. Dream Card VIP)."
+- **`readCard`** maps them to `FoundCard`:
+  - `issuer` from `op`, or from `is` when it names a company;
+  - `issuerBank` and `kind: 'bank'` when `is` or `bk` names a bank;
+  - `productName` from `pn`.
+- **`planCard`** writes `kind`, `issuerBank` and `productName` too, with the same "what the document doesn't print is left as it was" rule. `CardChange` gains `'issuerBank'`, `'company'` and `'productName'`.
+
+**The exact readers** (`src/domain/import-sheet-readers.ts`), from issuer research §5:
+
+| Document                                           | Reads                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Discount "כרטיסי אשראי" (`format: 'discount'`)     | A title row "כל הכרטיסים הבנקאיים" → every card is `kind: 'bank'`, `issuerBank: '11'`. `DISCOUNT_MORE` gains `issuer: 'מנפיק'`, whose cell ("כאל") is read as the **card company** through the companies table. The "כרטיס" cell gives the network word and the last 4.                          |
+| Max "transaction-details_export" (`format: 'max'`) | `issuer: 'max'` (the file is Max's). `titleCard` also returns the text after "NNNN-" as `productName`. Bank card or not stays **unknown**, unless the name contains a bank's name (`bankFromName`). In that case it suggests `kind: 'bank'` and that bank, tagged "From your statement · check". |
+| A bank's current-account rows                      | "חיוב לכרטיס <network> NNNN" → a found card (5, "a card seen only on rows") with `kind: 'bank'`, `issuerBank` = the statement's bank, and the network. A company's lump ("מקס איט פי חיוב") only sets `accountId` on the card it settles, and never creates a card.                              |
+| A card company's card page (screenshot or PDF)     | D470 §12(1) puts "שם המנפיק" and "שם מתפעל ההנפקה" on it, so the prompt reads both into `is` and `op`.                                                                                                                                                                                           |
+| Open banking (future)                              | `aspspCode` → the **card company** (never the issuer); `product` → `productName`; a bank's card list → `issuerBank`.                                                                                                                                                                             |
+
+- **Where the flow opens:** `firstOpenStep` treats a step as answered when the document gave it. A Max export alone answers the company and the product, but not step 2, so the flow opens on "Is it a bank card?" with the rest filled and tagged. A Discount export answers steps 2 to 5.
+- **When reads disagree** (one document says bank card, another non-bank), the existing `reads_disagree` flag applies.
+
+### 21.8 Migration of existing cards
+
+No Dexie version. `cardIdentityOf(card, accounts)` in `src/domain/cards.ts` derives the model on read, and every save writes it.
+
+| What the card holds                                                     | What it reads as                                                                                                |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `catalog.bank` is a code                                                | `kind: 'bank'`, `issuerBank` = that code                                                                        |
+| `catalog.bank === 'none'`                                               | `kind: 'non_bank'`                                                                                              |
+| `kind: 'bank'`, no catalog, `bank` text matches a bank (`bankFromName`) | `issuerBank` = that bank                                                                                        |
+| `kind: 'bank'`, the text matches nothing, `accountId` at a known bank   | `issuerBank` = the account's bank, marked "Check your card"                                                     |
+| `kind: 'bank'`, nothing else                                            | `issuerBank` unknown. The summary shows "Issued by: Not set", and a "Finish setting up" line counts it (below). |
+| `kind: 'non_bank'`                                                      | `bank` text ignored: it named the paying account's bank. `accountId` stands.                                    |
+| `kind` absent                                                           | Bank card or not is unknown. The `bank` text is **not** used to guess, because it meant either thing.           |
+
+- **Write-back:** the first save of the card through any step writes `issuerBank` (and `kind` when derived from the catalog). Sync carries it like any card edit.
+- **A mismatch:** a bank card whose `accountId` is at another bank than `issuerBank` shows "This bank card is paid from an account at another bank. Check your card." on the summary. It never blocks.
+- **"Finish setting up"** (8) gains a line: "1 card doesn't say which bank issued it." / "{{count}} cards don't say which bank issued them." It opens step 3.
+- **Schema** (`cardSchema`):
+  - `issuerBank: z.string().regex(/^\d{1,3}$/).optional()`;
+  - `productName: shortText.optional()`;
+  - `checked: z.literal(true).optional()`.
+  - All three go in `CardDraft` and `DRAFT_KEYS`.
+- **Older builds:** they keep the unknown keys on their credit card edits (13.1) and read `bank` as before, which this build still writes. A debit card edited on an older build loses them, as 13.8 already says for every new key.
+- **`card-fields.tsx` today overwrites an unlinked bank card's `bank` with the paying account's bank.** That code goes away with `CardFields` (14). The migration doesn't trust a `bank` text on a card whose `accountId` names another bank: such a card reads as "Check your card".
+
+### 21.9 Keeping the matrix true
+
+- **Dated data:** every cell carries `checked`. Any change to a cell bumps `CATALOG_VERSION` and gets a line in the release notes.
+- **`pnpm catalog:check`** (offline, in `pnpm verify`). It extends `check.ts`. It fails when:
+  - a cell other than `unverified` has no source;
+  - a cell's date is in the future;
+  - a bank in `banks.ts` (`israel` or `arab`) is neither in the catalog nor covered by the default;
+  - `CatalogBank.issuers` disagrees with the programmes;
+  - any reachable path gives an empty list (21.4).
+  - It **warns** on cells checked more than 180 days ago, and **fails** past 365.
+- **`pnpm catalog:sources`** (manual, online, never in CI). It fetches each cell's `source.url` and looks for its `quote`. It reports each cell as unchanged, quote gone, or unreachable. A bot wall counts as unreachable, with "check by hand".
+  - It never edits the data. A person updates the cells, their `checked` dates and the version.
+  - Run it monthly, and before any release that touches the catalog.
+- **Corrections from people:**
+  - **When it shows:** when a card is saved through an escape ("Another company", "Another network", "My bank isn't listed", "Not in the list") or on an unverified cell, its summary shows "Not in our card list? Tell us".
+  - **What it opens:** a short text to copy, or to open as a new GitHub issue on the app's repository. It holds the kind, the bank code, the company, the network and the card type, and nothing else: no digits, names or amounts.
+  - **Nothing is sent by itself.** Settings lists the household's cards with such combinations, under "Card list corrections".
+
+### 21.10 Copy
+
+New keys under `cards:flow.*`, except where noted. They replace `flow.company.*`, `flow.bank.*`, `flow.runBy.*`, `flow.issuedBy.*` and `flow.card.networkFixed`.
+
+| Key                            | English                                                                                                                               | עברית                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `flow.bankCard.title`          | Is it a bank card?                                                                                                                    | האם זה כרטיס בנקאי?                                                                                              |
+| `flow.bankCard.hint`           | A bank card has your bank's name on it and is charged to your account at that bank. A non-bank card has only the card company's name. | על כרטיס בנקאי מופיע שם הבנק שלכם, והוא מחויב בחשבון שלכם באותו בנק. על כרטיס חוץ בנקאי מופיע רק שם חברת האשראי. |
+| `flow.bankCard.bank`           | Bank card                                                                                                                             | כרטיס בנקאי                                                                                                      |
+| `flow.bankCard.bankHint`       | From your bank, run by a card company                                                                                                 | מהבנק, בתפעול חברת אשראי                                                                                         |
+| `flow.bankCard.nonBank`        | Non-bank card                                                                                                                         | כרטיס חוץ בנקאי                                                                                                  |
+| `flow.bankCard.nonBankHint`    | Straight from Isracard, Cal, Max, American Express or Diners                                                                          | ישירות מישראכרט, כאל, מקס, אמריקן אקספרס או דיינרס                                                               |
+| `flow.bankCard.notSure`        | Not sure                                                                                                                              | לא בטוחים                                                                                                        |
+| `flow.bankCard.prepaidBank`    | From a bank                                                                                                                           | מהבנק                                                                                                            |
+| `flow.bankCard.prepaidCompany` | From a card company                                                                                                                   | מחברת אשראי                                                                                                      |
+| `flow.bank.title`              | Which bank's name is on the card?                                                                                                     | איזה בנק מופיע על הכרטיס?                                                                                        |
+| `flow.bank.hint`               | The bank issued the card, gives its credit and charges your account there.                                                            | הבנק הנפיק את הכרטיס, נותן את האשראי ומחייב את החשבון שלכם בו.                                                   |
+| `flow.bank.yourAccounts`       | Your accounts                                                                                                                         | החשבונות שלכם                                                                                                    |
+| `flow.bank.otherBanks`         | Other banks                                                                                                                           | בנקים אחרים                                                                                                      |
+| `flow.bank.showAll`            | Show all banks                                                                                                                        | הצגת כל הבנקים                                                                                                   |
+| `flow.bank.notListed`          | My bank isn't listed                                                                                                                  | הבנק שלי לא ברשימה                                                                                               |
+| `flow.bank.name`               | Bank name                                                                                                                             | שם הבנק                                                                                                          |
+| `flow.company.titleBank`       | Which card company runs it?                                                                                                           | איזו חברת אשראי מתפעלת את הכרטיס?                                                                                |
+| `flow.company.hintBank`        | Its name is on your statement, and usually on the card: Isracard, Cal, Max…                                                           | השם שלה מופיע בדף הפירוט, ובדרך כלל גם על הכרטיס: ישראכרט, כאל, מקס…                                             |
+| `flow.company.titleNonBank`    | Which card company issued it?                                                                                                         | איזו חברת אשראי הנפיקה את הכרטיס?                                                                                |
+| `flow.company.hintNonBank`     | Its name is on the card and at the top of your statement.                                                                             | השם שלה מופיע על הכרטיס ובראש דף הפירוט.                                                                         |
+| `flow.company.another`         | Another company                                                                                                                       | חברה אחרת                                                                                                        |
+| `flow.company.otherName`       | Company name                                                                                                                          | שם החברה                                                                                                         |
+| `flow.network.title`           | Which network?                                                                                                                        | איזו רשת?                                                                                                        |
+| `flow.network.hint`            | The logo in the corner of the card.                                                                                                   | הלוגו בפינת הכרטיס.                                                                                              |
+| `flow.network.another`         | Another network                                                                                                                       | רשת אחרת                                                                                                         |
+| `flow.check.divider`           | Less common here. Check your card                                                                                                     | פחות נפוץ כאן. בדקו בכרטיס                                                                                       |
+| `flow.check.tag`               | Check your card                                                                                                                       | בדקו בכרטיס                                                                                                      |
+| `flow.answered`                | {{question}}: {{answer}}                                                                                                              | {{question}}: {{answer}}                                                                                         |
+| `flow.change`                  | Change                                                                                                                                | שינוי                                                                                                            |
+| `flow.billing.otherBank`       | An account at another bank                                                                                                            | חשבון בבנק אחר                                                                                                   |
+| `flow.billing.otherBankWarn`   | A bank card is usually charged to your account at the bank that issued it.                                                            | כרטיס בנקאי מחויב בדרך כלל בחשבון שלכם בבנק שהנפיק אותו.                                                         |
+| `row.bankCard`                 | Bank card                                                                                                                             | כרטיס בנקאי                                                                                                      |
+| `row.issuedBy`                 | Issued by                                                                                                                             | מנפיק                                                                                                            |
+| `row.runBy`                    | Run by                                                                                                                                | בתפעול                                                                                                           |
+| `row.network`                  | Network                                                                                                                               | רשת                                                                                                              |
+| `row.productName`              | Name on the card                                                                                                                      | שם הכרטיס                                                                                                        |
+| `face.runBy`                   | Run by {{company}}                                                                                                                    | בתפעול {{company}}                                                                                               |
+| `summary.otherBankWarn`        | This bank card is paid from an account at another bank. Check your card.                                                              | הכרטיס הבנקאי הזה מחויב מחשבון בבנק אחר. בדקו בכרטיס.                                                            |
+| `unfinished.issuerBank_one`    | 1 card doesn't say which bank issued it.                                                                                              | בכרטיס אחד חסר הבנק שהנפיק אותו.                                                                                 |
+| `unfinished.issuerBank_other`  | {{count}} cards don't say which bank issued them.                                                                                     | ב־{{count}} כרטיסים חסר הבנק שהנפיק אותם.                                                                        |
+| `corrections.prompt`           | Not in our card list? Tell us                                                                                                         | לא ברשימת הכרטיסים שלנו? ספרו לנו                                                                                |
+| `cards:edit.network` (changed) | Network                                                                                                                               | רשת (was "מותג")                                                                                                 |
+
+### 21.11 Tests
+
+**`card-matrix.test.ts`** (new, catalog data through `choicesFor`). These pin real combinations:
+
+- **No bank on a non-bank card.** A non-bank card is never offered a bank. `stepsFor` has no step 3 for non-bank or "Not sure". Its company list for credit is exactly Isracard, Amex, Cal, Diners and Max.
+- **Discount (11), credit:**
+  - `main` is Cal, Diners and Max, and `hidden` is Isracard and Amex.
+  - Max is in `main` only because its programme cell is `confirmed` with a source URL and date. The test asserts the cell, so a data change that drops the source fails here.
+- **Mercantile (17), credit:** `main` is Cal and Diners. Max is `hidden`.
+- **One Zero (18):** the company is `only` Isracard and the network `only` Mastercard. Neither is a screen; the path has 8 screens.
+- **Mizrahi-Tefahot (20), credit:** all five companies in `main`. Isracard's networks are Isracard, Mastercard and Visa.
+- **Hapoalim (12), debit:** the company is `only` Isracard.
+- **Debit never offers credit-only companies:** Amex and Diners are never in `main` or `checkYourCard` for debit, at any bank. Their networks never appear for debit.
+- **Fixed networks:** Amex gives exactly American Express. Diners gives Diners and Mastercard. Cal and Max give Visa and Mastercard. Isracard gives Isracard, Mastercard and Visa.
+- **Unverified is never hidden:** Leumi (10) credit → Max and Diners are in `main`, and Cal (Visa, Mastercard) is in `checkYourCard`. Hapoalim credit → Cal is in `checkYourCard`. Bank of Jerusalem debit → every company is in `checkYourCard`.
+- **The default for unresearched banks:** Citibank (22) gives all five companies in `checkYourCard`.
+- **Never empty:** for every kind × every step-2 answer × every bank code in `banks.ts` (plus "not listed") × every company offered × every network offered, each step's `main` and `checkYourCard` together have at least one choice, and `escape` is set.
+- **Changing an earlier answer:** a hidden later answer is cleared, an unverified one is kept with its tag, and a main one is kept.
+- **No catalog:** no narrowing and no tags.
+- **The worked examples A to E (21.5),** end to end through `methodFromState`: exactly the saved fields in the table.
+
+**`card-flow.test.ts`** (changes to 18.1):
+
+- `stepsFor`: credit bank 10, credit non-bank 9, each `only` step removed; debit 8 screens, with step 2 folded into step 3; prepaid 10 or 9.
+- `firstOpenStep`: a Max export alone → step 2; a Discount export → step 6.
+- `suggestedName`: examples A to E in en and he.
+
+**`cards.test.ts`:**
+
+- `cardIdentityOf`: each row of the 21.8 table.
+- Write-back on save.
+- The legacy `bank` text is still written: the issuing bank's name for a bank card, the account's bank for a non-bank card.
+- The mismatch warning when the account is at another bank.
+
+**Import** (`import-sheet-readers.test.ts`, `import-cards.test.ts`), on synthetic files built from issuer research §5:
+
+- The Discount reader gives `issuer: 'cal'` from the "מנפיק" column, `issuerBank: '11'`, `kind: 'bank'` and `network: 'visa'`.
+- The Max reader gives `issuer: 'max'` and `productName`, with `kind` unset. With "דיסקונט" in the name, the suggested `issuerBank` is `'11'`, tagged.
+- "חיוב לכרטיס ויזה 1234" gives a found bank card. A "מקס איט פי חיוב" lump never creates a card.
+- The wire parses `op`, `pn` and `bk`. `readCard` sends a bank in `is` to `issuerBank`, and a company to `issuer`.
+
+**Schema and sync** (18.2): `issuerBank`, `productName` and `checked` parse. An older build's credit card edit keeps them. The legacy `bank` round-trips.
+
+**Catalog** (18.3): `catalog:check` fails on a sourceless confirmed cell, a future date, a stale cell past 365 days, a missing Israeli bank, and `issuers` disagreeing with the programmes.
+
+**DOM** (18.4):
+
+- A non-bank answer goes from step 2 straight to the company.
+- An `only` answer shows as a line with "Change", which opens it.
+- The "Check your card" divider and tag, read as text by a screen reader.
+- "Another company" reveals the hidden choices and Other.
+- The network step uses the radio-group selection rule of 2.4.
+
+**Browser (en and he):** example A from the Cards screen: Credit → Bank card → the Discount account → Max → Visa → … → Save. The face shows Discount large and "בתפעול מקס".
+
+### 21.12 Build order
+
+All of 21.1, 21.2, 21.4, 21.7 and 21.8, and their tests, belong to step 1 of section 19 (data and domain). The steps of 21.3 are built with the rest of the screens. `catalog:sources` and the corrections line may follow in a later release.
+
+### 21.13 What is not verified
+
+The cells marked `unverified` in the initial data, from issuer research §4.2 and §8, are:
+
+- Leumi's Visa and Mastercard cards through Cal, and which Leumi products Isracard runs;
+- Hapoalim's Visa credit cards through Cal;
+- Massad's Cal and Diners;
+- Bank of Jerusalem's Diners, debit and prepaid;
+- every debit card's company at Leumi, Discount, Mercantile and Bank of Jerusalem;
+- the networks of MyCal, PayBox Young, max cash, MyMAX and נטענצ'יק;
+- non-bank debit at Isracard and Max;
+- One Zero's debit;
+- every bank not researched (Citibank, HSBC, State Bank of India, the Arab banks).
+
+Also open:
+
+- when the Mizrahi–Isracard agreement of 12.4.2026 starts, and what happens to existing Cal, Max and Diners cards at Mizrahi;
+- whether Discount's export ever lists Max-run cards;
+- what Max's "מפתח דיסקונט" column marks;
+- Isracard's, Cal's and Amex's export columns.
