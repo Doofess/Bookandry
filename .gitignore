@@ -31,3 +31,6 @@ artifacts/
 
 # Vercel CLI link (per machine)
 .vercel
+
+.vercel
+.env*
