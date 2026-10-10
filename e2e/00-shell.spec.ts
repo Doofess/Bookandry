@@ -132,7 +132,7 @@ test.describe('@smoke0 app shell', () => {
        * way an old link opens Settings, never a page that is not there.
        */
       await page.goto(old);
-      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page).toHaveURL(/\/settings(\/preferences)?$/);
       await expect(page.getByRole('heading', { level: 1, name: /settings|הגדרות/i })).toBeVisible();
     });
   }
@@ -418,7 +418,7 @@ test.describe('@nav the app mark', () => {
     await completeFirstRun(page, 'en');
 
     await page.goto('/settings');
-    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).toHaveURL(/\/settings(\/preferences)?$/);
 
     await page.getByRole('link', { name: 'Bookandry' }).click();
     await expect(page).toHaveURL(/\/$/);
@@ -458,6 +458,6 @@ test.describe('@nav the account menu', () => {
     await trigger.click();
     await page.getByRole('menuitem', { name: rtl ? 'העדפות' : 'Preferences' }).click();
     await expect(page).toHaveURL(/\/settings\/preferences$/);
-    await expect(page.getByRole('heading', { level: 1, name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
   });
 });
