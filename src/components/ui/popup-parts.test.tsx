@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
-import { useAnchoredPopup, useHeldWhileClosing } from './popup-parts';
+import { bottomInsetFrom, useAnchoredPopup, useHeldWhileClosing } from './popup-parts';
 
 function scrollTo(y: number): void {
   act(() => {
@@ -358,5 +358,25 @@ describe('useHeldWhileClosing', () => {
 
     hook.rerender({ value: undefined, open: false });
     expect(hook.result.current).toBe('needs_billing_day');
+  });
+});
+
+describe('bottomInsetFrom', () => {
+  it('is nothing with nothing docked', () => {
+    expect(bottomInsetFrom([], 800)).toBe(0);
+  });
+  it('is the height from the highest box in the lower half to the bottom edge', () => {
+    expect(
+      bottomInsetFrom(
+        [
+          { top: 640, bottom: 704 },
+          { top: 580, bottom: 630 },
+        ],
+        800,
+      ),
+    ).toBe(228);
+  });
+  it('ignores a box in the upper half: a toast stack at the top is no bottom edge', () => {
+    expect(bottomInsetFrom([{ top: 16, bottom: 80 }], 800)).toBe(0);
   });
 });
