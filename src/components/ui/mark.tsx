@@ -8,12 +8,17 @@ import type * as React from 'react';
  * own mapping. One or two per sheet: a sheet full of boxes has no figure that
  * matters. A wrapped box keeps its ends; a number inside stays an isolated run.
  */
-export function Mark({ className, ...props }: React.ComponentProps<'span'>) {
+export function Mark({
+  className,
+  wrap = false,
+  ...props
+}: React.ComponentProps<'span'> & { readonly wrap?: boolean }) {
   return (
     <span
       data-slot="mark"
       className={cn(
-        'rounded-mark bg-box box-decoration-clone px-[0.28em] pt-[0.04em] pb-[0.1em] font-semibold whitespace-nowrap text-box-text [unicode-bidi:isolate]',
+        'rounded-mark bg-box box-decoration-clone px-[0.28em] pt-[0.04em] pb-[0.1em] font-semibold text-box-text [unicode-bidi:isolate]',
+        !wrap && 'whitespace-nowrap',
         className,
       )}
       {...props}

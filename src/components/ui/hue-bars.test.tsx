@@ -59,3 +59,47 @@ describe('MoneyStrip (§7.4)', () => {
     expect(strip).toHaveClass('gap-0.5');
   });
 });
+
+describe('HueBars against the largest', () => {
+  it('draws each bar against the largest, as the concept does', () => {
+    const { container } = render(
+      <HueBars
+        currency="ILS"
+        items={[
+          { id: 'rent', name: 'Rent', minor: 560_000, hue: 'indigo' },
+          { id: 'food', name: 'Groceries', minor: 284_000, hue: 'green' },
+        ]}
+      />,
+    );
+    const bars = [...container.querySelectorAll<HTMLElement>('i[data-hue]')];
+    expect(bars[0]?.style.getPropertyValue('--bp')).toBe(bars[0]?.style.getPropertyValue('--bp-max'));
+    expect(bars[0]?.className).toMatch(/var\(--bp\)\/var\(--bp-max\)/);
+  });
+
+  it('draws no bar for a category with nothing in it', () => {
+    const { container } = render(
+      <HueBars
+        currency="ILS"
+        items={[
+          { id: 'a', name: 'A', minor: 0, hue: 'teal' },
+          { id: 'b', name: 'B', minor: 5, hue: 'lime' },
+        ]}
+      />,
+    );
+    expect(container.querySelectorAll('i[data-hue]')).toHaveLength(1);
+  });
+
+  it('stays a list in Safari, and keeps a long name whole', () => {
+    render(
+      <HueBars
+        currency="ILS"
+        items={[{ id: 'a', name: 'חשבונות בית ועוד דברים ארוכים', minor: 5, hue: 'cyan' }]}
+      />,
+    );
+    expect(screen.getByRole('list')).toBeInTheDocument();
+    expect(screen.getByText('חשבונות בית ועוד דברים ארוכים')).toHaveAttribute(
+      'title',
+      'חשבונות בית ועוד דברים ארוכים',
+    );
+  });
+});

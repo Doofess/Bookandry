@@ -7,7 +7,7 @@ import { APP_ROUTES, LANGUAGES, LAYOUT_WIDTHS, viewportFor } from './support/wid
  * @numerals (§9.4, §13.3): every `[data-numeral]` on every screen runs off its
  * sheet's foot by no more than the rule - (0.61 x b + 0.02) x its font size,
  * plus a pixel - with b 0.06 from lg and 0.03 below, halved in a card sheet,
- * and 0 for a figure that never bleeds. The ₪ ends above the cut, and a
+ * and 0 for a figure that never bleeds, and none runs past its sheet's side. The ₪ ends above the cut, and a
  * spoken twin carries the amount.
  *
  * Phase 2 builds Numeral; the screens draw it from phase 3. Until one does,
@@ -50,6 +50,12 @@ for (const width of LAYOUT_WIDTHS) {
               const overflow = numeral.getBoundingClientRect().bottom - foot;
               if (overflow > (0.61 * b + 0.02) * size + 1)
                 bad.push(`${label}: ${String(overflow)}px past the foot`);
+              // Never cut at a side: the run of digits stays inside its sheet (CAN WAIT 2).
+              const side = sheet.getBoundingClientRect();
+              const digits =
+                numeral.lastElementChild?.getBoundingClientRect() ?? numeral.getBoundingClientRect();
+              if (digits.left < side.left - 1 || digits.right > side.right + 1)
+                bad.push(`${label}: runs past the sheet's side`);
               const symbol = numeral.querySelector('span');
               if (symbol !== null && symbol.getBoundingClientRect().bottom > foot)
                 bad.push(`${label}: the symbol is cut`);

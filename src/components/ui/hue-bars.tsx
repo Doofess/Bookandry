@@ -37,7 +37,7 @@ export function largestWithOther(
  * One 30px hue pill bar per category, at least 30px long, with its name and
  * amount beside it (§7.4). The bar is a mark (decision 10): hidden from
  * screen readers, never carrying text; the name and the amount carry the data.
- * Lengths are basis points from sharesBp(), turned into widths in CSS.
+ * Lengths are basis points from sharesBp(), drawn against the largest in CSS.
  */
 export function HueBars({
   items,
@@ -51,20 +51,28 @@ export function HueBars({
   const { t } = useTranslation();
   const shown = largestWithOther(items, limit, t('sheets.other'));
   const shares = sharesBp(shown.map((item) => item.minor));
+  const largest = Math.max(1, ...shares);
   return (
-    <ul data-slot="hue-bars" className="grid gap-1.75">
+    // role="list": Safari drops list semantics from a list with list-style none.
+    // eslint-disable-next-line jsx-a11y/no-redundant-roles -- deliberate, see above
+    <ul role="list" data-slot="hue-bars" className="grid gap-1.75">
       {shown.map((item, index) => (
         <li
           key={item.id}
-          className="grid min-h-8 grid-cols-[minmax(0,8rem)_minmax(0,1fr)_auto] items-center gap-3.5 text-base"
+          className="grid min-h-8 grid-cols-[minmax(0,8rem)_minmax(0,1fr)_minmax(5.25rem,auto)] items-center gap-3.5 text-base"
         >
-          <span className="truncate">{item.name}</span>
+          <span title={item.name} className="line-clamp-2">
+            {item.name}
+          </span>
           <span aria-hidden="true" className="block h-7.5">
-            <i
-              data-hue={item.hue}
-              className="block h-full w-[calc(var(--bp)*0.01%)] min-w-7.5 rounded-full bg-hue"
-              style={{ '--bp': String(shares[index] ?? 0) } as CSSProperties}
-            />
+            {item.minor <= 0 ? null : (
+              <i
+                data-hue={item.hue}
+                // Against the largest, as the concept draws them (rent is the whole track); at least 30px.
+                className="block h-full w-[calc(var(--bp)/var(--bp-max)*100%)] min-w-7.5 rounded-full bg-hue"
+                style={{ '--bp': String(shares[index] ?? 0), '--bp-max': String(largest) } as CSSProperties}
+              />
+            )}
           </span>
           <Money minor={item.minor} currency={currency} className="text-end font-medium" />
         </li>
@@ -85,8 +93,10 @@ export function MoneyStrip({
   readonly items: readonly HueBarItem[];
   readonly limit?: number;
 }) {
-  const shown = largestWithOther(items, limit, '');
-  const shares = sharesBp(shown.map((item) => item.minor));
+  const all = largestWithOther(items, limit, '');
+  const allShares = sharesBp(all.map((item) => item.minor));
+  const shown = all.filter((_, i) => (allShares[i] ?? 0) > 0);
+  const shares = allShares.filter((share) => share > 0);
   return (
     <div aria-hidden="true" data-slot="money-strip" className="flex h-3 gap-0.5 overflow-clip rounded-full">
       {shown.map((item, index) => (
