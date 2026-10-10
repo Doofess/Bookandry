@@ -4,8 +4,7 @@ import { toast } from 'sonner';
 
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { HeroSheet, ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
 import { db } from '@/db/db';
@@ -127,28 +126,30 @@ export function CashScreen() {
           sheet.openAdd('income', { cash: true });
         }}
       />
-      <ScreenPanel>
-        <ScreenTitle>{t('cash.title')}</ScreenTitle>
-        {lookups === undefined ? null : (
-          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="cash-pills">
-            <ProfileSwitcher
-              profiles={profiles}
-              active={whose}
-              onSelect={(profileId) => {
-                void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
-              }}
-              tone="panel"
-            />
-          </div>
-        )}
-        {setUp ? (
-          <div className="mt-5">
-            <CashFigure summary={data.summary} currency={currency} profiles={byId} />
-          </div>
-        ) : null}
-      </ScreenPanel>
+      <ScreenHead title={t('cash.title')} />
+      {lookups === undefined && !setUp ? null : (
+        <HeroSheet>
+          {lookups === undefined ? null : (
+            <div className="flex flex-wrap items-center gap-2" data-testid="cash-pills">
+              <ProfileSwitcher
+                profiles={profiles}
+                active={whose}
+                onSelect={(profileId) => {
+                  void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+                }}
+                tone="panel"
+              />
+            </div>
+          )}
+          {setUp ? (
+            <div className="mt-5">
+              <CashFigure summary={data.summary} currency={currency} profiles={byId} />
+            </div>
+          ) : null}
+        </HeroSheet>
+      )}
 
-      <PanelSheet className="space-y-5 px-4 pt-6">
+      <ScreenSheet className="space-y-5 px-4 pt-6">
         {(data?.twoStarts ?? []).map((found) => {
           const owner = byId.get(found.profileId);
           return owner === undefined ? null : (
@@ -188,7 +189,7 @@ export function CashScreen() {
             />
           </>
         ) : null}
-      </PanelSheet>
+      </ScreenSheet>
 
       {lookups === undefined ? null : (
         <TransactionSheet

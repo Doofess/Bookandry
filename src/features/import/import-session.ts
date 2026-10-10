@@ -3,7 +3,7 @@ import type { Reconciliation } from '@/domain/import-check';
 import { methodOwnedBy } from '@/domain/tx-options';
 import { ALL_PROFILES, isActiveMethod, type PaymentMethod } from '@/types/domain';
 
-import type { ReviewItem } from './review-items';
+import type { ImportKind, ReviewItem } from './review-items';
 import type { FileState } from './run-import';
 
 /**
@@ -24,6 +24,12 @@ export type ImportSession = {
   readonly drafted: number;
   readonly reconciliations: readonly Reconciliation[];
   readonly batch: { readonly methodId: string; readonly profileId: string };
+  /** Expenses, income or both: what is added. Rows of the other kind are left out, not dropped. */
+  readonly kind: ImportKind;
+  /** The left-out rows are on show, to be ticked by hand. */
+  readonly leftOutShown: boolean;
+  /** What the person said about these files, as typed. Only sent with the reading; never saved. */
+  readonly note: string;
   /** The share the files came from, so it can be forgotten once read. */
   readonly sharedId?: string;
 };

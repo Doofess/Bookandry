@@ -169,13 +169,10 @@ importers:
       '@base-ui/react':
         specifier: 1.8.0
         version: 1.8.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@fontsource-variable/frank-ruhl-libre':
+      '@fontsource/ibm-plex-sans-hebrew':
         specifier: 5.3.0
         version: 5.3.0
-      '@fontsource-variable/heebo':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@fontsource-variable/inter':
+      '@fontsource/karantina':
         specifier: 5.3.0
         version: 5.3.0
       '@hookform/resolvers':
@@ -1081,14 +1078,11 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource-variable/frank-ruhl-libre@5.3.0':
-    resolution: {integrity: sha512-BgE4pEPDSXfg7741yQYdxB7XShRgdMTYoP4sdoRXfo0FCDWlQdDUm+o1xPcISC8+TTmC6ytvq+u/QmnpQ+EhpQ==}
+  '@fontsource/ibm-plex-sans-hebrew@5.3.0':
+    resolution: {integrity: sha512-6sYM3VzG65AnG1jul3dl+H8eBWYfx6Rqzm7946VNBIXx/ArU1NR5ZKdFx80EDehVqdbPsLOpP1fjImQFjVMopg==}
 
-  '@fontsource-variable/heebo@5.3.0':
-    resolution: {integrity: sha512-gaCKIbnx83+Za844O2dn4XYoAitS2jjBSj08bELHfCIL5gKMBDWl82oWte2CEBrnXwNMVJNd3ojZqFOd9+mCFg==}
-
-  '@fontsource-variable/inter@5.3.0':
-    resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
+  '@fontsource/karantina@5.3.0':
+    resolution: {integrity: sha512-+IYC+UR+1yPS6g631hJreAsdyLHwroCa+MMzJnlkP8WJrcvDZr2wgvGj6WGOzgK3I4xTTvgWhFPLBQz/dnRozw==}
 
   '@formatjs/ecma402-abstract@2.3.6':
     resolution: {integrity: sha512-HJnTFeRM2kVFVr5gr5kH1XP6K0JcJtE7Lzvtr3FS/so5f1kpsqqqxy5JF+FRaO6H2qmcMfAUIox7AJteieRtVw==}
@@ -6861,11 +6855,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource-variable/frank-ruhl-libre@5.3.0': {}
+  '@fontsource/ibm-plex-sans-hebrew@5.3.0': {}
 
-  '@fontsource-variable/heebo@5.3.0': {}
-
-  '@fontsource-variable/inter@5.3.0': {}
+  '@fontsource/karantina@5.3.0': {}
 
   '@formatjs/ecma402-abstract@2.3.6':
     dependencies:

@@ -9,6 +9,7 @@ import { accountController, useAccount } from '@/app/account';
 import { usePrime } from '@/app/prime';
 import { forgetShared, readShared } from '@/app/shared-files';
 import { Money } from '@/components/money';
+import { PersonAvatar } from '@/components/person-avatar';
 import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
@@ -22,7 +23,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Label } from '@/components/ui/label';
+import { PopOut, PopOutBody, PopOutContent } from '@/components/ui/pop-out';
+import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
 import {
   dropUnfinished,
@@ -33,13 +36,18 @@ import {
 } from '@/db/import-drafts';
 import { redoImport, saveImported, undoImport, type ImportItem } from '@/db/import-transactions';
 import { quoteRate } from '@/db/rates-gateway';
-import { categoryFromHistory, findCandidates, findOverrides } from '@/db/repos/transactions';
+import {
+  findCandidates,
+  findOverrides,
+  merchantHistory,
+  type MerchantHistory,
+} from '@/db/repos/transactions';
 import type { ResolvedRate } from '@/db/save-transaction';
 import { cardFeeOccurrences, fxFeeFor } from '@/domain/cards';
 import { buildMethodReview, type MethodReviewItem } from '@/domain/import-cards';
 import { BLOCKING, type Flag, type FoundRow } from '@/domain/import-check';
 import { flagCardFees, flagExisting } from '@/domain/import-review';
-import type { WireContext } from '@/domain/import-wire';
+import { LIMITS, type WireContext } from '@/domain/import-wire';
 import { expandOccurrences } from '@/domain/occurrences';
 import { txFormSchema, type TxFormValues } from '@/domain/tx-form';
 import { categoriesFor } from '@/domain/tx-options';
@@ -59,7 +67,7 @@ import {
   type PaymentMethod,
   type Profile,
 } from '@/types/domain';
-import type { Currency, LocalDate } from '@/types/money';
+import type { Currency, Kind, LocalDate } from '@/types/money';
 
 import {
   foundMethodOf,
@@ -75,10 +83,16 @@ import { readSession, startSession, usableVia, writeSession, type ImportSession 
 import {
   applyBatch,
   buildReview,
+  cardOf,
+  DEFAULT_IMPORT_KIND,
   holderOfMethod,
+  included,
   linkToCard,
+  matchesImportKind,
   saveable,
+  withImportKind,
   type Aliases,
+  type ImportKind,
   type ReviewItem,
 } from './review-items';
 import { runImport, type FileState } from './run-import';
@@ -119,9 +133,14 @@ const ACCEPT = [
 const EXISTING: ReadonlySet<Flag> = new Set<Flag>([
   'already_added',
   'already_plan',
+  'plan_in_import',
+  'loan_disbursement',
   'card_fee_counted',
   'in_another_file',
 ]);
+
+/** The note's counter shows once it is getting long. */
+const NOTE_COUNT_FROM = 250;
 
 const EMPTY_SESSION = (profileId: string): ImportSession => ({
   stage: 'pick',
@@ -132,7 +151,13 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
   drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId },
+  kind: DEFAULT_IMPORT_KIND,
+  leftOutShown: false,
+  note: '',
 });
+
+/** The three choices, in the order they are offered. */
+const IMPORT_KINDS: readonly ImportKind[] = ['expense', 'income', 'both'];
 
 /**
  * "Smart import": pick files, let them be read, check what was found, add it.
@@ -151,7 +176,6 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
  */
 export function ImportSheet(props: ImportSheetProps) {
   const { t, i18n } = useTranslation(['import', 'common', 'categories', 'profiles']);
-  const titleId = useId();
   const prime = usePrime();
   const account = useAccount();
   const me = account.status === 'signed_in' ? account.user.id : undefined;
@@ -225,8 +249,21 @@ export function ImportSheet(props: ImportSheetProps) {
 
   const unsaved =
     session.stage === 'review'
-      ? session.items.filter((i) => i.ticked).length + session.methods.filter((m) => m.ticked).length
+      ? session.items.filter((i) => included(i, session.kind, session.leftOutShown)).length +
+        session.methods.filter((m) => m.ticked).length
       : 0;
+  // Another choice re-filters what was read, at once: nothing is read again.
+  const chooseKind = (kind: ImportKind) => {
+    setSession((s) => ({ ...s, kind, leftOutShown: false, items: withImportKind(s.items, s.kind, kind) }));
+  };
+  const showLeftOut = (shown: boolean) => {
+    // Put away again, the left-out rows are out again: none stays ticked unseen.
+    setSession((s) => ({
+      ...s,
+      leftOutShown: shown,
+      items: shown ? s.items : withImportKind(s.items, s.kind, s.kind),
+    }));
+  };
   // Who a new card or account belongs to: the batch "For".
   const owner = session.batch.profileId || defaultProfileId;
   // One kept from an earlier reading: whoever it was read for, while they are in the household.
@@ -259,6 +296,7 @@ export function ImportSheet(props: ImportSheetProps) {
       stage: 'reading',
       files,
       states,
+      leftOutShown: false,
       items: [],
       methods: [],
       drafted: 0,
@@ -297,6 +335,18 @@ export function ImportSheet(props: ImportSheetProps) {
         : { ppl: people.map((p, i) => ({ a: `u${String(i + 1)}`, n: p.name.slice(0, 60) })) }),
     };
 
+    // What history says about each merchant: looked up once per import, for the reader and the review.
+    const looked = new Map<string, Promise<MerchantHistory>>();
+    const history = (kind: Kind, description: string): Promise<MerchantHistory> => {
+      const key = `${kind}\u0000${description}`;
+      let answer = looked.get(key);
+      if (answer === undefined) {
+        answer = merchantHistory(db, kind, description).catch((): MerchantHistory => ({}));
+        looked.set(key, answer);
+      }
+      return answer;
+    };
+
     try {
       const prepared = await prepareFiles(files, browserImageOps);
       const known = new Set<Currency>(SUPPORTED_CURRENCIES);
@@ -313,9 +363,8 @@ export function ImportSheet(props: ImportSheetProps) {
               ? props.today
               : minDate(todayLocal(new Date(modified)), props.today);
           },
-          knownMerchant: async (description) =>
-            (await categoryFromHistory(db, 'expense', description)) !== undefined ||
-            (await categoryFromHistory(db, 'income', description)) !== undefined,
+          history,
+          ...(session.note.trim() === '' ? {} : { note: session.note.trim() }),
         },
         (request, signal) => accountController().extractTransactions(request, signal),
         {
@@ -341,6 +390,7 @@ export function ImportSheet(props: ImportSheetProps) {
         base: props.baseCurrency,
         today: props.today,
         primeRate: prime.primeRate,
+        history,
       });
       const found = buildMethodReview(result.cards, result.accounts, props.paymentMethods);
       // What the files showed only part of is kept apart, until it is finished or deleted -
@@ -359,7 +409,8 @@ export function ImportSheet(props: ImportSheetProps) {
       setSession((s) => ({
         ...s,
         stage: 'review',
-        items,
+        // Read whole; what is not of the kind chosen is left out, unticked.
+        items: withImportKind(items, 'both', s.kind),
         methods: found.filter((m) => !needsFilling(m)),
         drafted: drafted.length,
         reconciliations: result.reconciliations,
@@ -385,7 +436,9 @@ export function ImportSheet(props: ImportSheetProps) {
         items = linkToCard(items, saved);
         methodsSaved += 1;
       }
-      const chosen = items.filter((item) => item.ticked && item.values !== undefined);
+      const chosen = items.filter(
+        (item) => included(item, session.kind, session.leftOutShown) && item.values !== undefined,
+      );
       const toSave: ImportItem[] = [];
       let noRate = 0;
       for (const item of chosen) {
@@ -470,160 +523,175 @@ export function ImportSheet(props: ImportSheetProps) {
   const filling = draft?.item ?? session.methods.find((m) => m.id === props.target.card);
 
   return (
-    <Sheet
+    <PopOut
       open
       onOpenChange={(open) => {
         if (!open) requestClose();
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>
-            {filling !== undefined
+      <PopOutContent>
+        <PopOutBody
+          title={
+            filling !== undefined
               ? t('import:fillTitle', { name: foundName(filling, i18n.language) })
               : editing === undefined
                 ? t('import:title')
-                : t('import:editTitle')}
-          </SheetTitle>
-          {editing === undefined && filling === undefined ? (
-            <SheetDescription>{t('import:body')}</SheetDescription>
-          ) : null}
-        </SheetHeader>
-
-        <div className="px-4 pb-4">
-          {filling !== undefined && props.target.card !== undefined ? (
-            <MethodPanel
-              key={filling.id}
-              item={filling}
-              methods={props.paymentMethods}
-              profiles={props.profiles}
-              owner={draft === undefined ? owner : ownerOf(draft.entry)}
-              onDone={(saved) => {
-                const open = props.target.card;
-                if (saved === undefined || open === undefined) {
-                  props.onOpenCard(undefined);
-                  return;
-                }
-                setSession((s) => ({
-                  ...s,
-                  methods: s.methods.map((m): MethodReviewItem =>
-                    m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
-                  ),
-                  items: linkToCard(s.items, saved),
-                }));
-                toast(t('import:methodSaved', { name: saved.label }));
-                if (draft === undefined) {
-                  props.onOpenCard(undefined);
-                  return;
-                }
-                // Finished: no longer kept. On to the next one still to finish, if any.
-                void dropUnfinished(db, draft.entry.key);
-                props.onOpenCard(
-                  nextUnfinished(
-                    unfinished.map((u) => u.entry.key),
-                    draft.entry.key,
-                  ),
-                );
-              }}
-            />
-          ) : editing !== undefined && props.target.row !== undefined ? (
-            <RowEditor
-              item={editing}
-              profiles={props.profiles}
-              categories={props.categories}
-              methods={props.paymentMethods}
-              translate={translate}
-              onDone={(values) => {
-                const index = props.target.row ?? -1;
-                setSession((s) => ({
-                  ...s,
-                  items: s.items.map((item, i) =>
-                    i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
-                  ),
-                }));
-                props.onOpenRow(undefined);
-              }}
-              onBack={() => {
-                props.onOpenRow(undefined);
-              }}
-            />
-          ) : (
-            <div className="space-y-4">
-              {session.stage === 'reading' ? null : (
-                <UnfinishedGroup
-                  entries={unfinished}
-                  methods={props.paymentMethods}
-                  onOpen={(key) => {
-                    props.onOpenCard(key);
-                  }}
-                  onDelete={deleteUnfinished}
-                />
-              )}
-              {session.stage === 'pick' ? (
-                <Picker
-                  files={session.files}
-                  shared={session.sharedId !== undefined}
-                  sharedGone={sharedGone}
-                  profiles={props.profiles}
-                  whose={session.batch.profileId}
-                  onWhose={(profileId) => {
-                    setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
-                  }}
-                  onFiles={(files) => {
-                    setSession((s) => ({ ...s, files }));
-                  }}
-                  onRead={() => void read(session.files)}
-                />
-              ) : session.stage === 'reading' ? (
-                <Reading
-                  states={session.states}
-                  onStop={() => {
-                    abort.current?.abort();
-                  }}
-                />
-              ) : (
-                <Review
-                  session={session}
-                  profiles={props.profiles}
-                  categories={props.categories}
-                  methodsList={props.paymentMethods}
-                  translate={translate}
-                  saving={saving}
-                  onChange={(items) => {
-                    setSession((s) => ({ ...s, items }));
-                  }}
-                  onMethods={(methods) => {
-                    setSession((s) => ({ ...s, methods }));
-                  }}
-                  onOpenMethod={(id) => {
-                    props.onOpenCard(id);
-                  }}
-                  onBatch={(batch) => {
-                    setSession((s) => ({
-                      ...s,
-                      batch,
-                      items: applyBatch(s.items, batch, props.paymentMethods),
-                    }));
-                  }}
-                  onOpen={(index) => {
-                    props.onOpenRow(index);
-                  }}
-                  onSave={() => void save()}
-                  onAgain={() => {
-                    setSession((s) => ({
-                      ...s,
-                      stage: 'pick',
-                      files: [],
-                      items: [],
-                      methods: [],
-                      drafted: 0,
-                    }));
-                  }}
-                />
-              )}
-            </div>
-          )}
-        </div>
+                : t('import:editTitle')
+          }
+          subtitle={editing === undefined && filling === undefined ? t('import:body') : undefined}
+        >
+          <div className="pb-4">
+            {filling !== undefined && props.target.card !== undefined ? (
+              <MethodPanel
+                key={filling.id}
+                item={filling}
+                methods={props.paymentMethods}
+                profiles={props.profiles}
+                owner={draft === undefined ? owner : ownerOf(draft.entry)}
+                onDone={(saved) => {
+                  const open = props.target.card;
+                  if (saved === undefined || open === undefined) {
+                    props.onOpenCard(undefined);
+                    return;
+                  }
+                  setSession((s) => ({
+                    ...s,
+                    methods: s.methods.map((m): MethodReviewItem =>
+                      m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
+                    ),
+                    items: linkToCard(s.items, saved),
+                  }));
+                  toast(t('import:methodSaved', { name: saved.label }));
+                  if (draft === undefined) {
+                    props.onOpenCard(undefined);
+                    return;
+                  }
+                  // Finished: no longer kept. On to the next one still to finish, if any.
+                  void dropUnfinished(db, draft.entry.key);
+                  props.onOpenCard(
+                    nextUnfinished(
+                      unfinished.map((u) => u.entry.key),
+                      draft.entry.key,
+                    ),
+                  );
+                }}
+              />
+            ) : editing !== undefined && props.target.row !== undefined ? (
+              <RowEditor
+                item={editing}
+                profiles={props.profiles}
+                categories={props.categories}
+                methods={props.paymentMethods}
+                translate={translate}
+                onDone={(values) => {
+                  const index = props.target.row ?? -1;
+                  setSession((s) => {
+                    const items = s.items.map((item, i) =>
+                      i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
+                    );
+                    // Changed into the other kind, the row the person just settled stays in sight.
+                    const edited = items[index];
+                    const strayed = edited !== undefined && !matchesImportKind(edited, s.kind);
+                    return { ...s, items, leftOutShown: s.leftOutShown || strayed };
+                  });
+                  props.onOpenRow(undefined);
+                }}
+                onBack={() => {
+                  props.onOpenRow(undefined);
+                }}
+              />
+            ) : (
+              <div className="space-y-4">
+                {session.stage === 'reading' ? null : (
+                  <UnfinishedGroup
+                    entries={unfinished}
+                    methods={props.paymentMethods}
+                    onOpen={(key) => {
+                      props.onOpenCard(key);
+                    }}
+                    onDelete={deleteUnfinished}
+                  />
+                )}
+                {session.stage === 'pick' ? (
+                  <Picker
+                    files={session.files}
+                    shared={session.sharedId !== undefined}
+                    sharedGone={sharedGone}
+                    profiles={props.profiles}
+                    whose={session.batch.profileId}
+                    onWhose={(profileId) => {
+                      setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
+                    }}
+                    kind={session.kind}
+                    onKind={chooseKind}
+                    onFiles={(files) => {
+                      setSession((s) => ({ ...s, files }));
+                    }}
+                    note={session.note}
+                    onNote={(note) => {
+                      setSession((s) => ({ ...s, note }));
+                    }}
+                    onRead={() => void read(session.files)}
+                  />
+                ) : session.stage === 'reading' ? (
+                  <Reading
+                    states={session.states}
+                    onStop={() => {
+                      abort.current?.abort();
+                    }}
+                  />
+                ) : (
+                  <Review
+                    session={session}
+                    profiles={props.profiles}
+                    categories={props.categories}
+                    methodsList={props.paymentMethods}
+                    translate={translate}
+                    saving={saving}
+                    onKind={chooseKind}
+                    onShowLeftOut={showLeftOut}
+                    onChange={(items) => {
+                      setSession((s) => ({ ...s, items }));
+                    }}
+                    onMethods={(methods) => {
+                      setSession((s) => ({ ...s, methods }));
+                    }}
+                    onOpenMethod={(id) => {
+                      props.onOpenCard(id);
+                    }}
+                    onBatch={(batch) => {
+                      setSession((s) => {
+                        const answered = applyBatch(s.items, batch, props.paymentMethods);
+                        // Answering whose a row is ticks it - never a left-out one: only the person does.
+                        const items = answered.map((item, i) =>
+                          matchesImportKind(item, s.kind)
+                            ? item
+                            : { ...item, ticked: s.items[i]?.ticked ?? false },
+                        );
+                        return { ...s, batch, items };
+                      });
+                    }}
+                    onOpen={(index) => {
+                      props.onOpenRow(index);
+                    }}
+                    onSave={() => void save()}
+                    onAgain={() => {
+                      setSession((s) => ({
+                        ...s,
+                        stage: 'pick',
+                        files: [],
+                        items: [],
+                        methods: [],
+                        drafted: 0,
+                        leftOutShown: false,
+                      }));
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </PopOutBody>
 
         <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
           <AlertDialogContent>
@@ -645,8 +713,8 @@ export function ImportSheet(props: ImportSheetProps) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SheetContent>
-    </Sheet>
+      </PopOutContent>
+    </PopOut>
   );
 }
 
@@ -697,7 +765,13 @@ async function flagAgainstHousehold(
     row.methodAlias === null
       ? undefined
       : methods.find((m) => m.id === aliases.methods.get(row.methodAlias ?? ''));
-  return flagCardFees(flagExisting(rows, [...occurrences, ...fees]), method, cards);
+  // What each row was paid with, as the review will take it: its card's digits, else the method it names.
+  const paidWith = (row: FoundRow) => cardOf(row, methods) ?? method(row);
+  return flagCardFees(
+    flagExisting(rows, [...occurrences, ...fees], { methods, methodOf: paidWith }),
+    method,
+    cards,
+  );
 }
 
 /** Who a found card or account goes to: whoever its file was read as being of, else `fallback`. */
@@ -713,7 +787,11 @@ function Picker({
   profiles,
   whose,
   onWhose,
+  kind,
+  onKind,
   onFiles,
+  note,
+  onNote,
   onRead,
 }: {
   readonly files: readonly File[];
@@ -723,11 +801,18 @@ function Picker({
   /** Whose spending and income the files are; '' until answered. */
   readonly whose: string;
   readonly onWhose: (profileId: string) => void;
+  readonly kind: ImportKind;
+  readonly onKind: (kind: ImportKind) => void;
   readonly onFiles: (files: File[]) => void;
+  /** What the person said about the files, for the whole batch. */
+  readonly note: string;
+  readonly onNote: (note: string) => void;
   readonly onRead: () => void;
 }) {
   const { t } = useTranslation('import');
   const whoseId = useId();
+  const noteId = useId();
+  const noteHintId = useId();
   const input = useRef<HTMLInputElement>(null);
   // Only a household asks; alone, it is always the one person's.
   const asks = profiles.length > 1;
@@ -764,16 +849,24 @@ function Picker({
           <Segmented
             value={whose}
             onChange={onWhose}
-            options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+            // Faces, not names: two people can share a first name. The name stays each option's
+            // accessible name, read out but not seen.
+            options={profiles.map((p) => ({
+              value: p.id,
+              label: p.name,
+              icon: <PersonAvatar person={p} size="md" />,
+              labelHidden: true,
+            }))}
             labelledBy={whoseId}
           />
           <p className="text-xs text-muted-foreground">{t('whoseHint')}</p>
         </div>
       ) : null}
+      <KindChoice kind={kind} onKind={onKind} />
       <div
         className={cn(
           'flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border p-6 text-center transition-colors',
-          dragging && 'border-primary bg-primary/5',
+          dragging && 'border-primary-ink bg-primary/5',
         )}
         onDragOver={(event) => {
           event.preventDefault();
@@ -838,6 +931,31 @@ function Picker({
           </ul>
         </div>
       )}
+
+      <div className="space-y-1.5">
+        <Label htmlFor={noteId}>{t('noteLabel')}</Label>
+        <Textarea
+          id={noteId}
+          dir="auto"
+          rows={2}
+          maxLength={LIMITS.note}
+          value={note}
+          placeholder={t('notePlaceholder')}
+          aria-describedby={noteHintId}
+          className="min-h-11"
+          onChange={(event) => {
+            onNote(event.target.value);
+          }}
+        />
+        <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+          <p id={noteHintId}>{t('noteHint')}</p>
+          {note.length > NOTE_COUNT_FROM ? (
+            <span className="shrink-0 tabular-nums">
+              {t('noteCount', { count: note.length, max: LIMITS.note })}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -912,6 +1030,8 @@ function Review({
   methodsList,
   translate,
   saving,
+  onKind,
+  onShowLeftOut,
   onChange,
   onMethods,
   onOpenMethod,
@@ -926,6 +1046,8 @@ function Review({
   readonly methodsList: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly saving: boolean;
+  readonly onKind: (kind: ImportKind) => void;
+  readonly onShowLeftOut: (shown: boolean) => void;
   readonly onChange: (items: ReviewItem[]) => void;
   readonly onMethods: (methods: MethodReviewItem[]) => void;
   readonly onOpenMethod: (id: string) => void;
@@ -961,7 +1083,10 @@ function Review({
     );
   }
 
-  const indexed = items.map((item, index) => ({ item, index }));
+  const all = items.map((item, index) => ({ item, index }));
+  // Rows of the other kind are left out: listed apart, on request, and counted toward nothing.
+  const indexed = all.filter(({ item }) => matchesImportKind(item, session.kind));
+  const leftOut = all.filter(({ item }) => !matchesImportKind(item, session.kind));
   const existing = indexed.filter(({ item }) => item.flags.some((f) => EXISTING.has(f)));
   const check = indexed.filter(
     ({ item }) =>
@@ -971,14 +1096,17 @@ function Review({
   const ready = indexed.filter(
     ({ item }) => !check.some((c) => c.item === item) && !existing.some((e) => e.item === item),
   );
-  const ticked = items.filter((i) => i.ticked).length + methods.filter((m) => m.ticked).length;
-  const selectable = items.length + methods.filter(tickable).length;
+  const methodsTicked = methods.filter((m) => m.ticked).length;
+  const ticked = items.filter((i) => included(i, session.kind, session.leftOutShown)).length + methodsTicked;
+  // Select all is for the rows chosen; a left-out row is only ever ticked by hand.
+  const tickedChosen = indexed.filter(({ item }) => item.ticked).length + methodsTicked;
+  const selectable = indexed.length + methods.filter(tickable).length;
   const setTicked = (value: boolean) => {
     onChange(
-      items.map((item) => ({
-        ...item,
-        ticked: value && item.values !== undefined && saveable(item.values),
-      })),
+      items.map((item) => {
+        if (!matchesImportKind(item, session.kind)) return value ? item : { ...item, ticked: false };
+        return { ...item, ticked: value && item.values !== undefined && saveable(item.values) };
+      }),
     );
     onMethods(methods.map((m) => ({ ...m, ticked: value && tickable(m) })));
   };
@@ -1027,6 +1155,8 @@ function Review({
           if (method !== undefined) onOpenMethod(method.id);
         }}
       />
+
+      {items.length === 0 ? null : <KindChoice kind={session.kind} onKind={onKind} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {items.length === 0 ? null : (
@@ -1096,16 +1226,33 @@ function Review({
         {...{ categories, profiles, translate, onChange, onOpen, items }}
       />
 
+      {items.length > 0 && indexed.length === 0 && session.kind !== 'both' ? (
+        <p className="text-sm">{t(`emptyKind.${session.kind}`)}</p>
+      ) : null}
+      {leftOut.length === 0 || session.kind === 'both' ? null : (
+        <LeftOut
+          kind={session.kind}
+          rows={leftOut}
+          shown={session.leftOutShown}
+          onShown={onShowLeftOut}
+          methods={methodsList}
+          {...{ categories, profiles, translate, onChange, onOpen, items }}
+        />
+      )}
+
       <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setTicked(ticked < selectable);
-          }}
-        >
-          {ticked < selectable ? t('selectAll') : t('selectNone')}
-        </Button>
+        {/* Nothing to select, and nothing ticked by hand: no button. */}
+        {selectable === 0 && ticked === 0 ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setTicked(tickedChosen < selectable);
+            }}
+          >
+            {tickedChosen < selectable ? t('selectAll') : t('selectNone')}
+          </Button>
+        )}
         <Button
           type="button"
           className="h-11 flex-1"
@@ -1164,25 +1311,122 @@ function Group({
         </button>
       </h3>
       {expanded ? (
-        <ul className="divide-y divide-border border-t border-border" data-testid="import-rows">
-          {rows.map(({ item, index }) => (
-            <ReviewRow
-              key={item.id}
-              item={item}
-              categories={categories}
-              profiles={profiles}
-              methods={methods}
-              translate={translate}
-              onTick={(ticked) => {
-                onChange(items.map((x, i) => (i === index ? { ...x, ticked } : x)));
-              }}
-              onOpen={() => {
-                onOpen(index);
-              }}
-            />
-          ))}
-        </ul>
+        <Rows
+          className="border-t border-border"
+          testId="import-rows"
+          {...{ rows, items, categories, profiles, methods, translate, onChange, onOpen }}
+        />
       ) : null}
+    </section>
+  );
+}
+
+type RowsProps = {
+  readonly rows: readonly { readonly item: ReviewItem; readonly index: number }[];
+  readonly items: readonly ReviewItem[];
+  readonly categories: readonly Category[];
+  readonly profiles: readonly Profile[];
+  readonly methods: readonly PaymentMethod[];
+  readonly translate: (category: Category) => string;
+  readonly onChange: (items: ReviewItem[]) => void;
+  readonly onOpen: (index: number) => void;
+};
+
+function Rows({
+  rows,
+  items,
+  categories,
+  profiles,
+  methods,
+  translate,
+  onChange,
+  onOpen,
+  className,
+  id,
+  testId,
+}: RowsProps & { readonly className?: string; readonly id?: string; readonly testId?: string }) {
+  return (
+    <ul id={id} className={cn('divide-y divide-border', className)} data-testid={testId}>
+      {rows.map(({ item, index }) => (
+        <ReviewRow
+          key={item.id}
+          item={item}
+          categories={categories}
+          profiles={profiles}
+          methods={methods}
+          translate={translate}
+          onTick={(ticked) => {
+            onChange(items.map((x, i) => (i === index ? { ...x, ticked } : x)));
+          }}
+          onOpen={() => {
+            onOpen(index);
+          }}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/** Expenses, income or both: asked before reading, and changeable on the review. */
+function KindChoice({
+  kind,
+  onKind,
+}: {
+  readonly kind: ImportKind;
+  readonly onKind: (kind: ImportKind) => void;
+}) {
+  const { t } = useTranslation('import');
+  const labelId = useId();
+  return (
+    <div className="space-y-1.5">
+      <p id={labelId} className="text-sm font-medium">
+        {t('kindLabel')}
+      </p>
+      <Segmented
+        value={kind}
+        onChange={onKind}
+        options={IMPORT_KINDS.map((value) => ({ value, label: t(`kindChoice.${value}`) }))}
+        labelledBy={labelId}
+      />
+    </div>
+  );
+}
+
+/**
+ * The rows of the other kind: one quiet line saying how many, and - on
+ * request - the rows themselves, unticked until the person ticks one.
+ */
+function LeftOut({
+  kind,
+  shown,
+  onShown,
+  ...rows
+}: RowsProps & {
+  readonly kind: Exclude<ImportKind, 'both'>;
+  readonly shown: boolean;
+  readonly onShown: (shown: boolean) => void;
+}) {
+  const { t } = useTranslation('import');
+  const listId = useId();
+  const other = kind === 'expense' ? 'income' : 'expense';
+  return (
+    <section className="space-y-2" data-testid="import-left-out">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+        <span>{t(`leftOut.${other}`, { count: rows.rows.length })}</span>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          aria-expanded={shown}
+          aria-controls={shown ? listId : undefined}
+          className="-mx-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-1 font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:bg-muted"
+          onClick={() => {
+            onShown(!shown);
+          }}
+        >
+          {shown ? t('leftOut.hide') : t('leftOut.show')}
+        </button>
+      </p>
+      {shown ? <Rows id={listId} className="rounded-xl border border-border" {...rows} /> : null}
     </section>
   );
 }
@@ -1220,7 +1464,7 @@ function ReviewRow({
       <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
         <input
           type="checkbox"
-          className="size-4 accent-primary"
+          className="size-4 accent-primary-ink"
           checked={item.ticked}
           disabled={values === undefined || !saveable(values)}
           onChange={(event) => {

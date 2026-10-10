@@ -11,7 +11,7 @@
  *
  * Images are served from bookandry.com, so a deploy must go out before the
  * templates are pasted. Colours come from src/index.css, so the emails follow
- * the app if its greens ever change. Rendered in Playwright's Chromium, which
+ * the app whenever its colours change. Rendered in Playwright's Chromium, which
  * is what reads the oklch() values and draws the PNGs.
  *
  * Each email is written twice, English and Hebrew, and picks one by the
@@ -58,10 +58,7 @@ const vivid = await hex(token('brand-vivid'));
 // --- images -------------------------------------------------------------------
 
 const font = readFileSync(
-  join(
-    root,
-    'node_modules/@fontsource-variable/frank-ruhl-libre/files/frank-ruhl-libre-latin-wght-normal.woff2',
-  ),
+  join(root, 'node_modules/@fontsource/karantina/files/karantina-latin-700-normal.woff2'),
 ).toString('base64');
 
 /** The Logo component's mark (src/components/logo.tsx), inverse tone. */
@@ -102,7 +99,7 @@ function bands(width, height) {
 
 async function render(html, path, transparent) {
   await page.setContent(`<!doctype html><html><head><style>
-    @font-face { font-family: 'Frank Ruhl Libre'; font-weight: 300 900;
+    @font-face { font-family: 'Karantina'; font-weight: 700;
       src: url(data:font/woff2;base64,${font}) format('woff2'); }
     html, body { margin: 0; background: transparent; }
     #shot { display: inline-flex; align-items: center; }
@@ -115,7 +112,7 @@ async function render(html, path, transparent) {
 // 280x48 shown, 560x96 drawn: sharp on high-density screens.
 await render(
   `<div style="display:flex;align-items:center;gap:14px;width:280px;height:48px">${mark}
-    <span style="font:700 34px/1 'Frank Ruhl Libre',serif;color:${paper};letter-spacing:-0.01em">Bookandry</span></div>`,
+    <span style="font:700 34px/1 'Karantina',sans-serif;color:${paper};letter-spacing:-0.01em">Bookandry</span></div>`,
   join(root, 'public/email/header.png'),
   true,
 );
@@ -126,7 +123,7 @@ await browser.close();
 
 const ink = '#18181b';
 const muted = '#52525b';
-const page_ = '#f1f4f2';
+const page_ = '#f4f4f5';
 const body = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
 /** Escapes text for HTML. Template tags ({{ }}) pass through untouched. */

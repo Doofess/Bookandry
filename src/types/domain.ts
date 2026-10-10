@@ -67,10 +67,24 @@ export type Category = {
   readonly id: string;
   readonly kind: Kind;
   readonly icon: string;
+  /**
+   * The hue it shows (§1.4): a hue key with an optional tone, "teal" or
+   * "teal-2". Never a colour. Optional: a built-in without one takes
+   * BUILTIN_HUES, a custom one without one a hash of its id
+   * (src/domain/category-hue.ts). An older build keeps it untouched.
+   */
+  readonly hue?: string;
   readonly sortOrder: number;
   /** Numeric because IndexedDB cannot index booleans. */
   readonly isArchived: 0 | 1;
   readonly archivedAt?: IsoInstant;
+  /**
+   * Expense categories only: the business types (Merchant Category Codes) the
+   * person moved INTO this category. The default table never writes here.
+   * Moving a code here takes it out of every other category's list in the
+   * same write (src/db/business-types.ts).
+   */
+  readonly mccs?: readonly string[];
   readonly createdAt: IsoInstant;
   readonly updatedAt: IsoInstant;
 } & (
@@ -386,6 +400,15 @@ export type Recurrence =
       readonly endDate?: LocalDate;
     };
 
+/**
+ * Where a transaction's business type came from: a column of the file, the
+ * card company's sector text, the household's history, Claude, or the person.
+ * Stored as a plain string (`Transaction.mccSource`): a later build may add a
+ * source, and a source this build does not know is treated like 'user' -
+ * never replaced (`replaceableMcc`).
+ */
+export type MccSource = 'file' | 'sector' | 'history' | 'ai' | 'user';
+
 export type Transaction = {
   readonly id: string;
   readonly profileId: string;
@@ -420,6 +443,14 @@ export type Transaction = {
    * every ordinary purchase, and on every row written before it existed.
    */
   readonly deferral?: { readonly rate: string };
+  /**
+   * Expenses only: the business type, a Merchant Category Code as a
+   * four-digit string ("5812", "0742"). A series carries one; an override
+   * never changes it. Absent on income, and on rows from before it existed.
+   */
+  readonly mcc?: string;
+  /** Where `mcc` came from: an `MccSource`, or a source a later build added. */
+  readonly mccSource?: string;
 
   // --- denormalised by materialize(); never written by hand ---
   /** === date */

@@ -1,12 +1,12 @@
-import { db } from '@/db/db';
-import { categoryFromHistory } from '@/db/repos/transactions';
-import { categoryFromText, knownCategory } from '@/domain/import-categories';
+import type { MerchantHistory } from '@/db/repos/transactions';
 import { BLOCKING, withFlags, type Flag, type FoundRow } from '@/domain/import-check';
 import { draftOf } from '@/domain/import-review';
+import { chooseExpenseCategory, isCashWithdrawal, pickMcc } from '@/domain/mcc-categories';
+import { sectorMcc } from '@/domain/sector-mcc';
 import { txFormSchema, type TxFormValues } from '@/domain/tx-form';
 import { categoriesFor } from '@/domain/tx-options';
 import { SHARED_OWNER, type Category, type PaymentMethod, type Profile } from '@/types/domain';
-import type { Currency, LocalDate, RateString } from '@/types/money';
+import type { Currency, Kind, LocalDate, RateString } from '@/types/money';
 
 /** One found transaction in the review list: what it will be saved as, and whether it will be. */
 export type ReviewItem = {
@@ -31,7 +31,49 @@ export type Aliases = {
   readonly people?: ReadonlyMap<string, string>;
 };
 
-const REFUND_CATEGORY = 'cat.refund';
+export const REFUND_CATEGORY = 'cat.refund';
+
+/** What a Smart import adds: its expenses (refunds with them), its income, or both. */
+export type ImportKind = 'expense' | 'income' | 'both';
+
+/** A new import starts on expenses; the choice is never remembered. */
+export const DEFAULT_IMPORT_KIND: ImportKind = 'expense';
+
+/**
+ * Whether a row belongs to what the person chose to import. Expenses take
+ * refunds too - money back on a purchase undoes spending; Income is the rest
+ * of income. Read off the row as it is now, edits and all; a row with nothing
+ * to save yet goes by the kind it was read as. Filtered here, after reading,
+ * never by the reader: the totals check needs every row, and a row the reader
+ * got wrong stays one tap away.
+ */
+export function matchesImportKind(item: ReviewItem, mode: ImportKind): boolean {
+  if (mode === 'both') return true;
+  // A row with no values has no category, so a refund among them reads as income. It cannot
+  // be saved until opened and finished, and the editor gives it values - and its place - then.
+  const kind = item.values?.kind ?? item.found.kind;
+  const spending = kind === 'expense' || item.values?.categoryId === REFUND_CATEGORY;
+  return mode === 'expense' ? spending : !spending;
+}
+
+/**
+ * The review, moved from one choice to another: a row that leaves is
+ * unticked; one that comes in is ticked as it was first read - unless
+ * something about it needs a look; one that stays keeps the person's tick.
+ * From a choice to itself, it unticks whatever is left out.
+ */
+export function withImportKind(items: readonly ReviewItem[], from: ImportKind, to: ImportKind): ReviewItem[] {
+  return items.map((item) => {
+    if (!matchesImportKind(item, to)) return item.ticked ? { ...item, ticked: false } : item;
+    if (matchesImportKind(item, from)) return item;
+    return { ...item, ticked: !item.flags.some((f) => BLOCKING.has(f)) };
+  });
+}
+
+/** Whether a row is to be added: ticked, and in the import - or among the left-out rows on show. */
+export function included(item: ReviewItem, mode: ImportKind, leftOutShown: boolean): boolean {
+  return item.ticked && (leftOutShown || matchesImportKind(item, mode));
+}
 
 /** Whether a set of form values would save, as the form itself judges it. */
 export function saveable(values: TxFormValues): boolean {
@@ -40,10 +82,11 @@ export function saveable(values: TxFormValues): boolean {
 
 /**
  * The review list, from what was found. Each row gets:
- *  - its category: the household's own history for that name first - what it
- *    filed it under last time - then the reader's suggestion if it is of the
- *    right kind, then the kind's first category; money back on a card is a
- *    refund;
+ *  - its business type: the file's MCC column, the card company's sector,
+ *    the household's history, then the reader's (`pickMcc`); and its
+ *    category, in the order of spec §3 (`chooseExpenseCategory`), then money
+ *    back on a card is a refund, then Other;
+ *  - a cash withdrawal (6010, 6011) waits unticked: not an expense here;
  *  - its payment method: the card whose last four digits the document shows
  *    beside it, else the one the document named, else the batch choice;
  *  - its profile: whoever owns that card, else whoever the document names as
@@ -63,24 +106,34 @@ export async function buildReview(
     readonly base: Currency;
     readonly today: LocalDate;
     readonly primeRate: string;
+    /** What history says about a merchant; memoised by the caller, shared with the reader. */
+    readonly history: (kind: Kind, description: string) => Promise<MerchantHistory>;
   },
 ): Promise<ReviewItem[]> {
   const items: ReviewItem[] = [];
   for (const row of rows) {
-    const fromHistory = await categoryFromHistory(db, row.kind, row.description);
-    const suggested = row.categoryAlias === null ? undefined : ctx.aliases.categories.get(row.categoryAlias);
-    const suggestedFits = ctx.categories.some(
-      (c) => c.id === suggested && c.kind === row.kind && c.isArchived === 0,
+    const history = await ctx.history(row.kind, row.description);
+    const pick = pickMcc(
+      row,
+      {
+        file: row.fileMcc,
+        sector: row.sector === undefined ? undefined : sectorMcc(row.sector),
+        history: history.mcc,
+        ai: row.aiMcc,
+      },
+      ctx.categories,
     );
+    const suggested = row.categoryAlias === null ? undefined : ctx.aliases.categories.get(row.categoryAlias);
     const refund =
       row.kind === 'income' && row.wire.k === 'e' && ctx.categories.some((c) => c.id === REFUND_CATEGORY)
         ? REFUND_CATEGORY
         : undefined;
     const categoryId =
-      knownCategory(row, ctx.categories) ??
-      fromHistory ??
-      categoryFromText(row, ctx.categories) ??
-      (suggestedFits ? suggested : undefined) ??
+      chooseExpenseCategory(
+        row,
+        { history: history.categoryId, mcc: pick?.mcc, claude: suggested },
+        ctx.categories,
+      ) ??
       refund ??
       otherOf(ctx.categories, row.kind) ??
       categoriesFor(ctx.categories, row.kind)[0]?.id ??
@@ -105,6 +158,11 @@ export async function buildReview(
     });
     let found = draft === undefined ? row : withFlags(row, ...draft.flags);
     let values = draft?.values;
+    if (values !== undefined && pick !== undefined) {
+      values = { ...values, mcc: pick.mcc, mccSource: pick.source };
+    }
+    // Cash taken out is not an expense here (spec point 14): kept only if the person ticks it.
+    if (row.kind === 'expense' && isCashWithdrawal(pick?.mcc)) found = withFlags(found, 'cash_withdrawal');
     if (profileId === '') found = withFlags(found, 'whose_unknown');
     // A credit plan needs a credit card; without one it is saved as plain instalments.
     if (values !== undefined && !saveable(values) && values.mode === 'credit') {
@@ -145,7 +203,7 @@ const rowDigits = (row: FoundRow): string => row.wire.l4 || (row.statementCard?.
  * digits printed beside it or in its statement's header, else - a statement
  * that names its card but not its digits - the one of that name.
  */
-function cardOf(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
+export function cardOf(row: FoundRow, methods: readonly PaymentMethod[]): PaymentMethod | undefined {
   const cards = methods.filter((m) => m.type === 'credit_card' && m.isArchived === 0);
   const digits = rowDigits(row);
   const byDigits = digits === '' ? undefined : cards.find((m) => m.card?.lastDigits === digits);

@@ -71,4 +71,11 @@ describe('AddMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(pill).toHaveFocus();
   });
+
+  it('draws the rail’s Add as a full-width solid pill', () => {
+    renderMenu({ placement: 'rail' });
+    const add = screen.getByTestId('rail-add');
+    expect(add).toHaveAccessibleName('Add');
+    expect(add).toHaveClass('bg-primary', 'min-h-12', 'w-full');
+  });
 });

@@ -3,6 +3,7 @@ import { parseStatementAmount } from '@/lib/money';
 import type { Currency, LocalDate } from '@/types/money';
 
 import type { WireRow, WireTotal } from './import-wire';
+import { isMcc } from './mcc';
 
 /**
  * The mistake-correction stage of "Smart import": what the model transcribed,
@@ -32,12 +33,22 @@ export type Flag =
   | 'in_another_file'
   | 'already_added'
   | 'already_plan'
+  /** Another payment of a deal this import already adds as one plan, or a loan's own disbursement. */
+  | 'plan_in_import'
+  /** A row of a plan's deal that is not one of its payments - a correction, an interest adjustment: added as it is. */
+  | 'plan_adjustment'
+  /** A card company's loan paid out: the loan coming in, not income - it is added from its payments. */
+  | 'loan_disbursement'
+  /** The same amount a day or two away, on another card: noted, in case it is the same purchase saved under the wrong card. */
+  | 'similar_other_card'
   | 'card_fee_counted'
   | 'total_estimated'
   | 'total_mismatch'
   | 'not_saveable'
   | 'rate_missing'
-  | 'whose_unknown';
+  | 'whose_unknown'
+  /** Cash taken out (6010, 6011): not an expense in an import. Left out until the person keeps it. */
+  | 'cash_withdrawal';
 
 /** Flags that leave a row unticked: it is not added unless the person says so. */
 export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
@@ -52,10 +63,13 @@ export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
   'in_another_file',
   'already_added',
   'already_plan',
+  'plan_in_import',
+  'loan_disbursement',
   'card_fee_counted',
   'not_saveable',
   'rate_missing',
   'whose_unknown',
+  'cash_withdrawal',
 ]);
 
 export type FoundPlan = {
@@ -93,6 +107,16 @@ export type FoundRow = {
   readonly flags: readonly Flag[];
   /** What was transcribed, kept for a second look. */
   readonly wire: WireRow;
+  /** The business type the file's MCC column gave, when the list has it. */
+  readonly fileMcc?: string;
+  /** The card company's business sector (ענף), as printed. */
+  readonly sector?: string;
+  /**
+   * The business type the reader gave - for a PDF or image row, transcribed
+   * or guessed (spec point 7); for a sheet row, Claude's answer for its
+   * merchant (Task 8). Only a code the list has.
+   */
+  readonly aiMcc?: string;
   /** What the other read said, when the two disagree. */
   readonly otherRead?: FoundRow;
 };
@@ -200,6 +224,9 @@ export function readRow(wire: WireRow, id: string, ctx: ReadContext): FoundRow {
     cardFee: wire.fee,
     flags,
     wire,
+    // An expense's only: money coming back has no business type, whatever the reader said.
+    ...(kind === 'expense' && isMcc(wire.mcc) ? { aiMcc: wire.mcc } : {}),
+    ...(wire.sec === undefined || wire.sec === '' ? {} : { sector: wire.sec }),
   };
 }
 

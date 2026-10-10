@@ -1,11 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Archive, ArchiveRestore, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Pencil, Plus, Store, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { CategoryChip, CategoryIcon } from '@/components/category-icon';
 import { ICON_NAMES } from '@/components/category-icons';
 import { Segmented } from '@/components/segmented';
@@ -20,9 +19,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import { createCategory, deleteCategory, renameCategory, setCategoryArchived } from '@/db/repos/categories';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -30,6 +34,8 @@ import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
 import type { Category } from '@/types/domain';
 import type { Kind } from '@/types/money';
+
+import { BusinessTypesSheet } from './business-types-sheet';
 
 /**
  * The category manager.
@@ -46,6 +52,8 @@ export function CategoriesScreen() {
   const [kind, setKind] = useState<Kind>('expense');
   const [editing, setEditing] = useState<Category | 'new' | undefined>(undefined);
   const [deleting, setDeleting] = useState<Category | undefined>(undefined);
+  /** The category whose business types are open, by id, so the sheet follows live edits. */
+  const [typesOf, setTypesOf] = useState<string | undefined>(undefined);
   const kindId = useId();
 
   const data = useLiveQuery(async () => {
@@ -69,10 +77,8 @@ export function CategoriesScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('categories:manage.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-4 px-4 pt-6">
+      <ScreenHead title={t('categories:manage.title')} />
+      <ScreenSheet className="space-y-4 px-4 pt-6">
         <p className="text-sm text-muted-foreground">{t('categories:manage.body')}</p>
 
         <Label id={kindId} className="sr-only">
@@ -103,6 +109,9 @@ export function CategoriesScreen() {
                 }}
                 onDelete={() => {
                   setDeleting(category);
+                }}
+                onBusinessTypes={() => {
+                  setTypesOf(category.id);
                 }}
               />
             ))}
@@ -137,7 +146,15 @@ export function CategoriesScreen() {
             if (!open) setDeleting(undefined);
           }}
         />
-      </PanelSheet>
+
+        <BusinessTypesSheet
+          category={all.find((c) => c.id === typesOf)}
+          categories={all}
+          onOpenChange={(open) => {
+            if (!open) setTypesOf(undefined);
+          }}
+        />
+      </ScreenSheet>
     </section>
   );
 }
@@ -146,10 +163,12 @@ function CategoryRow({
   category,
   onEdit,
   onDelete,
+  onBusinessTypes,
 }: {
   readonly category: Category;
   readonly onEdit: () => void;
   readonly onDelete: () => void;
+  readonly onBusinessTypes: () => void;
 }) {
   const { t } = useTranslation(['common', 'categories']);
   const name = categoryDisplayName(category, t);
@@ -172,6 +191,20 @@ function CategoryRow({
           {isArchived ? t('categories:manage.archived') : null}
         </span>
       </span>
+
+      {/* Every expense category, built-in or the person's own, has business types (spec point 12). */}
+      {category.kind === 'expense' ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-11"
+          aria-label={`${t('categories:businessTypes.open')}: ${name}`}
+          onClick={onBusinessTypes}
+        >
+          <Store className="size-4" aria-hidden="true" />
+        </Button>
+      ) : null}
 
       <Button
         type="button"
@@ -270,13 +303,13 @@ function CategoryEditor({
   };
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {isNew ? t('categories:manage.newTitle') : t('categories:manage.editTitle')}
-          </SheetTitle>
-        </SheetHeader>
+          </EditorPanelTitle>
+        </EditorPanelHeader>
 
         <form
           noValidate
@@ -316,7 +349,7 @@ function CategoryEditor({
                       setIcon(option);
                     }}
                     className={`flex size-11 items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                      option === icon ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                      option === icon ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                     }`}
                   >
                     <CategoryIcon name={option} className="size-4" />
@@ -326,7 +359,7 @@ function CategoryEditor({
             </div>
           ) : null}
 
-          <div className="flex gap-2 pt-1">
+          <div data-slot="editor-actions" className="flex gap-2 pt-1">
             <Button
               type="button"
               variant="outline"
@@ -342,8 +375,8 @@ function CategoryEditor({
             </Button>
           </div>
         </form>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -421,7 +454,7 @@ function DeleteCategoryDialog({
                     setReassignTo(option.id);
                   }}
                   className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                    option.id === target ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                    option.id === target ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                   }`}
                 >
                   <CategoryIcon name={option.icon} className="size-4 shrink-0" />

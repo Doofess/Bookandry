@@ -5,6 +5,7 @@ import { normalizeAnnualRate, normalizeRateMargin } from '@/lib/money';
 import { DEAL_KINDS, EXTRA_RATE_KINDS, SHARED_OWNER } from '@/types/domain';
 
 import { isExpiresMonth } from './cards';
+import { MCC_SHAPE } from './mcc';
 
 /**
  * The export document format.
@@ -103,14 +104,31 @@ const profileSchema = z.object({
   updatedAt: isoInstant,
 });
 
+/**
+ * A business type's SHAPE only. A synced row from a build with a newer list
+ * may carry a code this one has never heard of; refusing the row for it would
+ * drop the whole row on this device. Whether the list has the code is checked
+ * where a code comes in (`isMcc`), and by `validateEnvelope` for a file.
+ */
+const mccCode = z.string().regex(MCC_SHAPE, 'Expected a four-digit business type');
+
 const categorySchema = z.intersection(
   z.object({
     id: z.string().min(1),
     kind: z.enum(['income', 'expense']),
     icon: z.string().min(1),
+    // Loose on purpose: a newer build's hue key must survive an import here.
+    hue: z.string().min(1).max(40).optional(),
     sortOrder: z.number().int(),
     isArchived: z.union([z.literal(0), z.literal(1)]),
     archivedAt: isoInstant.optional(),
+    // The business types moved into this category; absent on rows from before them.
+    mccs: z
+      .array(mccCode)
+      .max(200)
+      .refine((codes) => new Set(codes).size === codes.length, 'A business type is listed twice')
+      .readonly()
+      .optional(),
     createdAt: isoInstant,
     updatedAt: isoInstant,
   }),
@@ -258,6 +276,10 @@ const transactionSchema = z.object({
   note: z.string().max(2000).optional(),
   // A 30+ purchase's rate; absent on every other row, and on rows from before it.
   deferral: z.object({ rate: annualRate }).optional(),
+  // Expenses only (transfer-validate refuses them on income). The source is any short
+  // string, like a cash move's kind: a source a later build adds must not refuse the row.
+  mcc: mccCode.optional(),
+  mccSource: z.string().min(1).max(20).optional(),
   // Income only: the account or the cash it went to. transfer-validate refuses
   // it on an expense; a destination naming nothing is "not assigned", never an error.
   destinationId: z.string().min(1).optional(),

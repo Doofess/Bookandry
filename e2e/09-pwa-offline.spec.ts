@@ -236,4 +236,29 @@ test.describe('@pwa offline', () => {
     // The integer, never the formatted string - and the SAME integer.
     await expect(page.locator('[data-value]').first()).toHaveAttribute('data-value', before ?? '');
   });
+
+  test('draws the feed in Karantina and Plex, on the grain, with the network gone', async ({ page }) => {
+    await installServiceWorker(page);
+    await completeFirstRun(page, 'en', { origin: ORIGIN });
+    await goOffline();
+    await page.reload();
+
+    await expect(page.getByRole('main')).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const fonts = await page.evaluate(() => ({
+      karantina: document.fonts.check('700 44px Karantina', '0123456789'),
+      plex: document.fonts.check('400 16px "IBM Plex Sans Hebrew"', 'Feed'),
+    }));
+    expect(fonts).toEqual({ karantina: true, plex: true });
+
+    // The grain is a precached same-origin file, not a request that failed.
+    const grain = await page.evaluate(async () => {
+      for (const name of await caches.keys()) {
+        const keys = await (await caches.open(name)).keys();
+        if (keys.some((request) => /\/assets\/grain-[\w-]+\.png/.test(request.url))) return true;
+      }
+      return false;
+    });
+    expect(grain).toBe(true);
+  });
 });

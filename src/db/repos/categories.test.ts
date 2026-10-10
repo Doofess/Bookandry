@@ -228,3 +228,53 @@ describe('the built-in categories on an older install', () => {
     expect(await handle.db.outbox.toArray()).toEqual([]);
   });
 });
+
+describe('business types moved into a category', () => {
+  it('survive a rename and an archive: every write spreads the stored row', async () => {
+    const custom = await createCategory(
+      handle.db,
+      'cat.custom',
+      { name: 'Coffee', kind: 'expense', icon: 'Circle' },
+      NOW,
+    );
+    await handle.db.categories.update(custom.id, { mccs: ['5814'] });
+
+    await renameCategory(handle.db, custom.id, 'Coffee out', NOW);
+    await setCategoryArchived(handle.db, custom.id, true, NOW);
+    expect(await handle.db.categories.get(custom.id)).toMatchObject({
+      name: 'Coffee out',
+      isArchived: 1,
+      mccs: ['5814'],
+    });
+  });
+});
+
+describe('a category’s hue (§1.4, the rollout with older builds)', () => {
+  it('starts a new custom category on the hue least used among its kind', async () => {
+    const created = await createCategory(
+      handle.db,
+      'c1',
+      { name: 'Garden', kind: 'expense', icon: 'Flower' },
+      NOW,
+    );
+    expect(created.hue).toBe('lime');
+    expect((await handle.db.categories.get('c1'))?.hue).toBe('lime');
+  });
+
+  it('keeps hue through a rename and an archive, even a key this build does not know', async () => {
+    await createCategory(handle.db, 'c2', { name: 'Garden', kind: 'expense', icon: 'Flower' }, NOW);
+    await handle.db.categories.update('c2', { hue: 'teal-3' });
+
+    await renameCategory(handle.db, 'c2', 'Gardening', NOW);
+    await setCategoryArchived(handle.db, 'c2', true, NOW);
+    await setCategoryArchived(handle.db, 'c2', false, NOW);
+
+    expect((await handle.db.categories.get('c2'))?.hue).toBe('teal-3');
+  });
+
+  it('keeps a re-coloured built-in’s hue when the built-ins are checked again', async () => {
+    await handle.db.categories.update('cat.rent', { hue: 'lime' });
+    await ensureBuiltinCategories(handle.db, NOW);
+    expect((await handle.db.categories.get('cat.rent'))?.hue).toBe('lime');
+  });
+});

@@ -105,7 +105,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('link', { name: copy.nav }).click();
       await page.getByRole('button', { name: copy.add }).click();
       await page.getByLabel(copy.label, { exact: true }).fill('Visa');
-      await page.getByLabel(copy.lastDigits, { exact: true }).fill('3200');
+      await page.getByLabel(copy.lastDigits, { exact: true }).fill('5555');
       await page.getByRole('radio', { name: copy.max, exact: true }).click();
       // Its colour: picked from swatches shaped like the card.
       await page.getByTitle(copy.gold, { exact: true }).click();
@@ -117,7 +117,7 @@ for (const lang of ['en', 'he'] as const) {
       const tile = page.getByRole('article').filter({ hasText: 'Visa' });
       await expect(tile).toContainText(copy.billed);
       // Its last four digits, where a card prints them.
-      await expect(tile).toContainText('3200');
+      await expect(tile).toContainText('5555');
       await expect(tile.getByTestId('card-face')).toHaveAttribute('data-color', 'gold');
 
       // The balance before.
@@ -131,12 +131,12 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByLabel(copy.amount, { exact: true }).fill('250');
       await page.getByRole('combobox', { name: new RegExp(copy.paidWith) }).click();
       await page.getByRole('option', { name: /Visa/ }).click();
-      const sheet = page.locator('[data-slot="sheet-content"]');
+      const sheet = page.locator('[data-slot="editor-panel"]');
       await expect(sheet.getByTestId('card-charge-note')).toContainText(copy.charged);
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(sheet).toHaveCount(0);
       // The feed says which card paid: a card and its last four digits.
-      await expect(page.getByTestId('row-card').first()).toContainText('3200');
+      await expect(page.getByTestId('row-card').first()).toContainText('5555');
 
       // Not taken yet: the balance is as it was, and the breakdown says why.
       await expect(balance).toHaveText(beforeText ?? '');
@@ -315,7 +315,7 @@ test.describe('@cards what a card is committed to', () => {
     await page.getByLabel('מספר תשלומים', { exact: true }).fill('6');
     await page.getByRole('combobox', { name: /אמצעי תשלום/ }).click();
     await page.getByRole('option', { name: /Visa/ }).click();
-    const sheet = page.locator('[data-slot="sheet-content"]');
+    const sheet = page.locator('[data-slot="editor-panel"]');
     await page.getByRole('button', { name: 'שמירה', exact: true }).click();
     await expect(sheet).toHaveCount(0);
 
@@ -338,7 +338,10 @@ test.describe('@cards bank accounts', () => {
 
   /** From the account menu, where the household's setup lives. */
   const openAccounts = async (page: Page) => {
-    await page.getByRole('button', { name: 'חשבון והגדרות' }).click();
+    // From lg the account is at the foot of the rail, below it in the screen head.
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+    const scope = desktop ? page.getByRole('navigation') : page.getByRole('main');
+    await scope.getByRole('button', { name: 'חשבון והגדרות' }).click();
     await page.getByRole('menuitem', { name: 'חשבונות בנק' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'חשבונות בנק' })).toBeVisible();
   };
@@ -413,5 +416,30 @@ test.describe('@cards bank accounts', () => {
     await page.getByPlaceholder('חיפוש לפי שם או קוד').fill('بنك فلسطين');
     await page.getByRole('option', { name: /בנק פלסטין/ }).click();
     await expect(page.getByRole('combobox', { name: /בנק/ })).toContainText('בנק פלסטין');
+  });
+});
+
+test.describe('@forced-colours the Cards screen', () => {
+  test('keeps an edge on every card face and the colour in every swatch', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'en', 'One language is enough for a system colour scheme.');
+    await page.emulateMedia({ forcedColors: 'active' });
+    await completeFirstRun(page, 'en');
+    await page.goto('/cards');
+
+    // Windows High Contrast replaces backgrounds: the transparent 2px border is what it paints instead.
+    const faces = page.getByTestId('card-face');
+    await expect(faces.first()).toBeVisible();
+    for (const face of await faces.all()) {
+      const edge = await face.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return `${style.borderTopWidth} ${style.borderTopStyle}`;
+      });
+      expect(edge).toBe('2px solid');
+    }
+
+    // The swatches keep their colour: here the colour is what is being chosen.
+    await page.getByRole('button', { name: COPY.en.add }).click();
+    const swatch = page.getByTitle(COPY.en.gold, { exact: true }).locator('[data-money]');
+    expect(await swatch.evaluate((el) => getComputedStyle(el).forcedColorAdjust)).toBe('none');
   });
 });

@@ -120,10 +120,22 @@ export function applyLanguage(lang: Language): void {
   el.dir = dirFor(lang);
 }
 
-/** Applies the theme to <html>. Mirrors the inline boot script. */
+/** The paper, as the status bar shows it (§3). Mirrors the inline boot script. */
+export const THEME_PAPER = { light: '#F6F2EA', dark: '#1A1510' } as const;
+
+/** Sets the one theme-color meta, dropping any media query an older index.html put on it. */
+export function setThemeColor(color: string): void {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta === null) return;
+  meta.removeAttribute('media');
+  meta.setAttribute('content', color);
+}
+
+/** Applies the theme to <html>, and the status bar to its paper. Mirrors the inline boot script. */
 export function applyTheme(theme: Theme): void {
   const el = document.documentElement;
   const dark = resolveDark(theme);
   el.classList.toggle('dark', dark);
   el.style.colorScheme = dark ? 'dark' : 'light';
+  setThemeColor(dark ? THEME_PAPER.dark : THEME_PAPER.light);
 }

@@ -151,14 +151,14 @@ describe('a map from the model', () => {
   it("reads the card each row was charged to: its own column, else the one the sheet's title names", () => {
     const perRow: Cell[][] = [
       ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה', '4 ספרות אחרונות של כרטיס האשראי'],
-      ['03/10/2026', 'Spotify', '19.90', '3200'],
+      ['03/10/2026', 'Spotify', '19.90', '5555'],
       ['04/10/2026', 'שופרסל', '50.00', 512],
       ['05/10/2026', 'Wolt', '80.00', '4580-1234-5678-9012'],
     ];
     const map = mapByDictionary(perRow)!;
     expect(map.card).toBe(3);
     // A number cell has lost its leading zero; a full number gives only its last four.
-    expect(readSheet(perRow, map, ctx).rows.map((r) => r.wire.l4)).toEqual(['3200', '0512', '9012']);
+    expect(readSheet(perRow, map, ctx).rows.map((r) => r.wire.l4)).toEqual(['5555', '0512', '9012']);
 
     const titled: Cell[][] = [
       ['פירוט עסקאות לכרטיס מקס 1234 לחודש 10/2026'],
@@ -186,5 +186,125 @@ describe('plan text', () => {
     expect(planFromText('Payment 2 of 4')).toEqual({ mode: 'installments', number: 2, count: 4 });
     expect(planFromText('תשלום 7 מתוך 6')).toBeUndefined();
     expect(planFromText('רגילה')).toBeUndefined();
+  });
+});
+
+describe('business types in a sheet', () => {
+  it('reads an MCC column however Excel stored it, and never fails a row over it (Review Focus 5)', () => {
+    const sheet: Cell[][] = [
+      ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה', 'MCC', 'ענף'],
+      ['01/10/2026', 'Vet', '100.00', 742, 'חיות מחמד'],
+      ['02/10/2026', 'Shop', '10.00', 5411, null],
+      ['03/10/2026', 'Shop', '10.00', '5411.0', ''],
+      ['04/10/2026', 'Cafe', '10.00', ' 5812 ', 'מסעדות'],
+      ['05/10/2026', 'Odd', '10.00', '9999', null],
+      ['06/10/2026', 'Odd', '10.00', 'abc', null],
+      ['07/10/2026', 'Odd', '10.00', '', null],
+      ['08/10/2026', 'Odd', '10.00', 5411.5, null],
+    ];
+    const map = mapByDictionary(sheet)!;
+    expect(map).toMatchObject({ mcc: 3, sector: 4 });
+    const read = readSheet(sheet, map, ctx);
+    expect(read.unreadable).toBe(0);
+    expect(read.rows.map((r) => r.fileMcc)).toEqual([
+      '0742',
+      '5411',
+      '5411',
+      '5812',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(read.rows.map((r) => r.sector)).toEqual([
+      'חיות מחמד',
+      undefined,
+      undefined,
+      'מסעדות',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(read.rows.every((r) => r.flags.length === 0)).toBe(true);
+  });
+
+  it('knows the MCC and sector headers Israeli and English exports use, and keeps them apart', () => {
+    const header = (cells: string[]): Cell[][] => [['תאריך', 'תיאור', 'סכום', ...cells]];
+    expect(mapByDictionary(header(['קוד ענף', 'ענף עסקי']))).toMatchObject({ mcc: 3, sector: 4 });
+    expect(mapByDictionary(header(['Merchant category code', 'Category']))).toMatchObject({
+      mcc: 3,
+      sector: 4,
+    });
+    expect(mapByDictionary(header(['SIC', 'Sector']))).toMatchObject({ mcc: 3, sector: 4 });
+    expect(mapByDictionary(header(['קטגוריה']))).toMatchObject({ mcc: null, sector: 3 });
+    expect(mapByDictionary(header(['תחום']))).toMatchObject({ mcc: null, sector: 3 });
+    expect(mapByDictionary(header([]))).toMatchObject({ mcc: null, sector: null });
+  });
+
+  it('finds them on a header row the model mapped, too', () => {
+    const rows: Cell[][] = [
+      ['when', 'what', 'how much', 'MCC', 'ענף'],
+      ['10/03/2026', 'Cafe', 12.5, '5812', 'מסעדות'],
+    ];
+    const wire = {
+      hr: 0,
+      date: 0,
+      desc: 1,
+      amt: 2,
+      debit: null,
+      credit: null,
+      cur: null,
+      chg: null,
+      chgCur: null,
+      chgDate: null,
+      plan: null,
+      card: null,
+      dec: '.' as const,
+      df: 'dmy' as const,
+      mc: [],
+    };
+    expect(fromWireMap(wire, rows)).toMatchObject({ mcc: 3, sector: 4 });
+    expect(fromWireMap(wire)).toMatchObject({ mcc: null, sector: null });
+    expect(readSheet(rows, fromWireMap(wire, rows), ctx).rows[0]).toMatchObject({
+      fileMcc: '5812',
+      sector: 'מסעדות',
+    });
+  });
+});
+
+describe('a card export with a renamed header, read by the dictionary', () => {
+  // Synthetic: a Max-like layout whose "מטבע עסקה מקורי" header was renamed, so no exact reader knows it.
+  const header = [
+    'תאריך עסקה',
+    'שם בית העסק',
+    'סוג עסקה',
+    'סכום חיוב',
+    'מטבע חיוב',
+    'סכום עסקה מקורי',
+    'מטבע מקור',
+    'תאריך חיוב',
+    'הערות',
+  ];
+  const rows: Cell[][] = [
+    header,
+    ['01/03/2019', 'חנות לדוגמה', 'תשלומים', 150, '₪', 600, '₪', '02/04/2019', 'תשלום 2 מתוך 4'],
+    ['02/03/2019', 'דמי כרטיס', 'רגילה', 23.4, '₪', 19.83, '₪', '02/04/2019', ''],
+  ];
+
+  it('takes the instalment text from the column whose cells say it, and the date of the charge', () => {
+    const map = mapByDictionary(rows)!;
+    expect(map).toMatchObject({ plan: 8, chgDate: 7 });
+  });
+
+  it('saves the charge, not the original, when both are shekels', () => {
+    const map = mapByDictionary(rows)!;
+    const read = readSheet(rows, map, ctx);
+    expect(read.rows.map((r) => [r.amountMinor, r.plan?.number ?? null, r.plan?.totalMinor ?? null])).toEqual(
+      [
+        [15_000, 2, 60_000],
+        [2_340, null, null],
+      ],
+    );
   });
 });

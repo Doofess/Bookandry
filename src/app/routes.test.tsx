@@ -3,7 +3,15 @@ import { createMemoryRouter, RouterProvider, type RouteObject } from 'react-rout
 import { describe, expect, it } from 'vitest';
 
 import { appRoutes } from './app-routes';
-import { LINKED_ROUTES, NAV_ORDER, ROUTES, SETTINGS_ROUTES } from './routes';
+import {
+  LINKED_ROUTES,
+  NAV_ORDER,
+  navDirection,
+  RAIL_PLACES,
+  RAIL_SETUP,
+  ROUTES,
+  SETTINGS_ROUTES,
+} from './routes';
 
 /*
  * Account linking is a settings page, not a tab: four tabs, and every old
@@ -55,5 +63,25 @@ describe('account linking', () => {
 
   it('is mounted at its own address', () => {
     expect(routeFor(SETTINGS_ROUTES.linking).element).toBeDefined();
+  });
+});
+
+describe('the rail (§4.2)', () => {
+  it('lists the places in the phone’s order with Bank accounts after Cards, then the set-up places', () => {
+    expect(RAIL_PLACES.map((place) => place.key)).toEqual(['feed', 'chart', 'cards', 'bankAccounts', 'cash']);
+    expect(RAIL_SETUP.map((place) => place.key)).toEqual(['categories', 'commitments', 'settings']);
+  });
+
+  it('keeps the phone’s four tabs exactly (decision 27)', () => {
+    expect(RAIL_PLACES.filter((place) => place.phone).map((place) => place.key)).toEqual(NAV_ORDER);
+    expect(RAIL_SETUP.some((place) => place.phone)).toBe(false);
+  });
+
+  it('tells forward from back by rail order, a settings page by its section', () => {
+    expect(navDirection('/', '/chart')).toBe('forward');
+    expect(navDirection('/cash', '/cards')).toBe('back');
+    expect(navDirection('/settings/account', '/categories')).toBe('back');
+    // From a page that is not a place (an invitation link), every place is ahead.
+    expect(navDirection('/link', '/chart')).toBe('forward');
   });
 });

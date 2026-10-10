@@ -138,7 +138,7 @@ function FullBreakdown({ onClick }: { readonly onClick: () => void }) {
     <Button
       type="button"
       variant="ghost"
-      className="min-h-11 w-full justify-between text-primary sm:min-h-9"
+      className="min-h-11 w-full justify-between text-primary-ink sm:min-h-9"
       onClick={onClick}
     >
       {t('breakdown.full')}

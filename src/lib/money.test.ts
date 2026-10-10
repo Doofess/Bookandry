@@ -38,6 +38,8 @@ import {
   toDecimalString,
   toMinor,
   prorateMinor,
+  sharesBp,
+  wholeMinor,
 } from './money';
 
 describe('decimalToRational', () => {
@@ -975,5 +977,51 @@ describe('requestDatePrincipal', () => {
   it('rejects a negative rate or days', () => {
     expect(() => requestDatePrincipal(100, '-1', 30, 360)).toThrow(RangeError);
     expect(() => requestDatePrincipal(100, '1', -1, 360)).toThrow(RangeError);
+  });
+});
+
+describe('sharesBp (§7.4)', () => {
+  it('splits by the largest remainder, so the shares sum to exactly 10,000', () => {
+    expect(sharesBp([1, 1, 1])).toEqual([3334, 3333, 3333]);
+    // 2/7, 1/7, 1/7, 3/7: floors 2857, 1428, 1428, 4285; the two left go to the largest remainders.
+    expect(sharesBp([2, 1, 1, 3])).toEqual([2857, 1429, 1428, 4286]);
+  });
+
+  it('is the whole for a single segment, and nothing for a zero total', () => {
+    expect(sharesBp([12_345])).toEqual([10_000]);
+    expect(sharesBp([0, 0])).toEqual([0, 0]);
+    expect(sharesBp([])).toEqual([]);
+  });
+
+  it('counts a negative value as nothing: a share is a size', () => {
+    expect(sharesBp([-500, 500])).toEqual([0, 10_000]);
+  });
+
+  it('always sums to 10,000, never goes negative, and keeps the values’ order', () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: 0, max: 1e12 }), { minLength: 1, maxLength: 30 }), (minors) => {
+        const shares = sharesBp(minors);
+        const total = minors.reduce((a, b) => a + b, 0);
+        expect(shares.reduce((a, b) => a + b, 0)).toBe(total === 0 ? 0 : 10_000);
+        for (const share of shares) expect(share).toBeGreaterThanOrEqual(0);
+        for (let i = 0; i < minors.length; i += 1) {
+          for (let j = 0; j < minors.length; j += 1) {
+            if ((minors[i] ?? 0) > (minors[j] ?? 0)) expect(shares[i]).toBeGreaterThanOrEqual(shares[j] ?? 0);
+          }
+        }
+      }),
+    );
+  });
+});
+
+describe('wholeMinor (§9.4: big numerals are whole)', () => {
+  it('rounds to whole units, half away from zero', () => {
+    expect(wholeMinor(123_456, 'ILS')).toBe(123_500);
+    expect(wholeMinor(123_449, 'ILS')).toBe(123_400);
+    expect(wholeMinor(-150, 'ILS')).toBe(-200);
+  });
+
+  it('leaves a currency with no minor unit alone', () => {
+    expect(wholeMinor(1234, 'JPY')).toBe(1234);
   });
 });

@@ -108,3 +108,30 @@ describe('a cash move', () => {
     }
   });
 });
+
+describe('a category’s hue', () => {
+  const category = {
+    id: 'c1',
+    kind: 'expense',
+    icon: 'Dog',
+    sortOrder: 30,
+    isArchived: 0,
+    source: 'custom',
+    name: 'Pets',
+    createdAt: AT,
+    updatedAt: AT,
+  };
+
+  it('is accepted as a loose optional string, so a newer build’s key survives an import', () => {
+    expect(rowSchemas.categories.safeParse({ ...category, hue: 'teal-2' }).success).toBe(true);
+    expect(rowSchemas.categories.safeParse({ ...category, hue: 'some-future-hue' }).success).toBe(true);
+  });
+
+  it('is optional: a file from before it is still fine', () => {
+    expect(rowSchemas.categories.safeParse(category).success).toBe(true);
+  });
+
+  it('is never empty', () => {
+    expect(rowSchemas.categories.safeParse({ ...category, hue: '' }).success).toBe(false);
+  });
+});

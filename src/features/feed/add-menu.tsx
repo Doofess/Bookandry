@@ -1,7 +1,9 @@
-import { HandCoins, type LucideIcon, ShoppingBag, Sparkles } from 'lucide-react';
+import { HandCoins, type LucideIcon, Plus, ShoppingBag, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { useDesktop } from '@/app/use-desktop';
 import { AddButton } from '@/components/add-button';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,14 +20,17 @@ import type { Kind } from '@/types/money';
  * The pill is the menu's trigger, rendered through it so it keeps its fixed
  * place and its test id while the menu adds the popup's ARIA state. The menu
  * opens above it, and Expense comes first, so Enter, Enter is still the
- * quickest way to the form.
+ * quickest way to the form. On a desktop the same menu hangs from the rail's Add.
  */
 export function AddMenu({
+  placement = 'floating',
   disabled,
   aiAvailable,
   onAdd,
   onAddWithAi,
 }: {
+  /** 'floating': the phone's pill, above the tab bar. 'rail': the solid pill at the top of the desktop rail. */
+  readonly placement?: 'floating' | 'rail';
   readonly disabled: boolean;
   /** False in a build without accounts: reading a file needs the account's server. */
   readonly aiAvailable: boolean;
@@ -33,12 +38,29 @@ export function AddMenu({
   readonly onAddWithAi: () => void;
 }) {
   const { t } = useTranslation();
+  const desktop = useDesktop();
+  // From lg, Add is in the rail on every screen (§4.2): the floating pill is the phone's.
+  if (placement === 'floating' && desktop) return null;
+  const rail = placement === 'rail';
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<AddButton />} disabled={disabled} />
+      <DropdownMenuTrigger
+        render={
+          rail ? <Button variant="pill-solid" data-testid="rail-add" className="w-full" /> : <AddButton />
+        }
+        disabled={disabled}
+      >
+        {rail ? (
+          <>
+            {/* Plus is non-directional: it must NOT carry rtl:rotate-180. */}
+            <Plus aria-hidden="true" />
+            {t('addMenu.add')}
+          </>
+        ) : null}
+      </DropdownMenuTrigger>
       <DropdownMenuContent
-        side="top"
-        align="center"
+        side={rail ? 'bottom' : 'top'}
+        align={rail ? 'start' : 'center'}
         sideOffset={10}
         className="w-72 p-1.5"
         data-testid="add-menu"

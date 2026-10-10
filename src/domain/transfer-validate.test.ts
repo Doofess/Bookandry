@@ -563,3 +563,72 @@ describe('cash moves in a file', () => {
     expect(validateEnvelope(withMoves([move], 2)).ok).toBe(false);
   });
 });
+
+describe('business types in a file', () => {
+  const doc = envelope() as ExportEnvelope;
+  /** The fixture with its one transaction and its one category changed. */
+  const withRows = (row: Record<string, unknown>, category: Record<string, unknown> = {}): unknown => ({
+    ...doc,
+    data: {
+      ...doc.data,
+      categories: [{ ...doc.data.categories[0]!, ...category }],
+      transactions: [{ ...doc.data.transactions[0]!, ...row }],
+    },
+  });
+  const paths = (result: ReturnType<typeof validateEnvelope>): string[] =>
+    !result.ok && result.reason === 'invalid' ? result.issues.map((i) => i.path) : [];
+
+  it('keeps an expense’s business type, where it came from, and a category’s moved-in types', () => {
+    const result = validateEnvelope(withRows({ mcc: '5411', mccSource: 'user' }, { mccs: ['5411', '5499'] }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.data.transactions[0]).toMatchObject({ mcc: '5411', mccSource: 'user' });
+      expect(result.doc.data.categories[0]?.mccs).toEqual(['5411', '5499']);
+    }
+  });
+
+  it('keeps a source a later build added', () => {
+    const result = validateEnvelope(withRows({ mcc: '5411', mccSource: 'bank-feed' }));
+    expect(result.ok && result.doc.data.transactions[0]?.mccSource).toBe('bank-feed');
+  });
+
+  it('drops a code the list does not have, and keeps the row it was on', () => {
+    const result = validateEnvelope(withRows({ mcc: '9999', mccSource: 'ai' }, { mccs: ['5411', '9999'] }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('mcc');
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('mccSource');
+      expect(result.doc.data.categories[0]?.mccs).toEqual(['5411']);
+    }
+  });
+
+  it('refuses a business type on income, or on an income category', () => {
+    const income = validateEnvelope(withRows({ kind: 'income', paymentMethodId: undefined, mcc: '5411' }));
+    expect(paths(income)).toContain('transactions.tx1.mcc');
+    const source = validateEnvelope(
+      withRows({ kind: 'income', paymentMethodId: undefined, mccSource: 'ai' }),
+    );
+    expect(paths(source)).toContain('transactions.tx1.mccSource');
+    const category = validateEnvelope(withRows({}, { kind: 'income', mccs: ['5411'] }));
+    expect(paths(category)).toContain('categories.cat.groceries.mccs');
+  });
+
+  it('refuses what is not a code at all: not four digits, repeated, or too many', () => {
+    for (const bad of ['742', '5411.0', 5411, '']) {
+      expect(validateEnvelope(withRows({ mcc: bad })).ok, String(bad)).toBe(false);
+    }
+    expect(validateEnvelope(withRows({ mcc: '5411', mccSource: '' })).ok).toBe(false);
+    expect(validateEnvelope(withRows({}, { mccs: ['5411', '5411'] })).ok).toBe(false);
+    const many = Array.from({ length: 201 }, (_, i) => String(3000 + i));
+    expect(validateEnvelope(withRows({}, { mccs: many })).ok).toBe(false);
+  });
+
+  it('reads a file from before business types exactly as before', () => {
+    const result = validateEnvelope(envelope());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.data.transactions[0]).not.toHaveProperty('mcc');
+      expect(result.doc.data.categories[0]).not.toHaveProperty('mccs');
+    }
+  });
+});

@@ -1,3 +1,4 @@
+import type { MerchantHistory } from '@/db/repos/transactions';
 import {
   combineAccountReads,
   combineCardReads,
@@ -32,6 +33,7 @@ import {
   type Cell,
   type ColumnMap,
 } from '@/domain/import-sheet-map';
+import { groupPlans, readKnownExport, type KnownBlock } from '@/domain/import-sheet-readers';
 import {
   cleanExtract,
   cleanMap,
@@ -48,11 +50,14 @@ import {
   type WireRow,
   type WireTotal,
 } from '@/domain/import-wire';
+import { isMcc } from '@/domain/mcc';
+import { tableFiles } from '@/domain/mcc-categories';
+import { sectorMcc } from '@/domain/sector-mcc';
 import { parseStatementDate } from '@/lib/dates';
 import type { RefuseReason, Job, PreparedFile } from '@/services/ai-import/prepare-files';
 import { planJobs } from '@/services/ai-import/prepare-files';
 import type { ExtractError, ExtractOutcome } from '@/services/supabase/extract';
-import type { Currency, LocalDate } from '@/types/money';
+import type { Currency, Kind, LocalDate } from '@/types/money';
 
 /**
  * "Smart import", start to finish: every prepared file read, checked and,
@@ -106,8 +111,22 @@ export type ImportContext = {
   readonly today: LocalDate;
   /** When each file was made, for dates printed without a year. */
   readonly anchorOf: (file: number) => LocalDate;
-  /** Whether the household's history already places this merchant. */
-  readonly knownMerchant: (description: string) => Promise<boolean>;
+  /**
+   * What the household's history says about a merchant (`merchantHistory`):
+   * its category, and its business type. The caller memoises it per import.
+   */
+  readonly history: (kind: Kind, description: string) => Promise<MerchantHistory>;
+  /**
+   * What the person said about these files, if anything. The same on every
+   * call of the import; kept nowhere.
+   */
+  readonly note?: string;
+};
+
+/** The note as a request carries it: present when there is one, absent otherwise. */
+const withNote = (ctx: ImportContext): { readonly note?: string } => {
+  const note = ctx.note?.trim() ?? '';
+  return note === '' ? {} : { note: note.slice(0, LIMITS.note) };
 };
 
 export type ImportResult = {
@@ -178,10 +197,11 @@ export async function runImport(
   }
 
   // Spreadsheets: by code.
+  const exact = new Set<string>();
   for (const p of fresh) {
     if (p.kind !== 'sheet') continue;
     try {
-      rows.push(...(await readWorkbook(p, ctx, ask)));
+      rows.push(...(await readWorkbook(p, ctx, ask, exact)));
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
       failed.add(p.file);
@@ -193,6 +213,10 @@ export async function runImport(
       });
     }
   }
+
+  // A deal's payments across the exports' files - Discount prints one a month - made one plan.
+  const plans = new Map(groupPlans(rows.filter((row) => exact.has(row.id))).map((row) => [row.id, row]));
+  rows.splice(0, rows.length, ...rows.map((row) => plans.get(row.id) ?? row));
 
   // Everything else: one job per call, a few at a time.
   const jobs = planJobs(fresh, groupSmall);
@@ -268,6 +292,7 @@ export async function runImport(
           candidates: d.candidates.map((c) => ({ ...c, s: Math.min(c.s, job.sources.length - 1) })),
         })),
         maxTokens: tokensForRows(disputes.length),
+        ...withNote(ctx),
       };
       answer = cleanVerify(
         await ask(request),
@@ -359,6 +384,7 @@ async function extractAll(
         maxTokens,
         continueAfter: all.length,
         cache,
+        ...withNote(ctx),
       });
     } catch (error) {
       // Cut off mid-answer: the same again with room to finish.
@@ -530,52 +556,126 @@ function applyCorrections(
   return fixed ? swapped : settled;
 }
 
-/** Every sheet of a workbook, read by code - asking the model only for columns the dictionary does not know. */
+/** One sheet by the dictionary - or, when it does not know the sheet, by the columns the model names. */
+async function readGeneric(
+  sheet: Extract<PreparedFile, { kind: 'sheet' }>['sheets'][number],
+  s: number,
+  file: number,
+  ctx: ImportContext,
+  ask: (r: WireRequest) => Promise<unknown>,
+): Promise<KnownBlock> {
+  const readWith = (map: ColumnMap) =>
+    readSheet(sheet.rows, map, {
+      file,
+      base: ctx.base,
+      known: ctx.known,
+      anchor: ctx.anchorOf(file),
+      date1904: sheet.date1904,
+      idPrefix: `f${String(file)}s${String(s)}r`,
+    });
+  const known = mapByDictionary(sheet.rows);
+  const first = known === undefined ? undefined : readWith(known);
+  let map: ColumnMap;
+  let read: ReturnType<typeof readWith>;
+  if (known !== undefined && first !== undefined && mapHolds(first)) {
+    map = known;
+    read = first;
+  } else {
+    map = fromWireMap(await askMap(sheet.rows, [], ctx, ask), sheet.rows);
+    read = readWith(map);
+    if (!mapHolds(read)) throw new Error('sheet');
+  }
+  return { sheet: s, header: sheet.rows.slice(map.headerRow, map.headerRow + 3), rows: read.rows };
+}
+
+/**
+ * Every sheet of a workbook, read by code: by its exact reader when the app
+ * knows the export (`import-sheet-readers`), else by the dictionary - asking
+ * the model only for columns the dictionary does not know.
+ */
 async function readWorkbook(
   p: Extract<PreparedFile, { kind: 'sheet' }>,
   ctx: ImportContext,
   ask: (r: WireRequest) => Promise<unknown>,
+  /** Collects the ids of the rows an exact reader read. */
+  exact: Set<string>,
 ): Promise<FoundRow[]> {
   const out: FoundRow[] = [];
+  const read = readKnownExport(p.sheets, {
+    file: p.file,
+    base: ctx.base,
+    known: ctx.known,
+    anchor: ctx.anchorOf(p.file),
+  });
+  const known = new Map<number, KnownBlock>((read?.blocks ?? []).map((b) => [b.sheet, b]));
+  for (const block of known.values()) for (const row of block.rows) exact.add(row.id);
+  const generic = new Set(read === undefined ? p.sheets.map((_, s) => s) : read.rest);
   for (const [s, sheet] of p.sheets.entries()) {
-    if (sheet.rows.length === 0) continue;
-    const readWith = (map: ColumnMap) =>
-      readSheet(sheet.rows, map, {
-        file: p.file,
-        base: ctx.base,
-        known: ctx.known,
-        anchor: ctx.anchorOf(p.file),
-        date1904: sheet.date1904,
-        idPrefix: `f${String(p.file)}s${String(s)}r`,
-      });
-    const known = mapByDictionary(sheet.rows);
-    const first = known === undefined ? undefined : readWith(known);
-    let map: ColumnMap;
-    let read: ReturnType<typeof readWith>;
-    if (known !== undefined && first !== undefined && mapHolds(first)) {
-      map = known;
-      read = first;
-    } else {
-      map = fromWireMap(await askMap(sheet.rows, [], ctx, ask));
-      read = readWith(map);
-      if (!mapHolds(read)) throw new Error('sheet');
-    }
-    let merchantCats = new Map<string, string | null>();
-    // Merchants the household has not filed before: named in one cheap call, not one per row.
+    const exactBlock = known.get(s);
+    if (exactBlock === undefined && (!generic.has(s) || sheet.rows.length === 0)) continue;
+    const block = exactBlock ?? (await readGeneric(sheet, s, p.file, ctx, ask));
+    /*
+     * Merchants worth one cheap call, not one per row (spec point 9): an
+     * expense with no business type from its file, its sector or its history,
+     * and an income its history does not place. A sector the table does not
+     * know goes along as a hint.
+     */
     const unknown: string[] = [];
-    for (const description of new Set(read.rows.map((r) => r.description))) {
-      if (description !== '' && !(await ctx.knownMerchant(description))) unknown.push(description);
+    const sectors: string[] = [];
+    for (const description of new Set(block.rows.map((r) => r.description))) {
+      if (description === '') continue;
+      const rows = block.rows.filter((r) => r.description === description);
+      if (await placed(rows, description, ctx)) continue;
+      unknown.push(description);
+      sectors.push((rows.find((r) => r.sector !== undefined)?.sector ?? '').slice(0, LIMITS.field));
     }
+    let answers = new Map<string, { readonly mcc: string | null; readonly cat: string | null }>();
     if (unknown.length > 0) {
-      const header = sheet.rows.slice(map.headerRow, map.headerRow + 3);
-      const cats = await askCategories(header, unknown.slice(0, LIMITS.merchants), ctx, ask);
-      merchantCats = new Map(cats.map((m) => [m.m, m.cat]));
+      const cats = await askCategories(
+        block.header,
+        unknown.slice(0, LIMITS.merchants),
+        sectors.slice(0, LIMITS.merchants),
+        ctx,
+        ask,
+      );
+      answers = new Map(cats.map((m) => [m.m, m]));
     }
     out.push(
-      ...read.rows.map((row) => ({ ...row, categoryAlias: merchantCats.get(row.description) ?? null })),
+      ...block.rows.map((row) => {
+        const answer = answers.get(row.description);
+        const code = answer?.mcc;
+        return {
+          ...row,
+          categoryAlias: answer?.cat ?? null,
+          // Claude's business type, for an expense, when the list has it.
+          ...(row.kind === 'expense' && isMcc(code) ? { aiMcc: code } : {}),
+        };
+      }),
     );
   }
   return out;
+}
+
+/**
+ * Whether history, the file or the sector already says what every row of
+ * this merchant needs. An expense's business type is the first of those, as
+ * `pickMcc` takes it - and only one the table files somewhere: a code that
+ * merely falls through to Other (9311, tax payments) places nothing, so
+ * Claude's own category is still asked for (final review C1). A code the
+ * person moved into a category is not seen here, and such a merchant is
+ * asked about too, at no extra call; the review still files it by the move.
+ */
+async function placed(rows: readonly FoundRow[], description: string, ctx: ImportContext): Promise<boolean> {
+  for (const row of rows) {
+    if (row.kind === 'income') {
+      if ((await ctx.history('income', description)).categoryId === undefined) return false;
+    } else {
+      const code =
+        row.fileMcc ?? sectorMcc(row.sector ?? '') ?? (await ctx.history('expense', description)).mcc;
+      if (code === undefined || !tableFiles(code)) return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -588,15 +688,19 @@ const NO_RETRY: ReadonlySet<ExtractError> = new Set(['aborted', 'quota', 'unauth
 async function askCategories(
   header: readonly (readonly Cell[])[],
   merchants: readonly string[],
+  sectors: readonly string[],
   ctx: ImportContext,
   ask: (r: WireRequest) => Promise<unknown>,
-): Promise<{ m: string; cat: string | null }[]> {
+): Promise<{ m: string; mcc: string | null; cat: string | null }[]> {
   const request: WireRequest = {
     mode: 'map',
     ctx: ctx.wire,
     rows: sampleRows(header),
     merchants,
+    // Only when one was printed: an older function ignores the key either way.
+    ...(sectors.some((sector) => sector !== '') ? { sectors } : {}),
     maxTokens: tokensForRows(10 + merchants.length / 2),
+    ...withNote(ctx),
   };
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -623,6 +727,7 @@ async function askMap(
     rows: sample,
     merchants,
     maxTokens: tokensForRows(10 + merchants.length / 2),
+    ...withNote(ctx),
   });
   const map = cleanMap(raw, sample.length, cols, ctx.wire);
   if (map === undefined) throw new Failure('upstream');

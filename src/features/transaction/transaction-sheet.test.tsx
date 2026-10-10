@@ -924,3 +924,158 @@ describe('where income goes', () => {
     expect(goesTo()).toHaveAccessibleName(/Yossi current/);
   });
 });
+
+describe('the business type row', () => {
+  const dining: Category = {
+    ...groceries,
+    id: 'cat.dining',
+    nameKey: 'categories:builtin.dining',
+    sortOrder: 1,
+  };
+  const salary: Category = {
+    ...groceries,
+    id: 'cat.salary',
+    kind: 'income',
+    nameKey: 'categories:builtin.salary',
+  };
+
+  function openForm() {
+    const onSaved = vi.fn();
+    renderWithProviders(
+      <TransactionSheet
+        target={{ mode: 'add', kind: 'expense' }}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries, dining, salary]}
+        paymentMethods={[]}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={onSaved}
+      />,
+    );
+    return { onSaved, user: userEvent.setup() };
+  }
+
+  async function pickType(
+    user: ReturnType<typeof userEvent.setup>,
+    current: string,
+    query: string,
+    name: RegExp,
+  ) {
+    await user.click(screen.getByRole('button', { name: `Business type ${current}` }));
+    const popout = await screen.findByRole('dialog', { name: 'Business type' });
+    await user.type(within(popout).getByPlaceholderText('Search by name or code'), query);
+    await user.click(within(popout).getByRole('option', { name }));
+  }
+
+  async function amount(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByLabelText('Amount'));
+    await user.paste('58');
+  }
+
+  it('is shown for an expense only', async () => {
+    const { user } = openForm();
+    expect(await screen.findByRole('button', { name: 'Business type Not set' })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    expect(screen.queryByRole('button', { name: /^Business type/ })).toBeNull();
+  });
+
+  it('moves the category to the type’s when the category was not picked by hand, and saves it as the person’s', async () => {
+    const { user, onSaved } = openForm();
+    await amount(user);
+    await pickType(user, 'Not set', 'restaurant', /^Restaurant/);
+    expect(screen.getByRole('combobox', { name: /Category/ })).toHaveTextContent('Eating out');
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved).toMatchObject({ categoryId: 'cat.dining', mcc: '5812', mccSource: 'user' });
+  });
+
+  it('leaves a category the person picked by hand', async () => {
+    const { user } = openForm();
+    await user.click(screen.getByRole('combobox', { name: /Category/ }));
+    await user.click(await screen.findByRole('option', { name: /Groceries/ }));
+    await pickType(user, 'Not set', 'restaurant', /^Restaurant/);
+    expect(screen.getByRole('combobox', { name: /Category/ })).toHaveTextContent('Groceries');
+  });
+
+  it('clears', async () => {
+    const { user, onSaved } = openForm();
+    await amount(user);
+    await pickType(user, 'Not set', '5812', /^Restaurant/);
+    await user.click(screen.getByRole('button', { name: 'Business type Restaurant' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Business type' })).getByRole('button', {
+        name: 'Clear',
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Business type Not set' })).toBeInTheDocument();
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    expect((await db.transactions.toArray())[0]).not.toHaveProperty('mcc');
+  });
+
+  it('is not saved on an expense switched to income before saving (Review Focus 4)', async () => {
+    const { user, onSaved } = openForm();
+    await amount(user);
+    await pickType(user, 'Not set', 'restaurant', /^Restaurant/);
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    await user.click(save());
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const [saved] = await db.transactions.toArray();
+    expect(saved?.kind).toBe('income');
+    expect(saved).not.toHaveProperty('mcc');
+    expect(saved).not.toHaveProperty('mccSource');
+  });
+
+  it('reads in Hebrew', async () => {
+    await initTestI18n('he');
+    try {
+      const { user } = openForm();
+      await user.click(await screen.findByRole('button', { name: 'סוג עסק לא נקבע' }));
+      const popout = await screen.findByRole('dialog', { name: 'סוג עסק' });
+      await user.type(within(popout).getByPlaceholderText('חיפוש לפי שם או קוד'), 'מסעדות');
+      await user.click(within(popout).getByRole('option', { name: /^מסעדות/ }));
+      expect(screen.getByRole('button', { name: 'סוג עסק מסעדות' })).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: /קטגוריה/ })).toHaveTextContent('אוכל בחוץ');
+    } finally {
+      await initTestI18n('en');
+    }
+  });
+
+  it('leaves an edit’s category alone: it is the person’s own', async () => {
+    await db.transactions.put(
+      makeTx({
+        id: 'meal',
+        date: '2026-10-05' as LocalDate,
+        recurrence: { type: 'one_time' },
+        categoryId: 'cat.groceries',
+        money: { ...MONEY, currency: 'ILS', baseCurrency: 'ILS' },
+      }),
+    );
+    renderWithProviders(
+      <TransactionSheet
+        target={{ mode: 'edit', transactionId: 'meal', at: '2026-10-05' as LocalDate }}
+        onOpenChange={() => undefined}
+        profiles={[profile]}
+        categories={[groceries, dining, salary]}
+        paymentMethods={[]}
+        activeProfileId="p1"
+        baseCurrency="ILS"
+        today={TODAY}
+        onSaved={() => undefined}
+      />,
+    );
+    const user = userEvent.setup();
+    await screen.findByRole('button', { name: 'Business type Not set' });
+    await pickType(user, 'Not set', 'restaurant', /^Restaurant/);
+    expect(screen.getByRole('combobox', { name: /Category/ })).toHaveTextContent('Groceries');
+  });
+});

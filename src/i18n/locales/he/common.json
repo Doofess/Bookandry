@@ -9,7 +9,19 @@
     "chart": "תרשים",
     "settings": "הגדרות",
     "cards": "כרטיסים",
-    "cash": "מזומן"
+    "cash": "מזומן",
+    "bankAccounts": "חשבונות בנק",
+    "categories": "קטגוריות",
+    "commitments": "התחייבויות"
+  },
+  "popout": {
+    "stepOf": "שלב {{current}} מתוך {{total}}",
+    "steps": "שלבים"
+  },
+  "sheets": {
+    "other": "אחר",
+    "selected": "נבחר ✓",
+    "cardName": "{{issuer}} המסתיים ב־{{last4}}"
   },
   "a11y": {
     "skipToContent": "דילוג לתוכן",
@@ -102,6 +114,13 @@
     "scopeFuture": "מעכשיו והלאה",
     "scopeAll": "כל התשלומים",
     "changed": "הקטגוריה שונתה ל{{name}}"
+  },
+  "businessType": {
+    "label": "סוג עסק",
+    "notSet": "לא נקבע",
+    "search": "חיפוש לפי שם או קוד",
+    "empty": "אין סוג עסק מתאים.",
+    "clear": "ניקוי"
   },
   "projected": {
     "chip": "טרם נכלל. לשינוי",

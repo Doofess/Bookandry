@@ -5,9 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
-import { ScreenPanel } from '@/app/screen-panel';
+import { HeroSheet, ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { pendingShares, sweepShared } from '@/app/shared-files';
-import { PanelSheet } from '@/components/brand-panel';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
 import { changeCategory, moveOccurrence } from '@/db/occurrence-actions';
@@ -15,6 +14,7 @@ import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculato
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
+import { mccName } from '@/domain/mcc';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
@@ -34,6 +34,7 @@ import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences
 import { useFeedFilters } from './use-feed-filters';
 import { offerUndo, useRowActions, useUndoableWrite } from './use-row-actions';
 import { VirtualFeed } from './virtual-feed';
+import { useMccList } from '../business-type/use-mcc-list';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
@@ -121,6 +122,13 @@ export function FeedScreen() {
     [t],
   );
 
+  // Business type names for the search box: their own chunk, loaded once the feed is up.
+  const mccList = useMccList();
+  const businessTypeName = useMemo(
+    () => (code: string) => (mccList === undefined ? undefined : mccName(mccList, code, i18n.language)),
+    [mccList, i18n.language],
+  );
+
   const { rows, windowCount, isLoading } = useFeedRows(
     occurrences,
     filters,
@@ -128,6 +136,7 @@ export function FeedScreen() {
     today,
     translateCategory,
     translateMethod,
+    businessTypeName,
   );
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);
@@ -187,8 +196,6 @@ export function FeedScreen() {
           : '0px',
       }}
     >
-      <h1 className="sr-only">{t('nav.feed')}</h1>
-
       {/*
         FIRST in the DOM, and deliberately so.
 
@@ -225,13 +232,14 @@ export function FeedScreen() {
       ) : null}
 
       <div ref={measureHeader} data-testid="feed-header">
-        <ScreenPanel>
+        <ScreenHead title={t('nav.feed')} />
+        <HeroSheet>
           {/*
             At most two lines on a phone: below sm the profile pill is faces
             only and prime drops its icon. 375: month + profile, then prime.
             320: month, then profile + prime. One row from sm up.
           */}
-          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="panel-pills">
+          <div className="flex flex-wrap items-center gap-2" data-testid="panel-pills">
             <MonthCursor
               month={filters.month}
               today={today}
@@ -271,10 +279,10 @@ export function FeedScreen() {
               }}
             />
           </div>
-        </ScreenPanel>
+        </HeroSheet>
       </div>
 
-      <PanelSheet className="px-4 pt-4">
+      <ScreenSheet className="px-4 pt-4">
         <FilterBar filters={filters} onChange={set} onClear={clear} />
 
         <div className="mt-3">
@@ -309,7 +317,7 @@ export function FeedScreen() {
             />
           )}
         </div>
-      </PanelSheet>
+      </ScreenSheet>
 
       {lookups === undefined ? null : (
         <TransactionSheet

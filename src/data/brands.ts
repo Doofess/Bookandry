@@ -41,38 +41,3 @@ const WORDMARK: ReadonlySet<BrandKey> = new Set(['bank-31', 'bank-52', 'bank-14'
 export function brandLogo(key: BrandKey): string | undefined {
   return URLS.get(WORDMARK.has(key) ? `${key}-wordmark` : key);
 }
-
-/** Each brand's own colour, as its logo prints it. */
-const COLORS: Readonly<Partial<Record<BrandKey, string>>> = {
-  'bank-10': '#0066FF', // Leumi
-  'bank-12': '#F0000B', // Hapoalim
-  'bank-20': '#F58220', // Mizrahi-Tefahot
-  'bank-11': '#62A93B', // Discount
-  'bank-17': '#2E6633', // Mercantile
-  'bank-31': '#00529B', // FIBI
-  'bank-52': '#002D6E', // PAGI
-  'bank-14': '#00529C', // Otsar HaHayal
-  'bank-26': '#004B87', // U-Bank
-  'bank-46': '#004895', // Massad
-  'bank-4': '#283D99', // Yahav
-  'bank-18': '#000000', // One Zero
-  'issuer-isracard': '#101820',
-  'issuer-cal': '#1F5BBE',
-  'issuer-max': '#000000',
-  'issuer-amex': '#2E77BC',
-  'issuer-diners': '#004C97',
-  'network-visa': '#1A1F71',
-  'network-mastercard': '#EB001B',
-  'network-amex': '#2E77BC',
-  'network-diners': '#004C97',
-  'network-isracard': '#101820',
-};
-
-/**
- * The brand's own colour, for an accent beside its logo - never as the colour
- * of text, whose contrast stays the app's own. Undefined for a brand it does
- * not know.
- */
-export function brandColor(key: BrandKey): string | undefined {
-  return COLORS[key];
-}

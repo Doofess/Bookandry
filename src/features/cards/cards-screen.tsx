@@ -8,8 +8,7 @@ import { useAccount } from '@/app/account';
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { usePrime } from '@/app/prime';
 import { ROUTES } from '@/app/routes';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { Money } from '@/components/money';
 import { Percent } from '@/components/percent';
 import { Button } from '@/components/ui/button';
@@ -36,6 +35,7 @@ import {
 import { rateOfTerm } from '@/domain/deal-rules';
 import { PARAM } from '@/domain/feed-filters';
 import { followsPrimeFrom } from '@/domain/long-credit';
+import { cardKey } from '@/domain/money-key';
 import { methodOwnedBy } from '@/domain/tx-options';
 import { ProfileSwitcher } from '@/features/feed/profile-switcher';
 import { useUndoableWrite } from '@/features/feed/use-row-actions';
@@ -53,7 +53,6 @@ import {
 } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
-import { cardGradient } from './card-colors';
 import { CardMenu, type CardMenuTarget } from './card-menu';
 import { tierName } from './catalog-names';
 import { MethodEditor, OtherMethods } from './method-editor';
@@ -127,10 +126,8 @@ export function CardsScreen() {
 
   return (
     <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-5 px-4 pt-6">
+      <ScreenHead title={t('title')} />
+      <ScreenSheet className="space-y-5 px-4 pt-6">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           <Button
@@ -269,7 +266,7 @@ export function CardsScreen() {
             }
           }}
         />
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }
@@ -333,10 +330,11 @@ function CardPanel({
       <div
         data-testid="card-face"
         data-color={card.color ?? ''}
-        className={cn(
-          'relative flex aspect-[1.586] w-full flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br p-5 text-white shadow-md',
-          cardGradient(card),
-        )}
+        // A money sheet: the card's own colour, else its company's, else the
+        // neutral ink sheet. Its text is the sheet's tint, never white (§1.3).
+        data-sheet="money"
+        data-money={cardKey(card)}
+        className="relative flex aspect-[1.586] w-full flex-col justify-between overflow-hidden rounded-2xl p-5"
       >
         {/*
           The face is a button too: a larger pointer target for the same menu
@@ -354,7 +352,7 @@ function CardPanel({
           className="absolute inset-0 rounded-2xl focus-visible:outline-none"
         />
         <div className="pointer-events-none relative flex items-start justify-between gap-3">
-          <span className="text-sm font-medium opacity-90">
+          <span className="text-sm font-medium">
             {details?.issuer === undefined ? t('unknownIssuer') : t(`issuer.${details.issuer}`)}
           </span>
           <span className="flex items-start gap-1">
@@ -369,7 +367,7 @@ function CardPanel({
               onClick={(event) => {
                 onMenu(event.currentTarget);
               }}
-              className="pointer-events-auto -me-3 -mt-3 flex size-11 items-center justify-center rounded-full text-white hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none"
+              className="pointer-events-auto -me-3 -mt-3 flex size-11 items-center justify-center rounded-full text-current focus-visible:ring-2 focus-visible:ring-current focus-visible:outline-none active:bg-accent"
             >
               <MoreHorizontal className="size-5" aria-hidden="true" />
             </button>
@@ -377,24 +375,21 @@ function CardPanel({
         </div>
         <div className="pointer-events-none relative">
           {details?.lastDigits === undefined ? null : (
-            <p
-              dir="ltr"
-              className="mb-1 font-mono text-base tracking-widest tabular-nums opacity-90 rtl:text-end"
-            >
+            <p dir="ltr" className="mb-1 font-mono text-base tracking-widest tabular-nums rtl:text-end">
               •••• {details.lastDigits}
             </p>
           )}
           <h2 id={`card-${card.id}`} className="text-xl font-semibold">
             {card.label}
           </h2>
-          <p className="text-sm opacity-85">
+          <p className="text-sm font-light">
             {[tier, details?.club, details?.kind === undefined ? undefined : t(`kind.${details.kind}`)]
               .filter(Boolean)
               .join(' · ')}
           </p>
         </div>
         <div className="pointer-events-none relative flex items-end justify-between gap-3 text-sm">
-          <span className="opacity-90">
+          <span className="font-light">
             {card.profileId === SHARED_OWNER ? t('shared') : (owner?.name ?? '')}
           </span>
           <span className="flex flex-col items-end">
@@ -404,7 +399,7 @@ function CardPanel({
               </span>
             )}
             {day === undefined ? null : (
-              <span className="text-xs opacity-85">
+              <span className="text-xs font-light">
                 {t('billsOn', { day: ordinalDay(day, i18n.language) })}
               </span>
             )}

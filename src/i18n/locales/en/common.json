@@ -9,7 +9,19 @@
     "chart": "Chart",
     "settings": "Settings",
     "cards": "Cards",
-    "cash": "Cash"
+    "cash": "Cash",
+    "bankAccounts": "Bank accounts",
+    "categories": "Categories",
+    "commitments": "Commitments"
+  },
+  "popout": {
+    "stepOf": "Step {{current}} of {{total}}",
+    "steps": "Steps"
+  },
+  "sheets": {
+    "other": "Other",
+    "selected": "Selected ✓",
+    "cardName": "{{issuer}} ending {{last4}}"
   },
   "a11y": {
     "skipToContent": "Skip to content",
@@ -102,6 +114,13 @@
     "scopeFuture": "From now on",
     "scopeAll": "Every payment",
     "changed": "Category changed to {{name}}"
+  },
+  "businessType": {
+    "label": "Business type",
+    "notSet": "Not set",
+    "search": "Search by name or code",
+    "empty": "No business type matches.",
+    "clear": "Clear"
   },
   "projected": {
     "chip": "Not counted yet. Change it",

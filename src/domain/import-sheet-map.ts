@@ -4,6 +4,7 @@ import type { Currency, LocalDate } from '@/types/money';
 
 import { currencyFromText, type Flag, type FoundPlan, type FoundRow } from './import-check';
 import type { WireMap, WireRow } from './import-wire';
+import { isMcc } from './mcc';
 
 /**
  * Spreadsheets are read by code, not by the model.
@@ -19,7 +20,15 @@ import type { WireMap, WireRow } from './import-wire';
 
 export type Cell = string | number | boolean | null;
 
-export type ColumnMap = Omit<WireMap, 'mc' | 'hr'> & { readonly headerRow: number };
+/**
+ * A sheet's columns. `mcc` and `sector` come from the dictionary only - the
+ * model's map never names them - including on a header row the model found.
+ */
+export type ColumnMap = Omit<WireMap, 'mc' | 'hr'> & {
+  readonly headerRow: number;
+  readonly mcc: number | null;
+  readonly sector: number | null;
+};
 
 const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>, readonly string[]>> = {
   date: ['תאריך עסקה', 'תאריך העסקה', 'תאריך רכישה', 'תאריך', 'date', 'transaction date', 'purchase date'],
@@ -42,8 +51,8 @@ const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>
   cur: ['מטבע עסקה', 'מטבע מקור', 'מטבע', 'currency'],
   chg: ['סכום חיוב', 'סכום לחיוב', 'סכום החיוב', 'charged amount', 'charge amount'],
   chgCur: ['מטבע חיוב', 'מטבע החיוב', 'charge currency'],
-  chgDate: ['תאריך חיוב', 'מועד חיוב', 'charge date', 'billing date'],
-  plan: ['פירוט נוסף', 'הערות', 'סוג עסקה', 'פרטי עסקה', 'notes', 'type'],
+  chgDate: ['תאריך חיוב', 'תאריך החיוב', 'מועד חיוב', 'charge date', 'billing date'],
+  plan: ['פירוט נוסף', 'הערות', 'סוג עסקה', 'סוג העסקה', 'פרטי עסקה', 'notes', 'type'],
   card: [
     '4 ספרות אחרונות של כרטיס האשראי',
     '4 ספרות אחרונות',
@@ -57,6 +66,8 @@ const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>
     'last 4 digits',
     'last four digits',
   ],
+  mcc: ['mcc', 'קוד ענף', 'merchant category code', 'sic'],
+  sector: ['ענף', 'ענף עסקי', 'תחום', 'קטגוריה', 'category', 'sector'],
 };
 
 const norm = (cell: Cell): string =>
@@ -91,10 +102,14 @@ function fieldOf(cell: Cell): keyof typeof HEADERS | undefined {
 export function mapByDictionary(rows: readonly (readonly Cell[])[], scan = 30): ColumnMap | undefined {
   for (let r = 0; r < Math.min(scan, rows.length); r += 1) {
     const found: Partial<Record<keyof typeof HEADERS, number>> = {};
+    const plans: number[] = [];
     (rows[r] ?? []).forEach((cell, c) => {
       const field = fieldOf(cell);
+      if (field === 'plan') plans.push(c);
       if (field !== undefined && found[field] === undefined) found[field] = c;
     });
+    // Several columns could hold the instalment text ("סוג עסקה", "הערות"): the one whose cells do.
+    if (plans.length > 1) found.plan = planColumn(rows, r, plans);
     const hasMoney = found.amt !== undefined || found.debit !== undefined || found.credit !== undefined;
     if (found.date === undefined || found.desc === undefined || !hasMoney) continue;
     return {
@@ -110,11 +125,29 @@ export function mapByDictionary(rows: readonly (readonly Cell[])[], scan = 30): 
       chgDate: found.chgDate ?? null,
       plan: found.plan ?? null,
       card: found.card ?? null,
+      mcc: found.mcc ?? null,
+      sector: found.sector ?? null,
       dec: decimalOf(rows, r, found.amt ?? found.debit ?? found.credit ?? 0),
       df: 'dmy',
     };
   }
   return undefined;
+}
+
+/** Of the columns that could hold "תשלום N מתוך M", the one whose cells say it most; the first on a tie. */
+function planColumn(rows: readonly (readonly Cell[])[], header: number, columns: readonly number[]): number {
+  let best = columns[0] ?? 0;
+  let most = 0;
+  for (const column of columns) {
+    const hits = rows
+      .slice(header + 1)
+      .filter((row) => planFromText(String(row[column] ?? '')) !== undefined).length;
+    if (hits > most) {
+      best = column;
+      most = hits;
+    }
+  }
+  return best;
 }
 
 /**
@@ -133,10 +166,15 @@ function decimalOf(rows: readonly (readonly Cell[])[], header: number, column: n
   return '.';
 }
 
-/** A model's map, as a column map. */
-export function fromWireMap(map: WireMap): ColumnMap {
+/** A model's map, as a column map: with the MCC and sector columns its header row names, by the dictionary. */
+export function fromWireMap(map: WireMap, rows: readonly (readonly Cell[])[] = []): ColumnMap {
   const { hr, mc: _merchants, ...rest } = map;
-  return { ...rest, headerRow: hr };
+  const header = rows[hr] ?? [];
+  const column = (field: 'mcc' | 'sector'): number | null => {
+    const at = header.findIndex((cell) => fieldOf(cell) === field);
+    return at === -1 ? null : at;
+  };
+  return { ...rest, headerRow: hr, mcc: column('mcc'), sector: column('sector') };
 }
 
 const TOTAL_WORDS = /סה["״]?כ|סך הכל|total|יתרה|balance/i;
@@ -217,6 +255,21 @@ export function cardAbove(rows: readonly (readonly Cell[])[], headerRow: number)
   return only !== undefined && more.length === 0 ? only : '';
 }
 
+/**
+ * A business type from an MCC cell. Excel keeps a code as a number, so 742
+ * is "0742" and 5411.0 is "5411"; a text cell may carry spaces or ".0".
+ * Anything the list does not have is none - never a flag on the row.
+ */
+function mccFromCell(cell: Cell | undefined): string | undefined {
+  let code: string | undefined;
+  if (typeof cell === 'number') {
+    code = Number.isInteger(cell) && cell >= 0 && cell < 10_000 ? String(cell).padStart(4, '0') : undefined;
+  } else if (typeof cell === 'string') {
+    code = /^\s*(\d{1,4})(?:\.0+)?\s*$/.exec(cell)?.[1]?.padStart(4, '0');
+  }
+  return isMcc(code) ? code : undefined;
+}
+
 export type SheetRead = {
   readonly rows: FoundRow[];
   /** Rows under the header that were not transactions: totals, blanks, notes. */
@@ -259,7 +312,31 @@ export function readSheet(
     const flags: Flag[] = [];
     let kind: FoundRow['kind'] = 'expense';
     let amount: number | undefined;
-    if (currency !== undefined) {
+    const chargedCurrency =
+      map.chg === null
+        ? undefined
+        : map.chgCur === null
+          ? ctx.base
+          : currencyFromText(text(row[map.chgCur]), ctx.base, ctx.known);
+    const chargedMinor =
+      map.chg === null || chargedCurrency === undefined
+        ? undefined
+        : cellMoney(row[map.chg] ?? null, chargedCurrency, map.dec);
+    const planText = map.plan === null ? undefined : planFromText(text(row[map.plan]));
+    /*
+     * Both in the base currency, the charge is what was paid: a card export's
+     * original can be before VAT, or a whole loan.
+     */
+    const byCharge =
+      planText === undefined &&
+      currency === ctx.base &&
+      chargedCurrency === ctx.base &&
+      chargedMinor !== undefined &&
+      chargedMinor !== 0;
+    if (byCharge) {
+      amount = Math.abs(chargedMinor);
+      if (chargedMinor < 0) kind = 'income';
+    } else if (currency !== undefined) {
       if (map.amt !== null) amount = cellMoney(row[map.amt] ?? null, currency, map.dec);
       if (amount === undefined || amount === 0) {
         const debit = map.debit === null ? undefined : cellMoney(row[map.debit] ?? null, currency, map.dec);
@@ -283,17 +360,6 @@ export function readSheet(
     if (date === undefined) flags.push('date_unreadable');
     if (flags.length > 0) unreadable += 1;
 
-    const chargedCurrency =
-      map.chg === null
-        ? undefined
-        : map.chgCur === null
-          ? ctx.base
-          : currencyFromText(text(row[map.chgCur]), ctx.base, ctx.known);
-    const chargedMinor =
-      map.chg === null || chargedCurrency === undefined
-        ? undefined
-        : cellMoney(row[map.chg] ?? null, chargedCurrency, map.dec);
-    const planText = map.plan === null ? undefined : planFromText(text(row[map.plan]));
     /*
      * An instalment row on a card export: the transaction amount is the whole
      * deal, the charged amount is this month's payment. The row is the
@@ -330,6 +396,8 @@ export function readSheet(
       pl: plan === undefined ? null : { md: plan.mode, n: plan.number, of: plan.count, tot: null },
       l4: (map.card === null ? '' : cardDigits(row[map.card])) || sheetCard,
     };
+    const fileMcc = map.mcc === null ? undefined : mccFromCell(row[map.mcc]);
+    const sector = map.sector === null ? '' : text(row[map.sector]);
     out.push({
       id: `${ctx.idPrefix}${String(i)}`,
       file: ctx.file,
@@ -351,6 +419,8 @@ export function readSheet(
       cardFee: description.includes('דמי כרטיס'),
       flags,
       wire,
+      ...(fileMcc === undefined ? {} : { fileMcc }),
+      ...(sector === '' ? {} : { sector }),
     });
   });
   return { rows: out, skipped, unreadable };

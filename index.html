@@ -8,9 +8,12 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
-    <!-- The status bar runs straight into the sapphire panel at the top of every screen. -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0F3A8A" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B2C6B" />
+    <!-- Paints the canvas in the right scheme before the CSS loads. -->
+    <meta name="color-scheme" content="light dark" />
+    <!-- The status bar is the paper (§3). The boot script below sets it to the
+         resolved theme's paper before first paint; useThemeColor() then follows
+         the top of the current screen. -->
+    <meta name="theme-color" content="#F6F2EA" />
     <meta
       name="description"
       content="Track income and expenses across profiles and currencies. Works entirely on your device, with an optional account that keeps your data safe and on all your devices."
@@ -80,6 +83,12 @@
         d.dir = lang === 'he' ? 'rtl' : 'ltr';
         d.classList.toggle('dark', dark);
         d.style.colorScheme = dark ? 'dark' : 'light';
+        /* The status bar is the paper: #F6F2EA, or #1A1510 in dark (boot.ts THEME_PAPER). */
+        var bar = document.querySelector('meta[name=theme-color]');
+        if (bar) {
+          bar.removeAttribute('media');
+          bar.setAttribute('content', dark ? '#1A1510' : '#F6F2EA');
+        }
       })();
     </script>
   </head>

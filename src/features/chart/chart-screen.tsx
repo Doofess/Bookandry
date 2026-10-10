@@ -2,8 +2,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSettings, useToday } from '@/app/app-context';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { Segmented } from '@/components/segmented';
 import { Label } from '@/components/ui/label';
 import { CHART_RANGES, type ChartRange } from '@/domain/chart-data';
@@ -50,10 +49,8 @@ export function ChartScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('chart.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="px-4 pt-6">
+      <ScreenHead title={t('chart.title')} />
+      <ScreenSheet className="px-4 pt-6">
         <MonthCursor month={filters.month} today={today} onStep={stepMonth} onPick={setMonth} />
 
         {lookups === undefined ? null : (
@@ -140,7 +137,7 @@ export function ChartScreen() {
             />
           </>
         )}
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }
