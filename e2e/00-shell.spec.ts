@@ -114,13 +114,13 @@ test.describe('@smoke0 app shell', () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test('has four tabs on a phone and eight places on the desktop rail; account linking is neither', async ({
+  test('has four tabs on a phone and seven places on the desktop rail; account linking is neither', async ({
     page,
   }) => {
     const nav = page.getByRole('navigation', { name: /primary|ניווט/i });
     // The rail's mark is a link home too, shown only on a wide screen.
     const places = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
-    await expect(places).toHaveCount((page.viewportSize()?.width ?? 0) >= 1024 ? 8 : 4);
+    await expect(places).toHaveCount((page.viewportSize()?.width ?? 0) >= 1024 ? 7 : 4);
     await expect(nav.getByRole('link', { name: /household|account linking|משק|קישור/i })).toHaveCount(0);
   });
 

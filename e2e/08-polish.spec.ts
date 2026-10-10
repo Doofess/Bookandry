@@ -220,11 +220,13 @@ test.describe('@collapse the summary header', () => {
     await page.evaluate((to) => {
       window.scrollTo(0, to);
     }, y);
-    // Two frames: the listener coalesces into requestAnimationFrame.
+    // Two frames for the listener, which coalesces into requestAnimationFrame, and two for the virtualizer's render after it (a busy machine needs both).
     await page.evaluate(
       async () =>
         new Promise((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(resolve));
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+          );
         }),
     );
   };
@@ -348,6 +350,7 @@ test.describe('@collapse the summary header', () => {
     await rowsDrawn(page);
     // The board's sheet shows the newest eight; the round arrow opens the whole month, which is the list that pins.
     await page.getByRole('button', { name: 'All transactions' }).click();
+    await page.locator('[data-slot="transactions-sheet"] [role="list"][style*="height"]').waitFor();
     // The list is below the board's other sheets: stop with its top 300px down the screen, above the pinned slot, so its rows draw and none is pinned yet.
     await page.evaluate(() => {
       const list = document.querySelector('[data-slot="transactions-sheet"] [role="list"]');

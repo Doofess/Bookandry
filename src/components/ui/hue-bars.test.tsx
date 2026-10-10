@@ -31,6 +31,19 @@ describe('largestWithOther (§1.4)', () => {
 });
 
 describe('HueBars (§7.4)', () => {
+  it('shows whole shekels without agorot with `whole`, and keeps the exact amount for a screen reader', () => {
+    const { container } = render(<HueBars items={[item('rent', 1_234_567)]} currency="ILS" whole />);
+    const amount = container.querySelector('li > span[data-value]');
+    expect(amount).toHaveAttribute('data-value', '1234567');
+    expect(amount?.querySelector('[aria-hidden]')).toHaveTextContent('₪12,346');
+    expect(amount?.querySelector('.sr-only')).toHaveTextContent('12,345.67');
+  });
+
+  it('keeps agorot by default (the chart)', () => {
+    render(<HueBars items={[item('rent', 1_234_567)]} currency="ILS" />);
+    expect(screen.getByText(/12,345.67/, { selector: '[aria-hidden]' })).toBeInTheDocument();
+  });
+
   it('lists every category by name and amount, then "Other"', () => {
     render(<HueBars items={TWELVE} currency="ILS" />);
     const rows = screen.getAllByRole('listitem');

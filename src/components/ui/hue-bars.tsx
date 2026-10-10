@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Money } from '@/components/money';
+import { WholeMoney } from '@/components/whole-money';
 import type { HueToken } from '@/domain/category-hue';
 import { sharesBp, sum } from '@/lib/money';
 import type { Currency, Minor } from '@/types/money';
@@ -38,15 +39,19 @@ export function largestWithOther(
  * amount beside it (§7.4). The bar is a mark (decision 10): hidden from
  * screen readers, never carrying text; the name and the amount carry the data.
  * Lengths are basis points from sharesBp(), drawn against the largest in CSS.
+ * With `whole` the amounts are whole units without agorot, as the board's
+ * sheets draw them; the exact amount is still what a screen reader hears.
  */
 export function HueBars({
   items,
   currency,
   limit = 10,
+  whole = false,
 }: {
   readonly items: readonly HueBarItem[];
   readonly currency: Currency;
   readonly limit?: number;
+  readonly whole?: boolean;
 }) {
   const { t } = useTranslation();
   const shown = largestWithOther(items, limit, t('sheets.other'));
@@ -74,7 +79,13 @@ export function HueBars({
               />
             )}
           </span>
-          <Money minor={item.minor} currency={currency} className="text-end font-medium" />
+          {whole ? (
+            <span className="text-end font-medium" data-value={item.minor}>
+              <WholeMoney minor={item.minor} currency={currency} />
+            </span>
+          ) : (
+            <Money minor={item.minor} currency={currency} className="text-end font-medium" />
+          )}
         </li>
       ))}
     </ul>

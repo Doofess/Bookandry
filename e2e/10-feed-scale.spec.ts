@@ -202,10 +202,9 @@ test.describe('@scale a dense month', () => {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
 
     const started = Date.now();
-    await page.goto(`/?m=${today.month}-01`);
+    await page.goto(`/?m=${today.month}-01&list=1`);
     await expect(page.locator('[role="listitem"]').first()).toBeVisible({ timeout: 60_000 });
-    // The board's sheet shows the newest eight rows; its round arrow opens the whole month, the list this measures.
-    await page.getByRole('button', { name: 'All transactions' }).click();
+    // The board's sheet shows the newest eight rows; ?list=1 is the whole month, the list this measures.
     const firstPaint = Date.now() - started;
 
     /*

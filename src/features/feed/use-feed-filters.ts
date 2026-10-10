@@ -35,6 +35,12 @@ export type FeedFilterApi = {
   readonly stepMonth: (delta: number) => void;
   readonly setProfile: (profileId: string) => void;
   readonly clear: () => void;
+  /** Whether the whole month is asked for (?list=1), apart from any filter. */
+  readonly listAsked: boolean;
+  /** Open the whole month: a history entry, so Back returns to the board. */
+  readonly openList: () => void;
+  /** Back to the board: the whole-month ask and every filter off, the profile and month kept. */
+  readonly closeList: () => void;
 };
 
 export function useFeedFilters(): FeedFilterApi {
@@ -49,13 +55,18 @@ export function useFeedFilters(): FeedFilterApi {
     [settings.activeProfileId, today],
   );
 
+  const listAsked = params.get('list') === '1';
+
   const filters = useMemo(() => parseFeedFilters(params, defaults), [params, defaults]);
 
   const write = useCallback(
     (nextFilters: FeedFilters) => {
-      setParams(feedFiltersToParams(nextFilters, defaults), { replace: true });
+      const next = feedFiltersToParams(nextFilters, defaults);
+      // List mode (the whole month) is part of the address too: a filter or a month step stays in it.
+      if (listAsked) next.set('list', '1');
+      setParams(next, { replace: true });
     },
-    [setParams, defaults],
+    [setParams, defaults, listAsked],
   );
 
   const set = useCallback(
@@ -96,5 +107,23 @@ export function useFeedFilters(): FeedFilterApi {
     write({ ...defaultFilters(defaults), profileId: filters.profileId, month: filters.month });
   }, [defaults, filters.profileId, filters.month, write]);
 
-  return { filters, defaults, set, setMonth, stepMonth, setProfile, clear };
+  const openList = useCallback(() => {
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('list', '1');
+      return next;
+    });
+  }, [setParams]);
+
+  const closeList = useCallback(() => {
+    setParams(
+      feedFiltersToParams(
+        { ...defaultFilters(defaults), profileId: filters.profileId, month: filters.month },
+        defaults,
+      ),
+      { replace: true },
+    );
+  }, [defaults, filters.profileId, filters.month, setParams]);
+
+  return { filters, defaults, set, setMonth, stepMonth, setProfile, clear, listAsked, openList, closeList };
 }

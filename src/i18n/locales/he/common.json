@@ -895,6 +895,7 @@
     "transactionsSub_two": "שתיים החודש",
     "transactionsSub_other": "{{count}} החודש",
     "allTransactions": "כל התנועות",
+    "backToBoard": "חזרה לסקירה",
     "walletSub": "{{amount}} יורדים מהבנק החודש",
     "walletEmpty": "עוד אין כרטיסים.",
     "addCard": "+ כרטיס",

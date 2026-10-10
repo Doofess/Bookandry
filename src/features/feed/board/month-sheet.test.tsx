@@ -60,7 +60,6 @@ function draw() {
       bills={bills}
       currency="ILS"
       nextIncome={{ name: 'Salary', date: d('2026-11-01') }}
-      forecast={<p>forecast</p>}
       monthPicker={null}
     />,
   );
@@ -77,7 +76,6 @@ describe('the month sheet', () => {
     expect(document.querySelector('[data-slot="mark"]')).toHaveTextContent('60%');
     const left = document.querySelector('[data-slot="month-left"] [data-numeral]');
     expect(left).toHaveAttribute('data-numeral-size', 'left');
-    expect(screen.getByText('forecast')).toBeInTheDocument(); // "expected this month" stays (behaviour kept)
   });
 
   it('lists the charges by day with each company as a chip, and strikes through the ones charged', () => {
@@ -88,8 +86,10 @@ describe('the month sheet', () => {
     expect(days[0]).toHaveTextContent('2');
     expect(days[0]).toHaveTextContent('charged');
     expect(days[0]?.querySelector('[data-slot="chip"]')).toHaveAttribute('data-money', 'issuer-isracard');
-    expect(days[0]?.className).toMatch(/opacity-78/);
-    expect(days[1]?.className).not.toMatch(/opacity-78/);
+    // The day and the amount are dimmed; the chip keeps its colour (dimmed, a company chip falls under 4.5:1).
+    expect(days[0]?.querySelectorAll('.opacity-78')).toHaveLength(2);
+    expect(days[0]?.querySelector('[data-slot="chip"]')?.closest('.opacity-78')).toBeNull();
+    expect(days[1]?.querySelector('.opacity-78')).toBeNull();
   });
 
   it('draws only what it has while the month loads', () => {
@@ -101,7 +101,6 @@ describe('the month sheet', () => {
         bills={undefined}
         currency="ILS"
         nextIncome={undefined}
-        forecast={null}
         monthPicker={null}
       />,
     );

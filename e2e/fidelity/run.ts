@@ -136,6 +136,8 @@ export async function runScreen(browser: Browser, screen: ScreenSpec, theme: The
         height: frame.height,
       });
       for (const kind of Object.keys(KINDS) as Kind[]) {
+        // A count the screen states itself replaces the comparison with the concept (the rail has 7 places, not 9).
+        if (screen.expect?.[kind] !== undefined) continue;
         const c = conceptCounts[kind] ?? 0;
         const a = appCounts[kind] ?? 0;
         const result = check(kind, a, c, TOLERANCE[kind]);
@@ -220,7 +222,13 @@ export async function runScreen(browser: Browser, screen: ScreenSpec, theme: The
           }
         }
         const conceptPng = await concept.page.screenshot({ fullPage: true, clip: conceptClip });
-        const appPng = await app.page.screenshot({ fullPage: true, clip: appClip });
+        // The fold, taken from the viewport at the top of the page: fullPage plus clip after the resize above
+        // came out shifted (content about 570px right, its edge cut off), so a scoped element keeps page
+        // coordinates and the fold is a plain viewport clip.
+        const appPng =
+          screen.concept?.kind === 'element'
+            ? await app.page.screenshot({ fullPage: true, clip: appClip })
+            : await app.page.screenshot({ clip: appClip });
         await fs.writeFile(path.join(dir, 'concept.png'), conceptPng);
         await fs.writeFile(path.join(dir, 'app.png'), appPng);
         const score: ScoreOutput = await scorer.evaluate(scoreInBrowser, {

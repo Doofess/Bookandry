@@ -27,6 +27,29 @@ describe('the feed board', () => {
     expect([...(board?.children ?? [])].map((cell) => cell.textContent)).toEqual(['b', 'm', 'c', 't', 'w']);
   });
 
+  it('gives the month note its own row under the month, before the categories on a phone', () => {
+    renderWithProviders(
+      <FeedBoard
+        balance={<p>b</p>}
+        month={<p>m</p>}
+        monthNote={<p>n</p>}
+        categories={<p>c</p>}
+        transactions={<p>t</p>}
+        wallet={<p>w</p>}
+      />,
+    );
+    const board = document.querySelector('[data-slot="board"]');
+    expect([...(board?.children ?? [])].map((cell) => cell.textContent)).toEqual([
+      'b',
+      'm',
+      'n',
+      'c',
+      't',
+      'w',
+    ]);
+    expect(board?.querySelector('[data-slot="month-note"]')?.className).toMatch(/@board\/main:row-start-3/);
+  });
+
   it('keeps the numeral at the foot of the balance sheet in one column, and beside the accounts from @wide', () => {
     renderWithProviders(
       <BalanceSheet title="All" subtitle="today" lede="l" figure={<span>fig</span>} accounts={<ul>a</ul>} />,

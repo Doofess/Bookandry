@@ -1,3 +1,4 @@
+import { cn } from 'cn';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { useCountUp } from '@/components/count-up';
@@ -195,6 +196,7 @@ export function ForecastLine({
   today,
   breakdown,
   onFullBreakdown,
+  tone = 'panel',
 }: {
   readonly expense: MonthlyExpenseResult | undefined;
   readonly currency: Currency;
@@ -202,10 +204,14 @@ export function ForecastLine({
   readonly today: LocalDate;
   readonly breakdown?: ForecastBreakdown;
   readonly onFullBreakdown?: () => void;
+  /** "panel" on the sapphire; "paper" on the page, under the month sheet. */
+  readonly tone?: 'panel' | 'paper';
 }) {
   const { t } = useTranslation();
+  const paper = tone === 'paper';
 
-  if (expense === undefined) return <Skeleton className="h-5 w-56 bg-white/15" />;
+  if (expense === undefined)
+    return <Skeleton className={cn('h-5 w-56', paper ? 'bg-muted' : 'bg-white/15')} />;
 
   // A month already over has nothing "still due"; saying so would be wrong, and
   // saying nothing is right. The label changes too: "Spent" reads as history.
@@ -218,7 +224,12 @@ export function ForecastLine({
         {title} <Money minor={expense.total} currency={currency} className="font-semibold" />
       </span>
       {isPast ? null : (
-        <span className="mt-0.5 block text-xs text-brand-deep-foreground/80">
+        <span
+          className={cn(
+            'mt-0.5 block text-xs',
+            paper ? 'text-muted-foreground' : 'text-brand-deep-foreground/80',
+          )}
+        >
           {/*
           ONE key, not three fragments joined in JSX.
           "X spent so far / Y still due" is a sentence, and Hebrew reverses
@@ -246,13 +257,17 @@ export function ForecastLine({
       month={month}
       currency={currency}
       onFullBreakdown={onFullBreakdown}
-      triggerClassName={PANEL_FIGURE}
+      triggerClassName={paper ? PAPER_FIGURE : PANEL_FIGURE}
       triggerLabel={t('summary.breakdownOf', { title })}
     >
       {line}
     </ForecastPopover>
   );
 }
+
+/** The same figure on the page: the ink, not the panel's white. */
+const PAPER_FIGURE =
+  '-mx-2 block min-h-11 rounded-xl px-2 py-1 text-start transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 
 /** The classes of a figure on the panel that opens what it is made of. */
 const PANEL_FIGURE =

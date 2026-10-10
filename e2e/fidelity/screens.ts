@@ -240,6 +240,7 @@ export const SCREENS: readonly ScreenSpec[] = [
     size: 'desktop',
     route: '/',
     concept: { kind: 'desk' },
+    expect: { navItem: 7 },
     metrics: [...SHELL, ...BOARD, ...BALANCE, ...MONTH, ...CATEGORIES, ...TRANSACTIONS, ...WALLET],
   },
   {
@@ -320,7 +321,7 @@ export const SCREENS: readonly ScreenSpec[] = [
       want('card numeral', `${S.card} [data-numeral]`, 'fontSize', 92, 0.02, REL),
       want('cash numeral', `${S.cash} [data-numeral]`, 'fontSize', 96, 0.02, REL),
     ],
-    mustShow: ['sapphire', 'money-cash', ...ISSUERS, ...BANKS, 'hue-indigo', 'hue-green'],
+    mustShow: ['sapphire', 'money-cash', ...ISSUERS, ...BANKS, 'hue-indigo'],
   },
   {
     id: 'feed-empty-desktop',

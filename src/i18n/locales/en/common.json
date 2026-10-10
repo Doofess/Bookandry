@@ -880,6 +880,7 @@
     "transactionsSub_one": "One this month",
     "transactionsSub_other": "{{count}} this month",
     "allTransactions": "All transactions",
+    "backToBoard": "Back to the overview",
     "walletSub": "{{amount}} leaves the bank this month",
     "walletEmpty": "No cards yet.",
     "addCard": "+ Card",

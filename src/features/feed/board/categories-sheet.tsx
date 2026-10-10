@@ -92,7 +92,7 @@ export function CategoriesSheet({
         <p className="font-light">{t('board.categoriesEmpty')}</p>
       ) : (
         <div className="mt-3.5">
-          <HueBars items={items} currency={currency} limit={limit} />
+          <HueBars items={items} currency={currency} limit={limit} whole />
         </div>
       )}
     </Sheet>
