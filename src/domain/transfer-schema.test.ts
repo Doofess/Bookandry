@@ -192,3 +192,20 @@ describe('card keys of every kind', () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+describe('card keys a later build writes', () => {
+  it('keeps a card key this build does not know, next to the ones it does', () => {
+    const card = { funding: 'gift', futureKey: 1, futureBlock: { nested: 'kept' } };
+    const parsed = rowSchemas.paymentMethods.parse({ ...METHOD, type: 'debit_card', card });
+    expect(parsed.card).toEqual(card);
+  });
+
+  it('still checks every key it knows when an unknown one rides along', () => {
+    const parsed = rowSchemas.paymentMethods.safeParse({
+      ...METHOD,
+      type: 'credit_card',
+      card: { futureKey: 1, issuerBank: 'Leumi' },
+    });
+    expect(parsed.success).toBe(false);
+  });
+});

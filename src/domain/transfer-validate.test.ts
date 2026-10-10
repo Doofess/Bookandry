@@ -380,6 +380,31 @@ describe('referential integrity', () => {
     }
   });
 
+  it('round-trips a method of a type a later build writes, with every card key, known or not', () => {
+    const doc = envelope() as ExportEnvelope;
+    const [first] = doc.data.paymentMethods;
+    const card = {
+      funding: 'gift',
+      issuerName: 'Synthetic Gifts',
+      loadFeeMinor: 350,
+      issuerBank: '99',
+      productName: 'Test Card',
+      checked: true,
+      futureKey: 1,
+      futureBlock: { nested: 'kept' },
+    };
+    const method = { ...first, id: 'pm-future', type: 'prepaid_card', card };
+    const result = validateEnvelope({
+      ...doc,
+      counts: { ...doc.counts, paymentMethods: 2 },
+      data: { ...doc.data, paymentMethods: [first, method] },
+    });
+    expect(result.ok).toBe(true);
+    const kept = result.ok ? result.doc.data.paymentMethods.find((m) => m.id === 'pm-future') : undefined;
+    expect(kept?.type).toBe('prepaid_card');
+    expect(kept?.card).toEqual(card);
+  });
+
   it('accepts an override for exactly the deal and extra-rate kinds, the same list the types use', () => {
     const doc = envelope() as ExportEnvelope;
     const [first] = doc.data.paymentMethods;
