@@ -15,8 +15,8 @@ test.beforeEach(({}, testInfo) => {
 
 const NAV = /^(Primary|ניווט ראשי)$/;
 const PLACES = {
-  en: ['Overview', 'Cards', 'Bank accounts', 'Cash box', 'Chart', 'Categories', 'Commitments', 'Settings'],
-  he: ['סקירה', 'כרטיסים', 'חשבונות בנק', 'קופת מזומן', 'תרשים', 'קטגוריות', 'התחייבויות', 'הגדרות'],
+  en: ['Overview', 'Cards', 'Bank accounts', 'Cash box', 'Chart', 'Commitments', 'Settings'],
+  he: ['סקירה', 'כרטיסים', 'חשבונות בנק', 'קופת מזומן', 'תרשים', 'התחייבויות', 'הגדרות'],
 } as const;
 const TABS = { en: ['Feed', 'Chart', 'Cards', 'Cash'], he: ['תנועות', 'תרשים', 'כרטיסים', 'מזומן'] } as const;
 const ACCOUNT = /^(Account and settings|חשבון והגדרות)/;

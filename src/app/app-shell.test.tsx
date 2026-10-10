@@ -50,7 +50,6 @@ describe('AppShell (§4)', () => {
       'Bank accounts',
       'Cash box',
       'Chart',
-      'Categories',
       'Commitments',
       'Settings',
     ]);

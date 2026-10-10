@@ -89,9 +89,11 @@ export const PHONE_PLACES: readonly RailPlace[] = NAV_ORDER.map((key) => {
   return place;
 });
 
-/** The set-up places, below a line: on the desktop rail only (decision 27). */
+/**
+ * The set-up places, below a line: on the desktop rail only (decision 27).
+ * Categories is not one: it is configuration, reached from Settings.
+ */
 export const RAIL_SETUP: readonly RailPlace[] = [
-  { key: 'categories', to: LINKED_ROUTES.categories, phone: false },
   { key: 'commitments', to: LINKED_ROUTES.commitments, phone: false },
   { key: 'settings', to: ROUTES.settings, phone: false },
 ];

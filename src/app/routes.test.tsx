@@ -73,7 +73,7 @@ describe('the rail (§4.2)', () => {
     expect(PHONE_PLACES.map((place) => place.key)).toEqual(NAV_ORDER);
     expect(RAIL_PLACES.find((p) => p.key === 'feed')?.railLabel).toBe('overview');
     expect(RAIL_PLACES.find((p) => p.key === 'cash')?.railLabel).toBe('cashBox');
-    expect(RAIL_SETUP.map((place) => place.key)).toEqual(['categories', 'commitments', 'settings']);
+    expect(RAIL_SETUP.map((place) => place.key)).toEqual(['commitments', 'settings']);
   });
 
   it('tells forward from back by rail order, a settings page by its section', () => {
