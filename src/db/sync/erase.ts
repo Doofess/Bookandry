@@ -2,6 +2,8 @@ import { instantFromMs } from '@/lib/dates';
 
 import { withoutTracking, type BookandryDB } from '../db';
 import { DRAFT_PREFIX } from '../import-drafts';
+import { readOrCreateDeviceId } from './device';
+import { queueBuiltinUploads } from '../repos/payment-methods';
 import { buildSeedCategories, buildSeedPaymentMethods } from '../seed';
 import {
   epochKeyOf,
@@ -32,7 +34,7 @@ export type EraseOptions = {
  * (signed out) there is no server. Settings and people stay (each person's
  * opening balance back to nothing), and are queued to
  * be sent again into a space that no longer holds them. The built-ins come
- * back as on a new install. Where every pull resumes is forgotten, so the next
+ * back as on a new install, and the four newer ones are queued to be sent. Where every pull resumes is forgotten, so the next
  * sync starts from the top, and so is every space's erase counter but those
  * this clear answers (see EraseOptions.epochs).
  */
@@ -56,6 +58,10 @@ export async function eraseLocalData(db: BookandryDB, options: EraseOptions = {}
     // currency. A pristine default row was never sent, and is not now.
     const kept = await db.syncState.filter((s) => KEPT.has(s.tbl) && s.deleted === 0).toArray();
     await db.outbox.bulkPut(kept.map(({ tbl, id }): OutboxRow => ({ tbl, id })));
+    // The newer built-ins are synced rows: sent again, dated their fixed
+    // instant, so a device on an older build never lacks one a transaction
+    // names (spec 10.2).
+    await queueBuiltinUploads(db, await readOrCreateDeviceId(db.meta));
 
     const keys = (await db.meta.toCollection().primaryKeys()).map(String);
     await db.meta.bulkDelete(

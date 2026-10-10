@@ -1,5 +1,7 @@
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { BookandryDB, withoutTracking } from '@/db/db';
 import { materialize } from '@/db/materialize';
 import { MONEY, d, modify } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
@@ -12,6 +14,7 @@ import {
   CHEQUE_METHOD_ID,
   OTHER_METHOD_ID,
   SHARED_OWNER,
+  STANDING_ORDER_METHOD_ID,
   TRANSFER_METHOD_ID,
   WALLET_METHOD_ID,
 } from '@/types/domain';
@@ -28,6 +31,8 @@ import {
 } from './payment-methods';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
+/** The built-ins that are synced rows (spec 10.2). */
+const SYNCED_IDS = [TRANSFER_METHOD_ID, STANDING_ORDER_METHOD_ID, WALLET_METHOD_ID, OTHER_METHOD_ID];
 const LATER = '2026-09-16T10:00:00.000Z' as IsoInstant;
 
 let handle: TestDb;
@@ -347,7 +352,8 @@ describe('the built-in methods on an older install', () => {
       isArchived: 0,
     });
     expect((await handle.db.paymentMethods.get(CASH_METHOD_ID))?.isArchived).toBe(1);
-    expect(await handle.db.outbox.toArray()).toEqual([]);
+    // Only the newer four are ever sent; cash and cheques never are.
+    expect((await handle.db.outbox.toArray()).map((o) => o.id).sort()).toEqual([...SYNCED_IDS].sort());
   });
 });
 
@@ -375,6 +381,57 @@ describe('the six built-ins', () => {
     expect(await db.outbox.get(['paymentMethods', TRANSFER_METHOD_ID])).toBeDefined();
     // Cash and cheques stay untracked, as before.
     expect(await db.syncState.get(['paymentMethods', CASH_METHOD_ID])).toBeUndefined();
+  });
+
+  it('queues the newer four for upload on a new install, where they were seeded untracked', async () => {
+    const { db } = handle;
+    await db.open(); // populate only: all six seeded, nothing sent
+    expect(await db.outbox.count()).toBe(0);
+    await ensureBuiltinPaymentMethods(db, NOW);
+    for (const id of SYNCED_IDS) {
+      const state = await db.syncState.get(['paymentMethods', id]);
+      expect(state?.deleted, id).toBe(0);
+      expect(parseRev((state?.rev ?? '') as Rev).ms, id).toBe(Date.parse(BUILTIN_METHODS_SINCE));
+      expect(await db.outbox.get(['paymentMethods', id]), id).toBeDefined();
+    }
+    for (const id of [CASH_METHOD_ID, CHEQUE_METHOD_ID]) {
+      expect(await db.syncState.get(['paymentMethods', id]), id).toBeUndefined();
+      expect(await db.outbox.get(['paymentMethods', id]), id).toBeUndefined();
+    }
+  });
+
+  it('never queues again a built-in this device has already sent or edited', async () => {
+    const { db } = handle;
+    await ensureBuiltinPaymentMethods(db, NOW);
+    await db.paymentMethods.update(WALLET_METHOD_ID, { color: 'red' }); // tracked: a later rev
+    const edited = await db.syncState.get(['paymentMethods', WALLET_METHOD_ID]);
+    await db.outbox.clear(); // as after a push the server acknowledged
+    await ensureBuiltinPaymentMethods(db, LATER);
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.syncState.get(['paymentMethods', WALLET_METHOD_ID])).toEqual(edited);
+  });
+
+  it('lets two tabs booting at once both add the missing ones, without either failing', async () => {
+    const indexedDB = new IDBFactory();
+    const tab = () => new BookandryDB('two-tabs', { indexedDB, IDBKeyRange });
+    const first = tab();
+    await first.open();
+    // As an older install: cash and cheques only, and no record of the rest.
+    await withoutTracking(first, [first.paymentMethods], () => first.paymentMethods.bulkDelete(SYNCED_IDS));
+    const second = tab();
+    await second.open();
+    try {
+      await expect(
+        Promise.all([ensureBuiltinPaymentMethods(first, NOW), ensureBuiltinPaymentMethods(second, NOW)]),
+      ).resolves.toBeDefined();
+      expect((await first.paymentMethods.toArray()).map((m) => m.id).sort()).toEqual(
+        [...BUILTIN_METHOD_IDS].sort(),
+      );
+    } finally {
+      second.close();
+      await first.delete();
+      first.close();
+    }
   });
 
   it('leaves a row this device already holds alone', async () => {

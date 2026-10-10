@@ -302,38 +302,68 @@ const SYNCED_BUILTINS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The newer built-ins this device holds but has never sent, queued for upload
+ * dated the one fixed instant (spec 10.2).
+ *
+ * A fresh install and an erased one seed all six untracked, so without this
+ * no device on this build would ever send them, and a device on an older
+ * build would clear a transaction that names one. A pristine row is identical
+ * on every device, and any real edit has a later rev, so sending it never
+ * undoes anything. Cash and cheques are never sent.
+ *
+ * Runs inside the caller's untracked transaction, which must hold
+ * `paymentMethods`, `syncState` and `outbox`.
+ */
+export async function queueBuiltinUploads(db: BookandryDB, deviceId: string): Promise<void> {
+  for (const id of SYNCED_BUILTINS) {
+    if ((await db.paymentMethods.get(id)) === undefined) continue;
+    if ((await db.syncState.get(['paymentMethods', id])) !== undefined) continue;
+    await db.syncState.put({
+      tbl: 'paymentMethods',
+      id,
+      rev: revFromIso(BUILTIN_METHODS_SINCE, deviceId),
+      deleted: 0,
+    });
+    await db.outbox.put({ tbl: 'paymentMethods', id });
+  }
+}
+
+/**
  * The built-ins, on any install that lacks one.
  *
  * A new database gets them from `populate` (db.ts); this adds any that an
  * older one lacks. Cash and cheques are added untracked, as they always were:
- * every install writes the identical row. The newer four are uploaded, dated
- * the one fixed instant, so a device on an older build receives them before a
- * transaction that names them, and its integrity repair never clears one. A
- * real edit (an archive on an older build) has a later rev and wins. One that
- * an older build deleted is added back as an ordinary edit, so it returns
- * everywhere.
+ * every install writes the identical row. The newer four, added here or
+ * already here, are uploaded if this device has never sent them (see
+ * `queueBuiltinUploads`). One that an older build deleted is added back as an
+ * ordinary edit, so it returns everywhere.
+ *
+ * Every read and write is inside a transaction, so two tabs booting this build
+ * at once serialise here and the second finds the rows the first added.
  */
 export async function ensureBuiltinPaymentMethods(db: BookandryDB, now: IsoInstant): Promise<void> {
   const seeds = buildSeedPaymentMethods(now);
-  const deviceId = await readOrCreateDeviceId(db.meta);
-  for (const method of seeds) {
-    if ((await db.paymentMethods.get(method.id)) !== undefined) continue;
-    const state = await db.syncState.get(['paymentMethods', method.id]);
-    if (SYNCED_BUILTINS.has(method.id) && state?.deleted === 1) {
-      // Tracked: the middleware gives it a rev newer than the deletion.
+  const deletedElsewhere = await withoutTracking(
+    db,
+    [db.paymentMethods, db.syncState, db.outbox, db.meta],
+    async () => {
+      const deleted: PaymentMethod[] = [];
+      for (const method of seeds) {
+        if ((await db.paymentMethods.get(method.id)) !== undefined) continue;
+        const state = await db.syncState.get(['paymentMethods', method.id]);
+        if (SYNCED_BUILTINS.has(method.id) && state?.deleted === 1) deleted.push(method);
+        else await db.paymentMethods.add(method);
+      }
+      await queueBuiltinUploads(db, await readOrCreateDeviceId(db.meta));
+      return deleted;
+    },
+  );
+  if (deletedElsewhere.length === 0) return;
+  // Tracked: the middleware gives each a rev newer than the deletion.
+  await db.transaction('rw', [db.paymentMethods, db.syncState, db.outbox], async () => {
+    for (const method of deletedElsewhere) {
+      if ((await db.paymentMethods.get(method.id)) !== undefined) continue;
       await db.paymentMethods.put({ ...method, updatedAt: now });
-      continue;
     }
-    await withoutTracking(db, [db.paymentMethods, db.syncState, db.outbox], async () => {
-      await db.paymentMethods.add(method);
-      if (!SYNCED_BUILTINS.has(method.id) || state !== undefined) return;
-      await db.syncState.put({
-        tbl: 'paymentMethods',
-        id: method.id,
-        rev: revFromIso(BUILTIN_METHODS_SINCE, deviceId),
-        deleted: 0,
-      });
-      await db.outbox.put({ tbl: 'paymentMethods', id: method.id });
-    });
-  }
+  });
 }

@@ -8,10 +8,18 @@ import { ensureSettings, writeSettings } from '@/db/repos/settings';
 import { buildSeedCategories, buildSeedPaymentMethods } from '@/db/seed';
 import { d, MONEY } from '@/domain/test-factories';
 import { instantFromMs } from '@/lib/dates';
-import type { Rev } from '@/lib/rev';
+import { parseRev, type Rev } from '@/lib/rev';
 import { freshDb, type TestDb } from '@/test/db-harness';
 import { MemorySyncServer } from '@/test/memory-sync-server';
-import { CASH_METHOD_ID, type Transaction } from '@/types/domain';
+import {
+  BUILTIN_METHODS_SINCE,
+  CASH_METHOD_ID,
+  OTHER_METHOD_ID,
+  STANDING_ORDER_METHOD_ID,
+  TRANSFER_METHOD_ID,
+  WALLET_METHOD_ID,
+  type Transaction,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { syncOnce, type SyncSpaces } from './engine';
@@ -49,6 +57,10 @@ type Device = {
 let server: MemorySyncServer;
 let a: Device;
 let b: Device;
+
+const SYNCED_BUILTIN_IDS = [TRANSFER_METHOD_ID, STANDING_ORDER_METHOD_ID, WALLET_METHOD_ID, OTHER_METHOD_ID];
+/** What a cleared device sends of the built-ins: the newer four (spec 10.2). */
+const BUILTIN_UPLOADS = SYNCED_BUILTIN_IDS.map(() => 'paymentMethods');
 
 const SEED_TIME = '2026-01-01T00:00:00.000Z' as IsoInstant;
 
@@ -192,8 +204,9 @@ describe('an erase reaching a device', () => {
     expect(await b.db.profiles.get('p1')).toBeDefined();
     expect(await b.db.settings.get('singleton')).toBeDefined();
     expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(1);
-    // The server got settings and people back - never t2, nor anything erased.
-    expect(held()).toEqual(['profiles', 'settings']);
+    // The server got settings, people and the newer built-ins back - never t2,
+    // nor anything erased.
+    expect(held()).toEqual([...BUILTIN_UPLOADS, 'profiles', 'settings']);
 
     // A, syncing later, clears too and converges on the same.
     expect((await a.sync()).wiped).toBe(true);
@@ -266,7 +279,7 @@ describe('an erase reaching a device', () => {
     // Both epochs taken before the second push, which both spaces accepted.
     expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(1);
     expect((await b.db.meta.get(epochKeyOf('them')))?.value).toBe(1);
-    expect(held()).toEqual(['profiles']);
+    expect(held()).toEqual([...BUILTIN_UPLOADS, 'profiles']);
   });
 
   it('pulls again what was pulled before an erase seen only in a later space', async () => {
@@ -365,7 +378,7 @@ describe('an erase reaching a device', () => {
     expect((await b.sync()).wiped).toBe(true);
     expect(await b.db.transactions.count()).toBe(0);
     expect(await customCategories(b.db)).toBe(0);
-    expect(held()).toEqual(['profiles', 'settings']);
+    expect(held()).toEqual([...BUILTIN_UPLOADS, 'profiles', 'settings']);
   });
 
   it('does not clear for an erase of a space it was unlinked from', async () => {
@@ -407,7 +420,7 @@ describe('an erase reaching a device', () => {
     expect((await b.sync()).wiped).toBe(false);
     expect(await b.db.transactions.count()).toBe(0);
     expect((await b.db.meta.get(epochKeyOf(ME)))?.value).toBe(1);
-    expect(held()).toEqual(['profiles', 'settings']);
+    expect(held()).toEqual([...BUILTIN_UPLOADS, 'profiles', 'settings']);
   });
 
   it('still fails a sync whose push was refused for any other reason, and clears nothing', async () => {
@@ -444,7 +457,12 @@ describe('eraseLocalData', () => {
     // The person stays; the balance they started from was data, and goes.
     expect((await a.db.profiles.get('p1'))?.openingBalanceMinor).toBe(0);
     expect((await a.db.settings.get('singleton'))?.defaultCurrency).toBe('ILS');
-    expect((await a.db.outbox.toArray()).map((o) => o.tbl).sort()).toEqual(['profiles', 'settings']);
+    expect(
+      (await a.db.outbox.toArray())
+        .filter((o) => o.tbl !== 'paymentMethods')
+        .map((o) => o.tbl)
+        .sort(),
+    ).toEqual(['profiles', 'settings']);
     for (const key of [
       cursorKeyOf(undefined),
       cursorKeyOf('x'),
@@ -465,14 +483,25 @@ describe('eraseLocalData', () => {
     expect((await a.db.categories.get('cat.groceries'))?.isArchived).toBe(0);
     // Pristine, so never sent.
     expect(await a.db.syncState.filter((s) => s.tbl === 'categories').count()).toBe(0);
-    expect(await a.db.outbox.count()).toBe(0);
+    // But the newer four built-ins are synced rows: queued, dated their fixed
+    // instant, so a device on an older build never lacks one (spec 10.2).
+    expect((await a.db.outbox.toArray()).map((o) => `${o.tbl}:${o.id}`).sort()).toEqual(
+      SYNCED_BUILTIN_IDS.map((id) => `paymentMethods:${id}`).sort(),
+    );
+    for (const id of SYNCED_BUILTIN_IDS) {
+      const state = await a.db.syncState.get(['paymentMethods', id]);
+      expect(parseRev((state?.rev ?? '') as Rev).ms, id).toBe(Date.parse(BUILTIN_METHODS_SINCE));
+    }
+    expect(await a.db.syncState.get(['paymentMethods', CASH_METHOD_ID])).toBeUndefined();
   });
 
   it('keeps a settings row nobody chose, without queuing it', async () => {
     await addProfile(b.db, 'p1');
     await eraseLocalData(b.db);
     expect(await b.db.settings.get('singleton')).toBeDefined();
-    expect((await b.db.outbox.toArray()).map((o) => o.tbl)).toEqual(['profiles']);
+    expect((await b.db.outbox.toArray()).filter((o) => o.tbl !== 'paymentMethods').map((o) => o.tbl)).toEqual(
+      ['profiles'],
+    );
   });
 
   it('records the epochs it answers, forgets the rest, and marks a clear made by a sync', async () => {
