@@ -173,7 +173,7 @@ describe('Smart import', () => {
             {
               s: 0,
               n: 'max executive',
-              l4: '3200',
+              l4: '5555',
               nw: 'Mastercard',
               is: 'MAX',
               cr: '5.9%',
@@ -211,14 +211,14 @@ describe('Smart import', () => {
     renderWithProviders(<Harness />);
     await user.upload(
       screen.getByTestId('import-input'),
-      new File(['max executive 3200 Mastercard קרדיט 5.9%'], 'cards.txt', { type: 'text/plain' }),
+      new File(['max executive 5555 Mastercard קרדיט 5.9%'], 'cards.txt', { type: 'text/plain' }),
     );
     await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
 
     // Only a card, and its billing day not in the file: straight to the editor, on what it did show.
     await screen.findByText("Filled in from your file. Add what it didn't show: billing day.");
     expect(screen.getByLabelText('Label')).toHaveValue('max executive');
-    expect(screen.getByLabelText('Last 4 digits')).toHaveValue('3200');
+    expect(screen.getByLabelText('Last 4 digits')).toHaveValue('5555');
     await user.click(screen.getByRole('radio', { name: 'The 10th' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -234,7 +234,7 @@ describe('Smart import', () => {
       label: 'max executive',
       profileId: 'p1',
       card: {
-        lastDigits: '3200',
+        lastDigits: '5555',
         network: 'mastercard',
         issuer: 'max',
         billingDay: 10,
@@ -254,7 +254,7 @@ describe('Smart import', () => {
           t: [],
           per: null,
           done: true,
-          k: [{ s: 0, n: 'Dream Card VIP', l4: '0400', nw: 'Visa', is: 'MAX', cr: '', lim: '', bd: '' }],
+          k: [{ s: 0, n: 'Dream Card VIP', l4: '0088', nw: 'Visa', is: 'MAX', cr: '', lim: '', bd: '' }],
           ba: [{ s: 0, n: 'בנק הפועלים', bk: '', br: '532', no: '', h: '' }],
           pr: '',
         },
@@ -284,7 +284,7 @@ describe('Smart import', () => {
     const first = renderWithProviders(<Harness />);
     await user.upload(
       screen.getByTestId('import-input'),
-      new File(['Dream Card VIP 0400 Visa / בנק הפועלים סניף 532'], 'cards.txt', { type: 'text/plain' }),
+      new File(['Dream Card VIP 0088 Visa / בנק הפועלים סניף 532'], 'cards.txt', { type: 'text/plain' }),
     );
     await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
 

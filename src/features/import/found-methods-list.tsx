@@ -64,7 +64,7 @@ export function MethodsGroup({
   );
 }
 
-/** "··3200", kept left to right in a Hebrew line. */
+/** "··5555", kept left to right in a Hebrew line. */
 const tail = (digits: string) => `⁦··${digits}⁩`;
 
 function MethodRow({

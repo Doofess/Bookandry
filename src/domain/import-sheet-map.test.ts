@@ -151,14 +151,14 @@ describe('a map from the model', () => {
   it("reads the card each row was charged to: its own column, else the one the sheet's title names", () => {
     const perRow: Cell[][] = [
       ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה', '4 ספרות אחרונות של כרטיס האשראי'],
-      ['03/10/2026', 'Spotify', '19.90', '3200'],
+      ['03/10/2026', 'Spotify', '19.90', '5555'],
       ['04/10/2026', 'שופרסל', '50.00', 512],
       ['05/10/2026', 'Wolt', '80.00', '4580-1234-5678-9012'],
     ];
     const map = mapByDictionary(perRow)!;
     expect(map.card).toBe(3);
     // A number cell has lost its leading zero; a full number gives only its last four.
-    expect(readSheet(perRow, map, ctx).rows.map((r) => r.wire.l4)).toEqual(['3200', '0512', '9012']);
+    expect(readSheet(perRow, map, ctx).rows.map((r) => r.wire.l4)).toEqual(['5555', '0512', '9012']);
 
     const titled: Cell[][] = [
       ['פירוט עסקאות לכרטיס מקס 1234 לחודש 10/2026'],
@@ -270,5 +270,41 @@ describe('business types in a sheet', () => {
       fileMcc: '5812',
       sector: 'מסעדות',
     });
+  });
+});
+
+describe('a card export with a renamed header, read by the dictionary', () => {
+  // Synthetic: a Max-like layout whose "מטבע עסקה מקורי" header was renamed, so no exact reader knows it.
+  const header = [
+    'תאריך עסקה',
+    'שם בית העסק',
+    'סוג עסקה',
+    'סכום חיוב',
+    'מטבע חיוב',
+    'סכום עסקה מקורי',
+    'מטבע מקור',
+    'תאריך חיוב',
+    'הערות',
+  ];
+  const rows: Cell[][] = [
+    header,
+    ['01/03/2019', 'חנות לדוגמה', 'תשלומים', 150, '₪', 600, '₪', '02/04/2019', 'תשלום 2 מתוך 4'],
+    ['02/03/2019', 'דמי כרטיס', 'רגילה', 23.4, '₪', 19.83, '₪', '02/04/2019', ''],
+  ];
+
+  it('takes the instalment text from the column whose cells say it, and the date of the charge', () => {
+    const map = mapByDictionary(rows)!;
+    expect(map).toMatchObject({ plan: 8, chgDate: 7 });
+  });
+
+  it('saves the charge, not the original, when both are shekels', () => {
+    const map = mapByDictionary(rows)!;
+    const read = readSheet(rows, map, ctx);
+    expect(read.rows.map((r) => [r.amountMinor, r.plan?.number ?? null, r.plan?.totalMinor ?? null])).toEqual(
+      [
+        [15_000, 2, 60_000],
+        [2_340, null, null],
+      ],
+    );
   });
 });

@@ -96,10 +96,10 @@ describe('files already read', () => {
 
   it('kept by older versions are cleared, and nothing else with them', async () => {
     await handle.db.meta.put({ key: 'importCache:abc', value: { v: 3, at: 0, rows: [row] } });
-    await handle.db.meta.put({ key: 'importDraft:card:3200', value: {} });
+    await handle.db.meta.put({ key: 'importDraft:card:5555', value: {} });
     await forgetImportReads(handle.db);
     expect(await handle.db.meta.get('importCache:abc')).toBeUndefined();
     // Cards and accounts still to finish stay until they are finished or deleted.
-    expect(await handle.db.meta.get('importDraft:card:3200')).toBeDefined();
+    expect(await handle.db.meta.get('importDraft:card:5555')).toBeDefined();
   });
 });

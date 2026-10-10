@@ -1,5 +1,5 @@
-import { daysBetween, parseStatementDate } from '@/lib/dates';
-import { minorFromNumber, parseStatementAmount } from '@/lib/money';
+import { dateFromExcelSerial, daysBetween, parseStatementDate } from '@/lib/dates';
+import { minorFromNumber, parseStatementAmount, prorateMinor } from '@/lib/money';
 import type { Currency, LocalDate } from '@/types/money';
 
 import { currencyFromText, withFlags, type Flag, type FoundPlan, type FoundRow } from './import-check';
@@ -14,14 +14,18 @@ import type { WireRow } from './import-wire';
  * fits is the wrong one: Max prints the deal's whole amount beside the
  * payment, and the instalment text in "הערות" beside a "סוג עסקה" column;
  * Discount keeps a row's currency only in its cell's number format. Each
- * reader here is keyed on the export's exact headers and reads every row the
+ * reader here is keyed on the export's own headers and reads every row the
  * way that export means it:
  *  - the amount is what the card charged; the original amount and currency
- *    are kept beside it only when it was a named foreign currency;
+ *    are kept beside it only when it was a named foreign currency, and never
+ *    on a plan's payment, whose original is the whole deal;
  *  - an instalment or loan row is this payment, of a plan whose total is the
- *    deal - and a deal's rows make one plan, not one each;
+ *    deal when it is in the payment's currency (`groupPlans` then makes a
+ *    deal's rows, across the import's files, one plan);
  *  - Max's FX wallet, which shows one foreign purchase three times, gives it
- *    once, at its shekel cost.
+ *    once, at its shekel cost - when the shekels that bought the currency
+ *    can be matched to what it bought; otherwise as Max prints it, netting to
+ *    nothing on the card.
  * A sheet no reader knows is left to the dictionary and the model, as before.
  */
 
@@ -63,18 +67,21 @@ const norm = (cell: Cell | undefined): string =>
 const text = (cell: Cell | undefined): string =>
   cell === null || cell === undefined ? '' : String(cell).trim();
 
+/** The columns that make a sheet Max's: the two amounts, their currencies, and "הערות". */
 const MAX = {
   date: 'תאריך עסקה',
   desc: 'שם בית העסק',
-  sector: 'קטגוריה',
-  card: '4 ספרות אחרונות של כרטיס האשראי',
-  type: 'סוג עסקה',
   chg: 'סכום חיוב',
   chgCur: 'מטבע חיוב',
   orig: 'סכום עסקה מקורי',
   origCur: 'מטבע עסקה מקורי',
-  chgDate: 'תאריך חיוב',
   notes: 'הערות',
+} as const;
+const MAX_MORE = {
+  sector: 'קטגוריה',
+  card: '4 ספרות אחרונות של כרטיס האשראי',
+  type: 'סוג עסקה',
+  chgDate: 'תאריך חיוב',
 } as const;
 
 const DISCOUNT = {
@@ -82,21 +89,30 @@ const DISCOUNT = {
   desc: 'בית עסק',
   date: 'תאריך עסקה',
   amt: 'סכום העסקה',
-  issuer: 'מנפיק',
+  chg: 'סכום החיוב',
+} as const;
+const DISCOUNT_MORE = {
   type: 'סוג העסקה',
   detail: 'פירוט',
   chgDate: 'תאריך החיוב',
-  chg: 'סכום החיוב',
 } as const;
 
-const TOTALS = ['חודש חיוב', 'מספר עסקאות', 'סכום החיוב בשח'] as const;
+const TOTALS = { month: 'חודש חיוב', count: 'מספר עסקאות', sum: 'סכום החיוב בשח' } as const;
 
-/** Where a sheet's header row is and where each named column sits in it - every name present - or undefined. */
-function findHeader<K extends string>(
+type Header<K extends string, O extends string> = {
+  readonly row: number;
+  readonly col: Readonly<Record<K, number>>;
+  /** Optional columns: -1 where the sheet has none. */
+  readonly more: Readonly<Record<O, number>>;
+};
+
+/** Where a sheet's header row is - every required name in it - and where each named column sits, or undefined. */
+function findHeader<K extends string, O extends string = never>(
   rows: readonly (readonly Cell[])[],
   names: Readonly<Record<K, string>>,
+  optional: Readonly<Record<O, string>> = {} as Record<O, string>,
   scan = 30,
-): { readonly row: number; readonly col: Readonly<Record<K, number>> } | undefined {
+): Header<K, O> | undefined {
   for (let r = 0; r < Math.min(scan, rows.length); r += 1) {
     const cells = (rows[r] ?? []).map(norm);
     const col: Partial<Record<K, number>> = {};
@@ -109,13 +125,16 @@ function findHeader<K extends string>(
       }
       col[key] = at;
     }
-    if (all) return { row: r, col: col as Record<K, number> };
+    if (!all) continue;
+    const more = Object.fromEntries(
+      (Object.entries(optional) as [O, string][]).map(([key, name]) => [key, cells.indexOf(norm(name))]),
+    ) as Record<O, number>;
+    return { row: r, col: col as Record<K, number>, more };
   }
   return undefined;
 }
 
-const isTotals = (sheet: SheetInput): boolean =>
-  findHeader(sheet.rows, { a: TOTALS[0], b: TOTALS[1], c: TOTALS[2] }) !== undefined;
+const isTotals = (sheet: SheetInput): boolean => findHeader(sheet.rows, TOTALS) !== undefined;
 const isMax = (sheet: SheetInput) => findHeader(sheet.rows, MAX) !== undefined;
 const isDiscount = (sheet: SheetInput) => findHeader(sheet.rows, DISCOUNT) !== undefined;
 
@@ -154,7 +173,7 @@ function cellMinor(cell: Cell | undefined, currency: Currency): number | undefin
   return parseStatementAmount(cell, currency, '.');
 }
 
-/** A card's last four digits from a cell: "0400", "ויזה 1234". */
+/** A card's last four digits from a cell: "0088", "ויזה 1234". */
 function lastFour(cell: Cell | undefined): string {
   if (typeof cell === 'number' && Number.isInteger(cell) && cell >= 0 && cell < 10_000) {
     return String(cell).padStart(4, '0');
@@ -194,8 +213,11 @@ function slashPlan(detail: string): Omit<FoundPlan, 'totalMinor'> | undefined {
   return { mode: 'installments', number, count };
 }
 
-const dateOf = (cell: Cell | undefined, anchor: LocalDate): LocalDate | undefined =>
-  typeof cell === 'string' ? parseStatementDate(cell, anchor)?.date : undefined;
+/** A date cell: printed text, or the serial number a re-saved workbook keeps. */
+const dateOf = (cell: Cell | undefined, anchor: LocalDate, date1904: boolean): LocalDate | undefined => {
+  if (typeof cell === 'number') return dateFromExcelSerial(cell, date1904);
+  return typeof cell === 'string' ? parseStatementDate(cell, anchor)?.date : undefined;
+};
 
 /** What a reader settled for one row, before it becomes a found row. */
 type Money = {
@@ -211,13 +233,16 @@ type Money = {
  * original was in a named currency other than that, when the original is the
  * amount and the charge stands beside it (the rate is then the two amounts').
  * An original in a currency the app does not know, or none named, is
- * foreign-unknown: the charge is the amount.
+ * foreign-unknown: the charge is the amount. So is a plan's payment: its
+ * original is the whole deal, and a rate taken from deal and payment would
+ * save the deal at one payment's cost.
  */
 function settle(input: {
   readonly charged: number | undefined;
   readonly chargedCurrency: Currency | undefined;
   readonly original: number | undefined;
   readonly originalCurrency: Currency | undefined;
+  readonly plan: boolean;
 }): Money {
   const { charged, chargedCurrency, original, originalCurrency } = input;
   const flags: Flag[] = [];
@@ -225,6 +250,7 @@ function settle(input: {
   const signed = charged ?? original;
   const kind = signed !== undefined && signed < 0 ? 'income' : 'expense';
   if (
+    !input.plan &&
     originalCurrency !== undefined &&
     originalCurrency !== chargedCurrency &&
     original !== undefined &&
@@ -318,7 +344,11 @@ function found(
   };
 }
 
-/** A plan's total: the deal's amount, when it is in the payment's own currency. */
+/**
+ * A plan's total: the deal's amount, when it is in the payment's own
+ * currency. A credit deal's payments carry interest on top of the price, so
+ * its total is left to the payments (payment × count, flagged as worked out).
+ */
 function withTotal(
   plan: Omit<FoundPlan, 'totalMinor'> | undefined,
   money: Money,
@@ -326,26 +356,32 @@ function withTotal(
   originalCurrency: Currency | undefined,
 ): FoundPlan | null {
   if (plan === undefined) return null;
-  return original !== undefined && original !== 0 && originalCurrency === money.currency
+  return plan.mode !== 'credit' &&
+    original !== undefined &&
+    original !== 0 &&
+    originalCurrency === money.currency
     ? { ...plan, totalMinor: Math.abs(original) }
     : plan;
 }
+
+const at = (row: readonly Cell[], column: number): Cell | undefined =>
+  column === -1 ? undefined : row[column];
 
 function readMaxSheet(
   sheet: SheetInput,
   s: number,
   ctx: ReaderContext,
 ): { block: KnownBlock; drafts: Draft[] } {
-  const header = findHeader(sheet.rows, MAX);
+  const header = findHeader(sheet.rows, MAX, MAX_MORE);
   /* c8 ignore next -- only called on a sheet whose header was found */
   if (header === undefined) throw new Error('not a Max sheet');
-  const { col } = header;
+  const { col, more } = header;
   const sheetCard = titleCard(sheet.rows, header.row);
   const wallet = sheet.name.includes('ארנק');
   const drafts: Draft[] = [];
   sheet.rows.slice(header.row + 1).forEach((row, i) => {
     const raw = text(row[col.desc]);
-    const date = dateOf(row[col.date], ctx.anchor);
+    const date = dateOf(row[col.date], ctx.anchor, sheet.date1904);
     const chargedCell = row[col.chg];
     if (date === undefined && (raw === '' || text(chargedCell) === '')) return;
     const chargedCurrencyText = text(row[col.chgCur]);
@@ -356,10 +392,16 @@ function readMaxSheet(
       originalCurrencyText === '' ? undefined : currencyFromText(originalCurrencyText, ctx.base, ctx.known);
     const charged = chargedCurrency === undefined ? undefined : cellMinor(chargedCell, chargedCurrency);
     const original = originalCurrency === undefined ? undefined : cellMinor(row[col.orig], originalCurrency);
-    const money = settle({ charged, chargedCurrency, original, originalCurrency });
-    const type = text(row[col.type]);
+    const type = text(at(row, more.type));
     const notes = text(row[col.notes]);
     const planText = planFromText(notes);
+    const money = settle({
+      charged,
+      chargedCurrency,
+      original,
+      originalCurrency,
+      plan: planText !== undefined,
+    });
     const plan = withTotal(
       planText === undefined
         ? undefined
@@ -380,10 +422,10 @@ function readMaxSheet(
         currencyText: originalCurrencyText,
         chargedText: text(chargedCell),
         chargedCurrencyText,
-        chargeDate: text(row[col.chgDate]),
+        chargeDate: text(at(row, more.chgDate)),
         plan,
-        l4: lastFour(row[col.card]) || sheetCard,
-        sector: text(row[col.sector]),
+        l4: lastFour(at(row, more.card)) || sheetCard,
+        sector: text(at(row, more.sector)),
       }),
       type,
       notes,
@@ -397,74 +439,159 @@ function readMaxSheet(
 }
 
 const FX_NOTE = /^([A-Z]{3})\s+([\d,]+(?:\.\d+)?)$/;
+/** How far apart, in days, a currency purchase and what it paid for may be. */
+const FX_WINDOW = 45;
+/** The most wallet purchases one currency purchase is tried against. */
+const FX_CANDIDATES = 12;
+
+/** The smallest set of `amounts` that adds up to `target` exactly, as indexes - or undefined. */
+function exactSubset(amounts: readonly number[], target: number): number[] | undefined {
+  let best: number[] | undefined;
+  for (let mask = 1; mask < 1 << amounts.length; mask += 1) {
+    const picked: number[] = [];
+    let total = 0;
+    amounts.forEach((amount, i) => {
+      if ((mask & (1 << i)) !== 0) {
+        picked.push(i);
+        total += amount;
+      }
+    });
+    if (total === target && (best === undefined || picked.length < best.length)) best = picked;
+  }
+  return best;
+}
 
 /**
  * Max's FX wallet shows one foreign purchase three times: the shekels that
  * bought the currency (local sheet, "רכישת מט"ח", its amount in "הערות"), the
  * purchase itself (wallet sheet, in the currency), and the wallet paying the
- * card back for it (wallet sheet, a credit of the same amount). Kept: the
- * purchase, at the shekels it cost when they can be matched. Dropped: the
- * other two.
+ * card back for it (wallet sheet, a credit of the same amount).
+ *
+ * When the wallet purchases a currency purchase paid for add up to exactly
+ * the currency it bought - one purchase, or several - those purchases are
+ * kept at the shekels it cost, shared by their amounts, and the currency
+ * purchase and the purchases' wallet credits are dropped. Anything that does
+ * not add up - currency bought in an earlier export, or not all spent yet -
+ * is left as Max prints it: the shekels as spent, and each wallet purchase
+ * with its credit, which net to nothing.
  */
 function foldWallet(drafts: readonly Draft[]): Draft[] {
   const dropped = new Set<string>();
-  const paid = new Set<string>();
-  const charged = new Map<string, FoundRow['charged']>();
-  const purchases = drafts.filter((d) => d.wallet && d.row.kind === 'expense');
-  for (const credit of drafts) {
-    if (!credit.wallet || credit.row.kind !== 'income' || credit.row.date === undefined) continue;
-    if (!credit.row.description.includes('ארנק') && !credit.type.includes('ארנק')) continue;
-    const creditDate = credit.row.date;
-    const match = purchases.find(
-      (p) =>
-        !paid.has(p.row.id) &&
-        p.row.currency === credit.row.currency &&
-        p.row.amountMinor === credit.row.amountMinor &&
-        p.row.date !== undefined &&
-        daysBetween(p.row.date, creditDate) >= 0 &&
-        daysBetween(p.row.date, creditDate) <= 31,
+  const folded = new Map<string, NonNullable<FoundRow['charged']>>();
+  const purchases = drafts.filter((d) => d.wallet && d.row.kind === 'expense' && d.row.date !== undefined);
+  const buys = drafts.filter(
+    (d) =>
+      !d.wallet &&
+      d.row.kind === 'expense' &&
+      d.row.description.includes('רכישת מט') &&
+      d.row.date !== undefined,
+  );
+  for (const buy of buys) {
+    const [, code, amount] = FX_NOTE.exec(buy.notes) ?? [];
+    const buyDate = buy.row.date;
+    if (code === undefined || amount === undefined || buyDate === undefined) continue;
+    const bought = parseStatementAmount(amount, code, '.');
+    if (bought === undefined || buy.row.amountMinor === undefined || buy.row.currency === undefined) continue;
+    const candidates = purchases
+      .filter(
+        (p) =>
+          !folded.has(p.row.id) &&
+          p.row.currency === code &&
+          p.row.amountMinor !== undefined &&
+          p.row.date !== undefined &&
+          Math.abs(daysBetween(buyDate, p.row.date)) <= FX_WINDOW,
+      )
+      .sort(
+        (a, b) =>
+          Math.abs(daysBetween(buyDate, a.row.date ?? buyDate)) -
+          Math.abs(daysBetween(buyDate, b.row.date ?? buyDate)),
+      )
+      .slice(0, FX_CANDIDATES);
+    const subset = exactSubset(
+      candidates.map((p) => p.row.amountMinor ?? 0),
+      bought,
     );
-    if (match === undefined) continue;
-    paid.add(match.row.id);
-    dropped.add(credit.row.id);
-  }
-  for (const purchase of purchases) {
-    const date = purchase.row.date;
-    if (date === undefined) continue;
-    const fx = drafts.find((d) => {
-      if (dropped.has(d.row.id) || d.wallet || d.row.kind !== 'expense' || d.row.date === undefined)
-        return false;
-      if (!d.row.description.includes('רכישת מט')) return false;
-      const [, code, amount] = FX_NOTE.exec(d.notes) ?? [];
-      if (code !== purchase.row.currency || amount === undefined || purchase.row.currency === undefined)
-        return false;
-      return (
-        parseStatementAmount(amount, purchase.row.currency, '.') === purchase.row.amountMinor &&
-        Math.abs(daysBetween(date, d.row.date)) <= 14
-      );
+    if (subset === undefined) continue;
+    const cost = buy.row.amountMinor;
+    let left = cost;
+    subset.forEach((index, n) => {
+      const purchase = candidates[index];
+      /* c8 ignore next -- an index the subset took from these candidates */
+      if (purchase === undefined) return;
+      const share =
+        n === subset.length - 1 ? left : prorateMinor(cost, purchase.row.amountMinor ?? 0, bought);
+      left -= share;
+      folded.set(purchase.row.id, { minor: share, currency: buy.row.currency ?? 'ILS' });
     });
-    if (fx?.row.amountMinor === undefined || fx.row.currency === undefined) continue;
-    dropped.add(fx.row.id);
-    charged.set(purchase.row.id, { minor: fx.row.amountMinor, currency: fx.row.currency });
+    dropped.add(buy.row.id);
+  }
+  // Each folded purchase's own wallet credit: the same amount back, after it.
+  for (const purchase of purchases) {
+    if (!folded.has(purchase.row.id)) continue;
+    const date = purchase.row.date ?? '';
+    const credit = drafts.find(
+      (d) =>
+        d.wallet &&
+        d.row.kind === 'income' &&
+        !dropped.has(d.row.id) &&
+        (d.row.description.includes('ארנק') || d.type.includes('ארנק')) &&
+        d.row.currency === purchase.row.currency &&
+        d.row.amountMinor === purchase.row.amountMinor &&
+        d.row.date !== undefined &&
+        daysBetween(date as LocalDate, d.row.date) >= 0 &&
+        daysBetween(date as LocalDate, d.row.date) <= 31,
+    );
+    if (credit !== undefined) dropped.add(credit.row.id);
   }
   return drafts
     .filter((d) => !dropped.has(d.row.id))
     .map((d) => {
-      const cost = charged.get(d.row.id);
+      const cost = folded.get(d.row.id);
       return cost === undefined ? d : { ...d, row: { ...d.row, charged: cost } };
     });
 }
 
+/**
+ * A loan's disbursement - the card company's loan paid out, a credit of its
+ * whole principal on the day its payments start from - is the loan coming in,
+ * not income: the loan is added from its payments.
+ */
+function markDisbursements(drafts: readonly Draft[]): FoundRow[] {
+  const loanKey = (row: FoundRow, total: number | undefined) =>
+    [row.wire.l4, row.date ?? '', merchantKey(row.description), total ?? ''].join('|');
+  const loans = new Set(
+    drafts
+      .filter((d) => d.row.plan?.mode === 'loan' && d.row.plan.totalMinor !== undefined)
+      .map((d) => loanKey(d.row, d.row.plan?.totalMinor)),
+  );
+  return drafts.map((d) =>
+    d.row.kind === 'income' &&
+    d.row.plan === null &&
+    d.type.includes('הלוואה') &&
+    loans.has(loanKey(d.row, d.row.amountMinor))
+      ? withFlags(d.row, 'loan_disbursement')
+      : d.row,
+  );
+}
+
 const merchantKey = (description: string): string => description.replace(/[\s"״'׳.,-]+/g, '').toLowerCase();
 
+/** A payment close enough to the plan's own to be one of its payments: within a tenth. */
+const paymentLike = (amount: number | undefined, lead: number | undefined): boolean =>
+  amount !== undefined && lead !== undefined && Math.abs(amount - lead) * 10 <= lead;
+
 /**
- * A deal's payments, in one export, as one plan: every row of the same card,
- * purchase date, merchant, count and total is a payment of it. The earliest
- * payment found carries the plan; the rest are marked as part of it - as is
- * a loan's disbursement, which is the loan coming in, not income.
+ * A deal's payments, across every file of an import, as one plan: rows of
+ * the same card, purchase date, merchant, kind, count and total whose amount
+ * is the plan's payment, give or take rounding, are payments of it. The
+ * earliest payment found carries the plan; the rest are marked as part of it.
+ *
+ * A row of the same deal that is not a payment - a correction Max labels
+ * "N of N", an interest adjustment, a credit back - is no plan of its own:
+ * it is added as the amount it is, noted.
  */
-function groupPlans(rows: readonly FoundRow[], loans: (row: FoundRow) => boolean): FoundRow[] {
-  const keyOf = (row: FoundRow, plan: { mode: string; count: number; totalMinor?: number }) =>
+export function groupPlans(rows: readonly FoundRow[]): FoundRow[] {
+  const keyOf = (row: FoundRow, plan: FoundPlan) =>
     [
       row.wire.l4,
       row.date ?? '',
@@ -473,29 +600,29 @@ function groupPlans(rows: readonly FoundRow[], loans: (row: FoundRow) => boolean
       plan.count,
       plan.totalMinor ?? '',
     ].join('|');
-  const lead = new Map<string, FoundRow>();
+  const groups = new Map<string, FoundRow[]>();
   for (const row of rows) {
     if (row.plan === null || row.date === undefined) continue;
     const key = keyOf(row, row.plan);
-    const current = lead.get(key);
-    if (current?.plan === undefined || current.plan === null || row.plan.number < current.plan.number) {
-      lead.set(key, row);
-    }
+    groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  const loanTotals = new Set(
-    [...lead.values()]
-      .filter((row) => row.plan?.mode === 'loan' && row.plan.totalMinor !== undefined)
-      .map((row) => [row.wire.l4, row.date, merchantKey(row.description), row.plan?.totalMinor].join('|')),
-  );
+  const lead = new Map<string, FoundRow>();
+  for (const [key, members] of groups) {
+    // The plan is the deal's own direction: an expense deal is led by an expense.
+    const kind = members.some((r) => r.kind === 'expense') ? 'expense' : 'income';
+    const first = members
+      .filter((r) => r.kind === kind)
+      .reduce((a, b) => ((b.plan?.number ?? 0) < (a.plan?.number ?? 0) ? b : a));
+    lead.set(key, first);
+  }
   return rows.map((row) => {
-    if (row.plan !== null && row.date !== undefined) {
-      return lead.get(keyOf(row, row.plan)) === row ? row : withFlags(row, 'plan_in_import');
+    if (row.plan === null || row.date === undefined) return row;
+    const first = lead.get(keyOf(row, row.plan));
+    if (first === undefined || first === row) return row;
+    if (row.kind === first.kind && paymentLike(row.amountMinor, first.amountMinor)) {
+      return withFlags(row, 'plan_in_import');
     }
-    const disbursement =
-      row.kind === 'income' &&
-      loans(row) &&
-      loanTotals.has([row.wire.l4, row.date, merchantKey(row.description), row.amountMinor].join('|'));
-    return disbursement ? withFlags(row, 'plan_in_import') : row;
+    return withFlags({ ...row, plan: null, wire: { ...row.wire, pl: null } }, 'plan_adjustment');
   });
 }
 
@@ -506,72 +633,82 @@ function readMax(sheets: readonly SheetInput[], ctx: ReaderContext): KnownRead {
     if (isMax(sheet)) blocks.push(readMaxSheet(sheet, s, ctx));
     else rest.push(s);
   });
-  const all = foldWallet(blocks.flatMap((b) => b.drafts));
-  const types = new Map(all.map((d) => [d.row.id, d.type]));
-  const grouped = groupPlans(
-    all.map((d) => d.row),
-    (row) => (types.get(row.id) ?? '').includes('הלוואה'),
-  );
+  const rows = markDisbursements(foldWallet(blocks.flatMap((b) => b.drafts)));
   return {
     format: 'max',
     blocks: blocks.map(({ block }) => ({
       ...block,
-      rows: grouped.filter((row) => row.id.startsWith(`f${String(ctx.file)}s${String(block.sheet)}r`)),
+      rows: rows.filter((row) => row.id.startsWith(`f${String(ctx.file)}s${String(block.sheet)}r`)),
     })),
     rest,
   };
 }
 
 function readDiscountSheet(sheet: SheetInput, s: number, ctx: ReaderContext): KnownBlock {
-  const header = findHeader(sheet.rows, DISCOUNT);
+  const header = findHeader(sheet.rows, DISCOUNT, DISCOUNT_MORE);
   /* c8 ignore next -- only called on a sheet whose header was found */
   if (header === undefined) throw new Error('not a Discount sheet');
-  const { col } = header;
+  const { col, more } = header;
   const rows: FoundRow[] = [];
   const hasFormats = sheet.formats !== undefined;
   sheet.rows.slice(header.row + 1).forEach((row, i) => {
     const r = header.row + 1 + i;
-    const date = dateOf(row[col.date], ctx.anchor);
-    const description = text(row[col.desc]);
-    if (date === undefined) return;
+    const date = dateOf(row[col.date], ctx.anchor, sheet.date1904);
+    const amountText = text(row[col.amt]);
+    const chargedText = text(row[col.chg]);
+    // Neither a date nor an amount: a title, a total line, the footer.
+    if (date === undefined && (amountText === '' || amountText === '--') && chargedText === '') return;
     const formats = sheet.formats?.[r] ?? [];
     const chargedCurrency = formatCurrency(formats[col.chg], ctx.base, ctx.known);
     const charged = chargedCurrency === undefined ? undefined : cellMinor(row[col.chg], chargedCurrency);
     // Without formats the amount's currency cannot be known: the charge, in the base, is what is certain.
     const originalCurrency = hasFormats ? formatCurrency(formats[col.amt], ctx.base, ctx.known) : undefined;
     const original =
-      originalCurrency === undefined || text(row[col.amt]) === '--'
+      originalCurrency === undefined || amountText === '--'
         ? undefined
         : cellMinor(row[col.amt], originalCurrency);
-    const money = settle({ charged, chargedCurrency, original, originalCurrency });
-    const detail = text(row[col.detail]);
-    const plan = withTotal(planFromText(detail) ?? slashPlan(detail), money, original, originalCurrency);
+    const detail = text(at(row, more.detail));
+    /*
+     * "תשלום N מתוך M" says so; a bare "N/M" only when the deal and this
+     * charge differ in one currency - "4/12" in a standing order's note is
+     * no plan.
+     */
+    const dealDiffers =
+      original !== undefined &&
+      charged !== undefined &&
+      originalCurrency === chargedCurrency &&
+      Math.abs(original) !== Math.abs(charged);
+    const planText = planFromText(detail) ?? (dealDiffers ? slashPlan(detail) : undefined);
+    const money = settle({
+      charged,
+      chargedCurrency,
+      original,
+      originalCurrency,
+      plan: planText !== undefined,
+    });
     rows.push(
       found(`f${String(ctx.file)}s${String(s)}r${String(i)}`, ctx, money, {
         date,
         dateText: text(row[col.date]),
-        description,
-        amountText: text(row[col.amt]),
+        description: text(row[col.desc]),
+        amountText,
         currencyText: null,
-        chargedText: text(row[col.chg]),
+        chargedText,
         chargedCurrencyText: null,
-        chargeDate: text(row[col.chgDate]),
-        plan,
+        chargeDate: text(at(row, more.chgDate)),
+        plan: withTotal(planText, money, original, originalCurrency),
         l4: lastFour(row[col.card]),
         sector: '',
       }),
     );
   });
-  return {
-    sheet: s,
-    header: sheet.rows.slice(header.row, header.row + 3),
-    rows: groupPlans(rows, () => false),
-  };
+  return { sheet: s, header: sheet.rows.slice(header.row, header.row + 3), rows };
 }
 
 /**
  * The workbook read by the reader that knows it, or undefined when none
- * does. A totals-only summary is known too, and gives nothing.
+ * does. A totals-only summary is known too, and gives nothing. A deal's
+ * payments are made one plan by `groupPlans`, over the whole import.
  */
 export function readKnownExport(sheets: readonly SheetInput[], ctx: ReaderContext): KnownRead | undefined {
   if (sheets.some(isMax)) return readMax(sheets, ctx);

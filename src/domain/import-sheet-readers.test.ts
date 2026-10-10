@@ -3,12 +3,21 @@ import { describe, expect, it } from 'vitest';
 import type { LocalDate } from '@/types/money';
 
 import type { FoundRow } from './import-check';
+import { draftOf } from './import-review';
 import type { Cell } from './import-sheet-map';
-import { formatCurrency, readKnownExport, totalsOnly, type SheetInput } from './import-sheet-readers';
+import {
+  formatCurrency,
+  groupPlans,
+  readKnownExport,
+  totalsOnly,
+  type SheetInput,
+} from './import-sheet-readers';
 
 /*
- * Every value below is invented. The layouts - titles, headers, sheet names,
- * footers, number formats and quirks - are the real exports' own.
+ * Every value below is synthetic: years long past, amounts made up, cards
+ * 9999 and 1111, places that do not exist. Only the layouts - titles,
+ * headers, sheet names, footers, number formats and quirks - are the real
+ * exports' own.
  */
 
 const ctx = {
@@ -59,7 +68,7 @@ const maxRow = (
   date,
   merchant,
   sector,
-  '0400',
+  '9999',
   type,
   charged,
   chargedCur,
@@ -78,8 +87,8 @@ const maxSheet = (name: string, rows: Cell[][], total: string): SheetInput => ({
   name,
   rows: [
     ['כל המשתמשים (1)', null, ''],
-    ['0400-כרטיס בדוי', null, ''],
-    ['2025-06-11-2026-10-10', null, ''],
+    ['9999-כרטיס לדוגמה', null, ''],
+    ['2019-01-01-2019-12-31', null, ''],
     MAX_HEADER,
     ...rows,
     ['סך הכל'],
@@ -88,104 +97,96 @@ const maxSheet = (name: string, rows: Cell[][], total: string): SheetInput => ({
   date1904: false,
 });
 
+const LOAN = 'הלוואה ברגע למולטי';
+
 const maxLocal = maxSheet(
   'עסקאות במועד החיוב',
   [
-    maxRow('05-09-2026', 'מכולת הבדיון', 'רגילה', 42.5, '₪', 42.5, '₪', '02-10-2026', '', '', 'מזון וצריכה'),
+    maxRow(
+      '05-03-2019',
+      'מכולת לדוגמה',
+      'רגילה',
+      37.15,
+      '₪',
+      37.15,
+      '₪',
+      '02-04-2019',
+      '',
+      '',
+      'מזון וצריכה',
+    ),
     // The card fee: charged with VAT, the original before it.
-    maxRow('01-09-2026', 'דמי כרטיס', 'רגילה', 12.5, '₪', 10.59, '₪', '02-10-2026'),
-    maxRow('07-09-2026', 'מכולת הבדיון', 'רגילה', -20, '₪', 20, '₪', '02-10-2026', 'ביטול עסקה'),
+    maxRow('01-03-2019', 'דמי כרטיס', 'רגילה', 23.4, '₪', 19.83, '₪', '02-04-2019'),
+    maxRow('07-03-2019', 'מכולת לדוגמה', 'רגילה', -11.5, '₪', 11.5, '₪', '02-04-2019', 'ביטול עסקה'),
     // Three payments of one deal: the original is the whole deal on each.
-    maxRow('10-07-2026', 'רהיטי דמה', 'תשלומים', 250, '₪', 1000, '₪', '02-08-2026', 'תשלום 1 מתוך 4'),
-    maxRow('10-07-2026', 'רהיטי דמה', 'תשלומים', 250, '₪', 1000, '₪', '02-09-2026', 'תשלום 2 מתוך 4'),
-    maxRow('10-07-2026', 'רהיטי דמה', 'תשלומים', 250, '₪', 1000, '₪', '02-10-2026', 'תשלום 3 מתוך 4'),
-    // The card company's own loan: the disbursement, bridge interest, repayments and an adjustment.
-    maxRow('15-05-2026', 'מקס', 'הלוואה ברגע למולטי', -5000, '₪', 5000, '₪', '16-05-2026', 'הלוואה'),
-    maxRow('15-05-2026', 'מקס', 'הלוואה ברגע למולטי', 12.3, '₪', 5000, '₪', '02-06-2026', 'ריבית גישור'),
-    maxRow('15-05-2026', 'מקס', 'הלוואה ברגע למולטי', 440.1, '₪', 5000, '₪', '02-07-2026', 'תשלום 1 מתוך 12'),
-    maxRow(
-      '15-05-2026',
-      'מקס',
-      'הלוואה ברגע למולטי',
-      -10.2,
-      '₪',
-      5000,
-      '₪',
-      '02-08-2026',
-      'תשלום 12 מתוך 12',
-    ),
-    maxRow('15-05-2026', 'מקס', 'הלוואה ברגע למולטי', 438.5, '₪', 5000, '₪', '02-08-2026', 'תשלום 2 מתוך 12'),
-    // Shekels bought for the FX wallet, then spent from it on the wallet sheet.
-    maxRow(
-      '20-06-2026',
-      'רכישת מט"ח',
-      'חיוב עסקות מיידי',
-      36.6,
-      '₪',
-      36.6,
-      '₪',
-      '21-06-2026',
-      'USD 12.00',
-      ' 3.0500',
-    ),
-  ],
-  '1234.56₪',
-);
-
-const maxWallet = maxSheet(
-  'עסקאות בארנק מט"ח',
-  [
-    maxRow('14-06-2026', padded('APPDEMO', 'DEMO TOWN', 'ZZY'), 'חיוב חודשי', 12, '$', 12, '$', '02-07-2026'),
-    maxRow('22-06-2026', 'זיכוי מיתרת ארנק מט"ח', 'חיוב ארנק מטח', -12, '$', 12, '$', '02-07-2026'),
+    maxRow('10-01-2019', 'רהיטי דוגמה', 'תשלומים', 191.25, '₪', 765, '₪', '02-02-2019', 'תשלום 1 מתוך 4'),
+    maxRow('10-01-2019', 'רהיטי דוגמה', 'תשלומים', 191.25, '₪', 765, '₪', '02-03-2019', 'תשלום 2 מתוך 4'),
+    maxRow('10-01-2019', 'רהיטי דוגמה', 'תשלומים', 191.25, '₪', 765, '₪', '02-04-2019', 'תשלום 3 מתוך 4'),
+    // The card company's own loan: the disbursement, bridge interest, repayments and adjustments.
+    maxRow('15-01-2019', 'מקס', LOAN, -4100, '₪', 4100, '₪', '16-01-2019', 'הלוואה'),
+    maxRow('15-01-2019', 'מקס', LOAN, 9.61, '₪', 4100, '₪', '02-02-2019', 'ריבית גישור'),
+    maxRow('15-01-2019', 'מקס', LOAN, 361.07, '₪', 4100, '₪', '02-03-2019', 'תשלום 1 מתוך 12'),
+    maxRow('15-01-2019', 'מקס', LOAN, -8.13, '₪', 4100, '₪', '02-04-2019', 'תשלום 12 מתוך 12'),
+    maxRow('15-01-2019', 'מקס', LOAN, 13.27, '₪', 4100, '₪', '02-04-2019', 'תשלום 12 מתוך 12'),
+    maxRow('15-01-2019', 'מקס', LOAN, 359.84, '₪', 4100, '₪', '02-04-2019', 'תשלום 2 מתוך 12'),
   ],
   '0',
 );
+
+const walletSheet = (rows: Cell[][]) => maxSheet('עסקאות בארנק מט"ח', rows, '0');
+const fxBuy = (date: string, shekels: number, note: string) =>
+  maxRow(date, 'רכישת מט"ח', 'חיוב עסקות מיידי', shekels, '₪', shekels, '₪', date, note, ' 3.4500');
+const walletSpend = (date: string, name: string, dollars: number) =>
+  maxRow(date, padded(name, 'DEMO CITY', 'ZZZ'), 'חיוב חודשי', dollars, '$', dollars, '$', '02-08-2019');
+const walletCredit = (date: string, dollars: number) =>
+  maxRow(date, 'זיכוי מיתרת ארנק מט"ח', 'חיוב ארנק מטח', -dollars, '$', dollars, '$', '02-08-2019');
 
 const maxForeign = maxSheet(
   'עסקאות חו"ל ומט"ח',
   [
     // A currency the export leaves blank, converted via the euro.
     maxRow(
-      '24-06-2026',
-      padded('CAFE DEMO', 'DEMO CITY', 'ZZZ'),
+      '12-05-2019',
+      padded('CAFE SAMPLE', 'DEMO CITY', 'ZZZ'),
       'חיוב חודשי',
-      28.3,
+      17.62,
       '₪',
-      200,
+      113,
       '',
-      '02-07-2026',
+      '02-06-2019',
       '',
-      'שער המרה מאירו לש"ח 3.5000',
+      'שער המרה מאירו לש"ח 3.9000',
     ),
     maxRow(
-      '03-08-2026',
-      padded('WEBSHOP DEMO', 'SEATTLE', 'USA'),
+      '03-05-2019',
+      padded('WEBSHOP SAMPLE', 'SAMPLE TOWN', 'ZZY'),
       'חיוב חודשי',
-      61.2,
+      44.38,
       '₪',
-      20,
+      12.7,
       '$',
-      '02-09-2026',
+      '02-06-2019',
       '',
-      ' 3.0600',
+      ' 3.4945',
     ),
     maxRow(
-      '10-06-2026',
-      padded('DELIVERY DEMO', 'TEL AVIV', 'ISR'),
+      '14-05-2019',
+      padded('DELIVERY SAMPLE', 'SAMPLE TOWN', 'ZZY'),
       'חיוב חודשי',
-      50,
+      26.4,
       '₪',
-      50,
+      26.4,
       '₪',
-      '02-07-2026',
+      '02-06-2019',
       'חיוב עסקת חו"ל בש"ח ',
     ),
   ],
-  '139.50₪',
+  '0',
 );
 
 const rowsOf = (sheets: readonly SheetInput[]): FoundRow[] =>
   readKnownExport(sheets, ctx)?.blocks.flatMap((b) => b.rows) ?? [];
+const grouped = (sheets: readonly SheetInput[]) => groupPlans(rowsOf(sheets));
 
 const plain = (r: FoundRow) => ({
   description: r.description,
@@ -199,104 +200,188 @@ const plain = (r: FoundRow) => ({
   l4: r.wire.l4,
 });
 
+const draft = (row: FoundRow | undefined) =>
+  row === undefined
+    ? undefined
+    : draftOf(row, {
+        profileId: 'p',
+        base: 'ILS',
+        today: '2026-10-10' as LocalDate,
+        primeRate: '6',
+        categoryId: 'c',
+        paymentMethodId: 'm',
+      });
+
 describe('a Max transaction-details export', () => {
   it('is recognised by its headers, sheet by sheet, with no column guessing', () => {
-    const read = readKnownExport([maxLocal, maxWallet, maxForeign], ctx);
+    const read = readKnownExport([maxLocal, walletSheet([]), maxForeign], ctx);
     expect(read?.format).toBe('max');
     expect(read?.blocks.map((b) => b.sheet)).toEqual([0, 1, 2]);
     expect(read?.rest).toEqual([]);
+  });
+
+  it('is still recognised with only its money columns and "הערות" - the rest optional', () => {
+    const keep = [0, 1, 5, 6, 7, 8, 10];
+    const slim: SheetInput = {
+      ...maxForeign,
+      rows: maxForeign.rows.map((row, i) => (i < 3 ? row : keep.map((c) => row[c] ?? null))),
+    };
+    const rows = rowsOf([slim]);
+    expect(rows.map((r) => [r.amountMinor, r.currency, r.wire.l4, r.sector ?? null])).toEqual([
+      [1_762, 'ILS', '9999', null],
+      [1_270, 'USD', '9999', null],
+      [2_640, 'ILS', '9999', null],
+    ]);
   });
 
   it('saves what the card charged, not the original figure', () => {
     const rows = rowsOf([maxLocal]);
     const fee = rows.find((r) => r.description === 'דמי כרטיס');
     expect(fee && plain(fee)).toMatchObject({
-      amountMinor: 1250,
+      amountMinor: 2_340,
       currency: 'ILS',
       charged: null,
-      l4: '0400',
+      l4: '9999',
     });
     expect(fee?.cardFee).toBe(true);
-    const refund = rows.find((r) => r.kind === 'income' && r.description === 'מכולת הבדיון');
-    expect(refund && plain(refund)).toMatchObject({ amountMinor: 2000, date: '2026-09-07' });
+    const refund = rows.find((r) => r.kind === 'income' && r.description === 'מכולת לדוגמה');
+    expect(refund && plain(refund)).toMatchObject({ amountMinor: 1_150, date: '2019-03-07' });
   });
 
   it("keeps Max's own sector beside each row, for the business type", () => {
     const [first] = rowsOf([maxLocal]);
     expect(first?.sector).toBe('מזון וצריכה');
     expect(first?.wire.sec).toBe('מזון וצריכה');
-    expect(first?.wire.cd).toBe('02-10-2026');
+    expect(first?.wire.cd).toBe('02-04-2019');
+  });
+
+  it('reads a date a re-saved workbook keeps as a serial number', () => {
+    const sheet = maxSheet(
+      'עסקאות במועד החיוב',
+      [maxRow(43_529 as unknown as string, 'מכולת לדוגמה', 'רגילה', 5, '₪', 5, '₪', '02-04-2019')],
+      '0',
+    );
+    // Serial 43529 is 5 March 2019.
+    expect(rowsOf([sheet])[0]).toMatchObject({ date: '2019-03-05', flags: [] });
   });
 
   it('reads instalments from "הערות": each row is this payment, the deal is the plan total, one plan per deal', () => {
-    const series = rowsOf([maxLocal]).filter((r) => r.description === 'רהיטי דמה');
+    const series = grouped([maxLocal]).filter((r) => r.description === 'רהיטי דוגמה');
     expect(series.map((r) => [r.amountMinor, r.plan, r.flags])).toEqual([
-      [25_000, { mode: 'installments', number: 1, count: 4, totalMinor: 100_000 }, []],
-      [25_000, { mode: 'installments', number: 2, count: 4, totalMinor: 100_000 }, ['plan_in_import']],
-      [25_000, { mode: 'installments', number: 3, count: 4, totalMinor: 100_000 }, ['plan_in_import']],
+      [19_125, { mode: 'installments', number: 1, count: 4, totalMinor: 76_500 }, []],
+      [19_125, { mode: 'installments', number: 2, count: 4, totalMinor: 76_500 }, ['plan_in_import']],
+      [19_125, { mode: 'installments', number: 3, count: 4, totalMinor: 76_500 }, ['plan_in_import']],
     ]);
   });
 
-  it('reads a credit deal as credit', () => {
+  it('leaves a credit deal’s total to its payments, which carry interest on top of the price', () => {
     const sheet = maxSheet(
       'עסקאות במועד החיוב',
-      [maxRow('10-07-2026', 'חנות דמה', 'קרדיט', 100, '₪', 1200, '₪', '02-08-2026', 'תשלום 1 מתוך 12')],
+      [maxRow('10-01-2019', 'חנות לדוגמה', 'קרדיט', 77.3, '₪', 850, '₪', '02-02-2019', 'תשלום 1 מתוך 12')],
       '0',
     );
-    expect(rowsOf([sheet])[0]?.plan?.mode).toBe('credit');
+    const [row] = rowsOf([sheet]);
+    expect(row?.plan).toEqual({ mode: 'credit', number: 1, count: 12 });
+    // Saved as payment × count, flagged as worked out - never at the bare price.
+    expect(draft(row)).toMatchObject({ values: { amount: '927.60' }, flags: ['total_estimated'] });
   });
 
-  it("reads the card company's loan as one loan: its payments, not the principal, and no income for the disbursement", () => {
-    const loan = rowsOf([maxLocal]).filter((r) => r.description === 'מקס');
+  it('saves a foreign deal paid in shekels at its shekel payments: $600 as 3 × ₪700 is ₪2,100, not ₪700', () => {
+    const sheet = maxSheet(
+      'עסקאות חו"ל ומט"ח',
+      [
+        maxRow('20-02-2019', 'SHOP SAMPLE', 'תשלומים', 700, '₪', 600, '$', '02-03-2019', 'תשלום 1 מתוך 3'),
+        maxRow('20-02-2019', 'SHOP SAMPLE', 'תשלומים', 700, '₪', 600, '$', '02-04-2019', 'תשלום 2 מתוך 3'),
+      ],
+      '0',
+    );
+    const rows = groupPlans(rowsOf([sheet]));
+    expect(rows.map((r) => [r.amountMinor, r.currency, r.charged ?? null, r.plan, r.flags])).toEqual([
+      [70_000, 'ILS', null, { mode: 'installments', number: 1, count: 3 }, []],
+      [70_000, 'ILS', null, { mode: 'installments', number: 2, count: 3 }, ['plan_in_import']],
+    ]);
+    expect(draft(rows[0])).toMatchObject({
+      values: { amount: '2100.00', currency: 'ILS' },
+      flags: ['total_estimated'],
+    });
+    // The deal in dollars stays as printed.
+    expect(rows[0]?.wire.a).toBe('600');
+  });
+
+  it("reads the card company's loan as one loan: its payments, its corrections as they are, no income for the disbursement", () => {
+    const loan = grouped([maxLocal]).filter((r) => r.description === 'מקס');
     expect(
       loan.map((r) => [r.kind, r.amountMinor, r.plan?.mode ?? null, r.plan?.number ?? null, r.flags]),
     ).toEqual([
-      ['income', 500_000, null, null, ['plan_in_import']],
-      ['expense', 1_230, null, null, []],
-      ['expense', 44_010, 'loan', 1, []],
-      ['income', 1_020, 'loan', 12, ['plan_in_import']],
-      ['expense', 43_850, 'loan', 2, ['plan_in_import']],
+      ['income', 410_000, null, null, ['loan_disbursement']],
+      ['expense', 961, null, null, []],
+      ['expense', 36_107, 'loan', 1, []],
+      // "12 of 12" corrections: not payments of the loan, added as the amounts they are.
+      ['income', 813, null, null, ['plan_adjustment']],
+      ['expense', 1_327, null, null, ['plan_adjustment']],
+      ['expense', 35_984, 'loan', 2, ['plan_in_import']],
     ]);
   });
 
-  it('folds the FX wallet: the purchase from the wallet at its shekel cost, no wallet credit, no second shekel row', () => {
-    const rows = rowsOf([maxLocal, maxWallet]);
-    expect(rows.some((r) => r.description.includes('ארנק'))).toBe(false);
-    expect(rows.some((r) => r.description.includes('רכישת מט'))).toBe(false);
-    const app = rows.find((r) => r.description === 'APPDEMO');
-    expect(app && plain(app)).toMatchObject({
-      kind: 'expense',
-      amountMinor: 1_200,
-      currency: 'USD',
-      charged: { minor: 3_660, currency: 'ILS' },
-    });
-  });
-
-  it('keeps a wallet purchase with no shekel purchase to match, and still drops its wallet credit', () => {
-    const rows = rowsOf([maxWallet]);
-    expect(rows.map((r) => [r.description, r.amountMinor, r.currency, r.charged ?? null])).toEqual([
-      ['APPDEMO', 1_200, 'USD', null],
+  it('folds the FX wallet: the purchase at its shekel cost, no wallet credit, no second shekel row', () => {
+    const local = maxSheet('עסקאות במועד החיוב', [fxBuy('20-07-2019', 41.4, 'USD 12.00')], '0');
+    const wallet = walletSheet([walletSpend('14-07-2019', 'APP SAMPLE', 12), walletCredit('22-07-2019', 12)]);
+    const rows = rowsOf([local, wallet]);
+    expect(rows.map((r) => [r.description, r.kind, r.amountMinor, r.currency, r.charged ?? null])).toEqual([
+      ['APP SAMPLE', 'expense', 1_200, 'USD', { minor: 4_140, currency: 'ILS' }],
     ]);
   });
 
-  it('keeps a wallet credit no purchase accounts for', () => {
-    const sheet = maxSheet(
-      'עסקאות בארנק מט"ח',
-      [maxRow('22-06-2026', 'זיכוי מיתרת ארנק מט"ח', 'חיוב ארנק מטח', -7, '$', 7, '$', '02-07-2026')],
-      '0',
-    );
-    expect(rowsOf([sheet]).map((r) => [r.kind, r.amountMinor])).toEqual([['income', 700]]);
+  it('shares one currency purchase over the wallet purchases it paid for: $500 loaded, $120 + $380 spent', () => {
+    const local = maxSheet('עסקאות במועד החיוב', [fxBuy('01-07-2019', 1_725, 'USD 500.00')], '0');
+    const wallet = walletSheet([
+      walletSpend('05-07-2019', 'HOTEL SAMPLE', 120),
+      walletSpend('09-07-2019', 'TOURS SAMPLE', 380),
+      walletCredit('06-07-2019', 120),
+      walletCredit('10-07-2019', 380),
+    ]);
+    const rows = rowsOf([local, wallet]);
+    expect(rows.map((r) => [r.description, r.amountMinor, r.currency, r.charged?.minor ?? null])).toEqual([
+      ['HOTEL SAMPLE', 12_000, 'USD', 41_400],
+      ['TOURS SAMPLE', 38_000, 'USD', 131_100],
+    ]);
+    // ₪1,725 in all - the load, counted once.
+    expect(rows.reduce((sum, r) => sum + (r.charged?.minor ?? 0), 0)).toBe(172_500);
+  });
+
+  it('leaves the wallet as Max prints it when the purchases do not add up to the load - netting to the shekels', () => {
+    const local = maxSheet('עסקאות במועד החיוב', [fxBuy('01-07-2019', 1_725, 'USD 500.00')], '0');
+    const wallet = walletSheet([
+      walletSpend('05-07-2019', 'HOTEL SAMPLE', 120),
+      walletCredit('06-07-2019', 120),
+    ]);
+    const rows = rowsOf([local, wallet]);
+    expect(rows.map((r) => [r.description, r.kind, r.amountMinor, r.currency])).toEqual([
+      ['רכישת מט"ח', 'expense', 172_500, 'ILS'],
+      ['HOTEL SAMPLE', 'expense', 12_000, 'USD'],
+      ['זיכוי מיתרת ארנק מט"ח', 'income', 12_000, 'USD'],
+    ]);
+  });
+
+  it('keeps a wallet purchase and its credit when the currency was bought in an earlier export', () => {
+    const rows = rowsOf([
+      walletSheet([walletSpend('14-07-2019', 'APP SAMPLE', 12), walletCredit('22-07-2019', 12)]),
+    ]);
+    expect(rows.map((r) => [r.kind, r.amountMinor, r.currency])).toEqual([
+      ['expense', 1_200, 'USD'],
+      ['income', 1_200, 'USD'],
+    ]);
   });
 
   it('reads the foreign sheet: blank-currency rows at the shekel charge, named currencies with both amounts, padding gone', () => {
     const rows = rowsOf([maxForeign]);
     expect(rows.map((r) => [r.description, r.amountMinor, r.currency, r.charged ?? null, r.flags])).toEqual([
-      ['CAFE DEMO', 2_830, 'ILS', null, []],
-      ['WEBSHOP DEMO', 2_000, 'USD', { minor: 6_120, currency: 'ILS' }, []],
-      ['DELIVERY DEMO', 5_000, 'ILS', null, []],
+      ['CAFE SAMPLE', 1_762, 'ILS', null, []],
+      ['WEBSHOP SAMPLE', 1_270, 'USD', { minor: 4_438, currency: 'ILS' }, []],
+      ['DELIVERY SAMPLE', 2_640, 'ILS', null, []],
     ]);
     // The original figure is kept, as printed.
-    expect(rows[0]?.wire.a).toBe('200');
+    expect(rows[0]?.wire.a).toBe('113');
   });
 
   it('skips the title, blank and total rows', () => {
@@ -310,27 +395,27 @@ describe('a Max transaction-details export', () => {
       ...maxForeign,
       rows: maxForeign.rows.map((r, i) => (i > 3 && r.length > 3 ? r.map((c, j) => (j === 3 ? '' : c)) : r)),
     };
-    expect(rowsOf([sheet]).map((r) => r.wire.l4)).toEqual(['0400', '0400', '0400']);
+    expect(rowsOf([sheet]).map((r) => r.wire.l4)).toEqual(['9999', '9999', '9999']);
   });
 
   it('flags a row whose amount or currency cannot be read, and one whose date cannot', () => {
     const sheet = maxSheet(
       'עסקאות במועד החיוב',
       [
-        maxRow('05-09-2026', 'מכולת הבדיון', 'רגילה', 'abc', '₪', 'abc', '₪', '02-10-2026'),
-        maxRow('לא תאריך', 'מכולת הבדיון', 'רגילה', 10, '₪', 10, '₪', '02-10-2026'),
-        maxRow('05-09-2026', 'מכולת הבדיון', 'רגילה', 5, 'XYZ', 5, '₪', '02-10-2026'),
-        maxRow('06-09-2026', 'מכולת הבדיון', 'רגילה', '7.50', '₪', null, '₪', '02-10-2026'),
+        maxRow('05-03-2019', 'מכולת לדוגמה', 'רגילה', 'abc', '₪', 'abc', '₪', '02-04-2019'),
+        maxRow('לא תאריך', 'מכולת לדוגמה', 'רגילה', 10, '₪', 10, '₪', '02-04-2019'),
+        maxRow('05-03-2019', 'מכולת לדוגמה', 'רגילה', 5, 'XYZ', 5, '₪', '02-04-2019'),
+        maxRow('06-03-2019', 'מכולת לדוגמה', 'רגילה', '7.50', '₪', null, '₪', '02-04-2019'),
       ],
       '0',
     );
     const rows = rowsOf([sheet]);
     expect(rows.map((r) => [r.amountMinor, r.date ?? null, r.flags])).toEqual([
-      [undefined, '2026-09-05', ['amount_unreadable']],
+      [undefined, '2019-03-05', ['amount_unreadable']],
       [1_000, null, ['date_unreadable']],
       // The charge's currency is unknown, so the row waits; the original is what it shows.
-      [500, '2026-09-05', ['currency_unknown']],
-      [750, '2026-09-06', []],
+      [500, '2019-03-05', ['currency_unknown']],
+      [750, '2019-03-06', []],
     ]);
   });
 
@@ -378,20 +463,21 @@ const DISCOUNT_TITLES: Cell[][] = [
 const ILS = '"₪"#,##0.00';
 const discountRow = (
   merchant: string,
-  date: string,
+  date: Cell,
   amount: Cell,
   type: string,
   detail: string,
   charged: Cell,
+  chargeDate = '02/02/2019',
 ): Cell[] => [
-  'ויזה 9876',
+  'ויזה 1111',
   merchant,
   date,
   amount,
   'כאל',
   type,
   detail,
-  '02/01/2026',
+  chargeDate,
   charged,
   '--',
   '',
@@ -409,49 +495,57 @@ const fmt = (amount: string | null, charged: string | null): (string | null)[] =
   DISCOUNT_HEADER.map((_, i) => (i === 3 ? amount : i === 8 ? charged : i === 17 ? '0.00%' : null));
 
 const discountData: [Cell[], (string | null)[]][] = [
-  [discountRow('מאפיית הבדיון', '12/12/2025', 80, 'ישראל', ' מזהה כרטיס 1111 Apple Pay', 80), fmt(ILS, ILS)],
+  [
+    discountRow('מאפיית לדוגמה', '12/01/2019', 63.7, 'ישראל', ' מזהה כרטיס 0000 Apple Pay', 63.7),
+    fmt(ILS, ILS),
+  ],
   [
     discountRow(
-      'WEBSHOP DEMO',
-      '03/12/2025',
-      30,
+      'WEBSHOP SAMPLE',
+      '03/01/2019',
+      21.5,
       'חו"ל',
-      ' ארה"ב . ב- 4/12/25 הומר לש"ח בשער יציג 3.5167',
-      105.5,
+      ' ארץ לדוגמה . ב- 4/01/19 הומר לש"ח בשער יציג 3.7000',
+      79.55,
     ),
     fmt('"$"#,##0.00', ILS),
   ],
   [
     discountRow(
-      'WEBSHOP DEMO',
-      '05/12/2025',
-      -10,
+      'WEBSHOP SAMPLE',
+      '05/01/2019',
+      -8.4,
       'זיכוי-חו"ל',
-      ' בריטניה . ב- 6/12/25 הומר לש"ח בשער יציג 4.5200 .',
-      -45.2,
+      ' ארץ לדוגמה . ב- 6/01/19 הומר לש"ח בשער יציג 4.7000 .',
+      -39.48,
     ),
     fmt('"£"#,##0.00', ILS),
   ],
   // A promotion: no transaction amount, only a credit charged.
-  [discountRow('מסעדת דמה', '25/12/2025', '--', '', ' מבצע הנחה לדוגמה', -3), fmt(null, '"ILS"#,##0.00')],
+  [
+    discountRow('מסעדת לדוגמה', '25/01/2019', '--', '', ' מבצע הנחה לדוגמה', -2.35),
+    fmt(null, '"ILS"#,##0.00'),
+  ],
   // Discount writes a plan as "N/M" in the details, without "תשלום".
-  [discountRow('חנות דמה', '20/12/2025', 1000, 'ישראל', ' 3/10', 100), fmt(ILS, ILS)],
-  [discountRow('דמי כרטיס בנק בדוי', '04/12/2025', 9.9, 'עמלה-ישראל', '', 9.9), fmt(ILS, ILS)],
+  [discountRow('חנות לדוגמה', '20/01/2019', 870, 'ישראל', ' 3/10', 87), fmt(ILS, ILS)],
+  [discountRow('דמי כרטיס בנק לדוגמה', '04/01/2019', 7.45, 'עמלה-ישראל', '', 7.45), fmt(ILS, ILS)],
   // A currency the household does not use: its shekel charge is what is saved.
-  [discountRow('MUSEUM DEMO', '15/12/2025', 200, 'חו"ל', " צ'כיה .", 30), fmt('"CZK"#,##0.00', ILS)],
+  [discountRow('MUSEUM SAMPLE', '15/01/2019', 140, 'חו"ל', ' ארץ לדוגמה .', 23.1), fmt('"CZK"#,##0.00', ILS)],
+  // A standing order's note with a year-less date: no plan.
+  [discountRow('ועד בית לדוגמה', '18/01/2019', 95, 'ישראל', ' הוראת קבע 4/12', 95), fmt(ILS, ILS)],
 ];
 
-const discountSheet = (withFormats = true): SheetInput => {
+const discountSheet = (data = discountData, withFormats = true): SheetInput => {
   const rows: Cell[][] = [
     ...DISCOUNT_TITLES,
-    ['7 עסקאות לחיוב בחודש ינואר בכל הכרטיסים'],
+    ['8 עסקאות לחיוב בחודש ינואר בכל הכרטיסים'],
     // A running total across months viewed before the export: never this file's total.
     ['עסקאות באשראי - סה"כ חיוב:  + ₪100 + ₪200 + ₪300'],
     DISCOUNT_HEADER,
-    ...discountData.map(([row]) => row),
+    ...data.map(([row]) => row),
     ['הודעה,המידע באחריות חברת כרטיסי האשראי.,בכל סתירה'],
   ];
-  const formats = [...rows.slice(0, 9).map(() => []), ...discountData.map(([, f]) => f), []];
+  const formats = [...rows.slice(0, 9).map(() => []), ...data.map(([, f]) => f), []];
   return { name: 'כרטיסי אשראי', rows, ...(withFormats ? { formats } : {}), date1904: false };
 };
 
@@ -463,44 +557,105 @@ describe('a Discount bank-cards export', () => {
   it('takes each amount’s currency from its number format, and keeps both amounts of a foreign row', () => {
     const rows = rowsOf([discountSheet()]);
     expect(rows.map((r) => [r.description, r.kind, r.amountMinor, r.currency, r.charged ?? null])).toEqual([
-      ['מאפיית הבדיון', 'expense', 8_000, 'ILS', null],
-      ['WEBSHOP DEMO', 'expense', 3_000, 'USD', { minor: 10_550, currency: 'ILS' }],
-      ['WEBSHOP DEMO', 'income', 1_000, 'GBP', { minor: 4_520, currency: 'ILS' }],
-      ['מסעדת דמה', 'income', 300, 'ILS', null],
-      ['חנות דמה', 'expense', 10_000, 'ILS', null],
-      ['דמי כרטיס בנק בדוי', 'expense', 990, 'ILS', null],
-      ['MUSEUM DEMO', 'expense', 3_000, 'ILS', null],
+      ['מאפיית לדוגמה', 'expense', 6_370, 'ILS', null],
+      ['WEBSHOP SAMPLE', 'expense', 2_150, 'USD', { minor: 7_955, currency: 'ILS' }],
+      ['WEBSHOP SAMPLE', 'income', 840, 'GBP', { minor: 3_948, currency: 'ILS' }],
+      ['מסעדת לדוגמה', 'income', 235, 'ILS', null],
+      ['חנות לדוגמה', 'expense', 8_700, 'ILS', null],
+      ['דמי כרטיס בנק לדוגמה', 'expense', 745, 'ILS', null],
+      ['MUSEUM SAMPLE', 'expense', 2_310, 'ILS', null],
+      ['ועד בית לדוגמה', 'expense', 9_500, 'ILS', null],
     ]);
     expect(rows.every((r) => r.flags.length === 0)).toBe(true);
   });
 
-  it('reads both dates, the card, the fee and the "N/M" plan', () => {
+  it('reads both dates, the card, the fee and the "N/M" plan - and no plan from a standing order’s "4/12"', () => {
     const rows = rowsOf([discountSheet()]);
-    expect(rows[0]).toMatchObject({ date: '2025-12-12', wire: { cd: '02/01/2026', l4: '9876' } });
-    expect(rows[4]?.plan).toEqual({ mode: 'installments', number: 3, count: 10, totalMinor: 100_000 });
+    expect(rows[0]).toMatchObject({ date: '2019-01-12', wire: { cd: '02/02/2019', l4: '1111' } });
+    expect(rows[4]?.plan).toEqual({ mode: 'installments', number: 3, count: 10, totalMinor: 87_000 });
     expect(rows[1]?.plan).toBeNull();
     expect(rows[5]?.cardFee).toBe(true);
+    expect(rows[7]?.plan).toBeNull();
+    expect(draft(rows[7])?.values.amount).toBe('95.00');
+  });
+
+  it('reads a date kept as a serial number, and flags one it cannot read rather than drop the row', () => {
+    const rows = rowsOf([
+      discountSheet([
+        [discountRow('מאפיית לדוגמה', 43_477, 63.7, 'ישראל', '', 63.7), fmt(ILS, ILS)],
+        [discountRow('מאפיית לדוגמה', 'לא תאריך', 12.4, 'ישראל', '', 12.4), fmt(ILS, ILS)],
+      ]),
+    ]);
+    // Serial 43477 is 12 January 2019.
+    expect(rows.map((r) => [r.date ?? null, r.amountMinor, r.flags])).toEqual([
+      ['2019-01-12', 6_370, []],
+      [null, 1_240, ['date_unreadable']],
+    ]);
   });
 
   it('without number formats, saves every row at its shekel charge rather than guess a currency', () => {
-    const rows = rowsOf([discountSheet(false)]);
+    const rows = rowsOf([discountSheet(discountData, false)]);
     expect(rows.map((r) => [r.amountMinor, r.currency, r.charged ?? null])).toEqual([
-      [8_000, 'ILS', null],
-      [10_550, 'ILS', null],
-      [4_520, 'ILS', null],
-      [300, 'ILS', null],
-      [10_000, 'ILS', null],
-      [990, 'ILS', null],
-      [3_000, 'ILS', null],
+      [6_370, 'ILS', null],
+      [7_955, 'ILS', null],
+      [3_948, 'ILS', null],
+      [235, 'ILS', null],
+      [8_700, 'ILS', null],
+      [745, 'ILS', null],
+      [2_310, 'ILS', null],
+      [9_500, 'ILS', null],
     ]);
   });
 
   it('flags a row with no amount it can read', () => {
-    const sheet = discountSheet();
-    const rows = sheet.rows.map((r, i) =>
-      i === 9 ? discountRow('דמה', '01/12/2025', '--', '', '', '--') : r,
-    );
-    expect(rowsOf([{ ...sheet, rows }])[0]?.flags).toEqual(['amount_unreadable']);
+    const rows = rowsOf([
+      discountSheet([[discountRow('דוגמה', '01/01/2019', '--', '', '', 'x'), fmt(null, ILS)]]),
+    ]);
+    expect(rows[0]?.flags).toEqual(['amount_unreadable']);
+  });
+});
+
+describe('a deal across monthly files', () => {
+  // ₪1,000 in three payments - 333.34, 333.33, 333.33 - one in each monthly file.
+  const month = (detail: string, charged: number, chargeDate: string, file: number) =>
+    readKnownExport(
+      [
+        discountSheet([
+          [
+            discountRow('מוסך לדוגמה', '07/01/2019', 1000, 'ישראל', detail, charged, chargeDate),
+            fmt(ILS, ILS),
+          ],
+        ]),
+      ],
+      { ...ctx, file },
+    )?.blocks.flatMap((b) => b.rows) ?? [];
+
+  it('is one plan of the deal, whatever the rounding of each payment', () => {
+    const rows = groupPlans([
+      ...month(' 1/3', 333.34, '02/02/2019', 0),
+      ...month(' 2/3', 333.33, '02/03/2019', 1),
+    ]);
+    expect(rows.map((r) => [r.file, r.amountMinor, r.plan?.totalMinor ?? null, r.flags])).toEqual([
+      [0, 33_334, 100_000, []],
+      [1, 33_333, 100_000, ['plan_in_import']],
+    ]);
+    expect(draft(rows[0])?.values.amount).toBe('1000.00');
+  });
+
+  it('is led by the earliest payment found, whichever file comes first', () => {
+    const rows = groupPlans([
+      ...month(' 3/3', 333.33, '02/04/2019', 0),
+      ...month(' 2/3', 333.33, '02/03/2019', 1),
+    ]);
+    expect(rows.map((r) => [r.plan?.number, r.flags])).toEqual([
+      [3, ['plan_in_import']],
+      [2, []],
+    ]);
+  });
+
+  it('leaves rows of no plan, and plan rows with no date, alone', () => {
+    const plainRow = rowsOf([discountSheet([discountData[0]!])]);
+    expect(groupPlans(plainRow)).toEqual(plainRow);
   });
 });
 
@@ -510,8 +665,8 @@ const summary: SheetInput = {
     ...DISCOUNT_TITLES,
     ['ריכוז חיובים קודמים'],
     ['חודש חיוב', 'מספר עסקאות', 'סכום החיוב בש"ח', 'סכום החיוב בדולר', 'סכום החיוב באירו'],
-    ['112025', '12 עסקאות', 1000, 0, 0],
-    ['122025', '9 עסקאות', 800, 0, 0],
+    ['012019', '12 עסקאות', 1000, 0, 0],
+    ['022019', '9 עסקאות', 800, 0, 0],
     ['הודעה,המידע באחריות חברת כרטיסי האשראי.'],
   ],
   date1904: false,

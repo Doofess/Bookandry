@@ -35,6 +35,12 @@ export type Flag =
   | 'already_plan'
   /** Another payment of a deal this import already adds as one plan, or a loan's own disbursement. */
   | 'plan_in_import'
+  /** A row of a plan's deal that is not one of its payments - a correction, an interest adjustment: added as it is. */
+  | 'plan_adjustment'
+  /** A card company's loan paid out: the loan coming in, not income - it is added from its payments. */
+  | 'loan_disbursement'
+  /** The same amount a day or two away, on another card: noted, in case it is the same purchase saved under the wrong card. */
+  | 'similar_other_card'
   | 'card_fee_counted'
   | 'total_estimated'
   | 'total_mismatch'
@@ -58,6 +64,7 @@ export const BLOCKING: ReadonlySet<Flag> = new Set<Flag>([
   'already_added',
   'already_plan',
   'plan_in_import',
+  'loan_disbursement',
   'card_fee_counted',
   'not_saveable',
   'rate_missing',

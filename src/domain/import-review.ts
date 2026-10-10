@@ -68,14 +68,21 @@ export function collapseOverlaps(rows: readonly FoundRow[]): FoundRow[] {
 /** What a row or an occurrence says about the card or payment method it was paid with. */
 type Paid = { readonly id?: string; readonly digits?: string };
 
-/** Two sides that each name a card or payment method, and not the same one. */
+/**
+ * Two sides that each name a card, and not the same one. The printed digits
+ * decide when both sides have them - a card archived and added again, or
+ * renamed, is still the card with those digits; the payment methods decide
+ * only when one side has no digits.
+ */
 function differentCards(a: Paid, b: Paid): boolean {
-  if (a.id !== undefined && b.id !== undefined) return a.id !== b.id;
-  return a.digits !== undefined && b.digits !== undefined && a.digits !== b.digits;
+  if (a.digits !== undefined && b.digits !== undefined) return a.digits !== b.digits;
+  return a.id !== undefined && b.id !== undefined && a.id !== b.id;
 }
 
 const sameCard = (a: Paid, b: Paid): boolean =>
-  (a.id !== undefined && a.id === b.id) || (a.digits !== undefined && a.digits === b.digits);
+  a.digits !== undefined && b.digits !== undefined
+    ? a.digits === b.digits
+    : a.id !== undefined && a.id === b.id;
 
 const words = (name: string): string[] =>
   name
@@ -159,6 +166,7 @@ export function flagExisting(
     const amounts = new Set(
       [row.amountMinor, row.charged?.minor].filter((n): n is number => n !== undefined),
     );
+    const other = { card: false };
     const match = occurrences.some((o) => {
       if (
         o.isSkipped ||
@@ -169,14 +177,19 @@ export function flagExisting(
         return false;
       }
       const paid = occurrencePaid(o);
-      if (differentCards(rowPaid, paid)) return false;
+      if (differentCards(rowPaid, paid)) {
+        other.card = true;
+        return false;
+      }
       // The same card a day or two apart: two purchases of one price, unless the merchant is the same.
       if (sameCard(rowPaid, paid) && o.date !== date) {
         return sameMerchant(row.description, o.note ?? '');
       }
       return true;
     });
-    return match ? withFlags(row, 'already_added') : row;
+    if (match) return withFlags(row, 'already_added');
+    // Not blocked: only noted, in case it is this purchase saved earlier under another card.
+    return other.card ? withFlags(row, 'similar_other_card') : row;
   });
 }
 

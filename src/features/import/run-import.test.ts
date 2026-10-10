@@ -189,8 +189,8 @@ describe('an image', () => {
 describe('cards and bank accounts', () => {
   const listed = {
     k: [
-      { s: 0, n: 'max executive', l4: '3200', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
-      { s: 0, n: 'Dream Card VIP', l4: '0400', nw: 'ויזה', is: 'MAX', cr: '14.65%', lim: '', bd: '' },
+      { s: 0, n: 'max executive', l4: '5555', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+      { s: 0, n: 'Dream Card VIP', l4: '0088', nw: 'ויזה', is: 'MAX', cr: '14.65%', lim: '', bd: '' },
     ],
     pr: '4.75%',
   };
@@ -210,19 +210,19 @@ describe('cards and bank accounts', () => {
     });
     expect(calls.map((c) => (c.mode === 'extract' ? c.read : c.mode))).toEqual(['primary', 'check']);
     expect(result.cards.map((c) => [c.label, c.lastDigits, c.credit, c.flags])).toEqual([
-      ['max executive', '3200', { basis: 'prime', margin: '1.15' }, []],
-      ['Dream Card VIP', '0400', { basis: 'prime', margin: '9.9' }, ['reads_disagree']],
+      ['max executive', '5555', { basis: 'prime', margin: '1.15' }, []],
+      ['Dream Card VIP', '0088', { basis: 'prime', margin: '9.9' }, ['reads_disagree']],
     ]);
     // Something was found: not "nothing found".
     expect(states.at(-1)).toMatchObject({ status: 'done', found: 2 });
   });
 
   it('in a text are found in it, and a bank account with them', async () => {
-    const text = 'max executive 3200 קרדיט 5.9%\nבנק הפועלים סניף 532 חשבון 123456';
+    const text = 'max executive 5555 קרדיט 5.9%\nבנק הפועלים סניף 532 חשבון 123456';
     const { result } = await run([textFile(text)], {
       'extract:primary': [
         extract([], {
-          k: [{ s: 0, n: 'max executive', l4: '3200', nw: '', is: '', cr: '5.9%', lim: '', bd: '' }],
+          k: [{ s: 0, n: 'max executive', l4: '5555', nw: '', is: '', cr: '5.9%', lim: '', bd: '' }],
           ba: [{ s: 0, n: 'בנק הפועלים', bk: '', br: '532', no: '123456', h: '' }],
         }),
       ],
@@ -617,16 +617,16 @@ describe('an export the app knows by its headers', () => {
       'תאריך חיוב',
       'הערות',
     ];
-    // Invented: a deal of 600 in three payments of 200.
+    // Invented: a deal of 520.50 in three payments of 173.50.
     const pay = (n: number, charge: string) => [
-      '14-08-2026',
+      '14-08-2019',
       'חנות דמה',
       'ריהוט',
-      '0400',
+      '9999',
       'תשלומים',
-      200,
+      173.5,
       '₪',
-      600,
+      520.5,
       '₪',
       charge,
       `תשלום ${String(n)} מתוך 3`,
@@ -640,14 +640,14 @@ describe('an export the app knows by its headers', () => {
         {
           name: 'עסקאות במועד החיוב',
           date1904: false,
-          rows: [header, pay(1, '02-09-2026'), pay(2, '02-10-2026')],
+          rows: [header, pay(1, '02-09-2019'), pay(2, '02-10-2019')],
         },
         {
           name: 'Sheet2',
           date1904: false,
           rows: [
             ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה'],
-            ['03/10/2026', 'שופרסל', '120.50'],
+            ['03/10/2019', 'שופרסל', '88.40'],
           ],
         },
       ],
@@ -659,9 +659,48 @@ describe('an export the app knows by its headers', () => {
       result.rows.map((r) => [r.description, r.amountMinor, r.plan?.totalMinor ?? null, r.flags]),
     ).toEqual([
       // Equal payments on one date: noted as seen twice, as any repeat in a document is.
-      ['חנות דמה', 20_000, 60_000, ['twice_in_document']],
-      ['חנות דמה', 20_000, 60_000, ['plan_in_import', 'twice_in_document']],
-      ['שופרסל', 12_050, null, []],
+      ['חנות דמה', 17_350, 52_050, ['twice_in_document']],
+      ['חנות דמה', 17_350, 52_050, ['plan_in_import', 'twice_in_document']],
+      ['שופרסל', 8_840, null, []],
+    ]);
+  });
+
+  it('makes a Discount deal paid across two monthly files one plan: 1000 = 333.34 + 333.33 + 333.33', async () => {
+    const header = [
+      'כרטיס',
+      'בית עסק',
+      'תאריך עסקה',
+      'סכום העסקה',
+      'מנפיק',
+      'סוג העסקה',
+      'פירוט',
+      'תאריך החיוב',
+      'סכום החיוב',
+    ];
+    const month = (file: number, detail: string, charged: number, chargeDate: string): PreparedFile => ({
+      kind: 'sheet',
+      file,
+      name: `cards-${String(file)}.xlsx`,
+      hash: `d${String(file)}`,
+      sheets: [
+        {
+          name: 'כרטיסי אשראי',
+          date1904: false,
+          formats: [[], header.map((_, c) => (c === 3 || c === 8 ? '"₪"#,##0.00' : null))],
+          rows: [
+            header,
+            ['ויזה 1111', 'מוסך לדוגמה', '07/01/2019', 1000, 'כאל', 'ישראל', detail, chargeDate, charged],
+          ],
+        },
+      ],
+    });
+    const { result } = await run(
+      [month(0, ' 1/3', 333.34, '02/02/2019'), month(1, ' 2/3', 333.33, '02/03/2019')],
+      { map: [ok({ mc: [] }), ok({ mc: [] })] },
+    );
+    expect(result.rows.map((r) => [r.amountMinor, r.plan?.totalMinor ?? null, r.flags])).toEqual([
+      [33_334, 100_000, []],
+      [33_333, 100_000, ['plan_in_import']],
     ]);
   });
 

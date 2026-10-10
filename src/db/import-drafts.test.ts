@@ -38,7 +38,7 @@ afterEach(async () => {
 
 describe('unfinished cards and accounts', () => {
   it('knows a card by its last digits and an account by bank, branch and number', () => {
-    expect(unfinishedKey(card('3200'))).toBe('card:3200');
+    expect(unfinishedKey(card('5555'))).toBe('card:5555');
     expect(unfinishedKey(account('123456'))).toBe('account:12-532-123456');
     // Nothing that stays the same between readings: only this reading is the same one.
     expect(unfinishedKey(card('', 'k9'))).toBe('card:k9');
@@ -47,31 +47,31 @@ describe('unfinished cards and accounts', () => {
 
   it('keeps them, oldest first, until they are dropped - however long that takes', async () => {
     const { db } = handle;
-    await keepUnfinished(db, [card('3200'), account('123456')], 'p1', 1_000);
-    await keepUnfinished(db, [card('0400')], 'p2', 2_000);
+    await keepUnfinished(db, [card('5555'), account('123456')], 'p1', 1_000);
+    await keepUnfinished(db, [card('0088')], 'p2', 2_000);
 
     const kept = await listUnfinished(db);
     expect(kept.map((k) => [k.key, k.owner])).toEqual([
       ['account:12-532-123456', 'p1'],
-      ['card:3200', 'p1'],
-      ['card:0400', 'p2'],
+      ['card:5555', 'p1'],
+      ['card:0088', 'p2'],
     ]);
 
     // A later reading of anything else does not touch them, nor does time.
-    await keepUnfinished(db, [card('2600')], 'p1', 1_000 + YEAR);
+    await keepUnfinished(db, [card('6666')], 'p1', 1_000 + YEAR);
     expect(await listUnfinished(db)).toHaveLength(4);
 
-    await dropUnfinished(db, 'card:3200');
-    expect((await listUnfinished(db)).map((k) => k.key)).not.toContain('card:3200');
+    await dropUnfinished(db, 'card:5555');
+    expect((await listUnfinished(db)).map((k) => k.key)).not.toContain('card:5555');
   });
 
   it('replaces one read again rather than listing it twice, and keeps when it was first found', async () => {
     const { db } = handle;
-    await keepUnfinished(db, [card('3200', 'first')], 'p1', 1_000);
-    await keepUnfinished(db, [card('3200', 'second')], 'p2', 5_000);
+    await keepUnfinished(db, [card('5555', 'first')], 'p1', 1_000);
+    await keepUnfinished(db, [card('5555', 'second')], 'p2', 5_000);
     const [only, ...rest] = await listUnfinished(db);
     expect(rest).toEqual([]);
-    expect(only).toMatchObject({ key: 'card:3200', at: 1_000, owner: 'p2', found: { id: 'second' } });
+    expect(only).toMatchObject({ key: 'card:5555', at: 1_000, owner: 'p2', found: { id: 'second' } });
   });
 
   it('puts a deleted one back as it was', async () => {

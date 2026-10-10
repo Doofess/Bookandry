@@ -129,6 +129,7 @@ const EXISTING: ReadonlySet<Flag> = new Set<Flag>([
   'already_added',
   'already_plan',
   'plan_in_import',
+  'loan_disbursement',
   'card_fee_counted',
   'in_another_file',
 ]);

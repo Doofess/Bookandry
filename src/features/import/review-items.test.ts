@@ -36,7 +36,7 @@ const card = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
   profileId: 'p2',
   type: 'credit_card',
   label: 'Visa',
-  card: { lastDigits: '3200' },
+  card: { lastDigits: '5555' },
   isArchived: 0,
   createdAt: NOW,
   updatedAt: NOW,
@@ -46,23 +46,23 @@ const card = (over: Partial<PaymentMethod> = {}): PaymentMethod => ({
 describe('rows and the card they were charged to', () => {
   it('a card just added takes the rows its last four digits are printed beside, and their owner', () => {
     const [mine, other, settled] = linkToCard(
-      [item('3200'), item('9999'), item('3200', { confirmed: true })],
+      [item('5555'), item('9999'), item('5555', { confirmed: true })],
       card(),
     );
     expect(mine?.values).toMatchObject({ paymentMethodId: 'visa', profileId: 'p2' });
     expect(other?.values?.paymentMethodId).toBe('');
     expect(settled?.values?.paymentMethodId).toBe('');
     // A household card leaves the row's person as it was.
-    expect(linkToCard([item('3200')], card({ profileId: '*' }))[0]?.values?.profileId).toBe('p1');
+    expect(linkToCard([item('5555')], card({ profileId: '*' }))[0]?.values?.profileId).toBe('p1');
     // An account, or a card with no digits, takes nothing.
-    expect(linkToCard([item('3200')], card({ card: {} }))[0]?.values?.paymentMethodId).toBe('');
+    expect(linkToCard([item('5555')], card({ card: {} }))[0]?.values?.paymentMethodId).toBe('');
   });
 
   it("a statement's card takes its rows: by the digits in its header, else by its name", () => {
     const byDigits = item('', {});
     const header = {
       ...byDigits,
-      found: { ...byDigits.found, statementCard: { label: 'Max', lastDigits: '3200' } },
+      found: { ...byDigits.found, statementCard: { label: 'Max', lastDigits: '5555' } },
     };
     expect(linkToCard([header], card())[0]?.values?.paymentMethodId).toBe('visa');
     // A statement that names its card but not its digits: the card of that name, digits or none.
@@ -74,7 +74,7 @@ describe('rows and the card they were charged to', () => {
   it('the batch "Paid with" leaves a row whose card its digits name', () => {
     const visa = card();
     const [named, plain] = applyBatch(
-      [item('3200', { values: { ...item('3200').values!, paymentMethodId: 'visa' } }), item('')],
+      [item('5555', { values: { ...item('5555').values!, paymentMethodId: 'visa' } }), item('')],
       { methodId: 'cash', profileId: 'p1' },
       [visa],
     );
@@ -98,11 +98,11 @@ describe('whose a row is', () => {
 
   it("a found card or account goes to whoever its file's rows were read as being of - when that is one person", () => {
     const of = (l4: string, holder?: string) => item(l4, holder === undefined ? {} : { holder });
-    expect(holderOfMethod([of('3200', 'p2'), of('3200', 'p2')], 0, '3200')).toBe('p2');
+    expect(holderOfMethod([of('5555', 'p2'), of('5555', 'p2')], 0, '5555')).toBe('p2');
     // Another card's rows do not count; a file read as two people's gives nobody.
-    expect(holderOfMethod([of('3200', 'p2'), of('9999', 'p1')], 0, '3200')).toBe('p2');
-    expect(holderOfMethod([of('3200', 'p2'), of('9999', 'p1')], 0, undefined)).toBeUndefined();
-    expect(holderOfMethod([of('3200', 'p2'), of('3200')], 0, '3200')).toBeUndefined();
+    expect(holderOfMethod([of('5555', 'p2'), of('9999', 'p1')], 0, '5555')).toBe('p2');
+    expect(holderOfMethod([of('5555', 'p2'), of('9999', 'p1')], 0, undefined)).toBeUndefined();
+    expect(holderOfMethod([of('5555', 'p2'), of('5555')], 0, '5555')).toBeUndefined();
     expect(holderOfMethod([], 0, undefined)).toBeUndefined();
   });
 });

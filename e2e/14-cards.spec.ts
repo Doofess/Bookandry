@@ -105,7 +105,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('link', { name: copy.nav }).click();
       await page.getByRole('button', { name: copy.add }).click();
       await page.getByLabel(copy.label, { exact: true }).fill('Visa');
-      await page.getByLabel(copy.lastDigits, { exact: true }).fill('3200');
+      await page.getByLabel(copy.lastDigits, { exact: true }).fill('5555');
       await page.getByRole('radio', { name: copy.max, exact: true }).click();
       // Its colour: picked from swatches shaped like the card.
       await page.getByTitle(copy.gold, { exact: true }).click();
@@ -117,7 +117,7 @@ for (const lang of ['en', 'he'] as const) {
       const tile = page.getByRole('article').filter({ hasText: 'Visa' });
       await expect(tile).toContainText(copy.billed);
       // Its last four digits, where a card prints them.
-      await expect(tile).toContainText('3200');
+      await expect(tile).toContainText('5555');
       await expect(tile.getByTestId('card-face')).toHaveAttribute('data-color', 'gold');
 
       // The balance before.
@@ -136,7 +136,7 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(sheet).toHaveCount(0);
       // The feed says which card paid: a card and its last four digits.
-      await expect(page.getByTestId('row-card').first()).toContainText('3200');
+      await expect(page.getByTestId('row-card').first()).toContainText('5555');
 
       // Not taken yet: the balance is as it was, and the breakdown says why.
       await expect(balance).toHaveText(beforeText ?? '');

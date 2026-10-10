@@ -9,12 +9,12 @@ import { foundMethodOf, nextUnfinished, unfinishedItem } from './found-methods';
 
 const NOW = '2026-10-06T00:00:00.000Z' as IsoInstant;
 const entry: UnfinishedMethod = {
-  key: 'card:3200',
+  key: 'card:5555',
   at: 0,
   owner: 'p1',
   kind: 'card',
   found: readCard(
-    { s: 0, n: 'max executive', l4: '3200', nw: 'Mastercard', is: 'MAX', cr: '', lim: '', bd: '' },
+    { s: 0, n: 'max executive', l4: '5555', nw: 'Mastercard', is: 'MAX', cr: '', lim: '', bd: '' },
     'k0',
     0,
     '',
@@ -29,7 +29,7 @@ const card = (billingDay?: number): PaymentMethod => ({
   createdAt: NOW,
   updatedAt: NOW,
   card: {
-    lastDigits: '3200',
+    lastDigits: '5555',
     network: 'mastercard',
     issuer: 'max',
     ...(billingDay === undefined ? {} : { billingDay }),
@@ -45,7 +45,7 @@ describe('cards and accounts kept to finish', () => {
     expect(unfinishedItem(entry, [card()])).toBeUndefined();
     // Another card of the household's changes nothing.
     expect(
-      unfinishedItem(entry, [{ ...card(10), card: { lastDigits: '0400', billingDay: 10 } }]),
+      unfinishedItem(entry, [{ ...card(10), card: { lastDigits: '0088', billingDay: 10 } }]),
     ).toMatchObject({ missing: ['billingDay'] });
   });
 
