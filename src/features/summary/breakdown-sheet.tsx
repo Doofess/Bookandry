@@ -4,6 +4,7 @@ import { CategoryIcon } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import {
   EditorPanel,
+  EditorPanelBody,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -52,9 +53,9 @@ export function BalanceBreakdownSheet({
           </EditorPanelDescription>
         </EditorPanelHeader>
 
-        <div className="px-4 pb-4">
+        <EditorPanelBody>
           <BalanceLines breakdown={breakdown} currency={currency} />
-        </div>
+        </EditorPanelBody>
       </EditorPanelContent>
     </EditorPanel>
   );
@@ -134,7 +135,7 @@ export function ExpenseBreakdownSheet({
           <EditorPanelDescription>{t('breakdown.expenseBody', { month: monthLabel })}</EditorPanelDescription>
         </EditorPanelHeader>
 
-        <div className="px-4 pb-4">
+        <EditorPanelBody>
           {breakdown.groups.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{t('breakdown.empty')}</p>
           ) : (
@@ -161,7 +162,7 @@ export function ExpenseBreakdownSheet({
               </section>
             ))
           )}
-        </div>
+        </EditorPanelBody>
       </EditorPanelContent>
     </EditorPanel>
   );

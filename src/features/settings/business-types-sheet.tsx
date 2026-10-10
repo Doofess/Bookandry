@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelBody,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -112,7 +113,7 @@ export function BusinessTypesSheet({
           <EditorPanelDescription>{t('categories:businessTypes.body')}</EditorPanelDescription>
         </EditorPanelHeader>
 
-        <div className="space-y-4 px-4 pb-6">
+        <EditorPanelBody>
           {category?.isArchived === 1 ? (
             <p className="rounded-lg bg-muted px-3 py-2 text-sm">{t('categories:businessTypes.archived')}</p>
           ) : null}
@@ -172,13 +173,13 @@ export function BusinessTypesSheet({
               void add(code);
             }}
             trigger={
-              <Button type="button" variant="outline" className="h-11 w-full">
+              <Button type="button" variant="pill">
                 <Plus className="size-4" aria-hidden="true" />
                 {t('categories:businessTypes.add')}
               </Button>
             }
           />
-        </div>
+        </EditorPanelBody>
 
         <AlertDialog
           open={asking !== undefined}

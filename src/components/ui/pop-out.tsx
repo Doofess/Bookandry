@@ -195,7 +195,7 @@ function PopOutBody({
       {footer === undefined ? null : (
         <footer
           data-slot="popout-actions"
-          className="flex flex-wrap justify-end gap-2.5 border-t-2 border-border px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] *:min-w-37.5 sm:px-8"
+          className="flex flex-wrap justify-end gap-2.5 border-t-2 border-border px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] sm:px-8 [&>*]:min-w-37.5"
         >
           {footer}
         </footer>

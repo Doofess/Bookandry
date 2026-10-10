@@ -63,7 +63,7 @@ function EditorPanelHeader({ className, children, ...props }: React.ComponentPro
     <div
       data-slot="editor-panel-header"
       className={cn(
-        'sticky inset-bs-0 z-10 flex items-start gap-3 bg-card px-5 pt-5 pb-3 lg:px-7 lg:pt-7',
+        'sticky inset-bs-0 z-10 flex items-start gap-3 bg-card px-5 pt-5 pb-4 lg:px-7 lg:pt-7',
         className,
       )}
       {...props}
@@ -81,7 +81,10 @@ function EditorPanelTitle({ className, ...props }: DialogPrimitive.Title.Props) 
   return (
     <DialogPrimitive.Title
       data-slot="editor-panel-title"
-      className={cn('text-title-sheet leading-[1.02] font-semibold tracking-[-0.01em]', className)}
+      className={cn(
+        'text-(length:--text-title-sheet) leading-[1.02] font-semibold tracking-[-0.01em]',
+        className,
+      )}
       {...props}
     />
   );
@@ -91,10 +94,39 @@ function EditorPanelDescription({ className, ...props }: DialogPrimitive.Descrip
   return (
     <DialogPrimitive.Description
       data-slot="editor-panel-description"
-      className={cn('text-sub-sheet leading-[1.15] font-light', className)}
+      className={cn('text-(length:--text-sub-sheet) leading-[1.15] font-light', className)}
       {...props}
     />
   );
 }
 
-export { EditorPanel, EditorPanelContent, EditorPanelDescription, EditorPanelHeader, EditorPanelTitle };
+/** The editor's fields, on the header's inline padding (20 / 28px), 16px apart. */
+function EditorPanelBody({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="editor-panel-body"
+      className={cn('flex flex-col gap-4 px-5 pb-6 lg:px-7', className)}
+      {...props}
+    />
+  );
+}
+
+/** Cancel (a pill) and Save (the solid pill), held at the panel's foot; side by side at the inline end from lg. */
+function EditorPanelActions({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div data-slot="editor-actions" className={cn('flex gap-2 pt-1 [&>*]:flex-1', className)} {...props} />
+  );
+}
+
+const EditorPanelClose = DialogPrimitive.Close;
+
+export {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelBody,
+  EditorPanelClose,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+};

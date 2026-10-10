@@ -143,6 +143,40 @@ export function ReconvertDialog({
     }
   };
 
+  const footer =
+    phase.step === 'done' ? (
+      <Button
+        type="button"
+        variant="pill-solid"
+        onClick={() => {
+          onOpenChange(false);
+        }}
+      >
+        {t('action.close')}
+      </Button>
+    ) : phase.step === 'failed' ? (
+      <Button
+        type="button"
+        variant="pill-solid"
+        onClick={() => {
+          setPhase({ step: 'idle' });
+        }}
+      >
+        {t('action.retry')}
+      </Button>
+    ) : running ? undefined : (
+      <Button
+        type="button"
+        variant="destructive"
+        // Forced, not suggested. The most destructive operation in the
+        // app does not start until a backup exists.
+        disabled={isSame || !backedUp}
+        onClick={() => void run()}
+      >
+        {t('reconvert.start')}
+      </Button>
+    );
+
   return (
     <PopOut
       open={open}
@@ -160,36 +194,21 @@ export function ReconvertDialog({
       }}
     >
       <PopOutContent size="compact">
-        <PopOutBody title={t('reconvert.title', { currency: target })} subtitle={t('reconvert.body')}>
+        <PopOutBody
+          title={t('reconvert.title', { currency: target })}
+          subtitle={t('reconvert.body')}
+          footer={footer}
+        >
           <div className="space-y-4">
             {phase.step === 'done' ? (
               <>
                 <p className="text-sm">{t('reconvert.done', { currency: phase.currency })}</p>
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={() => {
-                    onOpenChange(false);
-                  }}
-                >
-                  {t('action.close')}
-                </Button>
               </>
             ) : phase.step === 'failed' ? (
               <>
                 <p role="alert" className="text-sm text-destructive">
                   {phase.message}
                 </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => {
-                    setPhase({ step: 'idle' });
-                  }}
-                >
-                  {t('action.retry')}
-                </Button>
               </>
             ) : running ? (
               <div className="space-y-2">
@@ -243,18 +262,6 @@ export function ReconvertDialog({
                     <p className="text-xs text-muted-foreground">{t('reconvert.backupDone')}</p>
                   ) : null}
                 </div>
-
-                <Button
-                  type="button"
-                  variant="destructive"
-                  className="w-full"
-                  // Forced, not suggested. The most destructive operation in the
-                  // app does not start until a backup exists.
-                  disabled={isSame || !backedUp}
-                  onClick={() => void run()}
-                >
-                  {t('reconvert.start')}
-                </Button>
               </>
             )}
           </div>

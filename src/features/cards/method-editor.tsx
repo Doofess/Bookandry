@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
   EditorPanelContent,
   EditorPanelHeader,
   EditorPanelTitle,
@@ -321,7 +322,7 @@ export function MethodEditor({
           target={target}
           profiles={profiles}
           newType={newType}
-          className="px-4 pb-6"
+          className="px-5 pb-6 lg:px-7"
           onDone={() => {
             onOpenChange(false);
           }}
@@ -493,6 +494,7 @@ export function MethodForm({
         setAttempted(true);
         if (label.trim() !== '' && !cardInvalid && !accountInvalid) void save();
       }}
+      data-slot="editor-panel-body"
       className={cn('space-y-4', className)}
     >
       <div className="space-y-1.5">
@@ -572,21 +574,20 @@ export function MethodForm({
         </div>
       )}
 
-      <div data-slot="editor-actions" className="flex gap-2 pt-1">
+      <EditorPanelActions>
         <Button
           type="button"
-          variant="outline"
-          className="flex-1"
+          variant="pill"
           onClick={() => {
             onDone(undefined);
           }}
         >
           {t('action.cancel')}
         </Button>
-        <Button type="submit" disabled={label.trim() === ''} className="flex-1">
+        <Button type="submit" variant="pill-solid" disabled={label.trim() === ''}>
           {t('action.save')}
         </Button>
-      </div>
+      </EditorPanelActions>
     </form>
   );
 }

@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
   EditorPanelContent,
   EditorPanelHeader,
   EditorPanelTitle,
@@ -317,7 +318,8 @@ function CategoryEditor({
             event.preventDefault();
             if (name.trim() !== '') void save();
           }}
-          className="space-y-4 px-4 pb-6"
+          data-slot="editor-panel-body"
+          className="space-y-4 px-5 pb-6 lg:px-7"
         >
           <div className="space-y-1.5">
             <Label htmlFor={nameId}>{t('categories:manage.nameLabel')}</Label>
@@ -359,21 +361,20 @@ function CategoryEditor({
             </div>
           ) : null}
 
-          <div data-slot="editor-actions" className="flex gap-2 pt-1">
+          <EditorPanelActions>
             <Button
               type="button"
-              variant="outline"
-              className="flex-1"
+              variant="pill"
               onClick={() => {
                 onOpenChange(false);
               }}
             >
               {t('action.cancel')}
             </Button>
-            <Button type="submit" disabled={name.trim() === ''} className="flex-1">
+            <Button type="submit" variant="pill-solid" disabled={name.trim() === ''}>
               {t('action.save')}
             </Button>
-          </div>
+          </EditorPanelActions>
         </form>
       </EditorPanelContent>
     </EditorPanel>

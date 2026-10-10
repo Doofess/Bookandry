@@ -24,6 +24,8 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
+  EditorPanelBody,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -321,11 +323,11 @@ export function TransactionSheet({
 /** The form's place while the row it opens on loads. */
 function FormSkeleton() {
   return (
-    <div className="space-y-3 px-4 pb-6" aria-busy="true">
+    <EditorPanelBody className="space-y-3" aria-busy="true">
       {[0, 1, 2, 3].map((i) => (
         <Skeleton key={i} className="h-11 w-full rounded-lg" />
       ))}
-    </div>
+    </EditorPanelBody>
   );
 }
 
@@ -365,14 +367,16 @@ function EditBody({
      * whatever they had half-typed here written into it.
      */
     return (
-      <div className="px-4 pb-6">
+      <EditorPanelBody>
         <p role="alert" className="text-sm text-muted-foreground">
           {t('tx.gone')}
         </p>
-        <Button type="button" variant="outline" onClick={onCancel} className="mt-4 w-full">
-          {t('action.close')}
-        </Button>
-      </div>
+        <EditorPanelActions>
+          <Button type="button" variant="pill" onClick={onCancel}>
+            {t('action.close')}
+          </Button>
+        </EditorPanelActions>
+      </EditorPanelBody>
     );
   }
 
@@ -981,7 +985,8 @@ function TransactionForm({
           beforeSubmit();
           void submit(event);
         }}
-        className="space-y-4 px-4 pb-6"
+        data-slot="editor-panel-body"
+        className="space-y-4 px-5 pb-6 lg:px-7"
         noValidate
       >
         {isSeries ? (
@@ -1423,18 +1428,18 @@ function TransactionForm({
           </AlertDialogContent>
         </AlertDialog>
 
-        <div data-slot="editor-actions" className="flex gap-2 pt-1">
-          <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+        <EditorPanelActions>
+          <Button type="button" variant="pill" onClick={onCancel}>
             {t('action.cancel')}
           </Button>
           <Button
             type="submit"
+            variant="pill-solid"
             disabled={form.formState.isSubmitting || rateBlocked || needRate}
-            className="flex-1"
           >
             {form.formState.isSubmitting ? t('tx.saving') : t('action.save')}
           </Button>
-        </div>
+        </EditorPanelActions>
       </form>
       {/* The chosen card, opened over the form to give a deal's rate; the purchase waits underneath.
           Outside the <form>: React carries a portal's events up its own tree, so the
@@ -1453,7 +1458,7 @@ function TransactionForm({
             <MethodForm
               target={cardOpen}
               profiles={profiles}
-              className="px-4 pb-6"
+              className="px-5 pb-6 lg:px-7"
               onDone={(saved) => {
                 setCardOpen(undefined);
                 if (saved !== undefined) cardSaved(saved);
