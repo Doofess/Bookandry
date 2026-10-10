@@ -28,3 +28,6 @@ artifacts/
 # Claude Code plugin scratch (session notes, subagent workspaces)
 .remember/
 .superpowers/
+
+# Vercel CLI link (per machine)
+.vercel
