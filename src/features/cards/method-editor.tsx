@@ -18,9 +18,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import {
   createPaymentMethod,
@@ -293,10 +298,8 @@ export function MethodEditor({
 }) {
   const { t } = useTranslation(['common', 'categories']);
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[92dvh] overflow-y-auto"
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent
         // The rates' wrapper is there as the sheet opens; a linked card's table
         // loads into it in place, so it is focused without waiting for that.
         initialFocus={
@@ -309,11 +312,11 @@ export function MethodEditor({
             : undefined
         }
       >
-        <SheetHeader>
-          <SheetTitle>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {target === 'new' ? t('categories:manage.methodNew') : t('categories:manage.methodEdit')}
-          </SheetTitle>
-        </SheetHeader>
+          </EditorPanelTitle>
+        </EditorPanelHeader>
         <MethodForm
           target={target}
           profiles={profiles}
@@ -323,8 +326,8 @@ export function MethodEditor({
             onOpenChange(false);
           }}
         />
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -569,7 +572,7 @@ export function MethodForm({
         </div>
       )}
 
-      <div className="flex gap-2 pt-1">
+      <div data-slot="editor-actions" className="flex gap-2 pt-1">
         <Button
           type="button"
           variant="outline"
@@ -701,7 +704,7 @@ function Option({
       aria-checked={selected}
       onClick={onSelect}
       className={`flex min-h-11 items-center rounded-xl border px-3 text-start text-sm transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-        selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+        selected ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
       }`}
     >
       <span className="truncate">{label}</span>

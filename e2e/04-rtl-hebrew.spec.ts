@@ -57,7 +57,10 @@ test.describe('@rtl the document', () => {
     if (box !== null && viewport !== null) {
       // Desktop layout: a vertical rail, so the assertion is which EDGE it hugs.
       expect(viewport.width).toBeGreaterThanOrEqual(1024);
-      expect(box.x + box.width).toBeCloseTo(viewport.width, -1);
+      // The window less the scrollbar the reset keeps room for (scrollbar-gutter: stable).
+      // On the right: an English rail would end near 224.
+      expect(box.x + box.width).toBeGreaterThan(viewport.width - 20);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
     }
   });
 });
@@ -85,32 +88,27 @@ test.describe('@rtl the mobile tab bar', () => {
 });
 
 test.describe('@rtl fonts', () => {
-  test('renders Hebrew in Heebo and digits in Inter', async ({ page }) => {
+  test('renders Hebrew and digits in Plex, ahead of every fallback', async ({ page }) => {
     await completeFirstRun(page, 'he');
     await page.evaluate(() => document.fonts.ready);
 
-    const result = await page.evaluate(() => {
-      const stack = getComputedStyle(document.body).fontFamily;
-
+    const result = await page.evaluate(() => ({
+      stack: getComputedStyle(document.body).fontFamily.replace(/["']/g, ''),
       // `document.fonts.check` answers "can this family render this text with a
-      // LOADED face", which is the question - a family declared but never
-      // downloaded silently falls through to a system font.
-      return {
-        stack,
-        heebo: document.fonts.check('400 16px "Heebo Variable"', 'שלום'),
-        inter: document.fonts.check('400 16px "Inter Variable"', '0123456789'),
-      };
-    });
+      // LOADED face": a family declared but never downloaded falls through silently.
+      hebrew: document.fonts.check('400 16px "IBM Plex Sans Hebrew"', 'שלום'),
+      digits: document.fonts.check('400 16px "IBM Plex Sans Hebrew"', '0123456789'),
+    }));
 
     /*
-     * ORDER IS LOAD-BEARING. Font fallback is per-glyph: ASCII digits resolve
-     * to Inter (which ships tnum) while Hebrew letters fall through to Heebo
-     * (which does not). Putting Heebo first breaks every amount column in
-     * Hebrew, and nothing else in the suite would notice.
+     * ORDER IS LOAD-BEARING. Plex's digits are fixed-width; a face ahead of it
+     * without them breaks every amount column, and nothing else in the suite
+     * would notice.
      */
-    expect(result.stack.indexOf('Inter Variable')).toBeLessThan(result.stack.indexOf('Heebo Variable'));
-    expect(result.heebo).toBe(true);
-    expect(result.inter).toBe(true);
+    expect(result.stack.indexOf('IBM Plex Sans Hebrew')).toBe(0);
+    expect(result.stack.indexOf('IBM Plex Sans Hebrew')).toBeLessThan(result.stack.indexOf('Plex Fallback'));
+    expect(result.hebrew).toBe(true);
+    expect(result.digits).toBe(true);
   });
 });
 
@@ -171,31 +169,33 @@ test.describe('@rtl amounts and the chart', () => {
   });
 });
 
-test.describe('@rtl sheets open on the right edge', () => {
-  test('brings the add sheet in from the correct side', async ({ page }) => {
+test.describe('@rtl the add panel', () => {
+  test('comes in at the inline end: the left in Hebrew from lg, the whole width on a phone', async ({
+    page,
+  }) => {
     /*
-     * Measured by BOX POSITION, not by class name. shadcn's rtl transform
-     * rewrites the physical utilities it knows about, but `side`/`align` on
-     * floating elements are NOT in its mapping table - so the only honest check
-     * is where the thing actually landed.
+     * Measured by BOX POSITION, not by class name: a physical side surviving a
+     * rewrite looks right in English and opens over the rail in Hebrew.
      */
     await completeFirstRun(page, 'he');
-
     await openAddSheet(page);
 
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-
-    const box = await dialog.boundingBox();
+    const panel = page.locator('[data-slot="editor-panel"]');
+    await expect(panel).toBeVisible();
+    const box = await panel.boundingBox();
     const viewport = page.viewportSize();
     expect(box).not.toBeNull();
     expect(viewport).not.toBeNull();
+    if (box === null || viewport === null) return;
 
-    if (box !== null && viewport !== null) {
-      // A bottom sheet spans the width; what matters is that it is not pinned
-      // to one physical edge with a gap on the other.
-      expect(box.x).toBeLessThan(viewport.width);
-      expect(box.x + box.width).toBeGreaterThan(0);
+    if (viewport.width >= 1024) {
+      // 480px, one sheet gap (16px) from the left edge, nowhere near the rail on the right.
+      expect(Math.round(box.width)).toBe(480);
+      expect(box.x).toBeGreaterThanOrEqual(15);
+      expect(box.x).toBeLessThanOrEqual(17);
+    } else {
+      expect(box.x).toBeLessThanOrEqual(1);
+      expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1);
     }
   });
 });

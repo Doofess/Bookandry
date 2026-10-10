@@ -24,7 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { PopOut, PopOutBody, PopOutContent } from '@/components/ui/pop-out';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
 import {
@@ -176,7 +176,6 @@ const IMPORT_KINDS: readonly ImportKind[] = ['expense', 'income', 'both'];
  */
 export function ImportSheet(props: ImportSheetProps) {
   const { t, i18n } = useTranslation(['import', 'common', 'categories', 'profiles']);
-  const titleId = useId();
   const prime = usePrime();
   const account = useAccount();
   const me = account.status === 'signed_in' ? account.user.id : undefined;
@@ -524,177 +523,175 @@ export function ImportSheet(props: ImportSheetProps) {
   const filling = draft?.item ?? session.methods.find((m) => m.id === props.target.card);
 
   return (
-    <Sheet
+    <PopOut
       open
       onOpenChange={(open) => {
         if (!open) requestClose();
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>
-            {filling !== undefined
+      <PopOutContent>
+        <PopOutBody
+          title={
+            filling !== undefined
               ? t('import:fillTitle', { name: foundName(filling, i18n.language) })
               : editing === undefined
                 ? t('import:title')
-                : t('import:editTitle')}
-          </SheetTitle>
-          {editing === undefined && filling === undefined ? (
-            <SheetDescription>{t('import:body')}</SheetDescription>
-          ) : null}
-        </SheetHeader>
-
-        <div className="px-4 pb-4">
-          {filling !== undefined && props.target.card !== undefined ? (
-            <MethodPanel
-              key={filling.id}
-              item={filling}
-              methods={props.paymentMethods}
-              profiles={props.profiles}
-              owner={draft === undefined ? owner : ownerOf(draft.entry)}
-              onDone={(saved) => {
-                const open = props.target.card;
-                if (saved === undefined || open === undefined) {
-                  props.onOpenCard(undefined);
-                  return;
-                }
-                setSession((s) => ({
-                  ...s,
-                  methods: s.methods.map((m): MethodReviewItem =>
-                    m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
-                  ),
-                  items: linkToCard(s.items, saved),
-                }));
-                toast(t('import:methodSaved', { name: saved.label }));
-                if (draft === undefined) {
-                  props.onOpenCard(undefined);
-                  return;
-                }
-                // Finished: no longer kept. On to the next one still to finish, if any.
-                void dropUnfinished(db, draft.entry.key);
-                props.onOpenCard(
-                  nextUnfinished(
-                    unfinished.map((u) => u.entry.key),
-                    draft.entry.key,
-                  ),
-                );
-              }}
-            />
-          ) : editing !== undefined && props.target.row !== undefined ? (
-            <RowEditor
-              item={editing}
-              profiles={props.profiles}
-              categories={props.categories}
-              methods={props.paymentMethods}
-              translate={translate}
-              onDone={(values) => {
-                const index = props.target.row ?? -1;
-                setSession((s) => {
-                  const items = s.items.map((item, i) =>
-                    i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
+                : t('import:editTitle')
+          }
+          subtitle={editing === undefined && filling === undefined ? t('import:body') : undefined}
+        >
+          <div className="pb-4">
+            {filling !== undefined && props.target.card !== undefined ? (
+              <MethodPanel
+                key={filling.id}
+                item={filling}
+                methods={props.paymentMethods}
+                profiles={props.profiles}
+                owner={draft === undefined ? owner : ownerOf(draft.entry)}
+                onDone={(saved) => {
+                  const open = props.target.card;
+                  if (saved === undefined || open === undefined) {
+                    props.onOpenCard(undefined);
+                    return;
+                  }
+                  setSession((s) => ({
+                    ...s,
+                    methods: s.methods.map((m): MethodReviewItem =>
+                      m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
+                    ),
+                    items: linkToCard(s.items, saved),
+                  }));
+                  toast(t('import:methodSaved', { name: saved.label }));
+                  if (draft === undefined) {
+                    props.onOpenCard(undefined);
+                    return;
+                  }
+                  // Finished: no longer kept. On to the next one still to finish, if any.
+                  void dropUnfinished(db, draft.entry.key);
+                  props.onOpenCard(
+                    nextUnfinished(
+                      unfinished.map((u) => u.entry.key),
+                      draft.entry.key,
+                    ),
                   );
-                  // Changed into the other kind, the row the person just settled stays in sight.
-                  const edited = items[index];
-                  const strayed = edited !== undefined && !matchesImportKind(edited, s.kind);
-                  return { ...s, items, leftOutShown: s.leftOutShown || strayed };
-                });
-                props.onOpenRow(undefined);
-              }}
-              onBack={() => {
-                props.onOpenRow(undefined);
-              }}
-            />
-          ) : (
-            <div className="space-y-4">
-              {session.stage === 'reading' ? null : (
-                <UnfinishedGroup
-                  entries={unfinished}
-                  methods={props.paymentMethods}
-                  onOpen={(key) => {
-                    props.onOpenCard(key);
-                  }}
-                  onDelete={deleteUnfinished}
-                />
-              )}
-              {session.stage === 'pick' ? (
-                <Picker
-                  files={session.files}
-                  shared={session.sharedId !== undefined}
-                  sharedGone={sharedGone}
-                  profiles={props.profiles}
-                  whose={session.batch.profileId}
-                  onWhose={(profileId) => {
-                    setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
-                  }}
-                  kind={session.kind}
-                  onKind={chooseKind}
-                  onFiles={(files) => {
-                    setSession((s) => ({ ...s, files }));
-                  }}
-                  note={session.note}
-                  onNote={(note) => {
-                    setSession((s) => ({ ...s, note }));
-                  }}
-                  onRead={() => void read(session.files)}
-                />
-              ) : session.stage === 'reading' ? (
-                <Reading
-                  states={session.states}
-                  onStop={() => {
-                    abort.current?.abort();
-                  }}
-                />
-              ) : (
-                <Review
-                  session={session}
-                  profiles={props.profiles}
-                  categories={props.categories}
-                  methodsList={props.paymentMethods}
-                  translate={translate}
-                  saving={saving}
-                  onKind={chooseKind}
-                  onShowLeftOut={showLeftOut}
-                  onChange={(items) => {
-                    setSession((s) => ({ ...s, items }));
-                  }}
-                  onMethods={(methods) => {
-                    setSession((s) => ({ ...s, methods }));
-                  }}
-                  onOpenMethod={(id) => {
-                    props.onOpenCard(id);
-                  }}
-                  onBatch={(batch) => {
-                    setSession((s) => {
-                      const answered = applyBatch(s.items, batch, props.paymentMethods);
-                      // Answering whose a row is ticks it - never a left-out one: only the person does.
-                      const items = answered.map((item, i) =>
-                        matchesImportKind(item, s.kind)
-                          ? item
-                          : { ...item, ticked: s.items[i]?.ticked ?? false },
-                      );
-                      return { ...s, batch, items };
-                    });
-                  }}
-                  onOpen={(index) => {
-                    props.onOpenRow(index);
-                  }}
-                  onSave={() => void save()}
-                  onAgain={() => {
-                    setSession((s) => ({
-                      ...s,
-                      stage: 'pick',
-                      files: [],
-                      items: [],
-                      methods: [],
-                      drafted: 0,
-                      leftOutShown: false,
-                    }));
-                  }}
-                />
-              )}
-            </div>
-          )}
-        </div>
+                }}
+              />
+            ) : editing !== undefined && props.target.row !== undefined ? (
+              <RowEditor
+                item={editing}
+                profiles={props.profiles}
+                categories={props.categories}
+                methods={props.paymentMethods}
+                translate={translate}
+                onDone={(values) => {
+                  const index = props.target.row ?? -1;
+                  setSession((s) => {
+                    const items = s.items.map((item, i) =>
+                      i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
+                    );
+                    // Changed into the other kind, the row the person just settled stays in sight.
+                    const edited = items[index];
+                    const strayed = edited !== undefined && !matchesImportKind(edited, s.kind);
+                    return { ...s, items, leftOutShown: s.leftOutShown || strayed };
+                  });
+                  props.onOpenRow(undefined);
+                }}
+                onBack={() => {
+                  props.onOpenRow(undefined);
+                }}
+              />
+            ) : (
+              <div className="space-y-4">
+                {session.stage === 'reading' ? null : (
+                  <UnfinishedGroup
+                    entries={unfinished}
+                    methods={props.paymentMethods}
+                    onOpen={(key) => {
+                      props.onOpenCard(key);
+                    }}
+                    onDelete={deleteUnfinished}
+                  />
+                )}
+                {session.stage === 'pick' ? (
+                  <Picker
+                    files={session.files}
+                    shared={session.sharedId !== undefined}
+                    sharedGone={sharedGone}
+                    profiles={props.profiles}
+                    whose={session.batch.profileId}
+                    onWhose={(profileId) => {
+                      setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
+                    }}
+                    kind={session.kind}
+                    onKind={chooseKind}
+                    onFiles={(files) => {
+                      setSession((s) => ({ ...s, files }));
+                    }}
+                    note={session.note}
+                    onNote={(note) => {
+                      setSession((s) => ({ ...s, note }));
+                    }}
+                    onRead={() => void read(session.files)}
+                  />
+                ) : session.stage === 'reading' ? (
+                  <Reading
+                    states={session.states}
+                    onStop={() => {
+                      abort.current?.abort();
+                    }}
+                  />
+                ) : (
+                  <Review
+                    session={session}
+                    profiles={props.profiles}
+                    categories={props.categories}
+                    methodsList={props.paymentMethods}
+                    translate={translate}
+                    saving={saving}
+                    onKind={chooseKind}
+                    onShowLeftOut={showLeftOut}
+                    onChange={(items) => {
+                      setSession((s) => ({ ...s, items }));
+                    }}
+                    onMethods={(methods) => {
+                      setSession((s) => ({ ...s, methods }));
+                    }}
+                    onOpenMethod={(id) => {
+                      props.onOpenCard(id);
+                    }}
+                    onBatch={(batch) => {
+                      setSession((s) => {
+                        const answered = applyBatch(s.items, batch, props.paymentMethods);
+                        // Answering whose a row is ticks it - never a left-out one: only the person does.
+                        const items = answered.map((item, i) =>
+                          matchesImportKind(item, s.kind)
+                            ? item
+                            : { ...item, ticked: s.items[i]?.ticked ?? false },
+                        );
+                        return { ...s, batch, items };
+                      });
+                    }}
+                    onOpen={(index) => {
+                      props.onOpenRow(index);
+                    }}
+                    onSave={() => void save()}
+                    onAgain={() => {
+                      setSession((s) => ({
+                        ...s,
+                        stage: 'pick',
+                        files: [],
+                        items: [],
+                        methods: [],
+                        drafted: 0,
+                        leftOutShown: false,
+                      }));
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </PopOutBody>
 
         <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
           <AlertDialogContent>
@@ -716,8 +713,8 @@ export function ImportSheet(props: ImportSheetProps) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SheetContent>
-    </Sheet>
+      </PopOutContent>
+    </PopOut>
   );
 }
 
@@ -869,7 +866,7 @@ function Picker({
       <div
         className={cn(
           'flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border p-6 text-center transition-colors',
-          dragging && 'border-primary bg-primary/5',
+          dragging && 'border-primary-ink bg-primary/5',
         )}
         onDragOver={(event) => {
           event.preventDefault();
@@ -1467,7 +1464,7 @@ function ReviewRow({
       <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
         <input
           type="checkbox"
-          className="size-4 accent-primary"
+          className="size-4 accent-primary-ink"
           checked={item.ticked}
           disabled={values === undefined || !saveable(values)}
           onChange={(event) => {

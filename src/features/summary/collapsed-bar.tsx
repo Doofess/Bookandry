@@ -18,7 +18,7 @@ const ROW = cn(
 );
 
 /**
- * The summary, collapsed to one line: a slim sapphire bar, the balance in the serif.
+ * The summary, collapsed to one line: a slim sapphire bar, the balance in Plex.
  *
  * What survives and what does not is the whole design decision. BALANCE stays,
  * at a size still worth reading - it is the number people open the app for, and
@@ -63,11 +63,7 @@ export function CollapsedSummaryBar({
         {state.status === 'ready' ? (
           // Not animated here: a count-up that replays every time the header
           // collapses is motion with nothing to say.
-          <Money
-            minor={state.minor}
-            currency={currency}
-            className="truncate font-display text-lg font-bold"
-          />
+          <Money minor={state.minor} currency={currency} className="truncate text-lg font-semibold" />
         ) : state.status === 'blocked' ? (
           <span className="truncate text-sm text-brand-deep-foreground">
             {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
@@ -113,12 +109,14 @@ export function CollapsedSummaryBar({
       data-testid="collapsed-summary"
       style={{ height: `calc(${String(COLLAPSED_HEIGHT)}px + env(safe-area-inset-top, 0px))` }}
       className={cn(
-        'fixed inset-x-0 top-0 z-30 bg-brand-deep text-brand-deep-foreground shadow-md',
+        'fixed inset-x-0 top-0 z-30 bg-night text-on-night shadow-md',
         'pt-[env(safe-area-inset-top,0px)]',
         // The figure it stands in for lives inside `main`, which clears the
-        // desktop nav rail. Without this the collapsed balance jumps ~112px to
+        // 256px desktop rail. The bar starts after the rail (not under it, which put
+        // night behind the transparent rail), so the balance keeps its place and
+        // the mark and Add stay on the paper. Without this it jumps ~128px to
         // the inline-start of the column it replaced.
-        'lg:ps-56 xl:pe-56',
+        'lg:start-64',
       )}
     >
       {opens ? (

@@ -57,3 +57,44 @@ export const SETTINGS_ROUTES = {
   preferences: '/settings/preferences',
   data: '/settings/data',
 } as const;
+
+/** A place in the desktop rail; `phone` marks the four that are the phone's tabs. */
+export type RailPlace = {
+  readonly key:
+    'feed' | 'chart' | 'cards' | 'bankAccounts' | 'cash' | 'categories' | 'commitments' | 'settings';
+  readonly to: string;
+  readonly phone: boolean;
+};
+
+/**
+ * The rail's places (§4.2): the phone's tabs in their order, with Bank
+ * accounts after Cards. The rail lists places only; Add is a button at its
+ * top (decision 28), because a nav that mixes links and actions is harder to
+ * use with a screen reader.
+ */
+export const RAIL_PLACES: readonly RailPlace[] = [
+  { key: 'feed', to: ROUTES.feed, phone: true },
+  { key: 'chart', to: ROUTES.chart, phone: true },
+  { key: 'cards', to: ROUTES.cards, phone: true },
+  { key: 'bankAccounts', to: LINKED_ROUTES.bankAccounts, phone: false },
+  { key: 'cash', to: ROUTES.cash, phone: true },
+];
+
+/** The set-up places, below a line: on the desktop rail only (decision 27). */
+export const RAIL_SETUP: readonly RailPlace[] = [
+  { key: 'categories', to: LINKED_ROUTES.categories, phone: false },
+  { key: 'commitments', to: LINKED_ROUTES.commitments, phone: false },
+  { key: 'settings', to: ROUTES.settings, phone: false },
+];
+
+/**
+ * Which way a move between two places goes, in rail order, for the route
+ * transition's slide (§8.2). A settings page counts as Settings; a page that
+ * is no place at all counts as before the first.
+ */
+export function navDirection(from: string, to: string): 'forward' | 'back' {
+  const order = [...RAIL_PLACES, ...RAIL_SETUP].map((place) => place.to);
+  const index = (path: string) =>
+    order.findIndex((place) => place === path || (place !== ROUTES.feed && path.startsWith(`${place}/`)));
+  return index(to) < index(from) ? 'back' : 'forward';
+}

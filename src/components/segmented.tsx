@@ -120,7 +120,9 @@ export function Segmented<T extends string>({
               onKeyDown(event, index);
             }}
             className={cn(
-              'flex-1 rounded-lg px-3 text-center transition',
+              // min-w-fit: the reset's min-width: 0 would let an option shrink under
+              // its own words; with it the row wraps instead.
+              'min-w-fit flex-1 rounded-lg px-3 text-center transition',
               // 44px is the WCAG 2.2 target-size floor.
               size === 'sm' ? 'min-h-9 py-1.5 text-xs' : 'min-h-11 py-2 text-sm',
               'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-none',
@@ -136,7 +138,7 @@ export function Segmented<T extends string>({
                     // Marks along a row line up at the top when one label wraps
                     // to two lines; a mark standing alone sits in the middle.
                     option.labelHidden === true ? 'justify-center' : 'justify-start',
-                    selected && 'inset-ring-2 inset-ring-primary',
+                    selected && 'inset-ring-2 inset-ring-primary-ink',
                   ),
             )}
           >

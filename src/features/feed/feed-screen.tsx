@@ -5,9 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
-import { ScreenPanel } from '@/app/screen-panel';
+import { HeroSheet, ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { pendingShares, sweepShared } from '@/app/shared-files';
-import { PanelSheet } from '@/components/brand-panel';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
 import { changeCategory, moveOccurrence } from '@/db/occurrence-actions';
@@ -197,8 +196,6 @@ export function FeedScreen() {
           : '0px',
       }}
     >
-      <h1 className="sr-only">{t('nav.feed')}</h1>
-
       {/*
         FIRST in the DOM, and deliberately so.
 
@@ -235,13 +232,14 @@ export function FeedScreen() {
       ) : null}
 
       <div ref={measureHeader} data-testid="feed-header">
-        <ScreenPanel>
+        <ScreenHead title={t('nav.feed')} />
+        <HeroSheet>
           {/*
             At most two lines on a phone: below sm the profile pill is faces
             only and prime drops its icon. 375: month + profile, then prime.
             320: month, then profile + prime. One row from sm up.
           */}
-          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="panel-pills">
+          <div className="flex flex-wrap items-center gap-2" data-testid="panel-pills">
             <MonthCursor
               month={filters.month}
               today={today}
@@ -281,10 +279,10 @@ export function FeedScreen() {
               }}
             />
           </div>
-        </ScreenPanel>
+        </HeroSheet>
       </div>
 
-      <PanelSheet className="px-4 pt-4">
+      <ScreenSheet className="px-4 pt-4">
         <FilterBar filters={filters} onChange={set} onClear={clear} />
 
         <div className="mt-3">
@@ -319,7 +317,7 @@ export function FeedScreen() {
             />
           )}
         </div>
-      </PanelSheet>
+      </ScreenSheet>
 
       {lookups === undefined ? null : (
         <TransactionSheet

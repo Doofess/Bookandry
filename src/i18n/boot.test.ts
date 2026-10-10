@@ -114,6 +114,28 @@ describe('applyLanguage and applyTheme', () => {
     expect(el.style.colorScheme).toBe('light');
   });
 
+  it('sets the status bar to the theme’s paper, and follows a change at once (Review Focus)', () => {
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.setAttribute('media', '(prefers-color-scheme: light)');
+    meta.content = '#000000';
+    document.head.append(meta);
+
+    applyTheme('dark');
+    expect(meta.content).toBe('#1A1510');
+    expect(meta.hasAttribute('media')).toBe(false);
+
+    applyTheme('light');
+    expect(meta.content).toBe('#F6F2EA');
+    meta.remove();
+  });
+
+  it('never throws when the page has no theme-color meta', () => {
+    expect(() => {
+      applyTheme('dark');
+    }).not.toThrow();
+  });
+
   it('never touches the theme when the language changes', () => {
     // The bug: a language change re-applied the theme read at startup.
     applyTheme('light');

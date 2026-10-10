@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useBaseCurrency, useToday } from '@/app/app-context';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,10 +57,8 @@ export function CommitmentsScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('commitments.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-4 px-4 pt-6">
+      <ScreenHead title={t('commitments.title')} />
+      <ScreenSheet className="space-y-4 px-4 pt-6">
         <p className="text-sm text-muted-foreground">{t('commitments.body')}</p>
 
         {data === undefined ? null : data.commitments.length === 0 ? (
@@ -117,7 +114,7 @@ export function CommitmentsScreen() {
             </Card>
           </>
         )}
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }

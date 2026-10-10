@@ -57,6 +57,16 @@ implied, because a reader cannot otherwise tell a check that was done from one
 that was only described — and they need redoing whenever the shell, the focus
 order or the copy changes.
 
+The Colour of money screenshot matrix (`e2e/screens.spec.ts`: 8 routes at 390,
+1440 and 1920, in both languages and themes) passes its overflow and console
+assertions in all 96 cases. On **2026-10-10** a sample of 23 of the 96 images was
+opened and reviewed by eye, covering every route, both languages, both themes
+and all three widths; the other 73 were not opened. For phase 2 (with the
+transaction panel and the import pop-out), on **2026-10-10**, all 24 overlay
+images (`overlay-*`: 2 overlays, 3 widths, both languages, both themes) were
+opened and reviewed by eye; none showed clipped Hebrew, a misplaced ₪, or
+missing grain.
+
 The sapphire redesign's screenshot matrix (`e2e/screens.spec.ts`, now with
 Cards) was reviewed by eye on **2026-10-09**.
 
@@ -408,17 +418,34 @@ wrong. It says "Add" rather than showing a bare plus, and its menu presets the
 form to an expense or income (`?add=expense|income`; `add=1` from older links
 still means an expense).
 
-**The brand is sapphire; green means money coming in.** `--brand-deep`
-(#0F3A8A, #0B2C6B in dark mode) is the engraved panel at the top of every
-screen, carried in from the front door; `--income` stays green and `--expense`
-red, and no other brand colour is either. Every token pair is checked by
-`src/lib/contrast.test.ts`, and the colours that live outside the token file
-(the status bar's `theme-color`, the favicon, the PWA icon background) by
-`src/lib/brand-colours.test.ts`.
+**Ink on paper; money in colour.** The house is ink on warm paper (`--paper`,
+#F6F2EA, #1A1510 in dark). Colour always means money: a bank, a card company,
+a card or a category, each as a full-strength sheet keyed by data — a Masav
+code, an issuer, a card colour key, a hue key — never by a stored colour
+(`src/domain/money-key.ts`, `src/domain/category-hue.ts`). A sheet's text is a
+tint of its own hue. Sapphire is the app's own colour, for its actions only.
+Every pair is checked by `src/lib/contrast.test.ts` and
+`src/lib/money-colours.test.ts`, which resolve the token file's aliases and
+`color-mix()` the way a browser does; the colours outside it (the status bar,
+the manifest, the icons) by `src/lib/brand-colours.test.ts`.
 
-**The panel's figures are in the serif, and still tabular.** Frank Ruhl Libre's
-Latin subset ships `tnum`, so the counting-up balance never jitters. Amount
-columns stay in the sans stack, whose order is load-bearing (below).
+**A desktop that uses its width.** From `lg` the shell is a text rail at the
+inline start — places only, Add a button at its top — and `main` is a size
+container: screens lay out by the room they have (`@board/main:`,
+`@wide/main:`, `@vast/main:`), so a screen beside an open panel, or inside a
+pop-out, still fits. Editors are one Base UI dialog with responsive classes: a
+bottom sheet on a phone, a panel at the inline end from `lg`, so resizing
+never loses what was typed. Flows open as a pop-out that lays itself out by
+its own width. The rail's Add opens its editor over any screen
+(`src/app/shell-editors.tsx`).
+
+**Two faces: Plex for text and amounts, Karantina for display.** IBM Plex Sans
+Hebrew (300, 400, 500, 600) covers Latin, Hebrew and ₪, and its digits are
+fixed-width, so amount columns line up in both languages. Karantina 700 draws
+screen names and the big numerals; its digits are proportional, so it is never
+used below 28px, in a column, or for a figure that counts without a box reserved
+from its final value. Both are self-hosted from Fontsource and precached; only
+Karantina is preloaded.
 
 **A pop-out in the feed is one instance at screen level, anchored to its row.**
 The feed is virtualised: a menu per row would unmount mid-gesture when its row
@@ -510,10 +537,11 @@ puts the symbol after the number; left to inherit page direction, a leading
 minus jumps to the far end. Every test asserts the integer, never the formatted
 string — pinning `"$1,234.50"` breaks the next time ICU moves a separator.
 
-**The font stack order is load-bearing.** `'Inter Variable', 'Heebo Variable', …`
-— fallback is per-glyph, so digits resolve to Inter (which ships tabular
-figures) while Hebrew falls through to Heebo (which does not). Putting Heebo
-first silently breaks every amount column in Hebrew.
+**The font stack order is load-bearing.** `'IBM Plex Sans Hebrew', 'Plex Fallback', …`
+— a face without fixed-width digits ahead of Plex, or a `:lang(he)` font rule,
+breaks amount alignment. `font-synthesis: none` means a weight that is not
+loaded is never faked, which is why `font-bold` (Plex 700) is banned by
+`src/lib/fonts.test.ts`.
 
 ## The card catalog
 

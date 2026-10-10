@@ -6,9 +6,15 @@ import { toast } from 'sonner';
 import { AmountInput } from '@/components/amount-input';
 import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import type { UndoableAction } from '@/db/occurrence-actions';
 import {
@@ -90,12 +96,12 @@ export function CashMoveSheet({
         : t('cash.sheet.withdrawBody');
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>{title}</SheetTitle>
-          <SheetDescription>{body}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent aria-labelledby={titleId}>
+        <EditorPanelHeader>
+          <EditorPanelTitle id={titleId}>{title}</EditorPanelTitle>
+          <EditorPanelDescription>{body}</EditorPanelDescription>
+        </EditorPanelHeader>
         {target === undefined ? null : (
           <MoveForm
             key={target.mode === 'edit' ? target.move.id : `new-${target.kind}`}
@@ -104,8 +110,8 @@ export function CashMoveSheet({
             {...props}
           />
         )}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 

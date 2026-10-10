@@ -23,102 +23,799 @@
 @custom-variant rtl (&:where(:dir(rtl), [dir='rtl'], [dir='rtl'] *));
 @custom-variant ltr (&:where(:dir(ltr), [dir='ltr'], [dir='ltr'] *));
 
+/*
+ * Hover for a fine pointer only (§9.6, good-css). Tailwind's own `hover:`
+ * checks `(hover: hover)` alone, which some touch screens with a stylus
+ * report, and a fill that sticks after a tap reads as a pressed button.
+ */
+@custom-variant hover-fine {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------------
-   Design tokens.
+   Design tokens: Colour of money (docs/superpowers/specs/2026-10-09-colour-of-money-design.md).
 
-   Contrast-audited against WCAG 2.2 AA, and every pair the design depends on
-   is re-checked by src/lib/contrast.test.ts.
+   The house is ink on warm paper. Money comes as full-strength coloured
+   sheets (the next section), so colour always means a bank, a company, a card
+   or a category. Sapphire is the app's own colour - primary buttons, the
+   current step, focus, the month sheet - and never a bank's.
 
-   The brand is SAPPHIRE (#0F3A8A deep, #56A0FF vivid). Green survives only as
-   money coming in (--income, --chart-income); red is money going out.
-   --brand-vivid is for lines and the logo, never text on a light background
-   (it is 2.67:1 on white).
+   THE FIVE HOUSE COLOURS HOLD THE LITERAL VALUES; THE SHADCN NAMES ALIAS THEM.
+   A sheet retints `--foreground` to its own tint, and a paper sheet's tint is
+   the ink: `--on-fill: var(--ink)` works, `--on-fill: var(--foreground)` would
+   be a cycle and resolve to nothing.
 
-   --border (decorative) and --input (an affordance needing 3:1) are separate
-   tokens on purpose; shadcn ships them at the same value, which fails 1.4.11.
+   Every pair the design depends on is re-checked by src/lib/contrast.test.ts
+   and src/lib/money-colours.test.ts, which resolve var() and color-mix() the
+   way the browser does.
+
+   --border (decorative, 2px) and --input (an affordance needing 3:1) are
+   separate tokens on purpose (decision 15).
 --------------------------------------------------------------------------- */
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.004 285.8);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.004 285.8);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.004 285.8);
+  /* The house. */
+  --paper: oklch(0.962 0.012 85); /* #F6F2EA, the page */
+  --paper-sheet: oklch(0.992 0.006 85); /* #FEFCF8, a paper sheet and popovers */
+  --ink: oklch(0.2 0.018 265); /* #12161E: 16.22:1 on the page */
+  --ink-quiet: oklch(0.43 0.018 265); /* 7.26:1 on the page */
+  --box-fill: oklch(0.15 0.01 265); /* the black box behind a figure that matters */
+  --on-box: oklch(0.962 0.012 85); /* 17.62:1 */
+  --night: oklch(0.2 0.018 265); /* the ink sheet */
+  --on-night: oklch(0.962 0.012 85); /* 16.22:1 */
 
-  /* #1D4FB8 — white text 7.34:1; as text on white 7.34:1 */
-  --primary: oklch(0.462 0.175 262.6);
-  --primary-foreground: oklch(1 0 0);
-  --primary-hover: oklch(0.374 0.142 261.5); /* #0F3A8A */
+  /* The shadcn names, which every component already uses. */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper-sheet);
+  --card-foreground: var(--ink);
+  --popover: var(--paper-sheet);
+  --popover-foreground: var(--ink);
+  --muted-foreground: var(--ink-quiet);
 
-  --secondary: oklch(0.968 0.001 286.4);
-  --secondary-foreground: oklch(0.141 0.004 285.8);
-  --muted: oklch(0.968 0.001 286.4);
-  --muted-foreground: oklch(0.516 0.013 285.9); /* 5.61:1 */
-  --accent: oklch(0.959 0.019 260.2); /* #EAF2FF: icon tint, menu highlight */
-  --accent-foreground: oklch(0.374 0.142 261.5); /* #0F3A8A, 9.36:1 */
+  /* A sheet's box and pressed control; [data-sheet] redefines these. */
+  --box: var(--box-fill);
+  --box-text: var(--on-box);
+  --press: var(--ink);
+  --on-press: var(--paper);
 
-  --destructive: oklch(0.531 0.199 27.4); /* white text 5.81:1 */
-  --destructive-foreground: oklch(1 0 0);
+  /* Sapphire. */
+  --primary: oklch(0.462 0.175 263); /* #1F4FB8 */
+  --primary-foreground: oklch(0.97 0.02 263); /* 6.71:1 */
+  --primary-ink: var(--primary); /* sapphire as text: 6.57:1 on the page */
+  --primary-hi: oklch(0.82 0.1 263); /* lifted, in the box: 11.14:1 */
+  --focus-ring: var(--primary); /* the paper's focus colour; a sheet's --ring is its own tint */
+  --ring: var(--focus-ring);
 
-  --border: oklch(0.92 0.004 286.3);
-  --input: oklch(0.667 0.018 285.9); /* 3.04:1 — the field's only affordance */
-  --ring: oklch(0.546 0.215 262.9); /* #2563EB, 5.17:1 focus ring */
+  --secondary: oklch(0.93 0.012 85);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.93 0.012 85);
+  --accent: color-mix(in oklch, var(--foreground) 6%, transparent); /* a neutral highlight */
+  --accent-foreground: var(--ink);
 
-  --income: oklch(0.523 0.121 156.1);
+  --destructive: oklch(0.531 0.199 27.4); /* 5.21:1 on the page */
+  --destructive-foreground: oklch(1 0 none);
+
+  --border: color-mix(in oklch, var(--foreground) 14%, transparent); /* decorative, drawn 2px */
+  --input: oklch(0.6 0.018 265); /* 3.54:1 on the page, 3.86:1 on the sheet */
+
+  --income: oklch(0.47 0.12 155); /* 6.26:1 on the sheet */
   --expense: oklch(0.505 0.188 27.3);
   --chart-income: oklch(0.601 0.141 155.8);
   --chart-expense: oklch(0.531 0.199 27.4);
-  --chart-balance: oklch(0.516 0.013 285.9);
+  --chart-balance: var(--ink-quiet);
 
-  /* Lines and the logo ONLY. Never text on a light background. */
-  --brand-vivid: oklch(0.702 0.158 255.6); /* #56A0FF */
-  /* The engraved panel, the front door's and every screen's. Near-white text
-     on it measures 10.1:1. */
+  --scrim: oklch(0.2 0.018 265 / 0.5); /* behind a modal */
+  --shadow-pop: 0 40px 80px -30px oklch(0 0 none / 0.5); /* pop-outs only: sheets draw no shadow */
+
+  /* The front door only (decision 39): its engraved panel and links. */
+  --brand-vivid: oklch(0.702 0.158 255.6); /* #56A0FF: lines and the logo, never text on light */
   --brand-deep: oklch(0.374 0.142 261.5); /* #0F3A8A */
   --brand-deep-foreground: oklch(0.985 0.008 262);
 }
 
 .dark {
-  --background: oklch(0.141 0.004 285.8);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.9);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.231 0.007 285.8);
-  --popover-foreground: oklch(0.985 0 0);
+  --paper: oklch(0.2 0.012 70); /* #1A1510 */
+  --paper-sheet: oklch(0.255 0.012 70); /* #27221D */
+  --ink: oklch(0.95 0.012 85); /* #F2EEE6: 13.65:1 on the sheet */
+  --ink-quiet: oklch(0.77 0.012 85); /* 7.62:1 on the sheet */
+  --box-fill: oklch(0.11 0.006 70);
+  --on-box: oklch(0.95 0.012 85); /* 17.68:1 */
+  --night: oklch(0.13 0.006 70);
+  --on-night: oklch(0.95 0.012 85);
 
-  --primary: oklch(0.779 0.113 259.7); /* #8CB8FF, 9.87:1 on the page */
-  --primary-foreground: oklch(0.253 0.084 263); /* #0B1F4A deep navy, 7.96:1 */
-  --primary-hover: oklch(0.836 0.082 258.8); /* #A9CBFF */
+  --primary: oklch(0.42 0.165 263); /* #1743A5, a deep fill */
+  --primary-foreground: oklch(0.96 0.025 263); /* 7.79:1 */
+  --primary-ink: oklch(0.78 0.12 263); /* 8.93:1 on the page; the fill as text would be 2.06:1 */
+  --primary-hi: oklch(0.82 0.1 263);
+  --focus-ring: var(--primary-ink);
 
-  --secondary: oklch(0.254 0.005 286);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.254 0.005 286);
-  --muted-foreground: oklch(0.755 0.011 286.1); /* 7.23:1 on --muted, the tightest surface it lands on */
-  --accent: oklch(0.314 0.085 263.5); /* #1A2F5C, a deep sapphire tint */
-  --accent-foreground: oklch(0.779 0.113 259.7); /* #8CB8FF, 6.49:1 */
+  --secondary: oklch(0.27 0.012 70);
+  --muted: oklch(0.27 0.012 70);
 
-  /* Dark mode INVERTS the pair, exactly as --primary does: a light red with
-     dark text on it. Carrying the light-mode red over left `text-destructive`
-     at 3.03:1 on the dark page - the one axe violation the token audit missed,
-     because it checked white-on-fill and never destructive-as-TEXT. */
-  --destructive: oklch(0.667 0.167 22.7); /* 6.08:1 as text on --background */
-  --destructive-foreground: oklch(0.141 0.004 285.8);
+  /* Dark mode INVERTS the destructive pair: a light red with dark text on it.
+     Carrying the light red over left `text-destructive` at 3.03:1 once. */
+  --destructive: oklch(0.667 0.167 22.7); /* 5.54:1 as text on the page */
+  --destructive-foreground: oklch(0.14 0 none);
 
-  --border: oklch(0.315 0.007 286);
-  --input: oklch(0.53 0.017 285.8); /* 3.35:1 vs card */
-  --ring: oklch(0.779 0.113 259.7);
+  --input: oklch(0.56 0.012 70); /* 3.89:1 on the page, 3.39:1 on the sheet */
 
-  --income: oklch(0.773 0.167 157.5);
-  --expense: oklch(0.667 0.167 22.7); /* 5.42:1 on --card; spec's 0 63% 51% was 2.50:1 */
+  --income: oklch(0.8 0.15 155); /* 8.96:1 on the sheet */
+  --expense: oklch(0.667 0.167 22.7); /* 4.82:1 on the sheet */
   --chart-income: oklch(0.788 0.147 159.7);
   --chart-expense: oklch(0.667 0.167 22.7);
-  --chart-balance: oklch(0.755 0.011 286.1);
 
-  --brand-vivid: oklch(0.702 0.158 255.6);
-  --brand-deep: oklch(0.314 0.117 261.7); /* #0B2C6B, near-white text 12.7:1 */
+  --scrim: oklch(0.08 0 none / 0.6);
+
+  --brand-vivid: oklch(0.702 0.158 255.6); /* 6.80:1 as a link on the dark page */
+  --brand-deep: oklch(0.314 0.117 261.7); /* #0B2C6B */
   --brand-deep-foreground: oklch(0.985 0.008 262);
+}
+
+/* ---------------------------------------------------------------------------
+   Money colours (§1.3) and category hues (§1.4).
+
+   Keys, not colours: data stores `bank-10`, `issuer-cal`, `card-teal`, `cash`
+   or a hue key, never a value, so a shade changes here without touching
+   anybody's data. Each money key has a fill, a tinted text colour (a tint of
+   the fill's own hue, decision 4) and a lifted colour for a figure in the
+   black box. Dark mode deepens brand fills and keeps their tints.
+
+   Hapoalim, Max and Amex are darkened slightly from the brands' own colours,
+   so their tints measure 5.44, 5.42 and 5.00:1 (decision 8). The FIBI group
+   (FIBI, PAGI, Otsar HaHayal, Massad, U-Bank) really are all navy, and are
+   told apart by name. One Zero's black is raised to ink so the box still reads.
+
+   Category hues are MARKS ONLY, never text (decision 10): bars, pills and
+   strips, each with its name beside it. Tone B is the same hue, darker.
+--------------------------------------------------------------------------- */
+:root {
+  --money-bank-10: oklch(0.476 0.145 254); /* Leumi #0C5CAB, tint 6.05:1 */
+  --money-bank-10-on: oklch(0.965 0.025 254);
+  --money-bank-10-hi: oklch(0.8 0.11 254);
+  --money-bank-12: oklch(0.52 0.205 25); /* Hapoalim #C40E22, tint 5.44:1 */
+  --money-bank-12-on: oklch(0.965 0.025 25);
+  --money-bank-12-hi: oklch(0.8 0.12 25);
+  --money-bank-11: oklch(0.5 0.12 155); /* Discount #0B7643, tint 5.17:1 */
+  --money-bank-11-on: oklch(0.965 0.03 155);
+  --money-bank-11-hi: oklch(0.83 0.14 155);
+  --money-bank-20: oklch(0.684 0.184 44); /* Mizrahi-Tefahot #F26B23, tint 6.02:1 */
+  --money-bank-20-on: oklch(0.2 0.06 44);
+  --money-bank-20-hi: oklch(0.72 0.17 44);
+  --money-bank-17: oklch(0.459 0.1 145); /* Mercantile, tint 6.24:1 */
+  --money-bank-17-on: oklch(0.965 0.025 145);
+  --money-bank-17-hi: oklch(0.82 0.07 145);
+  --money-bank-31: oklch(0.44 0.137 253); /* FIBI, tint 7.05:1 */
+  --money-bank-31-on: oklch(0.965 0.025 253);
+  --money-bank-31-hi: oklch(0.82 0.096 253);
+  --money-bank-52: oklch(0.316 0.122 259); /* PAGI, tint 11.80:1 */
+  --money-bank-52-on: oklch(0.965 0.025 259);
+  --money-bank-52-hi: oklch(0.82 0.085 259);
+  --money-bank-14: oklch(0.441 0.138 254); /* Otsar HaHayal, tint 7.04:1 */
+  --money-bank-14-on: oklch(0.965 0.025 254);
+  --money-bank-14-hi: oklch(0.82 0.097 254);
+  --money-bank-26: oklch(0.408 0.119 251); /* U-Bank, tint 8.05:1 */
+  --money-bank-26-on: oklch(0.965 0.025 251);
+  --money-bank-26-hi: oklch(0.82 0.083 251);
+  --money-bank-46: oklch(0.412 0.141 256); /* Massad, tint 8.01:1 */
+  --money-bank-46-on: oklch(0.965 0.025 256);
+  --money-bank-46-hi: oklch(0.82 0.099 256);
+  --money-bank-4: oklch(0.403 0.152 269); /* Yahav, tint 8.51:1 */
+  --money-bank-4-on: oklch(0.965 0.025 269);
+  --money-bank-4-hi: oklch(0.82 0.1 269);
+  --money-bank-18: oklch(0.2 0 none); /* One Zero, raised to ink; tint 16.36:1 */
+  --money-bank-18-on: oklch(0.965 0 none);
+  --money-bank-18-hi: oklch(0.82 0 none);
+
+  --money-issuer-isracard: oklch(0.367 0.15 270); /* #23328C, tint 9.75:1 */
+  --money-issuer-isracard-on: oklch(0.96 0.03 270);
+  --money-issuer-isracard-hi: oklch(0.8 0.1 270);
+  --money-issuer-cal: oklch(0.657 0.112 195); /* #01A6A6, tint 5.93:1 */
+  --money-issuer-cal-on: oklch(0.2 0.045 195);
+  --money-issuer-cal-hi: oklch(0.72 0.12 195);
+  --money-issuer-max: oklch(0.525 0.215 353); /* #BD0475, tint 5.42:1 */
+  --money-issuer-max-on: oklch(0.965 0.025 353);
+  --money-issuer-max-hi: oklch(0.8 0.13 353);
+  --money-issuer-amex: oklch(0.52 0.165 253); /* #0068C4 (clipped), tint 5.00:1 */
+  --money-issuer-amex-on: oklch(0.965 0.025 253);
+  --money-issuer-amex-hi: oklch(0.82 0.1 253);
+  --money-issuer-diners: oklch(0.312 0.02 261); /* #2B313B, tint 11.29:1 */
+  --money-issuer-diners-on: oklch(0.95 0.008 261);
+  --money-issuer-diners-hi: oklch(0.86 0.03 261);
+
+  --money-cash: oklch(0.861 0.159 86); /* #FFC93C (clipped), tint 11.26:1 */
+  --money-cash-on: oklch(0.22 0.05 86);
+  --money-cash-hi: oklch(0.861 0.159 86);
+
+  /* The colours a person can give a card (CARD_COLOR_KEYS in src/domain/money-key.ts). */
+  --money-card-black: oklch(0.24 0.01 277);
+  --money-card-black-on: oklch(0.965 0.003 277);
+  --money-card-black-hi: oklch(0.82 0.01 277);
+  --money-card-silver: oklch(0.514 0.023 258);
+  --money-card-silver-on: oklch(0.965 0.006 258);
+  --money-card-silver-hi: oklch(0.82 0.023 258);
+  --money-card-blue: oklch(0.459 0.12 260);
+  --money-card-blue-on: oklch(0.965 0.025 260);
+  --money-card-blue-hi: oklch(0.82 0.1 260);
+  --money-card-teal: oklch(0.525 0.085 185); /* the lowest tint: 4.70:1 */
+  --money-card-teal-on: oklch(0.965 0.021 185);
+  --money-card-teal-hi: oklch(0.82 0.085 185);
+  --money-card-green: oklch(0.434 0.085 153);
+  --money-card-green-on: oklch(0.965 0.021 153);
+  --money-card-green-hi: oklch(0.82 0.085 153);
+  --money-card-gold: oklch(0.494 0.088 82);
+  --money-card-gold-on: oklch(0.965 0.022 82);
+  --money-card-gold-hi: oklch(0.82 0.088 82);
+  --money-card-orange: oklch(0.489 0.114 46);
+  --money-card-orange-on: oklch(0.965 0.025 46);
+  --money-card-orange-hi: oklch(0.82 0.1 46);
+  --money-card-red: oklch(0.428 0.138 19);
+  --money-card-red-on: oklch(0.965 0.025 19);
+  --money-card-red-hi: oklch(0.82 0.1 19);
+  --money-card-rose: oklch(0.513 0.133 0);
+  --money-card-rose-on: oklch(0.965 0.025 0);
+  --money-card-rose-hi: oklch(0.82 0.1 0);
+  --money-card-purple: oklch(0.451 0.143 340);
+  --money-card-purple-on: oklch(0.965 0.025 340);
+  --money-card-purple-hi: oklch(0.82 0.1 340);
+
+  /* No colour of its own: the ink sheet, with the paper as text, and a flipped box. */
+  --money-neutral: var(--night);
+  --money-neutral-on: var(--on-night);
+  --money-neutral-hi: var(--night);
+
+  --hue-indigo: oklch(0.5 0.16 272);
+  --hue-indigo-2: oklch(0.36 0.136 272);
+  --hue-green: oklch(0.6 0.17 142);
+  --hue-green-2: oklch(0.46 0.145 142);
+  --hue-vermilion: oklch(0.6 0.2 33);
+  --hue-vermilion-2: oklch(0.46 0.17 33);
+  --hue-amber: oklch(0.64 0.15 82); /* the lowest: 3.05:1 on the page */
+  --hue-amber-2: oklch(0.5 0.128 82);
+  --hue-orange: oklch(0.63 0.17 58);
+  --hue-orange-2: oklch(0.49 0.145 58);
+  --hue-cyan: oklch(0.58 0.12 222);
+  --hue-cyan-2: oklch(0.44 0.102 222);
+  --hue-violet: oklch(0.55 0.2 302);
+  --hue-violet-2: oklch(0.41 0.17 302);
+  --hue-rose: oklch(0.6 0.2 8);
+  --hue-rose-2: oklch(0.46 0.17 8);
+  --hue-magenta: oklch(0.52 0.22 332);
+  --hue-magenta-2: oklch(0.38 0.187 332);
+  --hue-teal: oklch(0.58 0.11 182);
+  --hue-teal-2: oklch(0.44 0.093 182);
+  --hue-blue: oklch(0.55 0.16 246);
+  --hue-blue-2: oklch(0.41 0.136 246);
+  --hue-lime: oklch(0.62 0.15 118);
+  --hue-lime-2: oklch(0.48 0.128 118);
+  /* "Other", and a hue key this build does not know. */
+  --hue-neutral: var(--ink-quiet);
+}
+
+.dark {
+  --money-bank-10: oklch(0.44 0.14 254);
+  --money-bank-10-on: oklch(0.965 0.025 254);
+  --money-bank-10-hi: oklch(0.8 0.11 254);
+  --money-bank-12: oklch(0.48 0.19 25);
+  --money-bank-12-on: oklch(0.965 0.025 25);
+  --money-bank-12-hi: oklch(0.8 0.12 25);
+  --money-bank-11: oklch(0.45 0.11 155);
+  --money-bank-11-on: oklch(0.965 0.03 155);
+  --money-bank-11-hi: oklch(0.83 0.14 155);
+  --money-bank-20: oklch(0.65 0.175 44);
+  --money-bank-20-on: oklch(0.2 0.06 44);
+  --money-bank-20-hi: oklch(0.72 0.17 44);
+  --money-bank-17: oklch(0.419 0.1 145);
+  --money-bank-17-on: oklch(0.965 0.025 145);
+  --money-bank-17-hi: oklch(0.82 0.07 145);
+  --money-bank-31: oklch(0.4 0.137 253);
+  --money-bank-31-on: oklch(0.965 0.025 253);
+  --money-bank-31-hi: oklch(0.82 0.096 253);
+  --money-bank-52: oklch(0.276 0.122 259);
+  --money-bank-52-on: oklch(0.965 0.025 259);
+  --money-bank-52-hi: oklch(0.82 0.085 259);
+  --money-bank-14: oklch(0.401 0.138 254);
+  --money-bank-14-on: oklch(0.965 0.025 254);
+  --money-bank-14-hi: oklch(0.82 0.097 254);
+  --money-bank-26: oklch(0.368 0.119 251);
+  --money-bank-26-on: oklch(0.965 0.025 251);
+  --money-bank-26-hi: oklch(0.82 0.083 251);
+  --money-bank-46: oklch(0.372 0.141 256);
+  --money-bank-46-on: oklch(0.965 0.025 256);
+  --money-bank-46-hi: oklch(0.82 0.099 256);
+  --money-bank-4: oklch(0.363 0.152 269);
+  --money-bank-4-on: oklch(0.965 0.025 269);
+  --money-bank-4-hi: oklch(0.82 0.1 269);
+  --money-bank-18: oklch(0.16 0 none);
+  --money-bank-18-on: oklch(0.965 0 none);
+  --money-bank-18-hi: oklch(0.82 0 none);
+
+  --money-issuer-isracard: oklch(0.34 0.14 270);
+  --money-issuer-isracard-on: oklch(0.96 0.03 270);
+  --money-issuer-isracard-hi: oklch(0.8 0.1 270);
+  --money-issuer-cal: oklch(0.62 0.105 195);
+  --money-issuer-cal-on: oklch(0.2 0.045 195);
+  --money-issuer-cal-hi: oklch(0.72 0.12 195);
+  --money-issuer-max: oklch(0.48 0.2 353);
+  --money-issuer-max-on: oklch(0.965 0.025 353);
+  --money-issuer-max-hi: oklch(0.8 0.13 353);
+  --money-issuer-amex: oklch(0.46 0.15 253);
+  --money-issuer-amex-on: oklch(0.965 0.025 253);
+  --money-issuer-amex-hi: oklch(0.82 0.1 253);
+  /* Diners is the one brand the concept lifts in dark mode, so it shows on the dark paper. */
+  --money-issuer-diners: oklch(0.34 0.02 261);
+  --money-issuer-diners-on: oklch(0.95 0.008 261);
+  --money-issuer-diners-hi: oklch(0.86 0.03 261);
+
+  --money-cash: oklch(0.8 0.15 86);
+  --money-cash-on: oklch(0.22 0.05 86);
+  --money-cash-hi: oklch(0.8 0.15 86);
+
+  --money-card-black: oklch(0.2 0.01 277);
+  --money-card-black-on: oklch(0.965 0.003 277);
+  --money-card-black-hi: oklch(0.82 0.01 277);
+  --money-card-silver: oklch(0.474 0.023 258);
+  --money-card-silver-on: oklch(0.965 0.006 258);
+  --money-card-silver-hi: oklch(0.82 0.023 258);
+  --money-card-blue: oklch(0.419 0.12 260);
+  --money-card-blue-on: oklch(0.965 0.025 260);
+  --money-card-blue-hi: oklch(0.82 0.1 260);
+  --money-card-teal: oklch(0.485 0.085 185);
+  --money-card-teal-on: oklch(0.965 0.021 185);
+  --money-card-teal-hi: oklch(0.82 0.085 185);
+  --money-card-green: oklch(0.394 0.085 153);
+  --money-card-green-on: oklch(0.965 0.021 153);
+  --money-card-green-hi: oklch(0.82 0.085 153);
+  --money-card-gold: oklch(0.454 0.088 82);
+  --money-card-gold-on: oklch(0.965 0.022 82);
+  --money-card-gold-hi: oklch(0.82 0.088 82);
+  --money-card-orange: oklch(0.449 0.114 46);
+  --money-card-orange-on: oklch(0.965 0.025 46);
+  --money-card-orange-hi: oklch(0.82 0.1 46);
+  --money-card-red: oklch(0.388 0.138 19);
+  --money-card-red-on: oklch(0.965 0.025 19);
+  --money-card-red-hi: oklch(0.82 0.1 19);
+  --money-card-rose: oklch(0.473 0.133 0);
+  --money-card-rose-on: oklch(0.965 0.025 0);
+  --money-card-rose-hi: oklch(0.82 0.1 0);
+  --money-card-purple: oklch(0.411 0.143 340);
+  --money-card-purple-on: oklch(0.965 0.025 340);
+  --money-card-purple-hi: oklch(0.82 0.1 340);
+
+  --hue-indigo: oklch(0.72 0.13 272);
+  --hue-indigo-2: oklch(0.6 0.117 272);
+  --hue-green: oklch(0.76 0.17 142);
+  --hue-green-2: oklch(0.64 0.153 142);
+  --hue-vermilion: oklch(0.72 0.17 33);
+  --hue-vermilion-2: oklch(0.6 0.153 33);
+  --hue-amber: oklch(0.82 0.15 82);
+  --hue-amber-2: oklch(0.7 0.135 82);
+  --hue-orange: oklch(0.76 0.16 58);
+  --hue-orange-2: oklch(0.64 0.144 58);
+  --hue-cyan: oklch(0.76 0.11 222);
+  --hue-cyan-2: oklch(0.64 0.099 222);
+  --hue-violet: oklch(0.72 0.16 302);
+  --hue-violet-2: oklch(0.6 0.144 302);
+  --hue-rose: oklch(0.74 0.16 8);
+  --hue-rose-2: oklch(0.62 0.144 8);
+  --hue-magenta: oklch(0.7 0.18 332);
+  --hue-magenta-2: oklch(0.58 0.162 332); /* the lowest in dark: 3.38:1 on the sheet */
+  --hue-teal: oklch(0.76 0.11 182);
+  --hue-teal-2: oklch(0.64 0.099 182);
+  --hue-blue: oklch(0.74 0.12 246);
+  --hue-blue-2: oklch(0.62 0.108 246);
+  --hue-lime: oklch(0.8 0.15 118);
+  --hue-lime-2: oklch(0.68 0.135 118);
+}
+
+/* ---------------------------------------------------------------------------
+   Every sheet is a colour context (§1.6, decision 12).
+
+   A component never writes a colour. It sets data-sheet, data-money or
+   data-hue, and everything inside takes its colours from there: text, quiet
+   text (set apart by weight 300, never by a paler colour), lines, field
+   edges, the focus ring, pressed pills and the selection, which turns the
+   sheet inside out. A key this build does not know falls through to neutral.
+--------------------------------------------------------------------------- */
+[data-sheet] {
+  background-color: var(--fill);
+  color: var(--on-fill);
+  --foreground: var(--on-fill);
+  --muted-foreground: var(--on-fill);
+  --border: color-mix(in oklch, var(--on-fill) 30%, transparent);
+  --input: color-mix(in oklch, var(--on-fill) 70%, var(--fill));
+  --ring: currentColor;
+  --press: var(--box);
+  --on-press: var(--box-text);
+  --accent: color-mix(in oklch, var(--on-fill) 12%, transparent);
+
+  /* Every surface and pairing a component can reach for inside a sheet, so a
+     chip, a hover or a popover never sets ink on a dark fill. */
+  --accent-foreground: var(--on-fill);
+  --card: var(--fill);
+  --card-foreground: var(--on-fill);
+  --popover: var(--fill);
+  --popover-foreground: var(--on-fill);
+  --secondary: color-mix(in oklch, var(--on-fill) 12%, transparent);
+  --secondary-foreground: var(--on-fill);
+  --muted: color-mix(in oklch, var(--on-fill) 12%, transparent);
+}
+
+/* Forced colours replace backgrounds, so sheets and hue marks would vanish:
+   a transparent border is what Windows High Contrast paints as their edge. */
+[data-sheet],
+[data-hue] {
+  border: 2px solid transparent;
+}
+
+[data-sheet='paper'] {
+  --fill: var(--paper-sheet);
+  --on-fill: var(--ink);
+  --box: var(--box-fill);
+  --box-text: var(--on-box);
+}
+
+[data-sheet='night'] {
+  --fill: var(--night);
+  --on-fill: var(--on-night);
+  --box: var(--on-night);
+  --box-text: var(--night);
+}
+
+[data-sheet='sapphire'] {
+  --fill: var(--primary);
+  --on-fill: var(--primary-foreground);
+  --box: var(--box-fill);
+  --box-text: var(--primary-hi);
+}
+
+[data-money] {
+  --fill: var(--money-neutral);
+  --on-fill: var(--money-neutral-on);
+  --box: var(--on-night);
+  --box-text: var(--money-neutral-hi);
+}
+
+[data-money='bank-10'] {
+  --fill: var(--money-bank-10);
+  --on-fill: var(--money-bank-10-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-10-hi);
+}
+
+[data-money='bank-12'] {
+  --fill: var(--money-bank-12);
+  --on-fill: var(--money-bank-12-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-12-hi);
+}
+
+[data-money='bank-11'] {
+  --fill: var(--money-bank-11);
+  --on-fill: var(--money-bank-11-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-11-hi);
+}
+
+[data-money='bank-20'] {
+  --fill: var(--money-bank-20);
+  --on-fill: var(--money-bank-20-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-20-hi);
+}
+
+[data-money='bank-17'] {
+  --fill: var(--money-bank-17);
+  --on-fill: var(--money-bank-17-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-17-hi);
+}
+
+[data-money='bank-31'] {
+  --fill: var(--money-bank-31);
+  --on-fill: var(--money-bank-31-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-31-hi);
+}
+
+[data-money='bank-52'] {
+  --fill: var(--money-bank-52);
+  --on-fill: var(--money-bank-52-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-52-hi);
+}
+
+[data-money='bank-14'] {
+  --fill: var(--money-bank-14);
+  --on-fill: var(--money-bank-14-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-14-hi);
+}
+
+[data-money='bank-26'] {
+  --fill: var(--money-bank-26);
+  --on-fill: var(--money-bank-26-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-26-hi);
+}
+
+[data-money='bank-46'] {
+  --fill: var(--money-bank-46);
+  --on-fill: var(--money-bank-46-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-46-hi);
+}
+
+[data-money='bank-4'] {
+  --fill: var(--money-bank-4);
+  --on-fill: var(--money-bank-4-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-4-hi);
+}
+
+[data-money='bank-18'] {
+  --fill: var(--money-bank-18);
+  --on-fill: var(--money-bank-18-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-bank-18-hi);
+}
+
+[data-money='issuer-isracard'] {
+  --fill: var(--money-issuer-isracard);
+  --on-fill: var(--money-issuer-isracard-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-issuer-isracard-hi);
+}
+
+[data-money='issuer-cal'] {
+  --fill: var(--money-issuer-cal);
+  --on-fill: var(--money-issuer-cal-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-issuer-cal-hi);
+}
+
+[data-money='issuer-max'] {
+  --fill: var(--money-issuer-max);
+  --on-fill: var(--money-issuer-max-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-issuer-max-hi);
+}
+
+[data-money='issuer-amex'] {
+  --fill: var(--money-issuer-amex);
+  --on-fill: var(--money-issuer-amex-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-issuer-amex-hi);
+}
+
+[data-money='issuer-diners'] {
+  --fill: var(--money-issuer-diners);
+  --on-fill: var(--money-issuer-diners-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-issuer-diners-hi);
+}
+
+[data-money='cash'] {
+  --fill: var(--money-cash);
+  --on-fill: var(--money-cash-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-cash-hi);
+}
+
+[data-money='card-black'] {
+  --fill: var(--money-card-black);
+  --on-fill: var(--money-card-black-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-black-hi);
+}
+
+[data-money='card-silver'] {
+  --fill: var(--money-card-silver);
+  --on-fill: var(--money-card-silver-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-silver-hi);
+}
+
+[data-money='card-blue'] {
+  --fill: var(--money-card-blue);
+  --on-fill: var(--money-card-blue-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-blue-hi);
+}
+
+[data-money='card-teal'] {
+  --fill: var(--money-card-teal);
+  --on-fill: var(--money-card-teal-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-teal-hi);
+}
+
+[data-money='card-green'] {
+  --fill: var(--money-card-green);
+  --on-fill: var(--money-card-green-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-green-hi);
+}
+
+[data-money='card-gold'] {
+  --fill: var(--money-card-gold);
+  --on-fill: var(--money-card-gold-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-gold-hi);
+}
+
+[data-money='card-orange'] {
+  --fill: var(--money-card-orange);
+  --on-fill: var(--money-card-orange-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-orange-hi);
+}
+
+[data-money='card-red'] {
+  --fill: var(--money-card-red);
+  --on-fill: var(--money-card-red-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-red-hi);
+}
+
+[data-money='card-rose'] {
+  --fill: var(--money-card-rose);
+  --on-fill: var(--money-card-rose-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-rose-hi);
+}
+
+[data-money='card-purple'] {
+  --fill: var(--money-card-purple);
+  --on-fill: var(--money-card-purple-on);
+  --box: var(--box-fill);
+  --box-text: var(--money-card-purple-hi);
+}
+
+[data-hue] {
+  --hue: var(--hue-neutral);
+}
+
+[data-hue='indigo'] {
+  --hue: var(--hue-indigo);
+}
+
+[data-hue='indigo-2'] {
+  --hue: var(--hue-indigo-2);
+}
+
+[data-hue='green'] {
+  --hue: var(--hue-green);
+}
+
+[data-hue='green-2'] {
+  --hue: var(--hue-green-2);
+}
+
+[data-hue='vermilion'] {
+  --hue: var(--hue-vermilion);
+}
+
+[data-hue='vermilion-2'] {
+  --hue: var(--hue-vermilion-2);
+}
+
+[data-hue='amber'] {
+  --hue: var(--hue-amber);
+}
+
+[data-hue='amber-2'] {
+  --hue: var(--hue-amber-2);
+}
+
+[data-hue='orange'] {
+  --hue: var(--hue-orange);
+}
+
+[data-hue='orange-2'] {
+  --hue: var(--hue-orange-2);
+}
+
+[data-hue='cyan'] {
+  --hue: var(--hue-cyan);
+}
+
+[data-hue='cyan-2'] {
+  --hue: var(--hue-cyan-2);
+}
+
+[data-hue='violet'] {
+  --hue: var(--hue-violet);
+}
+
+[data-hue='violet-2'] {
+  --hue: var(--hue-violet-2);
+}
+
+[data-hue='rose'] {
+  --hue: var(--hue-rose);
+}
+
+[data-hue='rose-2'] {
+  --hue: var(--hue-rose-2);
+}
+
+[data-hue='magenta'] {
+  --hue: var(--hue-magenta);
+}
+
+[data-hue='magenta-2'] {
+  --hue: var(--hue-magenta-2);
+}
+
+[data-hue='teal'] {
+  --hue: var(--hue-teal);
+}
+
+[data-hue='teal-2'] {
+  --hue: var(--hue-teal-2);
+}
+
+[data-hue='blue'] {
+  --hue: var(--hue-blue);
+}
+
+[data-hue='blue-2'] {
+  --hue: var(--hue-blue-2);
+}
+
+[data-hue='lime'] {
+  --hue: var(--hue-lime);
+}
+
+[data-hue='lime-2'] {
+  --hue: var(--hue-lime-2);
+}
+
+/* The selection: ink with paper text on the paper; inside a sheet, the sheet turned inside out. */
+::selection {
+  background-color: var(--ink);
+  color: var(--paper);
+}
+
+[data-sheet]::selection,
+[data-sheet] ::selection {
+  background-color: var(--on-fill);
+  color: var(--fill);
+}
+
+/* ---------------------------------------------------------------------------
+   Shape and motion (§9.1, §8.1).
+
+   Each fluid radius runs from its phone size at a 390 window to its desktop
+   size at 1440, worked out as good-css's "Fluid sizes" says: the slope is
+   (max - min) / (1440 - 390), times 100 for the vw part; the rem part is
+   min - slope * 390. src/lib/base-css.test.ts checks every one at both ends.
+--------------------------------------------------------------------------- */
+:root {
+  --r-sheet: clamp(2.25rem, 1.786rem + 1.905vw, 3.5rem); /* 36 -> 56px: board and phone sheets, panels */
+  --r-sheet-s: clamp(2.125rem, 2.0786rem + 0.1905vw, 2.25rem); /* 34 -> 36px: card sheets */
+  --r-sheet-cash: clamp(2.25rem, 2.0643rem + 0.7619vw, 2.75rem); /* 36 -> 44px: the cash sheet */
+  --r-tile: clamp(1.75rem, 1.6571rem + 0.381vw, 2rem); /* 28 -> 32px: choice tiles */
+  --r-row: 1.625rem; /* account sheets inside the balance sheet */
+  --r-face: 1.375rem; /* CardFace */
+  --r-preview: 3.25rem; /* the pop-out's preview sheet */
+  --r-dialog: 4rem; /* the pop-out */
+  --r-mark: 3px; /* the black box */
+  --r-pill: 999px;
+
+  /* Sheets sit one gap apart: 8px at 390, 16px from about 1024. */
+  --gap-sheet: clamp(0.5rem, 0.193rem + 1.262vw, 1rem);
+
+  --dur-press: 150ms; /* pill and round-button fills, presses */
+  --dur-pop: 200ms; /* menus and popovers */
+  --dur-move: 250ms; /* view transitions */
+  --dur-panel: 300ms; /* panels and pop-outs */
 }
 
 @theme inline {
@@ -130,7 +827,6 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -150,50 +846,159 @@
   --color-brand-vivid: var(--brand-vivid);
   --color-brand-deep: var(--brand-deep);
   --color-brand-deep-foreground: var(--brand-deep-foreground);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-box: var(--box);
+  --color-box-text: var(--box-text);
+  --color-on-box: var(--on-box);
+  --color-night: var(--night);
+  --color-on-night: var(--on-night);
+  --color-press: var(--press);
+  --color-on-press: var(--on-press);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-hi: var(--primary-hi);
+  --color-scrim: var(--scrim);
+  --color-fill: var(--fill);
+  --color-on-fill: var(--on-fill);
+  --color-hue: var(--hue);
+  --shadow-pop: var(--shadow-pop);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-sheet: var(--r-sheet);
+  --radius-sheet-s: var(--r-sheet-s);
+  --radius-sheet-cash: var(--r-sheet-cash);
+  --radius-tile: var(--r-tile);
+  --radius-row: var(--r-row);
+  --radius-face: var(--r-face);
+  --radius-preview: var(--r-preview);
+  --radius-dialog: var(--r-dialog);
+  --radius-mark: var(--r-mark);
+  --radius-pill: var(--r-pill);
+  --spacing-sheet: var(--gap-sheet);
 
   --font-sans: var(--font-stack-sans);
-  --font-display: var(--font-stack-display);
 
   --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-soft: cubic-bezier(0.3, 0, 0.8, 0.15);
   --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* §8.1: anything that moves, and colour fills. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-fill: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* §4.3: screens lay out by main's width, not the window's. */
+  --container-board: 47.5rem; /* 760px: what a 1024 window leaves main */
+  --container-wide: 67.5rem; /* 1080px: main is 1184px at 1440 */
+  --container-vast: 90rem; /* 1440px: main is 1664px at 1920 */
+  /* §6.2: the pop-out lays out by its own width. */
+  --container-pane2: 45rem; /* 720px: steps and body */
+  --container-pane3: 65rem; /* 1040px: steps, body and preview */
+
+  /* §9.5: title pairs, each fluid from its phone size at 390 to its desktop size at 1440. */
+  --text-screen-name: 4.75rem; /* the phone's Karantina screen name */
+  --text-title-screen: 2.375rem; /* the desktop top bar: 38 */
+  --text-sub-screen: 1.3125rem; /* 21 */
+  --text-title-hero: clamp(1.25rem, 0.7857rem + 1.9048vw, 2.5rem); /* 20 -> 40 */
+  --text-sub-hero: clamp(1rem, 0.8143rem + 0.7619vw, 1.5rem); /* 16 -> 24 */
+  --text-title-sheet: clamp(1.25rem, 1.0179rem + 0.9524vw, 1.875rem); /* 20 -> 30 */
+  --text-sub-sheet: clamp(1rem, 0.8839rem + 0.4762vw, 1.3125rem); /* 16 -> 21 */
+  --text-title-question: clamp(2rem, 1.6286rem + 1.5238vw, 3rem); /* 32 -> 48 */
+  --text-sub-question: clamp(1.1875rem, 1.0714rem + 0.4762vw, 1.5rem); /* 19 -> 24 */
+  --text-title-steps: clamp(1.5rem, 1.4536rem + 0.1905vw, 1.625rem); /* 24 -> 26 */
+  --text-sub-steps: clamp(1.0625rem, 1.0393rem + 0.0952vw, 1.125rem); /* 17 -> 18 */
 }
 
 /* ---------------------------------------------------------------------------
-   Typography.
+   Typography (§2).
 
-   THE ORDER OF THIS STACK IS LOAD-BEARING. Font fallback is per-glyph:
-   ASCII digits resolve to Inter (which has tabular figures), Hebrew letters
-   fall through to Heebo (which does NOT ship tnum). Putting Heebo first, or
-   adding a `:lang(he) { font-family: Heebo }` rule, silently breaks
-   `tabular-nums` alignment in every amount column in Hebrew.
+   IBM Plex Sans Hebrew 300 / 400 / 500 / 600 for text, Karantina 700 for
+   display and big numerals. Both self-hosted from Fontsource, precached with
+   the app, because the app works offline.
+
+   THE ORDER OF THIS STACK IS LOAD-BEARING. Plex covers Latin, Hebrew and ₪ by
+   itself, and its digits are fixed-width by default (600 units in every
+   weight), which is what lines up an amount column. Putting a face without
+   fixed-width digits before Plex, or adding a :lang(he) font rule, breaks
+   amount alignment.
+
+   Karantina's digits are proportional (243-383 units) and it has no tnum, so
+   it is never used below 28px or for figures that line up or count (decision
+   20). The `font-display` utility sets weight 700 itself: Karantina is never
+   seen at any other weight.
+
+   `font-synthesis: none`: every weight used is loaded, and a weight that is
+   not (Plex 700) must never be faked. `b`, `strong` and `th` default to bold,
+   so the base layer sets them to 600.
 
    Do not declare font-family anywhere outside this file.
 --------------------------------------------------------------------------- */
-/*
- * The display face: the brand's wordmark and the front door's headline, and
- * nothing else. A ledger serif with Hebrew of its own, so the headline keeps
- * its character in both languages. Amounts and UI text stay in the sans stack
- * above, for its tabular figures.
- */
-:root {
-  --font-stack-display: 'Frank Ruhl Libre Variable', 'Heebo Variable', Georgia, serif;
-}
-
 :root {
   --font-stack-sans:
-    'Inter Variable', 'Heebo Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    'Noto Sans Hebrew', Arial, sans-serif;
+    'IBM Plex Sans Hebrew', 'Plex Fallback', system-ui, -apple-system, 'Segoe UI', 'Noto Sans Hebrew', Arial,
+    sans-serif;
+  --font-stack-display: 'Karantina', 'Karantina Fallback', 'Plex Fallback', sans-serif;
+  font-synthesis: none;
+}
+
+/* Fallback faces with the real faces' metrics, measured against Windows Arial
+   with fontTools on 2026-10-09 (§2.4). font-size-adjust is not used: it
+   normalises by x-height, which Hebrew letters do not follow (decision 22). */
+@font-face {
+  font-family: 'Plex Fallback';
+  src: local('Arial'), local('ArialMT'), local('Roboto');
+  size-adjust: 103%; /* Latin text 1.019, Hebrew text 1.044 */
+  ascent-override: 99.5%; /* 1.025 / 1.03 */
+  descent-override: 26.7%; /* 0.275 / 1.03 */
+  line-gap-override: 0%;
+}
+
+/* Sized for figure width, so a balance in the fallback takes the same room. */
+@font-face {
+  font-family: 'Karantina Fallback';
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Roboto Bold');
+  size-adjust: 60%; /* digits 0.584, Hebrew 0.672: sized for figures */
+  ascent-override: 143%; /* 0.859 / 0.60 */
+  descent-override: 25.5%; /* 0.153 / 0.60 */
+  line-gap-override: 0%;
+}
+
+@utility font-display {
+  font-family: var(--font-stack-display);
+  font-weight: 700;
 }
 
 @layer base {
-  * {
+  /* good-css's reset, adopted one rule at a time (§10). With min-width: 0 a
+     sized icon, avatar or logo in a flex row can shrink to make room for the
+     text beside it: it needs `shrink-0`. e2e/16-widths.spec.ts fails on any
+     squeezed icon. */
+  *,
+  *::before,
+  *::after {
     border-color: var(--border);
+    min-width: 0;
+  }
+
+  :root {
+    interpolate-size: allow-keywords;
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Room for the scrollbar is kept from a tablet up, so a page does not
+     jump sideways when it grows past the window. Not on a phone: its
+     scrollbar floats over the page, so the gutter would only be 15px of
+     margin (the 320px layout is measured with it in e2e/08-polish.spec.ts). */
+  @media (min-width: 40rem) {
+    :root {
+      scrollbar-gutter: stable;
+    }
   }
 
   body {
@@ -201,6 +1006,48 @@
     color: var(--foreground);
     font-family: var(--font-stack-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Bold would ask for Plex 700, which is not loaded (decision 19). */
+  b,
+  strong,
+  th {
+    font-weight: 600;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  /* iOS zooms into a field whose text is under 16px. A component that sets
+     its own size (Input's md:text-sm) wins over this on a desktop. */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+
+  button,
+  a,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  /* Controls only: people copy text, so never on body or on links. */
+  button,
+  [role='button'] {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Focus shows as an outline. A component that draws its own ring says so
+     with Tailwind's outline-none, which wins over this layer. */
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 3px;
   }
 
   /* Amounts are mathematical runs: always lining, always tabular. */
@@ -262,15 +1109,17 @@
 --------------------------------------------------------------------------- */
 /* The front door shows one blue. Its filled buttons and links take the
    engraved panel's deep sapphire, not the app's brighter primary beside it:
-   on white, the deep sapphire measures 10.1:1. */
+   on white, the deep sapphire measures 10.1:1. --primary-ink is resolved where
+   it is declared, so it is restated here or the app's would come through. */
 .front-door {
   --primary: var(--brand-deep);
+  --primary-ink: var(--brand-deep);
   --primary-foreground: var(--brand-deep-foreground);
 }
 /* On a near-black page deep sapphire text would vanish; links there take the
    logo's vivid blue, the same family, at 7.45:1. Fills keep the panel's. */
-.dark .front-door .text-primary {
-  color: var(--brand-vivid);
+.dark .front-door {
+  --primary-ink: var(--brand-vivid);
 }
 
 /* The sign-in form changing step (features/account/morph.ts): each part it
@@ -326,5 +1175,231 @@
 @media (prefers-reduced-motion: reduce) {
   .engraving path {
     animation: none;
+  }
+}
+
+/* ===========================================================================
+   Phase 2: the shell, editors and shared components.
+
+   Every rule here waits on an attribute its component sets (data-slot,
+   data-numeral, data-nav-dir), so it is harmless until that lands.
+   src/lib/stylesheet.test.ts pins the values the spec fixed.
+=========================================================================== */
+:root {
+  --tab-bar-h: 3.875rem; /* the phone's tab bar: a 2px line, 8px, a 44px pill, 8px */
+
+  /* §9.4: the share of a numeral's glyph height a sheet's foot hides, and that
+     height in em (fontTools: Karantina's digits are 600-608 units). Changing
+     the depth later changes only --numeral-bleed. */
+  --numeral-bleed: 0.06;
+  --numeral-cap: 0.61;
+
+  /* §9.1: the grain's strength is the veil of the surface's own colour over it. */
+  --grain-veil: 92.5%;
+  --grain-blend: multiply;
+}
+
+.dark {
+  --grain-veil: 94%;
+  --grain-blend: screen;
+}
+
+@media (width < 64rem) {
+  :root {
+    --numeral-bleed: 0.03;
+  }
+}
+
+/* No bounce on desktop: the rail never drags with a trackpad's rubber band (§4.3). */
+@media (pointer: fine) {
+  html {
+    overscroll-behavior-y: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The paper grain (§9.1): a static 180px tile, drawn as a background layer on
+   the paper and on every sheet, under a veil of the surface's own colour, so
+   its strength is 7.5% in light (multiply) and 6% in dark (screen). Not a
+   full-screen overlay with mix-blend-mode: over a long virtualised feed that
+   re-composites the page on every scroll frame. Forced colours drop it.
+--------------------------------------------------------------------------- */
+body,
+[data-sheet] {
+  background-image:
+    linear-gradient(
+      color-mix(in oklch, var(--surface) var(--grain-veil), transparent),
+      color-mix(in oklch, var(--surface) var(--grain-veil), transparent)
+    ),
+    url('./assets/grain.png');
+  background-blend-mode: normal, var(--grain-blend);
+  background-size:
+    auto,
+    11.25rem 11.25rem;
+}
+
+body {
+  --surface: var(--background);
+}
+
+[data-sheet] {
+  --surface: var(--fill);
+}
+
+@media (forced-colors: active) {
+  body,
+  [data-sheet] {
+    background-image: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Route changes (§8.2): same-document view transitions. The rail, the tab bar
+   and the collapsed bar have names of their own, so they stay still while
+   main changes. Before navigating, the shell sets data-nav-dir on <html> from
+   the rail's order; main cross-fades for everyone and slides 24px in the
+   reading direction only when motion is welcome (no view transition types:
+   Baseline only since January 2026). Without view transitions the route just
+   changes.
+--------------------------------------------------------------------------- */
+[data-slot='tab-bar'] {
+  view-transition-name: nav;
+}
+
+#main {
+  view-transition-name: main;
+}
+
+[data-testid='collapsed-summary'] {
+  view-transition-name: collapsed-bar;
+}
+
+::view-transition-group(main),
+::view-transition-old(main),
+::view-transition-new(main) {
+  animation-duration: var(--dur-move);
+  animation-timing-function: var(--ease-out);
+}
+
+@keyframes nav-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes nav-from-right {
+  from {
+    translate: 1.5rem 0;
+  }
+}
+
+@keyframes nav-from-left {
+  from {
+    translate: -1.5rem 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-nav-dir='forward']::view-transition-new(main),
+  html[data-nav-dir='back']:dir(rtl)::view-transition-new(main) {
+    animation-name: nav-fade-in, nav-from-right;
+  }
+
+  html[data-nav-dir='back']::view-transition-new(main),
+  html[data-nav-dir='forward']:dir(rtl)::view-transition-new(main) {
+    animation-name: nav-fade-in, nav-from-left;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Numerals that run off a sheet (§9.4, v2's rules). Numeral sets --glyphs
+   (the formatted figure's length) and --numeral-max (its type-scale cap); it
+   fits its container and never goes under 28px. The sheet's foot cuts it:
+   padding-block-end 0 under it, overflow: clip on the sheet. A figure with a
+   fraction sets --b: 0 inline and never bleeds.
+--------------------------------------------------------------------------- */
+[data-numeral] {
+  --b: var(--numeral-bleed);
+  font-size: max(1.75rem, min(var(--numeral-max, 7.375rem), calc(100cqi / (var(--glyphs, 6) * 0.34))));
+  line-height: 0.74;
+  letter-spacing: -0.005em;
+  margin-block-end: calc(var(--b) * var(--numeral-cap) * -1em - 0.02em);
+}
+
+[data-card-sheet] [data-numeral] {
+  --b: calc(var(--numeral-bleed) * 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   The pop-out (§6.2) lays out by its own width: one pane below 720px; steps
+   and body from 720px; steps, body and preview from 1040px. Missing areas
+   collapse: a flow with no preview has two panes at most. One popup always,
+   so a pop-out crossing a threshold keeps its step and its answers.
+--------------------------------------------------------------------------- */
+[data-slot='popout-layout'] {
+  display: grid;
+  block-size: 100%;
+  min-block-size: 0;
+  grid-template:
+    'preview' auto
+    'body' minmax(0, 1fr)
+    / minmax(0, 1fr);
+}
+
+[data-slot='popout-steps'] {
+  grid-area: steps;
+  display: none;
+}
+
+[data-slot='popout-body'] {
+  grid-area: body;
+}
+
+/* Small, above the question, until there is room beside it. */
+[data-slot='popout-preview'] {
+  grid-area: preview;
+  max-block-size: 14rem;
+  overflow: clip;
+}
+
+[data-slot='popout-preview'] [data-slot='popout-close'] {
+  display: none;
+}
+
+@container popout (width >= 45rem) {
+  [data-slot='popout-layout']:has(> [data-slot='popout-steps']) {
+    grid-template:
+      'steps preview' auto
+      'steps body' minmax(0, 1fr)
+      / 14.5rem minmax(0, 1fr);
+  }
+
+  [data-slot='popout-steps'] {
+    display: flex;
+  }
+}
+
+@container popout (width >= 65rem) {
+  [data-slot='popout-layout']:has(> [data-slot='popout-preview']) {
+    grid-template: 'body preview' minmax(0, 1fr) / minmax(0, 1fr) 22.5rem;
+  }
+
+  [data-slot='popout-layout']:has(> [data-slot='popout-preview']):has(> [data-slot='popout-steps']) {
+    grid-template: 'steps body preview' minmax(0, 1fr) / 14.5rem minmax(0, 1fr) 22.5rem;
+  }
+
+  [data-slot='popout-preview'] {
+    max-block-size: none;
+  }
+
+  /* The round × moves to the preview's corner (§6.2). */
+  [data-slot='popout-preview'] [data-slot='popout-close'] {
+    display: inline-flex;
+  }
+
+  [data-slot='popout-layout']:has(> [data-slot='popout-preview'])
+    [data-slot='popout-body']
+    [data-slot='popout-close'] {
+    display: none;
   }
 }

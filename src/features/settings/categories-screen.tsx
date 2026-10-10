@@ -4,8 +4,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { CategoryChip, CategoryIcon } from '@/components/category-icon';
 import { ICON_NAMES } from '@/components/category-icons';
 import { Segmented } from '@/components/segmented';
@@ -20,9 +19,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import { createCategory, deleteCategory, renameCategory, setCategoryArchived } from '@/db/repos/categories';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -73,10 +77,8 @@ export function CategoriesScreen() {
 
   return (
     <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('categories:manage.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-4 px-4 pt-6">
+      <ScreenHead title={t('categories:manage.title')} />
+      <ScreenSheet className="space-y-4 px-4 pt-6">
         <p className="text-sm text-muted-foreground">{t('categories:manage.body')}</p>
 
         <Label id={kindId} className="sr-only">
@@ -152,7 +154,7 @@ export function CategoriesScreen() {
             if (!open) setTypesOf(undefined);
           }}
         />
-      </PanelSheet>
+      </ScreenSheet>
     </section>
   );
 }
@@ -301,13 +303,13 @@ function CategoryEditor({
   };
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {isNew ? t('categories:manage.newTitle') : t('categories:manage.editTitle')}
-          </SheetTitle>
-        </SheetHeader>
+          </EditorPanelTitle>
+        </EditorPanelHeader>
 
         <form
           noValidate
@@ -347,7 +349,7 @@ function CategoryEditor({
                       setIcon(option);
                     }}
                     className={`flex size-11 items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                      option === icon ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                      option === icon ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                     }`}
                   >
                     <CategoryIcon name={option} className="size-4" />
@@ -357,7 +359,7 @@ function CategoryEditor({
             </div>
           ) : null}
 
-          <div className="flex gap-2 pt-1">
+          <div data-slot="editor-actions" className="flex gap-2 pt-1">
             <Button
               type="button"
               variant="outline"
@@ -373,8 +375,8 @@ function CategoryEditor({
             </Button>
           </div>
         </form>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -452,7 +454,7 @@ function DeleteCategoryDialog({
                     setReassignTo(option.id);
                   }}
                   className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                    option.id === target ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                    option.id === target ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                   }`}
                 >
                   <CategoryIcon name={option.icon} className="size-4 shrink-0" />

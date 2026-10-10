@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { ADD_EXPENSE, openAddSheet } from './support/add';
+import { ADD_EXPENSE, addTrigger, openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -60,10 +60,10 @@ for (const size of WIDTHS) {
       const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(1);
 
-      // Every pill on the panel sits inside the viewport: they wrap rather than overflow.
+      // Every pill on the hero sheet sits inside the viewport: they wrap rather than overflow.
       const outside = await page.evaluate(
         () =>
-          [...document.querySelectorAll('[data-slot="brand-panel"] button')]
+          [...document.querySelectorAll('[data-slot="hero-sheet"] button')]
             .map((el) => el.getBoundingClientRect())
             .filter((box) => box.width > 0 && (box.left < 0 || box.right > window.innerWidth + 0.5)).length,
       );
@@ -436,6 +436,20 @@ test.describe('@collapse on the desktop rail', () => {
 
     expect(Math.abs(columnCentre - rowCentre)).toBeLessThanOrEqual(2);
   });
+
+  test('starts after the rail, so the transparent rail never sits on the night bar', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await page.evaluate(() => {
+      window.scrollTo(0, 600);
+    });
+    const bar = page.getByTestId('collapsed-summary');
+    await expect(bar).toBeVisible();
+    const box = await bar.boundingBox();
+    const rail = await page.locator('nav').first().boundingBox();
+    if (box === null || rail === null) throw new Error('nothing to measure');
+    // Logical start edge: the bar must not extend under the rail.
+    expect(box.x).toBeGreaterThanOrEqual(rail.x + rail.width - 1);
+  });
 });
 
 test.describe('@collapse the collapsed bar’s pop-out', () => {
@@ -697,7 +711,7 @@ test.describe('@keyboard walkthrough', () => {
       seen.push(focused.label);
       expect(focused.hasFocusRing, `no visible focus on "${focused.label}"`).toBe(true);
 
-      if (focused.testid === 'add-button') {
+      if (focused.testid === 'add-button' || focused.testid === 'rail-add') {
         reachedAddPill = true;
         break;
       }
@@ -719,7 +733,7 @@ test.describe('@keyboard walkthrough', () => {
     await completeFirstRun(page, 'en');
 
     // The + opens its menu with focus on the first item, "Expense".
-    const fab = page.getByTestId('add-button');
+    const fab = addTrigger(page);
     await fab.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
@@ -744,7 +758,7 @@ test.describe('@keyboard walkthrough', () => {
     // through the page behind it, with no way to know the sheet is there.
     await completeFirstRun(page, 'en');
 
-    await page.getByTestId('add-button').focus();
+    await addTrigger(page).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menuitem', { name: ADD_EXPENSE })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -910,7 +924,7 @@ test.describe('@popouts every item clears 44px on a phone', () => {
     await page.goto('/');
     await expect(page.getByTestId('feed-header')).toBeVisible();
 
-    await check(page, () => page.getByTestId('add-button').click(), 'add menu');
+    await check(page, () => addTrigger(page).click(), 'add menu');
     // The prime pop-out is a title, the rate and a date: nothing to tap.
     await check(page, () => page.getByTestId('prime-pill').click(), 'prime', 'none');
     await check(

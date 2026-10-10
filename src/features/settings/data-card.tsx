@@ -245,7 +245,7 @@ function ModeOption({
       onClick={onSelect}
       className={
         'rounded-xl border p-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 ' +
-        (selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted')
+        (selected ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted')
       }
     >
       <span className={`block text-sm font-medium ${destructive ? 'text-destructive' : ''}`}>{label}</span>

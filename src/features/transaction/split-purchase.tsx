@@ -8,7 +8,7 @@ import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { PopOut, PopOutBody, PopOutContent } from '@/components/ui/pop-out';
 import { db } from '@/db/db';
 import { splitPurchase } from '@/db/split-purchase';
 import { CARD_CURRENCY } from '@/domain/cards';
@@ -47,24 +47,24 @@ export function SplitPurchaseSheet({
 }) {
   const { t } = useTranslation();
   return (
-    <Sheet open={offer !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{t('split.title')}</SheetTitle>
-        </SheetHeader>
-        {offer === undefined ? null : (
-          <SplitForm
-            key={offer.occurrence.key}
-            offer={offer}
-            today={today}
-            onDone={onDone}
-            onCancel={() => {
-              onOpenChange(false);
-            }}
-          />
-        )}
-      </SheetContent>
-    </Sheet>
+    // A one-pane pop-out over the panel (§6.3): a short form, capped at 36rem.
+    <PopOut open={offer !== undefined} onOpenChange={onOpenChange}>
+      <PopOutContent size="compact">
+        <PopOutBody title={t('split.title')}>
+          {offer === undefined ? null : (
+            <SplitForm
+              key={offer.occurrence.key}
+              offer={offer}
+              today={today}
+              onDone={onDone}
+              onCancel={() => {
+                onOpenChange(false);
+              }}
+            />
+          )}
+        </PopOutBody>
+      </PopOutContent>
+    </PopOut>
   );
 }
 
@@ -191,7 +191,7 @@ function SplitForm({
 
       {schedule === undefined ? null : <ScheduleLines schedule={schedule} currency={money.currency} />}
 
-      <div className="flex gap-2 pt-1">
+      <div data-slot="popout-actions" className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="outline" onClick={onCancel} className="min-h-11 flex-1">
           {t('action.cancel')}
         </Button>

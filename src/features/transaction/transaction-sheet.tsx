@@ -22,9 +22,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
@@ -255,12 +261,12 @@ export function TransactionSheet({
   const open = target.mode === 'add' || target.mode === 'edit';
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>{isAdd ? t('tx.addTitle') : t('tx.editTitle')}</SheetTitle>
-          <SheetDescription>{isAdd ? t('tx.addBody') : t('tx.editBody')}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent aria-labelledby={titleId}>
+        <EditorPanelHeader>
+          <EditorPanelTitle id={titleId}>{isAdd ? t('tx.addTitle') : t('tx.editTitle')}</EditorPanelTitle>
+          <EditorPanelDescription>{isAdd ? t('tx.addBody') : t('tx.editBody')}</EditorPanelDescription>
+        </EditorPanelHeader>
 
         {/*
          * Keyed, so every opening starts from the right values.
@@ -307,8 +313,8 @@ export function TransactionSheet({
             }}
           />
         ) : null}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -1417,7 +1423,7 @@ function TransactionForm({
           </AlertDialogContent>
         </AlertDialog>
 
-        <div className="flex gap-2 pt-1">
+        <div data-slot="editor-actions" className="flex gap-2 pt-1">
           <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
             {t('action.cancel')}
           </Button>
@@ -1433,16 +1439,16 @@ function TransactionForm({
       {/* The chosen card, opened over the form to give a deal's rate; the purchase waits underneath.
           Outside the <form>: React carries a portal's events up its own tree, so the
           card's own save would otherwise submit the purchase too. */}
-      <Sheet
+      <EditorPanel
         open={cardOpen !== undefined}
         onOpenChange={(next) => {
           if (!next) setCardOpen(undefined);
         }}
       >
-        <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{t('categories:manage.methodEdit')}</SheetTitle>
-          </SheetHeader>
+        <EditorPanelContent>
+          <EditorPanelHeader>
+            <EditorPanelTitle>{t('categories:manage.methodEdit')}</EditorPanelTitle>
+          </EditorPanelHeader>
           {cardOpen === undefined ? null : (
             <MethodForm
               target={cardOpen}
@@ -1454,8 +1460,8 @@ function TransactionForm({
               }}
             />
           )}
-        </SheetContent>
-      </Sheet>
+        </EditorPanelContent>
+      </EditorPanel>
     </>
   );
 }
