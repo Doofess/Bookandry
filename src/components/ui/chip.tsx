@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 import type { MoneyKey } from '@/domain/money-key';
 
@@ -14,13 +14,14 @@ export function Chip({
   moneyKey,
   children,
   className,
-}: {
+  ...rest
+}: Omit<HTMLAttributes<HTMLSpanElement>, 'children'> & {
   readonly moneyKey: MoneyKey;
   readonly children: ReactNode;
-  readonly className?: string;
 }) {
   return (
     <span
+      {...rest}
       data-slot="chip"
       data-money={moneyKey}
       className={cn(

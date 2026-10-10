@@ -204,6 +204,8 @@ test.describe('@scale a dense month', () => {
     const started = Date.now();
     await page.goto(`/?m=${today.month}-01`);
     await expect(page.locator('[role="listitem"]').first()).toBeVisible({ timeout: 60_000 });
+    // The board's sheet shows the newest eight rows; its round arrow opens the whole month, the list this measures.
+    await page.getByRole('button', { name: 'All transactions' }).click();
     const firstPaint = Date.now() - started;
 
     /*
