@@ -473,9 +473,13 @@ export function MethodForm({
             profileId,
             // A card's colour is set here; any other method keeps whatever it had.
             ...(type === 'credit_card' ? { color: color === '' ? null : color } : {}),
-            creditAnnualRate,
-            card: details ?? null,
-            account: accountDetails ?? null,
+            // Only a credit card's details are edited here. Any other card keeps
+            // what it has, including keys a later version wrote: writing null
+            // would wipe a debit, prepaid or gift card's details (spec 13.8).
+            ...(type === 'credit_card' ? { creditAnnualRate, card: details ?? null } : {}),
+            ...(type === 'bank_account' ? { account: accountDetails ?? null } : {}),
+            // A credit card turned into anything else leaves its rate behind.
+            ...(existing.type === 'credit_card' && type !== 'credit_card' ? { creditAnnualRate: null } : {}),
           },
           now,
         );
