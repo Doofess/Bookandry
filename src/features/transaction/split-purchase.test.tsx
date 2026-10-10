@@ -1,6 +1,6 @@
 import { renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as CatalogModule from '@/data/card-catalog';
 import { loadCatalog } from '@/data/card-catalog';
@@ -99,9 +99,15 @@ beforeAll(async () => {
   await initTestI18n();
 });
 beforeEach(async () => {
+  // The tests are written for the 8th of October: pin the date, or they fail from the 10th on.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 9, 8, 9, 0));
   catalog.fail = false;
   await db.transactions.clear();
   await db.overrides.clear();
+});
+afterEach(() => {
+  vi.useRealTimers();
 });
 afterAll(async () => {
   await db.transactions.clear();
