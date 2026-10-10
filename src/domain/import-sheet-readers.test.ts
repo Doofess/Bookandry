@@ -615,6 +615,19 @@ describe('a Discount bank-cards export', () => {
   });
 });
 
+const month3 = (n: number, charged: number, chargeDate: string) =>
+  readKnownExport(
+    [
+      discountSheet([
+        [
+          discountRow('מוסך לדוגמה', '07/01/2019', 1000, 'ישראל', ` ${String(n)}/3`, charged, chargeDate),
+          fmt(ILS, ILS),
+        ],
+      ]),
+    ],
+    ctx,
+  )?.blocks.flatMap((b) => b.rows) ?? [];
+
 describe('a deal across monthly files', () => {
   // ₪1,000 in three payments - 333.34, 333.33, 333.33 - one in each monthly file.
   const month = (detail: string, charged: number, chargeDate: string, file: number) =>
@@ -650,6 +663,20 @@ describe('a deal across monthly files', () => {
     expect(rows.map((r) => [r.plan?.number, r.flags])).toEqual([
       [3, ['plan_in_import']],
       [2, []],
+    ]);
+  });
+
+  it('counts a first payment that differs from the rest once: 400 + 300 + 300 of a ₪1,000 deal', () => {
+    const month = (n: number, charged: number, chargeDate: string) => month3(n, charged, chargeDate);
+    const rows = groupPlans([
+      ...month(1, 400, '02/02/2019'),
+      ...month(2, 300, '02/03/2019'),
+      ...month(3, 300, '02/04/2019'),
+    ]);
+    expect(rows.map((r) => [r.amountMinor, r.flags])).toEqual([
+      [40_000, []],
+      [30_000, ['plan_in_import']],
+      [30_000, ['plan_in_import']],
     ]);
   });
 

@@ -619,9 +619,24 @@ export function groupPlans(rows: readonly FoundRow[]): FoundRow[] {
     if (row.plan === null || row.date === undefined) return row;
     const first = lead.get(keyOf(row, row.plan));
     if (first === undefined || first === row) return row;
-    if (row.kind === first.kind && paymentLike(row.amountMinor, first.amountMinor)) {
-      return withFlags(row, 'plan_in_import');
-    }
+    /*
+     * A payment: any numbered payment short of the last (a first payment may
+     * differ from the rest), or one close to another payment of the deal.
+     * Only a "N of N" row unlike every other is a correction.
+     */
+    const members = groups.get(keyOf(row, row.plan)) ?? [];
+    const payment =
+      row.kind === first.kind &&
+      (row.plan.number !== row.plan.count ||
+        paymentLike(row.amountMinor, first.amountMinor) ||
+        members.some(
+          (m) =>
+            m !== row &&
+            m.kind === row.kind &&
+            m.plan?.number !== m.plan?.count &&
+            paymentLike(row.amountMinor, m.amountMinor),
+        ));
+    if (payment) return withFlags(row, 'plan_in_import');
     return withFlags({ ...row, plan: null, wire: { ...row.wire, pl: null } }, 'plan_adjustment');
   });
 }

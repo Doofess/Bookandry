@@ -658,9 +658,8 @@ describe('an export the app knows by its headers', () => {
     expect(
       result.rows.map((r) => [r.description, r.amountMinor, r.plan?.totalMinor ?? null, r.flags]),
     ).toEqual([
-      // Equal payments on one date: noted as seen twice, as any repeat in a document is.
-      ['חנות דמה', 17_350, 52_050, ['twice_in_document']],
-      ['חנות דמה', 17_350, 52_050, ['plan_in_import', 'twice_in_document']],
+      ['חנות דמה', 17_350, 52_050, []],
+      ['חנות דמה', 17_350, 52_050, ['plan_in_import']],
       ['שופרסל', 8_840, null, []],
     ]);
   });
@@ -702,6 +701,80 @@ describe('an export the app knows by its headers', () => {
       [33_334, 100_000, []],
       [33_333, 100_000, ['plan_in_import']],
     ]);
+  });
+
+  describe('a Discount deal of equal payments, the lower number in the later file: ₪870 = 10 × ₪87', () => {
+    const header = [
+      'כרטיס',
+      'בית עסק',
+      'תאריך עסקה',
+      'סכום העסקה',
+      'מנפיק',
+      'סוג העסקה',
+      'פירוט',
+      'תאריך החיוב',
+      'סכום החיוב',
+    ];
+    const other = (n: number) => [
+      'ויזה 1111',
+      `חנות ${String(n)} לדוגמה`,
+      '02/01/2019',
+      12,
+      'כאל',
+      'ישראל',
+      '',
+      '02/03/2019',
+      12,
+    ];
+    const deal = (n: number, chargeDate: string) => [
+      'ויזה 1111',
+      'מוסך לדוגמה',
+      '07/01/2019',
+      870,
+      'כאל',
+      'ישראל',
+      ` ${String(n)}/10`,
+      chargeDate,
+      87,
+    ];
+    const file = (index: number, rows: (string | number)[][]): PreparedFile => ({
+      kind: 'sheet',
+      file: index,
+      name: `cards-${String(index)}.xlsx`,
+      hash: `e${String(index)}`,
+      sheets: [
+        {
+          name: 'כרטיסי אשראי',
+          date1904: false,
+          formats: [[], ...rows.map(() => header.map((_, c) => (c === 3 || c === 8 ? '"₪"#,##0.00' : null)))],
+          rows: [header, ...rows],
+        },
+      ],
+    });
+    const saved = async (first: (string | number)[][], second: (string | number)[][]) => {
+      const { result } = await run([file(0, first), file(1, second)], {
+        map: [ok({ mc: [] }), ok({ mc: [] })],
+      });
+      return result.rows
+        .filter((r) => r.description === 'מוסך לדוגמה')
+        .map((r) => [r.plan?.number, r.plan?.totalMinor, r.flags]);
+    };
+
+    it('keeps the plan when the payments meet at the seam of the two files', async () => {
+      expect(await saved([deal(3, '02/03/2019')], [deal(2, '02/02/2019')])).toEqual([
+        [3, 87_000, ['plan_in_import']],
+        [2, 87_000, []],
+      ]);
+    });
+
+    it('keeps the plan when other rows sit between them', async () => {
+      expect(
+        await saved([other(1), deal(3, '02/03/2019'), other(2)], [other(3), deal(2, '02/02/2019'), other(4)]),
+      ).toEqual([
+        [3, 87_000, ['plan_in_import']],
+        [2, 87_000, []],
+      ]);
+    });
   });
 
   it('gives nothing for a summary of monthly totals, and asks nothing', async () => {

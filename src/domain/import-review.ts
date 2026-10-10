@@ -14,8 +14,15 @@ import { defaultFormValues, NOTE_MAX_LENGTH, type TxFormValues } from './tx-form
  * would have typed - so it is saved through the very same path.
  */
 
+/*
+ * A plan's payments are one deal's rows, equal in amount, date and merchant
+ * and told apart by their number: the number is part of the key, or the
+ * deal's payments in two files would fold into each other.
+ */
 const key = (row: FoundRow): string =>
-  `${String(row.amountMinor ?? '')}|${row.date ?? ''}|${row.description.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+  `${String(row.amountMinor ?? '')}|${row.date ?? ''}|${row.description.replace(/\s+/g, ' ').trim().toLowerCase()}|${
+    row.plan === null ? '' : `${row.plan.mode}:${String(row.plan.number)}/${String(row.plan.count)}`
+  }`;
 
 /**
  * Overlapping screenshots, and the same transaction in two files.
