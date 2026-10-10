@@ -54,6 +54,7 @@ export function ScopeChooser({
     <div className="space-y-1.5">
       <Label id={labelId}>{t('tx.scope')}</Label>
       <Segmented<EditScope>
+        look="pill"
         value={value}
         labelledBy={labelId}
         onChange={onChange}

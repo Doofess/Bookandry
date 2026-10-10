@@ -36,6 +36,8 @@ export type AmountInputProps = {
   readonly id?: string;
   readonly disabled?: boolean;
   readonly className?: string;
+  /** Extra classes for the field itself (the wrapper takes `className`). */
+  readonly inputClassName?: string;
   /**
    * Opening balances only. Transaction amounts are `> 0` by invariant - `kind`
    * carries the sign - but a Israeli current account in מינוס is an ordinary
@@ -85,6 +87,7 @@ export function AmountInput({
   id,
   disabled,
   className,
+  inputClassName,
   allowNegative = false,
   placeholder,
   'aria-describedby': describedBy,
@@ -163,7 +166,7 @@ export function AmountInput({
           const minor = parse(text, currency);
           setText(minor === undefined ? '' : toDecimalString(minor, currency));
         }}
-        className="tabular h-11 ps-15 text-end text-base"
+        className={cn('tabular h-11 ps-15 text-end text-base', inputClassName)}
       />
     </div>
   );
