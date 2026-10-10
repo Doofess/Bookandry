@@ -291,5 +291,19 @@
     "clearFor": "Remove my rate for {{label}}",
     "clear": "Remove my rate",
     "caveat": "The card company doesn't publish every detail of this rate. Check it against your statement."
-  }
+  },
+  "summary": {
+    "title": "Leaves the bank this month",
+    "sub": "{{cards}} cards, {{days}} charge days",
+    "next": "Next: <box>{{amount}}</box> on {{date}}.",
+    "nextFrom": "Next: <box>{{amount}}</box> on {{date}}, from {{account}}."
+  },
+  "details": {
+    "title": "Card details",
+    "empty": "Choose a card to see its bills, its transactions and its rates.",
+    "close": "Close the details",
+    "open": "Details of {{name}}"
+  },
+  "allCards": "All cards",
+  "billedOn": "Charged on day {{day}}"
 }

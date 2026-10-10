@@ -455,6 +455,16 @@ export function sharesBp(minors: readonly Minor[]): number[] {
   return shares.map((share, index) => Number(share) + (extra.has(index) ? 1 : 0));
 }
 
+/**
+ * `part` as a whole percent of `whole`, rounded half away from zero: "60%" of
+ * what came in has gone out. 0 when there is no whole. The one place a share
+ * becomes a percent, so gate:money stays green everywhere else.
+ */
+export function ratioPercent(part: Minor, whole: Minor): number {
+  if (whole === 0) return 0;
+  return Number(divRound(BigInt(part) * 100n, BigInt(whole)));
+}
+
 /** The amount in whole major units - shekels, dollars - rounded half away from zero (§9.4). */
 export function wholeMinor(minor: Minor, currency: Currency): Minor {
   const unit = 10n ** BigInt(exponentOf(currency));

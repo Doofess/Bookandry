@@ -66,4 +66,17 @@ describe('Button', () => {
     expect(pill).toHaveClass('motion-safe:active:scale-97', 'active:not-aria-[haspopup]:translate-y-0');
     expect(pill.className).not.toMatch(/(^|\s)active:scale-/);
   });
+
+  it('names its variant, so the harness and the sheets can find pills and round buttons', () => {
+    render(
+      <>
+        <Button variant="pill">Cancel</Button>
+        <Button variant="pill-solid">Save</Button>
+        <Button>Plain</Button>
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveAttribute('data-variant', 'pill');
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('data-variant', 'pill-solid');
+    expect(screen.getByRole('button', { name: 'Plain' })).toHaveAttribute('data-variant', 'default');
+  });
 });

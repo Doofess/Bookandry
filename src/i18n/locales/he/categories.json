@@ -100,5 +100,28 @@
     "movedPast_one": "הוצאה אחת הועברה",
     "movedPast_two": "שתי הוצאות הועברו",
     "movedPast_other": "{{count}} הוצאות הועברו"
+  },
+  "hue": {
+    "label": "צבע",
+    "tone2": "{{name}}, כהה",
+    "names": {
+      "indigo": "אינדיגו",
+      "green": "ירוק",
+      "vermilion": "אדום־כתום",
+      "amber": "ענבר",
+      "orange": "כתום",
+      "cyan": "תכלת",
+      "violet": "סגול",
+      "rose": "ורוד",
+      "magenta": "מג׳נטה",
+      "teal": "טורקיז",
+      "blue": "כחול",
+      "lime": "ליים"
+    }
+  },
+  "screen": {
+    "thisMonth": "החודש",
+    "expense": "הוצאות",
+    "income": "הכנסות"
   }
 }
