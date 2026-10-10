@@ -3601,7 +3601,7 @@ export function Sheet({
       data-sheet={kind}
       data-money={kind === 'money' ? (moneyKey ?? 'neutral') : undefined}
       className={cn(
-        'px-sheet-x pt-sheet-y relative overflow-clip',
+        'relative overflow-clip px-sheet-x pt-sheet-y',
         bleed ? 'pb-0' : 'pb-sheet-y',
         RADIUS[radius],
         className,
@@ -5147,7 +5147,7 @@ export function BalanceSheet({
     >
       <div className="flex min-w-0 flex-col gap-3.5 [grid-area:head]">
         <SheetHead size="hero" title={title} subtitle={subtitle} action={actions} />
-        <p className="text-lede max-w-[38ch] leading-[1.75] font-light">{lede}</p>
+        <p className="max-w-[38ch] text-lede leading-[1.75] font-light">{lede}</p>
       </div>
       <div className="-ms-1.5 min-w-0 self-end [grid-area:figure]">{figure}</div>
       <div className="@wide/main:-mbe-3.5 min-w-0 self-end [grid-area:accounts]">{accounts}</div>
@@ -7049,7 +7049,7 @@ export function CardsSummary({
         subtitle={t('summary.sub', { cards: cardCount, days: bills?.days.length ?? 0 })}
       />
       {next === undefined ? null : (
-        <p className="@board/main:text-lede text-[0.90625rem] leading-[1.7] font-light">
+        <p className="text-[0.90625rem] leading-[1.7] font-light @board/main:text-lede">
           <Trans
             t={t}
             i18nKey={from === undefined ? 'summary.next' : 'summary.nextFrom'}
