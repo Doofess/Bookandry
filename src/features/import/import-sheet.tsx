@@ -24,7 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PopOut, PopOutBody, PopOutContent } from '@/components/ui/pop-out';
+import { PopOut, PopOutBody, PopOutContent, PopOutPreview, PopOutSteps } from '@/components/ui/pop-out';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
 import {
@@ -80,6 +80,8 @@ import {
 } from './found-methods';
 import { MethodPanel, MethodsGroup, UnfinishedGroup } from './found-methods-list';
 import { readSession, startSession, usableVia, writeSession, type ImportSession } from './import-session';
+import { importStep, type ImportStage } from './import-stage';
+import { FooterPortal, ImportPreview } from './import-steps';
 import {
   applyBatch,
   buildReview,
@@ -201,6 +203,7 @@ export function ImportSheet(props: ImportSheetProps) {
   );
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [footerEl, setFooterEl] = useState<HTMLElement | null>(null);
   const abort = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -522,6 +525,35 @@ export function ImportSheet(props: ImportSheetProps) {
     props.target.card === undefined ? undefined : unfinished.find((u) => u.entry.key === props.target.card);
   const filling = draft?.item ?? session.methods.find((m) => m.id === props.target.card);
 
+  const stage: ImportStage =
+    filling !== undefined ? 'methods' : session.stage === 'pick' ? 'picker' : session.stage;
+  const step = importStep(stage);
+  const previewed = filling ?? session.methods[0];
+  // A stage with a form of its own (a row, a card) keeps that form's buttons; the others act from the footer.
+  const footer =
+    filling !== undefined || editing !== undefined ? undefined : session.stage === 'pick' ? (
+      <Button
+        type="button"
+        variant="pill-solid"
+        disabled={session.files.length === 0}
+        onClick={() => void read(session.files)}
+      >
+        {session.files.length === 0
+          ? t('import:readNone')
+          : t('import:read', { count: session.files.length })}
+      </Button>
+    ) : session.stage === 'reading' ? (
+      <Button
+        type="button"
+        variant="pill"
+        onClick={() => {
+          abort.current?.abort();
+        }}
+      >
+        {t('import:stop')}
+      </Button>
+    ) : null;
+
   return (
     <PopOut
       open
@@ -530,7 +562,20 @@ export function ImportSheet(props: ImportSheetProps) {
       }}
     >
       <PopOutContent>
+        <PopOutSteps
+          title={t('import:steps.title')}
+          steps={[t('import:steps.choose'), t('import:steps.review'), t('import:steps.cards')]}
+          current={step}
+          // Going back is only ever to the list of what was found; the choosing step would discard it.
+          reached={Math.min(step, 1)}
+          onStep={(index) => {
+            if (index === 1) props.onOpenCard(undefined);
+          }}
+        />
         <PopOutBody
+          heading="question"
+          footerRef={setFooterEl}
+          footer={footer}
           title={
             filling !== undefined
               ? t('import:fillTitle', { name: foundName(filling, i18n.language) })
@@ -631,15 +676,9 @@ export function ImportSheet(props: ImportSheetProps) {
                     onNote={(note) => {
                       setSession((s) => ({ ...s, note }));
                     }}
-                    onRead={() => void read(session.files)}
                   />
                 ) : session.stage === 'reading' ? (
-                  <Reading
-                    states={session.states}
-                    onStop={() => {
-                      abort.current?.abort();
-                    }}
-                  />
+                  <Reading states={session.states} />
                 ) : (
                   <Review
                     session={session}
@@ -648,6 +687,7 @@ export function ImportSheet(props: ImportSheetProps) {
                     methodsList={props.paymentMethods}
                     translate={translate}
                     saving={saving}
+                    footerEl={footerEl}
                     onKind={chooseKind}
                     onShowLeftOut={showLeftOut}
                     onChange={(items) => {
@@ -692,6 +732,9 @@ export function ImportSheet(props: ImportSheetProps) {
             )}
           </div>
         </PopOutBody>
+        <PopOutPreview title={t('import:preview.title')} subtitle={t('import:preview.subtitle')}>
+          <ImportPreview found={previewed} language={i18n.language} />
+        </PopOutPreview>
 
         <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
           <AlertDialogContent>
@@ -792,7 +835,6 @@ function Picker({
   onFiles,
   note,
   onNote,
-  onRead,
 }: {
   readonly files: readonly File[];
   readonly shared: boolean;
@@ -807,7 +849,6 @@ function Picker({
   /** What the person said about the files, for the whole batch. */
   readonly note: string;
   readonly onNote: (note: string) => void;
-  readonly onRead: () => void;
 }) {
   const { t } = useTranslation('import');
   const whoseId = useId();
@@ -966,16 +1007,11 @@ function Picker({
           </a>
         </span>
       </p>
-
-      <Button type="button" className="h-11 w-full" disabled={files.length === 0} onClick={onRead}>
-        {files.length === 0 ? t('readNone') : t('read', { count: files.length })}
-      </Button>
     </div>
   );
 }
 
-function Reading({ states, onStop }: { readonly states: readonly FileState[]; readonly onStop: () => void }) {
-  const { t } = useTranslation('import');
+function Reading({ states }: { readonly states: readonly FileState[] }) {
   return (
     <div className="space-y-4">
       <ul className="divide-y divide-border rounded-xl border border-border text-sm" aria-live="polite">
@@ -988,9 +1024,6 @@ function Reading({ states, onStop }: { readonly states: readonly FileState[]; re
           </li>
         ))}
       </ul>
-      <Button type="button" variant="outline" className="w-full" onClick={onStop}>
-        {t('stop')}
-      </Button>
     </div>
   );
 }
@@ -1030,6 +1063,7 @@ function Review({
   methodsList,
   translate,
   saving,
+  footerEl,
   onKind,
   onShowLeftOut,
   onChange,
@@ -1046,6 +1080,7 @@ function Review({
   readonly methodsList: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly saving: boolean;
+  readonly footerEl: HTMLElement | null;
   readonly onKind: (kind: ImportKind) => void;
   readonly onShowLeftOut: (shown: boolean) => void;
   readonly onChange: (items: ReviewItem[]) => void;
@@ -1066,19 +1101,23 @@ function Review({
   // Everything found waits above, to be finished: only another file to offer here.
   if (items.length === 0 && methods.length === 0 && session.drafted > 0) {
     return (
-      <Button type="button" variant="outline" className="w-full" onClick={onAgain}>
-        {t('chooseOther')}
-      </Button>
+      <FooterPortal target={footerEl}>
+        <Button type="button" variant="pill" onClick={onAgain}>
+          {t('chooseOther')}
+        </Button>
+      </FooterPortal>
     );
   }
   if (items.length === 0 && methods.length === 0) {
     return (
       <div className="space-y-4">
-        {failures.length === 0 ? null : <Reading states={session.states} onStop={() => undefined} />}
+        {failures.length === 0 ? null : <Reading states={session.states} />}
         <p className="text-sm">{t('nothing')}</p>
-        <Button type="button" variant="outline" className="w-full" onClick={onAgain}>
-          {t('chooseOther')}
-        </Button>
+        <FooterPortal target={footerEl}>
+          <Button type="button" variant="pill" onClick={onAgain}>
+            {t('chooseOther')}
+          </Button>
+        </FooterPortal>
       </div>
     );
   }
@@ -1240,12 +1279,12 @@ function Review({
         />
       )}
 
-      <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
+      <FooterPortal target={footerEl}>
         {/* Nothing to select, and nothing ticked by hand: no button. */}
         {selectable === 0 && ticked === 0 ? null : (
           <Button
             type="button"
-            variant="outline"
+            variant="pill"
             onClick={() => {
               setTicked(tickedChosen < selectable);
             }}
@@ -1255,14 +1294,14 @@ function Review({
         )}
         <Button
           type="button"
-          className="h-11 flex-1"
+          variant="pill-solid"
           disabled={ticked === 0 || saving}
           onClick={onSave}
           data-testid="import-add"
         >
           {t('add', { count: ticked })}
         </Button>
-      </div>
+      </FooterPortal>
     </div>
   );
 }

@@ -1000,6 +1000,7 @@ function TransactionForm({
             name="kind"
             render={({ field }) => (
               <Segmented<Kind>
+                look="pill"
                 value={field.value}
                 labelledBy={kindId}
                 onChange={changeKind}
@@ -1016,6 +1017,7 @@ function TransactionForm({
         <div className="space-y-1.5">
           <Label htmlFor={noteId}>{t('tx.name')}</Label>
           <Input
+            className="min-h-12 rounded-tile border-2 border-input"
             id={noteId}
             placeholder={t('tx.namePlaceholder')}
             autoComplete="off"
@@ -1048,6 +1050,7 @@ function TransactionForm({
                     // rewritten to "45.00" under the cursor.
                     field.onChange(minor === undefined ? '' : toDecimalString(minor, values.currency));
                   }}
+                  inputClassName="min-h-12 rounded-tile border-2 border-input"
                   aria-invalid={errors.amount !== undefined}
                   aria-describedby={`${amountId}-error`}
                 />
@@ -1143,6 +1146,7 @@ function TransactionForm({
           <div className="space-y-1.5">
             <Label id={viaId}>{t('tx.standingVia')}</Label>
             <Segmented<StandingVia>
+              look="pill"
               value={via}
               labelledBy={viaId}
               onChange={(next) => {
@@ -1229,6 +1233,7 @@ function TransactionForm({
               name="profileId"
               render={({ field }) => (
                 <Segmented
+                  look="pill"
                   value={field.value}
                   labelledBy={profileLabelId}
                   onChange={(next) => {
