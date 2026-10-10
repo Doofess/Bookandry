@@ -210,6 +210,22 @@ export type CardDetails = {
   readonly catalog?: CardCatalogLink;
   /** Only the rates the person changed from the catalog's. */
   readonly overrides?: Partial<Record<DealKind | ExtraRateKind, CardRateTerm>>;
+  /** debit, prepaid or gift on a `debit_card`; absent on a credit card. Open: an unknown value reads as debit. */
+  readonly funding?: string;
+  /** The company name typed under "Other": BuyMe, a mall. Only when `issuer` is 'other'. */
+  readonly issuerName?: string;
+  /** A prepaid card's loading credit card: a `credit_card` method's id. */
+  readonly loadCardId?: string;
+  /** A prepaid card's fee for each load. */
+  readonly loadFeeMinor?: number;
+  /** Where a gift card is accepted, as a short label. */
+  readonly acceptedAt?: string;
+  /** The issuing bank of a bank card, as a Masav code. Separate from the paying account. */
+  readonly issuerBank?: string;
+  /** The card's name as a document prints it: "Dream Card VIP". */
+  readonly productName?: string;
+  /** The person confirmed an unverified bank, company and network combination. */
+  readonly checked?: true;
 };
 
 export type CardCatalogLink = {
@@ -298,7 +314,7 @@ export type PaymentMethod = {
    * the card, and a rate identifies nothing.
    */
   readonly creditAnnualRate?: string;
-  /** Credit cards only: billing day, issuer, fees and the rest. */
+  /** Cards of every kind: billing day, issuer, fees and the rest. */
   readonly card?: CardDetails;
   /** Bank accounts only. */
   readonly account?: BankAccountDetails;

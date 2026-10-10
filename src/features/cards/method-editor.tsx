@@ -36,6 +36,7 @@ import {
 import { accountDraftOf, accountFromDraft, type AccountDraft } from '@/domain/account-draft';
 import { bankByCode, bankName } from '@/domain/banks';
 import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, type CardDraft } from '@/domain/card-draft';
+import { methodTypeOf } from '@/domain/tx-options';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
@@ -206,7 +207,7 @@ export function OtherMethods() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{displayName(method)}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {t(TYPE_KEY[method.type] as MethodTypeKey)} · {ownerName(method.profileId)}
+                  {t(TYPE_KEY[methodTypeOf(method)] as MethodTypeKey)} · {ownerName(method.profileId)}
                   {archived ? ` · ${t('categories:manage.archived')}` : ''}
                 </span>
               </span>

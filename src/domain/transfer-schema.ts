@@ -216,6 +216,18 @@ export const cardSchema = z.object({
       Object.fromEntries([...DEAL_KINDS, ...EXTRA_RATE_KINDS].map((kind) => [kind, overrideTerm.optional()])),
     )
     .optional(),
+  // Open, never an enum: a kind a later release adds reads as debit here.
+  funding: z.string().min(1).max(20).optional(),
+  issuerName: shortText.optional(),
+  loadCardId: z.string().min(1).optional(),
+  loadFeeMinor: minorAmount.optional(),
+  acceptedAt: shortText.optional(),
+  issuerBank: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .optional(),
+  productName: shortText.optional(),
+  checked: z.literal(true).optional(),
 });
 
 /** A bank account as the bank writes it; never anything that moves money (§12). */
@@ -238,17 +250,9 @@ export const accountSchema = z.object({
 const paymentMethodSchema = z.object({
   id: z.string().min(1),
   profileId: z.string().min(1),
-  type: z.enum([
-    'cash',
-    'cheque',
-    'credit_card',
-    'debit_card',
-    'bank_transfer',
-    'standing_order',
-    'digital_wallet',
-    'bank_account',
-    'other',
-  ]),
+  // Open: a type a later release writes is kept and read as "other"
+  // (methodTypeOf), so this build never drops the row on a pull or refuses a file.
+  type: z.string().min(1).max(30),
   // A LABEL only. §12 forbids storing any credential, and gate:pci enforces
   // that no field name here ever drifts toward one.
   label: z.string().trim().min(1).max(40),

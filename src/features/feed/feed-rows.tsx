@@ -11,7 +11,7 @@ import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
 import { isCardFee } from '@/domain/cards';
 import { recurrenceModeOf } from '@/domain/tx-edit';
-import { standingViaOf } from '@/domain/tx-options';
+import { methodTypeOf, standingViaOf } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { formatLocalDate, monthsBetween } from '@/lib/dates';
@@ -127,8 +127,9 @@ function cardOf(
 ): { readonly text: string; readonly label: string; readonly name: string } | undefined {
   if (occurrence.transaction.kind !== 'expense' || occurrence.paymentMethodId === undefined) return undefined;
   const method = methods?.get(occurrence.paymentMethodId);
-  if (method === undefined || (method.type !== 'credit_card' && method.type !== 'debit_card'))
-    return undefined;
+  if (method === undefined) return undefined;
+  const type = methodTypeOf(method);
+  if (type !== 'credit_card' && type !== 'debit_card') return undefined;
   const digits = method.card?.lastDigits;
   return digits === undefined
     ? { text: method.label, label: t('feed.paidWith', { name: method.label }), name: method.label }
@@ -155,7 +156,7 @@ function destinationOf(
   if (method === undefined) return undefined;
   const text = methodDisplayName(method, t);
   if (method.id === CASH_METHOD_ID) return { kind: 'cash', text, label: t('feed.into', { name: text }) };
-  if (method.type !== 'bank_account') return undefined;
+  if (methodTypeOf(method) !== 'bank_account') return undefined;
   return { kind: 'bank', bank: method.account?.bank ?? '', text, label: t('feed.into', { name: text }) };
 }
 
