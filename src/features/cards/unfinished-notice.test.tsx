@@ -37,17 +37,17 @@ describe('UnfinishedNotice', () => {
   });
 
   it('leads straight to the one card waiting', async () => {
-    await keepUnfinished(db, [card('3200')], 'p1', 0);
+    await keepUnfinished(db, [card('5555')], 'p1', 0);
     renderWithProviders(<UnfinishedNotice kind="card" />);
     expect(await screen.findByText('1 card from Smart import is still to finish.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Finish' })).toHaveAttribute(
       'href',
-      '/?import=1&card=card%3A3200',
+      '/?import=1&card=card%3A5555',
     );
   });
 
   it('leads to the list when several wait', async () => {
-    await keepUnfinished(db, [card('3200'), card('0400')], 'p1', 0);
+    await keepUnfinished(db, [card('5555'), card('0088')], 'p1', 0);
     renderWithProviders(<UnfinishedNotice kind="card" />);
     expect(await screen.findByText('2 cards from Smart import are still to finish.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Finish' })).toHaveAttribute('href', '/?import=1');

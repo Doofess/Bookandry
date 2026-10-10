@@ -14,8 +14,15 @@ import { defaultFormValues, NOTE_MAX_LENGTH, type TxFormValues } from './tx-form
  * would have typed - so it is saved through the very same path.
  */
 
+/*
+ * A plan's payments are one deal's rows, equal in amount, date and merchant
+ * and told apart by their number: the number is part of the key, or the
+ * deal's payments in two files would fold into each other.
+ */
 const key = (row: FoundRow): string =>
-  `${String(row.amountMinor ?? '')}|${row.date ?? ''}|${row.description.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+  `${String(row.amountMinor ?? '')}|${row.date ?? ''}|${row.description.replace(/\s+/g, ' ').trim().toLowerCase()}|${
+    row.plan === null ? '' : `${row.plan.mode}:${String(row.plan.number)}/${String(row.plan.count)}`
+  }`;
 
 /**
  * Overlapping screenshots, and the same transaction in two files.
@@ -65,15 +72,90 @@ export function collapseOverlaps(rows: readonly FoundRow[]): FoundRow[] {
   });
 }
 
+/** What a row or an occurrence says about the card or payment method it was paid with. */
+type Paid = { readonly id?: string; readonly digits?: string };
+
+/**
+ * Two sides that each name a card, and not the same one. The printed digits
+ * decide when both sides have them - a card archived and added again, or
+ * renamed, is still the card with those digits; the payment methods decide
+ * only when one side has no digits.
+ */
+function differentCards(a: Paid, b: Paid): boolean {
+  if (a.digits !== undefined && b.digits !== undefined) return a.digits !== b.digits;
+  return a.id !== undefined && b.id !== undefined && a.id !== b.id;
+}
+
+const sameCard = (a: Paid, b: Paid): boolean =>
+  a.digits !== undefined && b.digits !== undefined
+    ? a.digits === b.digits
+    : a.id !== undefined && a.id === b.id;
+
+const words = (name: string): string[] =>
+  name
+    .toLowerCase()
+    .replace(/בע["״'׳]?\s?מ/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(' ')
+    .filter((w) => w !== '');
+
+/**
+ * Whether two merchant names could be one merchant: one inside the other, or
+ * a word of three letters or more in common - so two issuers' spellings of one
+ * shop ("קפה רוזה", "ק.רוזה בע"מ") are one. A side with no name is no evidence.
+ */
+export function sameMerchant(a: string, b: string): boolean {
+  const left = words(a);
+  const right = words(b);
+  if (left.length === 0 || right.length === 0) return true;
+  const joinedLeft = left.join('');
+  const joinedRight = right.join('');
+  if (joinedLeft.includes(joinedRight) || joinedRight.includes(joinedLeft)) return true;
+  return left.some((w) => w.length >= 3 && right.includes(w));
+}
+
 /**
  * Rows the household already has: the same kind and amount within two days
  * of an occurrence - compared with what the occurrence is in either its own
  * currency or the base - and plan payments of a plan that is already there.
+ *
+ * With `cards`, what each side was paid with counts (the import-samples
+ * study's dedupe design): a row on one card is never an occurrence on another
+ * - a household uses two cards at the same shops, for the same amounts. On the
+ * same card, a different day lets the merchant break the tie; the same day and
+ * amount is enough. Where either side names no card, the match is as it was.
  */
-export function flagExisting(rows: readonly FoundRow[], occurrences: readonly Occurrence[]): FoundRow[] {
+export function flagExisting(
+  rows: readonly FoundRow[],
+  occurrences: readonly Occurrence[],
+  cards?: {
+    readonly methods: readonly PaymentMethod[];
+    /** The household's payment method a row names, by its card's digits or its alias. */
+    readonly methodOf: (row: FoundRow) => PaymentMethod | undefined;
+  },
+): FoundRow[] {
+  /** A card's digits, when it has some: '' is none. */
+  const digits = (method: PaymentMethod | undefined): Paid => {
+    const last = method?.card?.lastDigits ?? '';
+    return last === '' ? {} : { digits: last };
+  };
+  const occurrencePaid = (o: Occurrence): Paid =>
+    cards === undefined || o.paymentMethodId === undefined || o.paymentMethodId === ''
+      ? {}
+      : { id: o.paymentMethodId, ...digits(cards.methods.find((m) => m.id === o.paymentMethodId)) };
   return rows.map((row) => {
     if (row.date === undefined || row.amountMinor === undefined) return row;
     const date = row.date;
+    const method = cards?.methodOf(row);
+    const printed = row.wire.l4 === '' ? (row.statementCard?.lastDigits ?? '') : row.wire.l4;
+    const rowPaid: Paid =
+      cards === undefined
+        ? {}
+        : {
+            ...(method === undefined ? {} : { id: method.id }),
+            ...(printed === '' ? digits(method) : { digits: printed }),
+          };
     if (row.plan !== null) {
       const plan = row.plan;
       const existing = occurrences.some((o) => {
@@ -81,6 +163,7 @@ export function flagExisting(rows: readonly FoundRow[], occurrences: readonly Oc
         return (
           recurrence.type === 'monthly' &&
           recurrence.installments === plan.count &&
+          !differentCards(rowPaid, occurrencePaid(o)) &&
           Math.abs(o.money.amountMinor - (row.amountMinor ?? 0)) <= plan.count &&
           Math.abs(daysBetween(o.transaction.date, date)) <= 3
         );
@@ -90,14 +173,30 @@ export function flagExisting(rows: readonly FoundRow[], occurrences: readonly Oc
     const amounts = new Set(
       [row.amountMinor, row.charged?.minor].filter((n): n is number => n !== undefined),
     );
-    const match = occurrences.some(
-      (o) =>
-        !o.isSkipped &&
-        o.transaction.kind === row.kind &&
-        Math.abs(daysBetween(o.date, date)) <= 2 &&
-        (amounts.has(o.money.amountMinor) || amounts.has(o.money.baseAmountMinor)),
-    );
-    return match ? withFlags(row, 'already_added') : row;
+    const other = { card: false };
+    const match = occurrences.some((o) => {
+      if (
+        o.isSkipped ||
+        o.transaction.kind !== row.kind ||
+        Math.abs(daysBetween(o.date, date)) > 2 ||
+        !(amounts.has(o.money.amountMinor) || amounts.has(o.money.baseAmountMinor))
+      ) {
+        return false;
+      }
+      const paid = occurrencePaid(o);
+      if (differentCards(rowPaid, paid)) {
+        other.card = true;
+        return false;
+      }
+      // The same card a day or two apart: two purchases of one price, unless the merchant is the same.
+      if (sameCard(rowPaid, paid) && o.date !== date) {
+        return sameMerchant(row.description, o.note ?? '');
+      }
+      return true;
+    });
+    if (match) return withFlags(row, 'already_added');
+    // Not blocked: only noted, in case it is this purchase saved earlier under another card.
+    return other.card ? withFlags(row, 'similar_other_card') : row;
   });
 }
 

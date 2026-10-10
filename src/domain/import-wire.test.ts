@@ -267,12 +267,12 @@ describe('an answer', () => {
   it('reads the cards and accounts a document shows - of a card, never more than its last four digits', () => {
     const result = cleanExtract(
       {
-        r: [row({ l4: ' 3200 ' }), row({ l4: '5326100012343200' })],
+        r: [row({ l4: ' 5555 ' }), row({ l4: '5326100012345555' })],
         t: [],
         per: null,
         done: true,
         k: [
-          { s: 0, n: 'max executive', l4: '3200', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+          { s: 0, n: 'max executive', l4: '5555', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
           { s: 0, n: 'Leaky', l4: '4580123412341234', nw: '', is: '', cr: '', lim: '', bd: '' },
           { s: 0, n: '', l4: '1111' },
           { s: 3, n: 'Elsewhere' },
@@ -288,9 +288,9 @@ describe('an answer', () => {
       1,
       ctx,
     );
-    expect(result?.r.map((r) => r.l4)).toEqual(['3200', '']);
+    expect(result?.r.map((r) => r.l4)).toEqual(['5555', '']);
     expect(result?.k).toEqual([
-      { s: 0, n: 'max executive', l4: '3200', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+      { s: 0, n: 'max executive', l4: '5555', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
       { s: 0, n: 'Leaky', l4: '', nw: '', is: '', cr: '', lim: '', bd: '' },
     ]);
     expect(result?.ba).toEqual([

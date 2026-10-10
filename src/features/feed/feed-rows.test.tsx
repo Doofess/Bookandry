@@ -475,7 +475,7 @@ describe('the card an expense was paid with', () => {
     profileId: 'p1',
     type: 'credit_card',
     label: 'Max Gold',
-    card: { lastDigits: '3200' },
+    card: { lastDigits: '5555' },
     isArchived: 0,
     createdAt: at,
     updatedAt: at,
@@ -493,11 +493,11 @@ describe('the card an expense was paid with', () => {
 
   it('shows a card icon and its last four digits, and says so', () => {
     paidWith(card());
-    expect(screen.getByTestId('row-card').textContent).toBe('3200');
+    expect(screen.getByTestId('row-card').textContent).toBe('5555');
     // Cut short below sm: the full name is a hover away.
     expect(screen.getByTestId('row-card')).toHaveAttribute('title', 'Max Gold');
     expect(
-      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 3200$/ }),
+      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 5555$/ }),
     ).toBeInTheDocument();
   });
 

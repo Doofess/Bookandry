@@ -189,8 +189,8 @@ describe('an image', () => {
 describe('cards and bank accounts', () => {
   const listed = {
     k: [
-      { s: 0, n: 'max executive', l4: '3200', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
-      { s: 0, n: 'Dream Card VIP', l4: '0400', nw: 'ויזה', is: 'MAX', cr: '14.65%', lim: '', bd: '' },
+      { s: 0, n: 'max executive', l4: '5555', nw: 'מאסטרקארד', is: 'MAX', cr: '5.9%', lim: '', bd: '' },
+      { s: 0, n: 'Dream Card VIP', l4: '0088', nw: 'ויזה', is: 'MAX', cr: '14.65%', lim: '', bd: '' },
     ],
     pr: '4.75%',
   };
@@ -210,19 +210,19 @@ describe('cards and bank accounts', () => {
     });
     expect(calls.map((c) => (c.mode === 'extract' ? c.read : c.mode))).toEqual(['primary', 'check']);
     expect(result.cards.map((c) => [c.label, c.lastDigits, c.credit, c.flags])).toEqual([
-      ['max executive', '3200', { basis: 'prime', margin: '1.15' }, []],
-      ['Dream Card VIP', '0400', { basis: 'prime', margin: '9.9' }, ['reads_disagree']],
+      ['max executive', '5555', { basis: 'prime', margin: '1.15' }, []],
+      ['Dream Card VIP', '0088', { basis: 'prime', margin: '9.9' }, ['reads_disagree']],
     ]);
     // Something was found: not "nothing found".
     expect(states.at(-1)).toMatchObject({ status: 'done', found: 2 });
   });
 
   it('in a text are found in it, and a bank account with them', async () => {
-    const text = 'max executive 3200 קרדיט 5.9%\nבנק הפועלים סניף 532 חשבון 123456';
+    const text = 'max executive 5555 קרדיט 5.9%\nבנק הפועלים סניף 532 חשבון 123456';
     const { result } = await run([textFile(text)], {
       'extract:primary': [
         extract([], {
-          k: [{ s: 0, n: 'max executive', l4: '3200', nw: '', is: '', cr: '5.9%', lim: '', bd: '' }],
+          k: [{ s: 0, n: 'max executive', l4: '5555', nw: '', is: '', cr: '5.9%', lim: '', bd: '' }],
           ba: [{ s: 0, n: 'בנק הפועלים', bk: '', br: '532', no: '123456', h: '' }],
         }),
       ],
@@ -599,6 +599,205 @@ describe('a Max export', () => {
       ['מכון כושר הרים', 19_900, 'פנאי, בידור וספורט', '7997', null],
     ]);
     expect(result.rows.every((r) => r.kind === 'expense' && r.fileMcc === undefined)).toBe(true);
+  });
+});
+
+describe('an export the app knows by its headers', () => {
+  it('reads Max exactly - the payment, one plan per deal - and leaves a sheet it does not know to the dictionary', async () => {
+    const header = [
+      'תאריך עסקה',
+      'שם בית העסק',
+      'קטגוריה',
+      '4 ספרות אחרונות של כרטיס האשראי',
+      'סוג עסקה',
+      'סכום חיוב',
+      'מטבע חיוב',
+      'סכום עסקה מקורי',
+      'מטבע עסקה מקורי',
+      'תאריך חיוב',
+      'הערות',
+    ];
+    // Invented: a deal of 520.50 in three payments of 173.50.
+    const pay = (n: number, charge: string) => [
+      '14-08-2019',
+      'חנות דמה',
+      'ריהוט',
+      '9999',
+      'תשלומים',
+      173.5,
+      '₪',
+      520.5,
+      '₪',
+      charge,
+      `תשלום ${String(n)} מתוך 3`,
+    ];
+    const workbook: PreparedFile = {
+      kind: 'sheet',
+      file: 0,
+      name: 'transaction-details_export.xlsx',
+      hash: 'max',
+      sheets: [
+        {
+          name: 'עסקאות במועד החיוב',
+          date1904: false,
+          rows: [header, pay(1, '02-09-2019'), pay(2, '02-10-2019')],
+        },
+        {
+          name: 'Sheet2',
+          date1904: false,
+          rows: [
+            ['תאריך עסקה', 'שם בית העסק', 'סכום עסקה'],
+            ['03/10/2019', 'שופרסל', '88.40'],
+          ],
+        },
+      ],
+    };
+    const { result, calls } = await run([workbook], {});
+    // No call: no columns to name, and the sector and the household's history place both merchants.
+    expect(calls).toEqual([]);
+    expect(
+      result.rows.map((r) => [r.description, r.amountMinor, r.plan?.totalMinor ?? null, r.flags]),
+    ).toEqual([
+      ['חנות דמה', 17_350, 52_050, []],
+      ['חנות דמה', 17_350, 52_050, ['plan_in_import']],
+      ['שופרסל', 8_840, null, []],
+    ]);
+  });
+
+  it('makes a Discount deal paid across two monthly files one plan: 1000 = 333.34 + 333.33 + 333.33', async () => {
+    const header = [
+      'כרטיס',
+      'בית עסק',
+      'תאריך עסקה',
+      'סכום העסקה',
+      'מנפיק',
+      'סוג העסקה',
+      'פירוט',
+      'תאריך החיוב',
+      'סכום החיוב',
+    ];
+    const month = (file: number, detail: string, charged: number, chargeDate: string): PreparedFile => ({
+      kind: 'sheet',
+      file,
+      name: `cards-${String(file)}.xlsx`,
+      hash: `d${String(file)}`,
+      sheets: [
+        {
+          name: 'כרטיסי אשראי',
+          date1904: false,
+          formats: [[], header.map((_, c) => (c === 3 || c === 8 ? '"₪"#,##0.00' : null))],
+          rows: [
+            header,
+            ['ויזה 1111', 'מוסך לדוגמה', '07/01/2019', 1000, 'כאל', 'ישראל', detail, chargeDate, charged],
+          ],
+        },
+      ],
+    });
+    const { result } = await run(
+      [month(0, ' 1/3', 333.34, '02/02/2019'), month(1, ' 2/3', 333.33, '02/03/2019')],
+      { map: [ok({ mc: [] }), ok({ mc: [] })] },
+    );
+    expect(result.rows.map((r) => [r.amountMinor, r.plan?.totalMinor ?? null, r.flags])).toEqual([
+      [33_334, 100_000, []],
+      [33_333, 100_000, ['plan_in_import']],
+    ]);
+  });
+
+  describe('a Discount deal of equal payments, the lower number in the later file: ₪870 = 10 × ₪87', () => {
+    const header = [
+      'כרטיס',
+      'בית עסק',
+      'תאריך עסקה',
+      'סכום העסקה',
+      'מנפיק',
+      'סוג העסקה',
+      'פירוט',
+      'תאריך החיוב',
+      'סכום החיוב',
+    ];
+    const other = (n: number) => [
+      'ויזה 1111',
+      `חנות ${String(n)} לדוגמה`,
+      '02/01/2019',
+      12,
+      'כאל',
+      'ישראל',
+      '',
+      '02/03/2019',
+      12,
+    ];
+    const deal = (n: number, chargeDate: string) => [
+      'ויזה 1111',
+      'מוסך לדוגמה',
+      '07/01/2019',
+      870,
+      'כאל',
+      'ישראל',
+      ` ${String(n)}/10`,
+      chargeDate,
+      87,
+    ];
+    const file = (index: number, rows: (string | number)[][]): PreparedFile => ({
+      kind: 'sheet',
+      file: index,
+      name: `cards-${String(index)}.xlsx`,
+      hash: `e${String(index)}`,
+      sheets: [
+        {
+          name: 'כרטיסי אשראי',
+          date1904: false,
+          formats: [[], ...rows.map(() => header.map((_, c) => (c === 3 || c === 8 ? '"₪"#,##0.00' : null)))],
+          rows: [header, ...rows],
+        },
+      ],
+    });
+    const saved = async (first: (string | number)[][], second: (string | number)[][]) => {
+      const { result } = await run([file(0, first), file(1, second)], {
+        map: [ok({ mc: [] }), ok({ mc: [] })],
+      });
+      return result.rows
+        .filter((r) => r.description === 'מוסך לדוגמה')
+        .map((r) => [r.plan?.number, r.plan?.totalMinor, r.flags]);
+    };
+
+    it('keeps the plan when the payments meet at the seam of the two files', async () => {
+      expect(await saved([deal(3, '02/03/2019')], [deal(2, '02/02/2019')])).toEqual([
+        [3, 87_000, ['plan_in_import']],
+        [2, 87_000, []],
+      ]);
+    });
+
+    it('keeps the plan when other rows sit between them', async () => {
+      expect(
+        await saved([other(1), deal(3, '02/03/2019'), other(2)], [other(3), deal(2, '02/02/2019'), other(4)]),
+      ).toEqual([
+        [3, 87_000, ['plan_in_import']],
+        [2, 87_000, []],
+      ]);
+    });
+  });
+
+  it('gives nothing for a summary of monthly totals, and asks nothing', async () => {
+    const summary: PreparedFile = {
+      kind: 'sheet',
+      file: 0,
+      name: 'summary.xlsx',
+      hash: 'sum',
+      sheets: [
+        {
+          name: 'כרטיסי אשראי',
+          date1904: false,
+          rows: [
+            ['חודש חיוב', 'מספר עסקאות', 'סכום החיוב בש"ח'],
+            ['112025', '12 עסקאות', 1000],
+          ],
+        },
+      ],
+    };
+    const { result, calls, states } = await run([summary], {});
+    expect(calls).toEqual([]);
+    expect(result.rows).toEqual([]);
+    expect(states.at(-1)).toMatchObject({ status: 'empty' });
   });
 });
 

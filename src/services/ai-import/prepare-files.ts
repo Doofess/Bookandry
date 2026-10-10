@@ -1,5 +1,6 @@
 import { computeTiles, fitSize, patches } from '@/domain/import-images';
 import type { Cell } from '@/domain/import-sheet-map';
+import { totalsOnly } from '@/domain/import-sheet-readers';
 import { IMAGE_MEDIA, type ImageMedia, type WireSource } from '@/domain/import-wire';
 import { sha256Hex } from '@/services/crypto/digest';
 
@@ -24,7 +25,15 @@ export const MAX_PDF_PAGES = 100;
 const PAGES_PER_JOB = 4;
 
 export type RefuseReason =
-  'over_limit' | 'too_large' | 'pdf_password' | 'pdf_pages' | 'unreadable' | 'word97' | 'unsupported';
+  | 'over_limit'
+  | 'too_large'
+  | 'pdf_password'
+  | 'pdf_pages'
+  | 'unreadable'
+  | 'word97'
+  | 'unsupported'
+  /** A summary of monthly totals, not transactions: read as rows it would count every month twice. */
+  | 'totals_only';
 
 /** One image ready to send, and what it costs. */
 export type PreparedImage = {
@@ -62,6 +71,11 @@ export type PreparedFile =
       readonly sheets: readonly {
         readonly name: string;
         readonly rows: Cell[][];
+        /**
+         * Each numeric cell's number format, beside `rows`, where any cell has
+         * one: a currency some exports print only there ("$"#,##0.00).
+         */
+        readonly formats?: (string | null)[][];
         readonly date1904: boolean;
       }[];
     }
@@ -237,16 +251,46 @@ async function prepareSheet(
   try {
     const book = csv
       ? XLSX.read(decodeText(bytes), { type: 'string', raw: true })
-      : XLSX.read(bytes, { type: 'array', cellDates: false });
+      : XLSX.read(bytes, { type: 'array', cellDates: false, cellNF: true });
     const date1904 = Boolean(book.Workbook?.WBProps?.date1904);
     const sheets = book.SheetNames.map((sheetName) => {
       const sheet = book.Sheets[sheetName];
-      const rows =
-        sheet === undefined
-          ? []
-          : XLSX.utils.sheet_to_json<Cell[]>(sheet, { header: 1, raw: true, defval: null, blankrows: false });
-      return { name: sheetName, rows, date1904 };
+      if (sheet === undefined) return { name: sheetName, rows: [], date1904 };
+      /*
+       * Every row, blank ones too, so each lines up with its row number;
+       * then the blank ones dropped - exactly the rows `blankrows: false`
+       * gives. A number's format is taken off its cell before the rows are
+       * read, so a date-formatted serial is still the number it always was.
+       */
+      const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
+      const formats: (string | null)[][] = [];
+      let any = false;
+      for (let r = range.s.r; r <= range.e.r; r += 1) {
+        const line: (string | null)[] = [];
+        for (let c = range.s.c; c <= range.e.c; c += 1) {
+          const cell = sheet[XLSX.utils.encode_cell({ r, c })] as { t?: string; z?: unknown } | undefined;
+          const format =
+            cell?.t === 'n' && typeof cell.z === 'string' && cell.z !== 'General' ? cell.z : null;
+          if (format !== null) any = true;
+          line.push(format);
+          if (cell !== undefined) delete cell.z;
+        }
+        formats.push(line);
+      }
+      const all = XLSX.utils.sheet_to_json<Cell[]>(sheet, {
+        header: 1,
+        raw: true,
+        defval: null,
+        blankrows: true,
+      });
+      const kept = all.flatMap((row, r) => (row.some((cell) => cell !== null) ? [r] : []));
+      const rows = kept.map((r) => all[r] ?? []);
+      return any
+        ? { name: sheetName, rows, formats: kept.map((r) => formats[r] ?? []), date1904 }
+        : { name: sheetName, rows, date1904 };
     });
+    // Monthly totals only: refused here, with the reason, before anything is asked about them.
+    if (totalsOnly(sheets)) return { kind: 'refused', file, name, reason: 'totals_only' };
     return { kind: 'sheet', file, name, hash, sheets };
   } catch {
     return { kind: 'refused', file, name, reason: 'unreadable' };

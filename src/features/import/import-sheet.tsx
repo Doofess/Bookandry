@@ -83,6 +83,7 @@ import { readSession, startSession, usableVia, writeSession, type ImportSession 
 import {
   applyBatch,
   buildReview,
+  cardOf,
   holderOfMethod,
   linkToCard,
   saveable,
@@ -127,6 +128,8 @@ const ACCEPT = [
 const EXISTING: ReadonlySet<Flag> = new Set<Flag>([
   'already_added',
   'already_plan',
+  'plan_in_import',
+  'loan_disbursement',
   'card_fee_counted',
   'in_another_file',
 ]);
@@ -725,7 +728,13 @@ async function flagAgainstHousehold(
     row.methodAlias === null
       ? undefined
       : methods.find((m) => m.id === aliases.methods.get(row.methodAlias ?? ''));
-  return flagCardFees(flagExisting(rows, [...occurrences, ...fees]), method, cards);
+  // What each row was paid with, as the review will take it: its card's digits, else the method it names.
+  const paidWith = (row: FoundRow) => cardOf(row, methods) ?? method(row);
+  return flagCardFees(
+    flagExisting(rows, [...occurrences, ...fees], { methods, methodOf: paidWith }),
+    method,
+    cards,
+  );
 }
 
 /** Who a found card or account goes to: whoever its file was read as being of, else `fallback`. */

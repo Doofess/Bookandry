@@ -320,9 +320,17 @@ until the person says "Read"). Nothing is added before a review list: each
 row ticked or not, with its reason in words, and editable. Accuracy and
 cost come from doing as little as possible with the model:
 
-- **Code first.** Spreadsheets are read by code from a dictionary of the
-  headers Israeli exports use (`import-sheet-map.ts`); the model only names
-  the columns of one it does not know, from its first rows. A PDF with a
+- **Code first.** Spreadsheets are read by code. Exports the app knows by
+  their exact headers - Max's transaction details, Discount's bank-cards
+  months - have their own readers (`import-sheet-readers.ts`): the amount is
+  what the card charged, the original kept beside it only for a named foreign
+  currency (Discount prints that currency only in the cell's number format,
+  which is kept for it); an instalment or loan row is this payment, and a
+  deal's rows make one plan; Max's FX wallet gives each purchase once, at its
+  shekel cost. Discount's summary of monthly totals is refused, so no month
+  counts twice. Any other sheet is read from a dictionary of the headers
+  Israeli exports use (`import-sheet-map.ts`); the model only names the
+  columns of one it does not know, from its first rows. A PDF with a
   text layer goes as text. Only scans and screenshots go as images, sized to
   the largest the model reads without enlarging, long captures sliced.
 - **Transcribe, never compute.** The model copies amounts, dates and
@@ -339,7 +347,9 @@ cost come from doing as little as possible with the model:
   still in doubt stays unticked.
 - **What is already in the app**: rows already there (any occurrence of the
   same kind and amount within two days, a plan already running, a card's fee
-  the app already charges) are grouped as "looks already added"; a category
+  the app already charges) are grouped as "looks already added" - but never
+  a row on one card for an occurrence on another, and on the same card a day
+  apart only for the same merchant; a category
   comes from the app's own history for that name first.
 - **One call per request, a daily cap per person** (`ai_take_quota`), every
   request and answer checked by `import-wire.ts` - shared verbatim with the
@@ -765,6 +775,11 @@ Configuration that lives in the dashboard, not in this repo:
   share target, so there it is the file picker. Its accuracy has been checked
   on the checks' own test cases, not yet measured on a set of real
   statements and notifications.
+- Release note: Max and Discount spreadsheets imported before the exact
+  readers (`import-sheet-readers.ts`) may have been saved with wrong
+  amounts - a whole deal or loan on each payment, a foreign figure as
+  shekels. Re-importing them will not match those rows and will add them
+  again, so delete the old ones first.
 - Instalment plans are read-only in the editor. Re-splitting an existing plan
   would break the sum-to-total invariant.
 - Built-in categories can be archived but not renamed or deleted: they store an

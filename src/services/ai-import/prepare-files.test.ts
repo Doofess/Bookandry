@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
 
 import { groupSmall } from '@/domain/import-images';
 
@@ -154,5 +155,83 @@ describe('planning the calls', () => {
     const sheet: PreparedFile = { kind: 'sheet', file: 0, name: 'x.xlsx', hash: 's', sheets: [] };
     const refused: PreparedFile = { kind: 'refused', file: 1, name: 'x.zip', reason: 'unsupported' };
     expect(planJobs([sheet, refused], groupSmall)).toEqual([]);
+  });
+});
+
+/** An invented workbook, written by SheetJS as an exporter would: values, and number formats on some cells. */
+function workbook(
+  sheets: Record<string, { rows: unknown[][]; formats?: Record<string, string> }>,
+): Uint8Array {
+  const book = XLSX.utils.book_new();
+  for (const [name, { rows, formats = {} }] of Object.entries(sheets)) {
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    for (const [address, format] of Object.entries(formats)) {
+      const cell = sheet[address] as { z?: string } | undefined;
+      if (cell !== undefined) cell.z = format;
+    }
+    XLSX.utils.book_append_sheet(book, sheet, name);
+  }
+  return new Uint8Array(XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+}
+
+describe('preparing a spreadsheet', () => {
+  it('keeps each number’s format beside the rows, blank rows dropped as before, a date serial still a number', async () => {
+    const bytes = workbook({
+      'כרטיסי אשראי': {
+        rows: [
+          ['כרטיסי אשראי'],
+          [],
+          ['כרטיס', 'סכום העסקה', 'תאריך', 'סכום החיוב'],
+          ['ויזה 9876', 30, 46_000, 105.5],
+          [],
+          ['ויזה 9876', 12, 46_001, 12],
+        ],
+        formats: { B4: '"$"#,##0.00', C4: 'dd/mm/yyyy', D4: '"₪"#,##0.00', B6: '"₪"#,##0.00' },
+      },
+    });
+    const [prepared] = await prepareFiles([file('demo.xlsx', '', bytes)], fakeOps());
+    expect(prepared?.kind).toBe('sheet');
+    if (prepared?.kind !== 'sheet') return;
+    const [sheet] = prepared.sheets;
+    expect(sheet?.rows).toEqual([
+      ['כרטיסי אשראי', null, null, null],
+      ['כרטיס', 'סכום העסקה', 'תאריך', 'סכום החיוב'],
+      ['ויזה 9876', 30, 46_000, 105.5],
+      ['ויזה 9876', 12, 46_001, 12],
+    ]);
+    expect(sheet?.formats).toEqual([
+      [null, null, null, null],
+      [null, null, null, null],
+      [null, '"$"#,##0.00', 'dd/mm/yyyy', '"₪"#,##0.00'],
+      [null, '"₪"#,##0.00', null, null],
+    ]);
+  });
+
+  it('adds no formats to a sheet whose numbers have none', async () => {
+    const bytes = workbook({
+      a: {
+        rows: [
+          ['תאריך', 'סכום'],
+          ['01/10/2026', 5],
+        ],
+      },
+    });
+    const [prepared] = await prepareFiles([file('plain.xlsx', '', bytes)], fakeOps());
+    expect(prepared?.kind === 'sheet' && prepared.sheets[0]?.formats).toBeUndefined();
+  });
+
+  it('refuses a summary of monthly totals, so no month is counted twice', async () => {
+    const bytes = workbook({
+      'כרטיסי אשראי': {
+        rows: [
+          ['כרטיסי אשראי'],
+          ['ריכוז חיובים קודמים'],
+          ['חודש חיוב', 'מספר עסקאות', 'סכום החיוב בש"ח', 'סכום החיוב בדולר', 'סכום החיוב באירו'],
+          ['112025', '12 עסקאות', 1000, 0, 0],
+        ],
+      },
+    });
+    const [prepared] = await prepareFiles([file('summary.xlsx', '', bytes)], fakeOps());
+    expect(prepared).toMatchObject({ kind: 'refused', reason: 'totals_only' });
   });
 });

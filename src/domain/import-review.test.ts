@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { Occurrence, PaymentMethod } from '@/types/domain';
 import type { IsoInstant, LocalDate } from '@/types/money';
 
-import { readRow, type FoundRow, type ReadContext } from './import-check';
-import { collapseOverlaps, draftOf, flagCardFees, flagExisting } from './import-review';
+import { BLOCKING, readRow, type FoundRow, type ReadContext } from './import-check';
+import { collapseOverlaps, draftOf, flagCardFees, flagExisting, sameMerchant } from './import-review';
 import { expandOccurrences } from './occurrences';
 import { d, makeTx, wireRow as wire } from './test-factories';
 import { txFormSchema } from './tx-form';
@@ -126,6 +126,145 @@ describe('rows the household already has', () => {
   it('leaves rows it cannot date or price alone', () => {
     const row = readRow(wire({ d: 'soon' }), 'x', ctx);
     expect(flagExisting([row], [])[0]).toBe(row);
+  });
+
+  describe('when both sides name a card', () => {
+    // Synthetic: two cards of one household, used at the same shops.
+    const card = (id: string, lastDigits?: string, isArchived: 0 | 1 = 0): PaymentMethod => ({
+      id,
+      profileId: 'p1',
+      type: 'credit_card',
+      label: id,
+      isArchived,
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...(lastDigits === undefined ? {} : { card: { lastDigits } }),
+    });
+    const methods = [card('a', '1111'), card('b')];
+    const onCard = (minor: number, date: string, paymentMethodId?: string, note = 'מרקט לדוגמה') =>
+      occurrencesOf(
+        makeTx({
+          id: `${date}-${String(minor)}`,
+          date: d(date),
+          money: money(minor),
+          recurrence: { type: 'one_time' },
+          note,
+          ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
+        }),
+      );
+    const row = (id: string, a: string, date: string, l4: string, m = 'מרקט לדוגמה'): FoundRow => {
+      const found = at(0, null, id, a, m, date);
+      return { ...found, wire: { ...found.wire, l4 } };
+    };
+    const byDigits = (r: FoundRow) => methods.find((m) => m.card?.lastDigits === r.wire.l4);
+    const cards = { methods, methodOf: byDigits };
+
+    it('never takes a row on one card for an occurrence on another, and only notes the likeness: the five near-misses', () => {
+      const existing = [
+        ...onCard(3_770, '2026-02-03', 'a'),
+        ...onCard(3_770, '2026-03-11', 'a'),
+        ...onCard(3_770, '2026-03-24', 'a'),
+        ...onCard(3_820, '2026-02-26', 'a'),
+      ];
+      // The other card, not yet in the household: its digits are all the row has.
+      const rows = [
+        row('r1', '37.70', '04/02/26', '9999'),
+        row('r2', '37.70', '11/03/26', '9999'),
+        row('r3', '37.70', '23/03/26', '9999'),
+        row('r4', '37.70', '25/03/26', '9999'),
+        row('r5', '38.20', '27/02/26', '9999'),
+      ];
+      // Not blocked - ticked - but noted, in case it was saved earlier under the wrong card.
+      expect(flagExisting(rows, existing, cards).map((r) => r.flags)).toEqual(
+        Array(5).fill(['similar_other_card']),
+      );
+      expect(BLOCKING.has('similar_other_card')).toBe(false);
+      // Without what the cards say, as before: every one looks already added.
+      expect(flagExisting(rows, existing).map((r) => r.flags)).toEqual(Array(5).fill(['already_added']));
+    });
+
+    it('still knows a re-import on the same card', () => {
+      const existing = onCard(3_770, '2026-02-03', 'a');
+      expect(flagExisting([row('r', '37.70', '04/02/26', '1111')], existing, cards)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+    });
+
+    it('on the same card a day apart, lets the merchant break the tie; on the same day, the amount is enough', () => {
+      const existing = onCard(3_770, '2026-02-03', 'a', 'קפה פלוני');
+      const flags = (date: string) =>
+        flagExisting([row('r', '37.70', date, '1111', 'מרקט לדוגמה')], existing, cards)[0]?.flags;
+      expect(flags('04/02/26')).toEqual([]);
+      expect(flags('03/02/26')).toEqual(['already_added']);
+      // A different spelling of the same shop is the same shop.
+      expect(
+        flagExisting([row('r', '37.70', '04/02/26', '1111', 'ק.פלוני בע"מ')], existing, cards)[0]?.flags,
+      ).toEqual(['already_added']);
+    });
+
+    it('compares the payment methods themselves when the row has no digits', () => {
+      const existing = onCard(3_770, '2026-02-03', 'a');
+      const named = (r: FoundRow) => (r.id === 'r' ? methods[1] : undefined);
+      expect(
+        flagExisting([row('r', '37.70', '03/02/26', '')], existing, { methods, methodOf: named })[0]?.flags,
+      ).toEqual(['similar_other_card']);
+    });
+
+    it('lets equal digits decide over different payment methods: an archived card added again', () => {
+      // The occurrence is on the old, archived card; the row's alias names the new one with the same digits.
+      const old = card('old', '1111', 1);
+      const added = card('new', '1111');
+      const existing = onCard(3_770, '2026-02-03', 'old');
+      const everyCard = { methods: [old, added], methodOf: () => added };
+      expect(flagExisting([row('r', '37.70', '03/02/26', '1111')], existing, everyCard)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+      // The row prints nothing; its method's digits still match the old card's.
+      expect(flagExisting([row('r', '37.70', '03/02/26', '')], existing, everyCard)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+    });
+
+    it('lets equal digits decide for a renamed card the row names by its new name', () => {
+      const renamed = { ...card('renamed', '1111'), label: 'הכרטיס החדש' };
+      const existing = onCard(3_770, '2026-02-03', 'a');
+      const both = { methods: [...methods, renamed], methodOf: () => renamed };
+      expect(flagExisting([row('r', '37.70', '03/02/26', '')], existing, both)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+    });
+
+    it('keeps today’s match when either side carries no card', () => {
+      const noMethod = onCard(3_770, '2026-02-03');
+      expect(flagExisting([row('r', '37.70', '04/02/26', '9999')], noMethod, cards)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+      const onA = onCard(3_770, '2026-02-03', 'a');
+      expect(flagExisting([row('r', '37.70', '04/02/26', '')], onA, cards)[0]?.flags).toEqual([
+        'already_added',
+      ]);
+    });
+
+    it('does not take a plan on one card for a plan on another', () => {
+      const existing = occurrencesOf(
+        makeTx({
+          id: 'tv',
+          date: d('2026-08-14'),
+          money: money(20_000),
+          recurrence: { type: 'monthly', dayOfMonth: 14, installments: 6 },
+          paymentMethodId: 'a',
+        }),
+      );
+      const payment = readRow(
+        wire({ a: '200.00', d: '14/08/26', l4: '9999', pl: { md: 'installments', n: 3, of: 6, tot: null } }),
+        'p',
+        ctx,
+      );
+      expect(flagExisting([payment], existing, cards)[0]?.flags).not.toContain('already_plan');
+      expect(
+        flagExisting([{ ...payment, wire: { ...payment.wire, l4: '1111' } }], existing, cards)[0]?.flags,
+      ).toEqual(['already_plan']);
+    });
   });
 
   it('knows a card’s monthly fee is already charged by the app', () => {
@@ -270,5 +409,15 @@ describe('a found row as form values', () => {
 
   it('has nothing to offer for a row it cannot read', () => {
     expect(draftOf(readRow(wire({ a: 'x' }), 'x', ctx), base)).toBeUndefined();
+  });
+});
+
+describe('one merchant, two spellings', () => {
+  it('is one when a name sits inside the other or they share a real word', () => {
+    expect(sameMerchant('בר פלוני', 'ברפלוני סניף לדוגמה')).toBe(true);
+    expect(sameMerchant('קפה פלוני', 'ק.פלוני בע"מ')).toBe(true);
+    expect(sameMerchant('DEMOEATS', 'DemoEats (12.00 USD)')).toBe(true);
+    expect(sameMerchant('מרקט לדוגמה', 'קפה פלוני')).toBe(false);
+    expect(sameMerchant('', 'קפה פלוני')).toBe(true);
   });
 });
