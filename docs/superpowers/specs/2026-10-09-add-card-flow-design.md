@@ -1,6 +1,6 @@
 # Add a card, step by step: design
 
-**Status:** Design approved in chat on 2026-10-09; amended 2026-10-10 for card kinds and the Cards restructure, and again on 2026-10-10 for the issuer, card company and network (section 21); awaits review.
+**Status:** Design approved in chat on 2026-10-09; amended 2026-10-10 for card kinds and the Cards restructure, and again on 2026-10-10 for the issuer, card company and network (section 21), and on 2026-10-10 with the implementation plan's releases and rulings (section 22); awaits review.
 
 **Asked for by the user on 2026-10-09:**
 
@@ -1181,8 +1181,8 @@ All new strings live under `cards:flow.*`, except where noted. The Hebrew uses t
 **`tx-options.test.ts`:**
 
 - `methodTypeOf`: an unknown type reads as `'other'`.
-- `methodFits`: a debit, prepaid or gift card takes one-time, monthly and yearly, and not תשלומים, the credit modes, a loan or a standing order.
-- `standingViaOf`: `debit_card` gives `undefined`.
+- `methodFits`: a debit, prepaid or gift card takes one-time and a standing order, and not תשלומים, the credit modes or a loan (section 10.4, amended in section 22).
+- `standingViaOf`: `debit_card` gives `'card'`; `digital_wallet` gives `undefined` (section 10.4).
 - `methodsFor`: the six built-ins always; a custom row of a built-in type only as `keepId`; cards and accounts as today.
 
 **Built-ins:** `isBuiltinPaymentMethod` and `methodDisplayName` for all six, in both languages. The repo refuses to rename, reassign, delete or archive each new one.
@@ -1682,3 +1682,45 @@ Also open:
 - whether Discount's export ever lists Max-run cards;
 - what Max's "מפתח דיסקונט" column marks;
 - Isracard's, Cal's and Amex's export columns.
+
+## 22. Releases, and where the user's requests overrule this spec (amendment, 2026-10-10)
+
+The implementation plan, `docs/superpowers/plans/2026-10-10-cards-and-add-card-flow.md`, delivers this spec and thirteen requests the user restated on 2026-10-10 (R1 to R13). Where a request and this spec disagreed, the request wins. The user asked Claude to take its recommended answer to every open question. This section records each answer.
+
+### 22.1 Three releases
+
+- **A1, compatibility, deployed on its own and first** (R9): the open `type` (13.4), every new card key parsed and kept (13.1, 13.2, 21.8's schema), the six built-ins seeded and uploaded (10.2), and the editor never writing `card: null` for a card it doesn't edit. That last item is new: it closes the wipe 13.8 describes, for every build from A1 on. It also carries the fix of 22.4.
+- **A2, quick wins on today's screens, deployed once A1 is on every device** (R2, R3, R4): "Cards" in both languages with every kind, grouped as 9.1 says, in today's panel layout; "Other ways to pay" removed; "Paid with" in the order of 10.1; and the editor of 22.2. Gift spending leaves the balance from A2 (decision 21), because A2 lets a gift card be added.
+- **B, the flow** (R1, R5, R6, R12, R13): sections 2 to 9, 11 to 14, and 21.
+- **C, the transaction form and Smart import** (R7, R8, R11): 10.4, section 5's cards from rows, 21.7, and 22.5.
+
+### 22.2 The interim "New Card" editor (R4)
+
+Until B ships, the editor keeps working with no Type switch at all. Opened from Cards, it is titled "New Card" ("כרטיס חדש"), or "Edit card", and asks the **kind** (Credit, Debit, Prepaid, Gift) for a new card only. A debit, prepaid or gift card is saved as `type: 'debit_card'` with `card.funding`. Opened from Bank accounts, it is "New bank account" with the account fields. Bank transfer, standing order, digital wallet and other can't be created anywhere. Changing an existing card's kind waits for 7.1 in B. Decision 6's rule, that a card is only added through the flow, holds from B on.
+
+### 22.3 The transaction form's Type (R7, replacing the open parts of 10.4)
+
+- **A bank account** keeps Regular, Standing order and Loan, as before. The user's "only for cards" was said against cash and cheques, and a loan or rent paid from an account must stay possible.
+- **The built-in Standing order** opens the standing-order form. Bank transfer, Bit / PayBox and Other are one amount, as 10.4 already ruled.
+- **Cheques** are stored as before: one cheque is `one_time`, several are an `installments` plan on `pm.cheque`. A due date moved from its monthly slot is an occurrence override with `patch.date`, written in the same Dexie transaction.
+- "Charged to: card / bank account" goes. The way to pay decides it (`standingViaOf`).
+- "Paid with" is no longer filtered by the Type for a new transaction. The way to pay comes first and the Type follows it.
+
+### 22.4 Card menu items under the Undo toast (R10)
+
+On the live site, "Edit card" and "Archive" in a card's menu sometimes did nothing. This is not a deterministic regression of the redesign's side-panel editor. The Undo toast, stacked above every pop-out at the bottom inline end, can sit over a menu opened near the foot of the screen. A press there lands on the toast, and the menu closes as an outside press. From A1, anchored pop-outs keep clear of visible toasts as they do of the phone's tab bar.
+
+### 22.5 Doubtful card reads in Smart import (R11)
+
+- Two reads of a card's digits one digit apart are **one** card flagged `reads_disagree`, not two `one_read_only` cards.
+- A name the two reads disagree on, or that reads as garbled (a replacement or control character, Hebrew in visual order, two scripts in one word), is flagged `name_unreadable`.
+- A found card whose last four differ by one digit from a household card's is flagged `near_known`, with "Is this {{name}}?".
+- Every found card can have its name edited in the review.
+- A card carrying any of `reads_disagree`, `one_read_only`, `not_in_source`, `name_unreadable`, `near_known` or `rows_only` is never ticked, and the save path skips it whatever its tick says.
+
+### 22.6 Smaller rulings
+
+- `choicesFor` lives in `src/domain/card-choices.ts`, re-exported from `card-flow.ts`.
+- `catalog:check` runs the catalog's and the matrix's test files, which `pnpm verify` already runs.
+- The step motion uses `morph()` with a `data-flow-dir` attribute on `<html>`, as `data-nav-dir` does, not typed view transitions.
+- A card record from Smart import gains `w`, the printed cardholder's alias, sent only when the household has people, as rows have it.
