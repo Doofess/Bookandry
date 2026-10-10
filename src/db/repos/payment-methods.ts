@@ -1,13 +1,20 @@
 import { withoutTracking, type BookandryDB } from '@/db/db';
 import { buildSeedPaymentMethods } from '@/db/seed';
+import { readOrCreateDeviceId } from '@/db/sync/device';
 import { accountSchema, cardSchema } from '@/domain/transfer-schema';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
+import { revFromIso } from '@/lib/rev';
 import {
+  BUILTIN_METHODS_SINCE,
   isActiveMethod,
   isBuiltinPaymentMethod,
+  OTHER_METHOD_ID,
   redirectId,
   SHARED_OWNER,
+  STANDING_ORDER_METHOD_ID,
+  TRANSFER_METHOD_ID,
+  WALLET_METHOD_ID,
   type BankAccountDetails,
   type CardDetails,
   type PaymentMethod,
@@ -286,19 +293,47 @@ export async function deletePaymentMethod(
   });
 }
 
+/** The newer built-ins: synced rows, unlike cash and cheques (spec 10.2). */
+const SYNCED_BUILTINS: ReadonlySet<string> = new Set([
+  TRANSFER_METHOD_ID,
+  STANDING_ORDER_METHOD_ID,
+  WALLET_METHOD_ID,
+  OTHER_METHOD_ID,
+]);
+
 /**
- * The built-in methods, on an install made before one of them existed.
+ * The built-ins, on any install that lacks one.
  *
  * A new database gets them from `populate` (db.ts); this adds any that an
- * older one lacks - Cheque, for installs from before it. Untracked, like the
- * seed: every install writes the identical row, and as an edit it would
- * overwrite an archive made on another device. A built-in cannot be deleted,
- * so a missing one was never there.
+ * older one lacks. Cash and cheques are added untracked, as they always were:
+ * every install writes the identical row. The newer four are uploaded, dated
+ * the one fixed instant, so a device on an older build receives them before a
+ * transaction that names them, and its integrity repair never clears one. A
+ * real edit (an archive on an older build) has a later rev and wins. One that
+ * an older build deleted is added back as an ordinary edit, so it returns
+ * everywhere.
  */
 export async function ensureBuiltinPaymentMethods(db: BookandryDB, now: IsoInstant): Promise<void> {
-  await withoutTracking(db, [db.paymentMethods], async () => {
-    for (const method of buildSeedPaymentMethods(now)) {
-      if ((await db.paymentMethods.get(method.id)) === undefined) await db.paymentMethods.add(method);
+  const seeds = buildSeedPaymentMethods(now);
+  const deviceId = await readOrCreateDeviceId(db.meta);
+  for (const method of seeds) {
+    if ((await db.paymentMethods.get(method.id)) !== undefined) continue;
+    const state = await db.syncState.get(['paymentMethods', method.id]);
+    if (SYNCED_BUILTINS.has(method.id) && state?.deleted === 1) {
+      // Tracked: the middleware gives it a rev newer than the deletion.
+      await db.paymentMethods.put({ ...method, updatedAt: now });
+      continue;
     }
-  });
+    await withoutTracking(db, [db.paymentMethods, db.syncState, db.outbox], async () => {
+      await db.paymentMethods.add(method);
+      if (!SYNCED_BUILTINS.has(method.id) || state !== undefined) return;
+      await db.syncState.put({
+        tbl: 'paymentMethods',
+        id: method.id,
+        rev: revFromIso(BUILTIN_METHODS_SINCE, deviceId),
+        deleted: 0,
+      });
+      await db.outbox.put({ tbl: 'paymentMethods', id: method.id });
+    });
+  }
 }

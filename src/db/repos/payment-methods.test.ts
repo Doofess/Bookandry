@@ -3,8 +3,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { materialize } from '@/db/materialize';
 import { MONEY, d, modify } from '@/domain/test-factories';
 import { InvalidNameError } from '@/domain/validation';
+import { parseRev, type Rev } from '@/lib/rev';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import { CASH_METHOD_ID, CHEQUE_METHOD_ID, SHARED_OWNER } from '@/types/domain';
+import {
+  BUILTIN_METHOD_IDS,
+  BUILTIN_METHODS_SINCE,
+  CASH_METHOD_ID,
+  CHEQUE_METHOD_ID,
+  OTHER_METHOD_ID,
+  SHARED_OWNER,
+  TRANSFER_METHOD_ID,
+  WALLET_METHOD_ID,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import {
@@ -18,6 +28,7 @@ import {
 } from './payment-methods';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
+const LATER = '2026-09-16T10:00:00.000Z' as IsoInstant;
 
 let handle: TestDb;
 beforeEach(() => {
@@ -70,8 +81,8 @@ describe('listPaymentMethods', () => {
     const ids = (await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id);
     // The SHARED_OWNER sentinel exists precisely so these rows are reachable: a
     // null owner would be invisible to the [profileId+isArchived] index.
-    // pm.cash is seeded by populate() and shared by every profile.
-    expect(ids.sort()).toEqual(['joint', 'mine', 'pm.cash', 'pm.cheque']);
+    // The six built-ins are seeded by populate() and shared by every profile.
+    expect(ids.sort()).toEqual(['joint', 'mine', ...BUILTIN_METHOD_IDS].sort());
     expect(ids).not.toContain('theirs');
   });
 
@@ -96,16 +107,14 @@ describe('listPaymentMethods', () => {
 
   it('hides archived methods unless asked', async () => {
     await setPaymentMethodArchived(handle.db, 'mine', true, NOW);
-    expect((await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id).sort()).toEqual([
-      'joint',
-      'pm.cash',
-      'pm.cheque',
-    ]);
+    expect((await listPaymentMethods(handle.db, { profileId: 'p1' })).map((m) => m.id).sort()).toEqual(
+      ['joint', ...BUILTIN_METHOD_IDS].sort(),
+    );
     expect(
       (await listPaymentMethods(handle.db, { profileId: 'p1', includeArchived: true }))
         .map((m) => m.id)
         .sort(),
-    ).toEqual(['joint', 'mine', 'pm.cash', 'pm.cheque']);
+    ).toEqual(['joint', 'mine', ...BUILTIN_METHOD_IDS].sort());
   });
 
   it('supports הוראת קבע as its own type', async () => {
@@ -339,6 +348,54 @@ describe('the built-in methods on an older install', () => {
     });
     expect((await handle.db.paymentMethods.get(CASH_METHOD_ID))?.isArchived).toBe(1);
     expect(await handle.db.outbox.toArray()).toEqual([]);
+  });
+});
+
+describe('the six built-ins', () => {
+  it.each(BUILTIN_METHOD_IDS)('%s cannot be renamed, given an owner, archived or deleted', async (id) => {
+    const { db } = handle;
+    await ensureBuiltinPaymentMethods(db, NOW);
+    await expect(updatePaymentMethod(db, id, { label: 'Mine' }, NOW)).rejects.toThrow(/built in/);
+    await expect(updatePaymentMethod(db, id, { profileId: 'p1' }, NOW)).rejects.toThrow(/built in/);
+    await expect(setPaymentMethodArchived(db, id, true, NOW)).rejects.toThrow(/built in/);
+    await expect(deletePaymentMethod(db, id, {}, NOW)).rejects.toThrow(/built in/);
+  });
+
+  it('adds the new four to an older database, dated the fixed instant, and queues each for upload', async () => {
+    const { db } = handle;
+    await db.paymentMethods.clear();
+    await db.syncState.clear();
+    await db.outbox.clear();
+    await ensureBuiltinPaymentMethods(db, NOW);
+    const transfer = await db.paymentMethods.get(TRANSFER_METHOD_ID);
+    expect(transfer).toMatchObject({ type: 'bank_transfer', profileId: SHARED_OWNER });
+    expect(transfer?.createdAt).toBe(BUILTIN_METHODS_SINCE);
+    const state = await db.syncState.get(['paymentMethods', TRANSFER_METHOD_ID]);
+    expect(parseRev((state?.rev ?? '') as Rev).ms).toBe(Date.parse(BUILTIN_METHODS_SINCE));
+    expect(await db.outbox.get(['paymentMethods', TRANSFER_METHOD_ID])).toBeDefined();
+    // Cash and cheques stay untracked, as before.
+    expect(await db.syncState.get(['paymentMethods', CASH_METHOD_ID])).toBeUndefined();
+  });
+
+  it('leaves a row this device already holds alone', async () => {
+    const { db } = handle;
+    await ensureBuiltinPaymentMethods(db, NOW);
+    await db.paymentMethods.update(WALLET_METHOD_ID, { isArchived: 1 });
+    await ensureBuiltinPaymentMethods(db, LATER);
+    expect((await db.paymentMethods.get(WALLET_METHOD_ID))?.isArchived).toBe(1);
+  });
+
+  it('adds back, with a newer rev, a built-in an older build deleted', async () => {
+    const { db } = handle;
+    await ensureBuiltinPaymentMethods(db, NOW);
+    await db.paymentMethods.delete(OTHER_METHOD_ID); // tracked: the sync state records a deletion
+    const deleted = await db.syncState.get(['paymentMethods', OTHER_METHOD_ID]);
+    expect(deleted?.deleted).toBe(1);
+    await ensureBuiltinPaymentMethods(db, LATER);
+    const back = await db.syncState.get(['paymentMethods', OTHER_METHOD_ID]);
+    expect(await db.paymentMethods.get(OTHER_METHOD_ID)).toBeDefined();
+    expect(back?.deleted).toBe(0);
+    expect(back !== undefined && deleted !== undefined && back.rev > deleted.rev).toBe(true);
   });
 });
 

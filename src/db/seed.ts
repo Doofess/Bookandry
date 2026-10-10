@@ -1,8 +1,13 @@
 import { CASH_FOUND_CATEGORY_ID, CASH_MISSING_CATEGORY_ID } from '@/domain/cash';
 import {
+  BUILTIN_METHODS_SINCE,
   CASH_METHOD_ID,
   CHEQUE_METHOD_ID,
+  OTHER_METHOD_ID,
   SHARED_OWNER,
+  STANDING_ORDER_METHOD_ID,
+  TRANSFER_METHOD_ID,
+  WALLET_METHOD_ID,
   type Category,
   type PaymentMethod,
 } from '@/types/domain';
@@ -90,7 +95,12 @@ export function buildSeedCategories(now: IsoInstant): Category[] {
   ];
 }
 
-/** Cash and cheques: methods every profile can use from the first transaction. */
+/**
+ * The six built-in ways to pay, in "Paid with" order: methods every profile
+ * can use from the first transaction. Cash and cheques are dated `now`, as
+ * they always were; the four newer ones the one fixed instant every device
+ * shares, so identical rows from two devices race harmlessly.
+ */
 export function buildSeedPaymentMethods(now: IsoInstant): PaymentMethod[] {
   return [
     {
@@ -111,5 +121,21 @@ export function buildSeedPaymentMethods(now: IsoInstant): PaymentMethod[] {
       createdAt: now,
       updatedAt: now,
     },
+    ...(
+      [
+        [TRANSFER_METHOD_ID, 'bank_transfer', 'Bank transfer'],
+        [STANDING_ORDER_METHOD_ID, 'standing_order', 'Standing order'],
+        [WALLET_METHOD_ID, 'digital_wallet', 'Bit / PayBox'],
+        [OTHER_METHOD_ID, 'other', 'Other'],
+      ] as const
+    ).map(([id, type, label]): PaymentMethod => ({
+      id,
+      profileId: SHARED_OWNER,
+      type,
+      label,
+      isArchived: 0,
+      createdAt: BUILTIN_METHODS_SINCE,
+      updatedAt: BUILTIN_METHODS_SINCE,
+    })),
   ];
 }

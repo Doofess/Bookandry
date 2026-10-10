@@ -4,26 +4,50 @@ import type { Currency, IsoInstant, Kind, LocalDate, Minor, MoneySnapshot } from
 export const SHARED_OWNER = '*';
 
 /**
- * Cash and cheques, which every install has and nobody should have to create.
+ * The six built-in ways to pay, which every install has and nobody creates.
  *
  * Deterministic ids for the same reason the built-in categories have them: it
  * is how a merge-import recognises the row it already has instead of adding a
  * second one. These are the payment methods that are not a thing the user
  * owns - there is no card to name, no account to distinguish - so they are
- * seeded, their labels follow the UI language, and they cannot be renamed or
- * deleted. They CAN be archived, exactly like a built-in category, for someone
- * who never carries cash or writes a cheque.
+ * seeded, their names follow the UI language (`methodDisplayName`), and they
+ * cannot be renamed, given an owner, archived or deleted: the repository
+ * enforces it, not only the screens that hide the buttons.
+ *
+ * Cash and cheques are seeded untracked, as they always were. The four newer
+ * ones are synced rows, uploaded at one fixed instant, so that a device on an
+ * older build receives them before any transaction that names them.
  */
 export const CASH_METHOD_ID = 'pm.cash';
 /** צ'ק: still how rent and a good deal of Israeli household spending are paid. */
 export const CHEQUE_METHOD_ID = 'pm.cheque';
+/** העברה בנקאית, הוראת קבע, ביט / פייבוקס, אחר: built in since 2026-10-10, never created by hand. */
+export const TRANSFER_METHOD_ID = 'pm.transfer';
+export const STANDING_ORDER_METHOD_ID = 'pm.standing_order';
+export const WALLET_METHOD_ID = 'pm.wallet';
+export const OTHER_METHOD_ID = 'pm.other';
+
+/** Every built-in, in the order "Paid with" lists them. */
+export const BUILTIN_METHOD_IDS = [
+  CASH_METHOD_ID,
+  CHEQUE_METHOD_ID,
+  TRANSFER_METHOD_ID,
+  STANDING_ORDER_METHOD_ID,
+  WALLET_METHOD_ID,
+  OTHER_METHOD_ID,
+] as const;
+
+/** The one instant the four newer built-ins are dated at, on every device, so identical rows race harmlessly. */
+export const BUILTIN_METHODS_SINCE = '2026-10-10T00:00:00.000Z' as IsoInstant;
+
+const BUILTINS: ReadonlySet<string> = new Set(BUILTIN_METHOD_IDS);
 
 export function isBuiltinPaymentMethod(id: string): boolean {
-  return id === CASH_METHOD_ID || id === CHEQUE_METHOD_ID;
+  return BUILTINS.has(id);
 }
 
 /**
- * Whether a method is offered: not archived - and cash and cheques always,
+ * Whether a method is offered: not archived - and the built-ins always,
  * whatever an older install or another device recorded about them.
  */
 export function isActiveMethod(method: { readonly id: string; readonly isArchived: 0 | 1 }): boolean {

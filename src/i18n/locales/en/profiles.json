@@ -14,6 +14,9 @@
     "stone": "Stone",
     "slate": "Slate"
   },
+  "builtin": {
+    "wallet": "Bit / PayBox"
+  },
   "method": {
     "cash": "Cash",
     "cheque": "Cheque",
