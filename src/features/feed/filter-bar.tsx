@@ -30,7 +30,7 @@ export function FilterBar({
   const active = hasActiveFilters(filters);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-0 flex-1 lg:hidden">
         <Search
           className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -57,13 +57,13 @@ export function FilterBar({
         aria-label={t('filter.kind')}
         className="shrink-0"
       >
-        <ToggleGroupItem value="all" className="h-10 px-2.5 text-xs">
+        <ToggleGroupItem value="all" className="min-h-11 px-2.5 text-xs">
           {t('filter.kindAll')}
         </ToggleGroupItem>
-        <ToggleGroupItem value="income" className="h-10 px-2.5 text-xs">
+        <ToggleGroupItem value="income" className="min-h-11 px-2.5 text-xs">
           {t('filter.kindIncome')}
         </ToggleGroupItem>
-        <ToggleGroupItem value="expense" className="h-10 px-2.5 text-xs">
+        <ToggleGroupItem value="expense" className="min-h-11 px-2.5 text-xs">
           {t('filter.kindExpense')}
         </ToggleGroupItem>
       </ToggleGroup>

@@ -165,7 +165,7 @@ for (const size of WIDTHS) {
         const clashes = await page.evaluate(() => {
           const bad: string[] = [];
           const parts: [string, string][] = [
-            ['category chip', '[data-slot="category-chip"]'],
+            ['category pill', '[data-slot="hue-pill"]'],
             ['text', '[data-testid="row-text"]'],
             ['avatar', '[data-person]'],
             ['amount', '[data-testid="row-amount"]'],
@@ -346,6 +346,8 @@ test.describe('@collapse the summary header', () => {
      */
     await completeFirstRun(page, 'en');
     await rowsDrawn(page);
+    // The board's sheet shows the newest eight; the round arrow opens the whole month, which is the list that pins.
+    await page.getByRole('button', { name: 'All transactions' }).click();
     // The list is below the board's other sheets: stop with its top 300px down the screen, above the pinned slot, so its rows draw and none is pinned yet.
     await page.evaluate(() => {
       const list = document.querySelector('[data-slot="transactions-sheet"] [role="list"]');
@@ -375,7 +377,7 @@ test.describe('@collapse the summary header', () => {
       return { first: top(0), second: top(1) };
     });
     expect(offsets.first).toBe(0);
-    expect(offsets.second).toBe(36);
+    expect(offsets.second).toBe(45);
 
     const probe = async (y: number) => {
       await scrollTo(page, y);

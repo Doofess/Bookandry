@@ -19,7 +19,7 @@ import { COLLAPSED_HEIGHT } from '../summary/use-collapsing-header';
  * Every row in this feed is the same height by design - the note truncates
  * rather than wrapping - so dynamic measurement was re-measuring 28 elements
  * through a ResizeObserver to rediscover numbers that never change. Measured
- * live: rows are 64px and headers 36px, exactly these constants.
+ * live: rows are 71px and headers 45px, exactly these constants.
  *
  * Making them authoritative removes the observer, removes the re-measure churn
  * that dominated a scroll profile, and makes `getTotalSize()` exact from the
@@ -29,8 +29,8 @@ import { COLLAPSED_HEIGHT } from '../summary/use-collapsing-header';
  * the two cannot drift: if content ever outgrows the box it is clipped, which
  * is visible, rather than silently shifting every row below it.
  */
-const DAY_HEADER_HEIGHT = 36;
-const ROW_HEIGHT = 64;
+const DAY_HEADER_HEIGHT = 45;
+const ROW_HEIGHT = 71; // the concept's row (67px with its line) and the 4px it leaves between rows
 const HORIZON_HEIGHT = 44;
 
 function heightOf(row: FeedRow | undefined): number {
@@ -227,6 +227,71 @@ export function VirtualFeed({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** How many rows the board's transactions sheet shows, as the concept draws it. */
+export const BOARD_ROWS = 8;
+
+/**
+ * The board's transactions sheet: the newest few rows under their days, laid out
+ * as the concept draws them (no net totals, no avatars), not virtualised. The
+ * round arrow on the sheet opens the whole month in a VirtualFeed.
+ */
+export function RecentFeed({
+  rows,
+  context,
+  limit = BOARD_ROWS,
+  onOpen,
+  onMenu,
+  onCategory,
+  onProjected,
+}: {
+  rows: readonly FeedRow[];
+  context: RowContext;
+  limit?: number;
+  onOpen?: (occurrence: Occurrence) => void;
+  onMenu?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  onCategory?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+  onProjected?: (occurrence: Occurrence, anchor: HTMLElement) => void;
+}) {
+  const flat = { ...context, showProfile: false };
+  const shown: FeedRow[] = [];
+  let count = 0;
+  for (const row of rows) {
+    if (row.kind === 'horizon') continue;
+    if (row.kind === 'row' && count === limit) break;
+    if (row.kind === 'day' && count === limit) break;
+    if (row.kind === 'row') count += 1;
+    shown.push(row);
+  }
+  return (
+    <div role="list" className="grid gap-1 [&>[role=listitem]:last-child]:border-be-0">
+      {shown.map((row) =>
+        row.kind === 'day' ? (
+          <DayHeader
+            key={row.key}
+            date={row.date}
+            netMinor={row.netMinor}
+            isToday={row.isToday}
+            currency={context.currency}
+            bare
+          />
+        ) : row.kind === 'row' ? (
+          <TransactionRow
+            key={row.key}
+            occurrence={row.occurrence}
+            context={flat}
+            position={shown.slice(0, shown.indexOf(row) + 1).filter((r) => r.kind === 'row').length}
+            setSize={count}
+            onOpen={onOpen}
+            onMenu={onMenu}
+            onCategory={onCategory}
+            onProjected={onProjected}
+          />
+        ) : null,
+      )}
     </div>
   );
 }

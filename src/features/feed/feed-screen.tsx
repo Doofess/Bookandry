@@ -52,7 +52,7 @@ import { RowActionsMenu, type RowMenuTarget } from './row-actions-menu';
 import { monthWindow, useCandidates, useFeedLookups, useFeedRows, useOccurrences } from './use-feed-data';
 import { useFeedFilters } from './use-feed-filters';
 import { offerUndo, useRowActions, useUndoableWrite } from './use-row-actions';
-import { VirtualFeed } from './virtual-feed';
+import { RecentFeed, VirtualFeed } from './virtual-feed';
 import { useMccList } from '../business-type/use-mcc-list';
 import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdown-sheet';
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
@@ -102,6 +102,9 @@ export function FeedScreen() {
   /** The purchase being split into payments, kept once its menu has closed. */
   const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
   const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
+
+  /** The board shows the newest rows; the round arrow on the sheet opens the whole month (list mode). */
+  const [showAll, setShowAll] = useState(false);
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
 
@@ -465,7 +468,18 @@ export function FeedScreen() {
         transactions={
           <TransactionsSheet
             count={windowCount}
-            filterBar={<FilterBar filters={filters} onChange={set} onClear={clear} />}
+            onAll={
+              showAll
+                ? undefined
+                : () => {
+                    setShowAll(true);
+                  }
+            }
+            filterBar={
+              showAll || hasActiveFilters(filters) ? (
+                <FilterBar filters={filters} onChange={set} onClear={clear} />
+              ) : null
+            }
             list={
               <>
                 {reason !== undefined ? (
@@ -474,8 +488,31 @@ export function FeedScreen() {
                     month={filters.month}
                     onClearFilters={hasActiveFilters(filters) ? clear : undefined}
                   />
-                ) : context === undefined ? null : (
+                ) : context === undefined ? null : showAll ? (
                   <VirtualFeed
+                    rows={rows}
+                    context={context}
+                    // The row body opens the editor; its always-present ⋯ opens the
+                    // row menu, anchored to that button.
+                    // A card's fee is worked out from the card, not a row anyone saved:
+                    // it is changed where the card is, so it opens the Cards screen.
+                    onOpen={(occurrence) => {
+                      if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+                      else sheet.openEdit(occurrence);
+                    }}
+                    onMenu={(occurrence, anchor) => {
+                      if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+                      else setMenuFor({ occurrence, anchor });
+                    }}
+                    onCategory={(occurrence, anchor) => {
+                      setCategoryFor({ occurrence, anchor });
+                    }}
+                    onProjected={(occurrence, anchor) => {
+                      setProjectedFor({ occurrence, anchor });
+                    }}
+                  />
+                ) : (
+                  <RecentFeed
                     rows={rows}
                     context={context}
                     // The row body opens the editor; its always-present ⋯ opens the
