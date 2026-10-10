@@ -9,9 +9,9 @@ import { Sheet, SheetHead } from '@/components/ui/sheet-surface';
 import { totalsByCategory } from '@/domain/calculators';
 import { categoryHue } from '@/domain/category-hue';
 import { categoryDisplayName } from '@/i18n/category-name';
-import { formatMoney } from '@/i18n/money-format';
+import { figureParts } from '@/i18n/money-format';
 import { compareLocal, endOfMonth, formatLocalDate, startOfMonth } from '@/lib/dates';
-import { sum } from '@/lib/money';
+import { sum, wholeMinor } from '@/lib/money';
 import type { Category, Occurrence } from '@/types/domain';
 import type { Currency, LocalDate } from '@/types/money';
 
@@ -59,6 +59,9 @@ export function CategoriesSheet({
     [occurrences, categories, upTo, t],
   );
   const total = sum(items.map((item) => item.minor));
+  const parts = figureParts(wholeMinor(total, currency), currency, { locale: i18n.language, whole: true });
+  // An amount is a left-to-right run, isolated so Hebrew text around it cannot reorder it.
+  const wholeAmount = `⁦${parts.sign}${parts.symbol}${parts.digits}⁩`;
   const name = formatLocalDate(month, i18n.language, { month: 'long' });
 
   return (
@@ -71,7 +74,7 @@ export function CategoriesSheet({
             ? undefined
             : t('board.categoriesSub', {
                 count: items.length,
-                amount: formatMoney(total, currency, { locale: i18n.language }).text,
+                amount: wholeAmount,
               })
         }
         action={

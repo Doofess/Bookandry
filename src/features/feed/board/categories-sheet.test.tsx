@@ -53,7 +53,7 @@ describe('the categories sheet', () => {
     );
     expect(document.querySelector('[data-slot="categories-sheet"]')).toHaveAttribute('data-sheet', 'paper');
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/October by category/);
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/in 2 categories/);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/₪8,440.? in 2 categories/);
     const bars = document.querySelectorAll('[data-slot="hue-bars"] i[data-hue]');
     expect([...bars].map((bar) => bar.getAttribute('data-hue'))).toEqual(['indigo', 'green']);
     expect(screen.getByRole('link', { name: 'Categories' })).toHaveAttribute('href', '/categories');
