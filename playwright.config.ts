@@ -1,4 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { execSync } from 'node:child_process';
+
+// One folder per run for the fidelity harness's pictures and reports (e2e/fidelity/config.ts).
+process.env['FIDELITY_RUN'] ??=
+  `${new Date().toISOString().replace(/[:.]/g, '-')}-${execSync('git rev-parse --short HEAD').toString().trim()}`;
 
 /**
  * Runs against `build` + `preview`, never `dev`:
@@ -30,9 +35,19 @@ export default defineConfig({
     colorScheme: 'light',
   },
   projects: [
-    { name: 'en', use: { ...devices['Desktop Chrome'], locale: 'en-US' } },
-    { name: 'he', use: { ...devices['Desktop Chrome'], locale: 'he-IL' } },
-    { name: 'mobile', use: { ...devices['Pixel 7'], locale: 'en-US' } },
+    { name: 'en', testIgnore: /fidelity\//, use: { ...devices['Desktop Chrome'], locale: 'en-US' } },
+    { name: 'he', testIgnore: /fidelity\//, use: { ...devices['Desktop Chrome'], locale: 'he-IL' } },
+    { name: 'mobile', testIgnore: /fidelity\//, use: { ...devices['Pixel 7'], locale: 'en-US' } },
+    // The fidelity harness (docs/superpowers/plans/2026-10-10-colour-of-money-phase-3.md): seeded once, then every screen.
+    { name: 'fidelity-seed', testMatch: /fidelity\/seed\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'fidelity',
+      testMatch: /fidelity\/.*\.spec\.ts/,
+      dependencies: ['fidelity-seed'],
+      // One at a time: every test opens two browsers' worth of pages and big screenshots.
+      fullyParallel: false,
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
   /*
    * Two builds of the same code. With accounts, nothing of the app is reachable
