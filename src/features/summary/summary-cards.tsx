@@ -2,6 +2,7 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { useCountUp } from '@/components/count-up';
 import { Money } from '@/components/money';
+import { Numeral } from '@/components/ui/numeral';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { BalanceBreakdown, ForecastBreakdown } from '@/domain/breakdown';
 import type { MonthlyExpenseResult } from '@/domain/calculators';
@@ -108,6 +109,73 @@ export function BalanceFigure({
           currency={currency}
           onFullBreakdown={onFullBreakdown}
           triggerClassName={PANEL_FIGURE}
+          triggerLabel={t('summary.breakdownOf', { title })}
+        >
+          {figure}
+        </BalancePopover>
+      )}
+      <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="balance-announced">
+        {title}: {settled.aria}
+      </p>
+    </>
+  );
+}
+
+/**
+ * The balance as the huge numeral (§5.1, §9.4): whole shekels in Karantina,
+ * running off the balance sheet's foot; the exact amount, agorot and all, in
+ * the numeral's spoken twin and in the one live region. Sized for the settled
+ * figure while it counts up, so it never jitters. Its breakdown opens from it.
+ */
+export function BalanceNumeral({
+  state,
+  currency,
+  breakdown,
+  onFullBreakdown,
+}: {
+  readonly state: BalanceState;
+  readonly currency: Currency;
+  readonly breakdown?: BalanceBreakdown;
+  readonly onFullBreakdown?: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const target = state.status === 'ready' ? state.minor : 0;
+  const animated = useCountUp(target);
+  const title = t('summary.balance');
+
+  if (state.status === 'loading') {
+    // The numeral's own box, invisible: the sheet keeps its height while IndexedDB answers.
+    return (
+      <span data-testid="balance-amount" aria-busy="true" className="invisible block">
+        <Numeral minor={0} currency={currency} size="balance" rounded />
+      </span>
+    );
+  }
+  if (state.status === 'blocked') {
+    return (
+      <p className="text-lede font-light">
+        {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
+      </p>
+    );
+  }
+
+  const settled = formatMoney(state.minor, currency, { locale: i18n.language });
+  const figure = (
+    <span data-testid="balance-amount" className="block">
+      <Numeral minor={animated} fit={state.minor} currency={currency} size="balance" rounded />
+    </span>
+  );
+  return (
+    <>
+      {breakdown === undefined || onFullBreakdown === undefined ? (
+        figure
+      ) : (
+        <BalancePopover
+          breakdown={breakdown}
+          since={state.since}
+          currency={currency}
+          onFullBreakdown={onFullBreakdown}
+          triggerClassName="block w-full rounded-[0.5rem] text-start focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-current"
           triggerLabel={t('summary.breakdownOf', { title })}
         >
           {figure}

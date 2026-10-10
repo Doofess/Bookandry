@@ -47,7 +47,7 @@ for (const width of LAYOUT_WIDTHS) {
         }
 
         await page.goto('/');
-        await expect(page.locator('[data-slot="hero-sheet"]')).toHaveAttribute('data-sheet', 'night');
+        await expect(page.locator('[data-slot="balance-sheet"]')).toHaveAttribute('data-sheet', 'night');
       });
     });
   }

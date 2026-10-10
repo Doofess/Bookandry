@@ -170,11 +170,14 @@ test('@a11y BLOCKING the feed pop-outs, open', async ({ page }) => {
         .getByRole('button', { name: /^הצגת הפירוט של/ })
         .nth(1)
         .click(),
-    () =>
-      page
+    async () => {
+      // The list sits below the board's other sheets: bring it on screen, where its rows draw.
+      await page.locator('[data-slot="transactions-sheet"]').scrollIntoViewIfNeeded();
+      await page
         .getByRole('button', { name: /^פעולות עבור/ })
         .first()
-        .click(),
+        .click();
+    },
     () =>
       page
         .getByRole('button', { name: /^קטגוריה: / })

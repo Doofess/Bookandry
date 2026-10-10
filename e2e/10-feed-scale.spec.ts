@@ -219,7 +219,9 @@ test.describe('@scale a dense month', () => {
 
     // The list is nonetheless SIZED for all of them, which is what makes the
     // scrollbar honest and the position meaningful.
-    const totalHeight = await page.locator('[role="list"]').evaluate((el) => el.clientHeight);
+    const totalHeight = await page
+      .locator('[data-slot="transactions-sheet"] [role="list"]')
+      .evaluate((el) => el.clientHeight);
     expect(totalHeight).toBeGreaterThan(ROWS * 20);
 
     /*

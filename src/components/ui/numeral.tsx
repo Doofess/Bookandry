@@ -82,6 +82,7 @@ export function Numeral({
       <span
         aria-hidden="true"
         data-numeral=""
+        data-value={shown}
         data-numeral-size={size}
         dir="ltr"
         className="block font-display [unicode-bidi:isolate]"

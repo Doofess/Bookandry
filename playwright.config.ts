@@ -46,7 +46,8 @@ export default defineConfig({
       dependencies: ['fidelity-seed'],
       // One at a time: every test opens two browsers' worth of pages and big screenshots.
       fullyParallel: false,
-      use: { ...devices['Desktop Chrome'] },
+      // The concept is drawn with floating scrollbars (main 1184 at 1440): a classic one would take 15px of every width.
+      use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--enable-features=OverlayScrollbar'] } },
     },
   ],
   /*
