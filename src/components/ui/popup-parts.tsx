@@ -181,14 +181,27 @@ export function bottomInsetFrom(
   return Math.ceil(innerHeight - Math.min(...low.map((r) => r.top)) + TOAST_GAP);
 }
 
-/** The visible toasts: above every pop-out, so a pop-out keeps clear of them as of a screen edge. */
+const TOAST = '[data-sonner-toast][data-visible="true"]:not([data-removed="true"])';
+const TOASTER = '[data-sonner-toaster]';
+
+/**
+ * The visible toasts: above every pop-out, so a pop-out keeps clear of them as of a screen edge.
+ * Measured without the slide-in transform (a toast entering sits a toast-height low): each
+ * toast is its layout height up from the toaster's fixed bottom.
+ */
 function toastInset(): number {
-  const toasts = [...document.querySelectorAll('[data-sonner-toast][data-visible="true"]')];
-  return bottomInsetFrom(
-    toasts.map((t) => t.getBoundingClientRect()),
-    window.innerHeight,
-  );
+  const boxes: { top: number; bottom: number }[] = [];
+  for (const toast of document.querySelectorAll<HTMLElement>(TOAST)) {
+    const toaster = toast.closest(TOASTER);
+    if (toaster === null) continue;
+    const bottom = toaster.getBoundingClientRect().bottom;
+    boxes.push({ top: bottom - toast.offsetHeight, bottom });
+  }
+  return bottomInsetFrom(boxes, window.innerHeight);
 }
+
+const isToaster = (n: Node): boolean =>
+  n instanceof Element && (n.matches(TOASTER) || n.querySelector(TOASTER) !== null);
 
 /**
  * The bottom edge's inset as last measured, the tab bar and any visible toast
@@ -222,7 +235,11 @@ function watchBottomEdge(change: () => void): () => void {
         : new MutationObserver((records) => {
             const touched = records.some((r) => {
               const el = r.target instanceof Element ? r.target : r.target.parentElement;
-              return el?.closest('[data-sonner-toaster]') != null;
+              return (
+                el?.closest(TOASTER) != null ||
+                [...r.addedNodes].some(isToaster) ||
+                [...r.removedNodes].some(isToaster)
+              );
             });
             if (touched) remeasure();
           });
@@ -230,7 +247,7 @@ function watchBottomEdge(change: () => void): () => void {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-visible', 'data-removed'],
+      attributeFilter: ['data-visible', 'data-removed', 'data-mounted'],
     });
     stopWatching = () => {
       window.removeEventListener('resize', remeasure);

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
-import { bottomInsetFrom, useAnchoredPopup, useHeldWhileClosing } from './popup-parts';
+import { bottomInsetFrom, useAnchoredPopup, useCollisionPadding, useHeldWhileClosing } from './popup-parts';
 
 function scrollTo(y: number): void {
   act(() => {
@@ -378,5 +378,80 @@ describe('bottomInsetFrom', () => {
   });
   it('ignores a box in the upper half: a toast stack at the top is no bottom edge', () => {
     expect(bottomInsetFrom([{ top: 16, bottom: 80 }], 800)).toBe(0);
+  });
+});
+
+describe('useCollisionPadding and the Undo toast', () => {
+  const realHeight = window.innerHeight;
+  const toaster = (): HTMLOListElement => {
+    const ol = document.createElement('ol');
+    ol.setAttribute('data-sonner-toaster', '');
+    // The toaster is fixed: its bottom does not move while a toast slides in.
+    ol.getBoundingClientRect = () => ({ top: 636, bottom: 700, height: 64 }) as DOMRect;
+    const li = document.createElement('li');
+    li.setAttribute('data-sonner-toast', '');
+    li.setAttribute('data-visible', 'true');
+    // A toast still entering is translated down; only its layout height counts.
+    li.getBoundingClientRect = () => ({ top: 700, bottom: 764, height: 64 }) as DOMRect;
+    Object.defineProperty(li, 'offsetHeight', { value: 64, configurable: true });
+    ol.append(li);
+    return ol;
+  };
+
+  afterEach(() => {
+    Object.defineProperty(window, 'innerHeight', { value: realHeight, configurable: true });
+    document.body.replaceChildren();
+  });
+
+  it('keeps clear of a toast that mounts after the pop-out opened, and returns when it is removed', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const hook = renderHook(() => useCollisionPadding(true));
+    expect(hook.result.current.bottom).toBe(5);
+
+    const ol = toaster();
+    act(() => {
+      document.body.append(ol);
+    });
+    await waitFor(() => {
+      expect(hook.result.current.bottom).toBe(5 + 172);
+    });
+
+    act(() => {
+      ol.firstElementChild?.setAttribute('data-removed', 'true');
+    });
+    await waitFor(() => {
+      expect(hook.result.current.bottom).toBe(5);
+    });
+
+    act(() => {
+      ol.firstElementChild?.removeAttribute('data-removed');
+    });
+    await waitFor(() => {
+      expect(hook.result.current.bottom).toBe(5 + 172);
+    });
+
+    act(() => {
+      ol.remove();
+    });
+    await waitFor(() => {
+      expect(hook.result.current.bottom).toBe(5);
+    });
+  });
+
+  it('counts the toast when the pop-out opens with one already showing', () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    document.body.append(toaster());
+    const hook = renderHook(() => useCollisionPadding(true));
+    expect(hook.result.current.bottom).toBe(5 + 172);
+  });
+
+  it('counts the taller of the tab bar and the toast', () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const bar = document.createElement('nav');
+    bar.setAttribute('data-slot', 'tab-bar');
+    bar.getBoundingClientRect = () => ({ top: 720, bottom: 800, height: 80 }) as DOMRect;
+    document.body.append(bar, toaster());
+    const hook = renderHook(() => useCollisionPadding(true));
+    expect(hook.result.current.bottom).toBe(5 + 172);
   });
 });
