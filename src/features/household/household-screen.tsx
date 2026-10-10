@@ -268,8 +268,7 @@ function LinkedAccounts({ view }: { readonly view: Extract<AccountView, { status
                   </span>
                   <Button
                     type="button"
-                    variant="outline"
-                    size="sm"
+                    variant="pill"
                     onClick={() => {
                       setGiving(person);
                     }}
@@ -288,9 +287,8 @@ function LinkedAccounts({ view }: { readonly view: Extract<AccountView, { status
             <p className="text-sm text-muted-foreground">{t('household.unlinkBody')}</p>
             <Button
               type="button"
-              variant="outline"
-              // Red on the outline fill is 3.96:1 in dark mode; on the card it is AA.
-              className="text-destructive dark:bg-transparent"
+              variant="pill"
+              className="text-destructive"
               onClick={() => {
                 setConfirm({ kind: 'leave' });
               }}
@@ -425,7 +423,7 @@ function Invite({ full, currency }: { readonly full: boolean; readonly currency:
               </p>
             )}
           </div>
-          <Button type="submit" disabled={sending || email.trim() === ''}>
+          <Button type="submit" variant="pill-solid" disabled={sending || email.trim() === ''}>
             {sending ? t('household.inviteSending') : t('household.inviteSend')}
           </Button>
         </>

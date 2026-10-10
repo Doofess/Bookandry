@@ -103,7 +103,7 @@ test.describe('@shell on a desktop', () => {
 
     await page.goto('/settings?import=1');
     await expect(page.getByRole('dialog')).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/settings');
+    expect(new URL(page.url()).pathname).toMatch(/^\/settings(\/preferences)?$/);
   });
 
   test('says which way a move goes, for the transition', async ({ page }) => {

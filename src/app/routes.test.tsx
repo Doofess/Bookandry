@@ -63,7 +63,9 @@ describe('account linking', () => {
   );
 
   it('is mounted at its own address', () => {
-    expect(routeFor(SETTINGS_ROUTES.linking).element).toBeDefined();
+    const settings = routeFor(ROUTES.settings);
+    const linking = settings.children?.find((r) => r.path === 'linking');
+    expect(linking?.element).toBeDefined();
   });
 });
 
