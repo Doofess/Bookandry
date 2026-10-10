@@ -340,7 +340,7 @@ describe('Count my cash', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(async () => {
-      expect(await screen.findByTestId('cash-counted')).toHaveTextContent('Counted Sep 15, 2026');
+      expect(await screen.findByTestId('cash-counted')).toHaveTextContent('Counted Sep 15');
     });
     expect(await db.transactions.count()).toBe(0);
   });

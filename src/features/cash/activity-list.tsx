@@ -1,11 +1,12 @@
 import { cn } from 'cn';
 import { BanknoteArrowDown, BanknoteArrowUp, Wallet, type LucideIcon } from 'lucide-react';
-import { useId, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
+import { Sheet, SheetHead } from '@/components/ui/sheet-surface';
 import type { CashActivity } from '@/domain/cash';
 import type { FeedLookups } from '@/features/feed/use-feed-data';
 import { categoryDisplayName } from '@/i18n/category-name';
@@ -55,26 +56,29 @@ export function CashActivityList({
   readonly onOpenMove?: (move: CashMove) => void;
 }) {
   const { t, i18n } = useTranslation();
-  const headingId = useId();
 
   return (
-    <section aria-labelledby={headingId} className="space-y-2">
-      <h2 id={headingId} className="text-base font-semibold">
-        {t('cash.activity')}
-      </h2>
+    <Sheet
+      kind="paper"
+      data-slot="cash-moves"
+      aria-label={t('cash.activity')}
+      className="grid content-start gap-2"
+    >
+      <SheetHead title={t('cash.activity')} />
       {activity.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          {t('cash.activityEmpty')}
-        </p>
+        <p className="py-6 text-center text-sm font-light">{t('cash.activityEmpty')}</p>
       ) : (
         byDay(activity).map(([date, entries]) => (
           <div key={date}>
-            <p className="px-1 py-2 text-sm font-medium text-muted-foreground">
+            <p
+              data-slot="day-heading"
+              className="border-be-2 border-border pt-4 pb-1.5 text-sm font-semibold"
+            >
               {date === today
                 ? t('feed.today')
                 : formatLocalDate(date, i18n.language, { weekday: 'short', day: 'numeric', month: 'short' })}
             </p>
-            <ul className="divide-y divide-border rounded-2xl border border-border">
+            <ul className="divide-y-2 divide-border">
               {entries.map((entry) => (
                 <li key={entry.key}>
                   <ActivityRow
@@ -91,7 +95,7 @@ export function CashActivityList({
           </div>
         ))
       )}
-    </section>
+    </Sheet>
   );
 }
 
