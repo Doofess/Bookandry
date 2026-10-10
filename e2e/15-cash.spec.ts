@@ -55,9 +55,35 @@ const cashFigure = (page: Page) => page.getByTestId('cash-amount').locator('[dat
 const balance = async (page: Page): Promise<number> =>
   Number(await page.getByTestId('balance-amount').locator('[data-value]').getAttribute('data-value'));
 
+/** The cash sheet's own pills, which stand in for the Cash menu on a desktop, where the rail's Add is the only Add. */
+const POT_PILL = {
+  en: { withdraw: 'Withdraw', count: 'Count' },
+  he: { withdraw: 'משיכה', count: 'ספירה' },
+} as const;
+
+/** One of the Cash menu's items: its menu on a phone, the pot's pills (or the form's address) on a desktop. */
 async function fromMenu(page: Page, item: RegExp): Promise<void> {
-  await page.getByTestId('add-button').click();
-  await page.getByRole('menuitem', { name: item }).click();
+  const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+  if (!desktop) {
+    await page.getByTestId('add-button').click();
+    await page.getByRole('menuitem', { name: item }).click();
+    return;
+  }
+  const lang = item.source === COPY.he.withdraw.source || item.source === COPY.he.count.source ? 'he' : 'en';
+  const kind =
+    item.source === COPY[lang].withdraw.source
+      ? 'withdraw'
+      : item.source === COPY[lang].count.source
+        ? 'count'
+        : 'expense';
+  if (kind === 'expense') {
+    await page.goto('/cash?add=expense&cash=1');
+    return;
+  }
+  await page
+    .locator('[data-slot="cash-sheet"]')
+    .getByRole('button', { name: POT_PILL[lang][kind], exact: true })
+    .click();
 }
 
 async function setUp(page: Page, lang: 'en' | 'he', amount: string): Promise<void> {
@@ -149,10 +175,14 @@ for (const lang of ['en', 'he'] as const) {
       await setUp(page, lang, '500');
       await scan('figure and activity');
 
-      await page.getByTestId('add-button').click();
-      await expect(page.getByRole('menuitem', { name: copy.withdraw })).toBeVisible();
-      await scan('add menu', '[data-slot="dropdown-menu-content"]');
-      await page.getByRole('menuitem', { name: copy.withdraw }).click();
+      if ((page.viewportSize()?.width ?? 0) >= 1024) {
+        await fromMenu(page, copy.withdraw);
+      } else {
+        await page.getByTestId('add-button').click();
+        await expect(page.getByRole('menuitem', { name: copy.withdraw })).toBeVisible();
+        await scan('add menu', '[data-slot="dropdown-menu-content"]');
+        await page.getByRole('menuitem', { name: copy.withdraw }).click();
+      }
       await expect(page.getByRole('dialog', { name: copy.withdrawTitle })).toBeVisible();
       await scan('withdraw sheet', '[role="dialog"]');
       await page.keyboard.press('Escape');
@@ -203,7 +233,7 @@ test.describe('@cash on a phone', () => {
     await withdraw.getByRole('button', { name: 'Save' }).click();
     await expect(withdraw).toBeHidden();
 
-    expect(await short(page, 'main section[aria-labelledby]'), 'activity').toEqual([]);
+    expect(await short(page, '[data-slot="cash-moves"]'), 'activity').toEqual([]);
 
     await fromMenu(page, /^Count my cash/);
     await expect(page.getByRole('dialog', { name: 'Count my cash' })).toBeVisible();
@@ -246,7 +276,8 @@ test.describe('@cash on a 320px phone in Hebrew', () => {
     await completeFirstRun(page, 'he', { demo: false });
     await page.goto('/cash');
     await setUp(page, 'he', '1234567.89');
-    await expect(cashFigure(page)).toHaveAttribute('data-value', '123456789');
+    // The pot shows whole shekels, like the concept's sheets.
+    await expect(cashFigure(page)).toHaveAttribute('data-value', '123456800');
     const box = await cashFigure(page).boundingBox();
     expect(box).not.toBeNull();
     if (box !== null) {

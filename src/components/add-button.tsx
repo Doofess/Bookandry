@@ -11,9 +11,9 @@ export type AddButtonProps = React.ComponentProps<'button'>;
  * 10.5:1. In dark mode a 1px vivid border draws its edge on the near-black
  * page, where the deep pill alone would sink in.
  *
- * Bottom-centre above the tab bar on a phone. From `lg` the feed's Add is in
- * the rail; the Cash screen's own Add sits at the bottom-inline-end corner.
- * Both offsets add the safe-area inset.
+ * Bottom-centre above the tab bar on a phone, with the safe-area inset. From
+ * `lg` the rail's Add is on every screen, so this pill is not drawn (Cash's
+ * own moves are on its board there).
  */
 export function AddButton({ className, disabled = false, ...props }: AddButtonProps) {
   const { t } = useTranslation();
@@ -37,8 +37,8 @@ export function AddButton({ className, disabled = false, ...props }: AddButtonPr
         // width centres a fixed element of any label length.
         'start-0 end-0 mx-auto w-max',
         'bottom-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom,0px)+1rem)]',
-        // Desktop: inline-end, no tab bar to clear.
-        'lg:start-auto lg:end-6 lg:bottom-6 lg:mx-0',
+        // Desktop: the rail's Add is there; no second one floats over the board.
+        'lg:hidden',
         className,
       )}
     >

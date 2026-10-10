@@ -20,11 +20,11 @@ describe('AddButton', () => {
     expect(button).toHaveClass('hover-fine:bg-ink', 'motion-safe:active:scale-[0.96]');
   });
 
-  it('is centred above the tab bar on a phone and at the bottom-end corner on a desktop', () => {
+  it('is centred above the tab bar on a phone and not drawn on a desktop, where the rail has Add', () => {
     renderWithProviders(<AddButton />);
     const button = screen.getByTestId('add-button');
 
-    expect(button).toHaveClass('start-0', 'end-0', 'mx-auto', 'w-max', 'lg:end-6', 'lg:start-auto');
+    expect(button).toHaveClass('start-0', 'end-0', 'mx-auto', 'w-max', 'lg:hidden');
   });
 
   it('reads הוספה in Hebrew', async () => {
