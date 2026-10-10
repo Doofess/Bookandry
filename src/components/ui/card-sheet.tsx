@@ -45,10 +45,10 @@ export function CardSheet({
       data-sheet="money"
       data-money={moneyKey}
       className={cn(
-        '@container flex min-h-31 items-end justify-between gap-4 overflow-clip rounded-sheet-s px-5 pt-4 @board/main:min-h-27 @board/main:px-6.5 @board/main:pt-4.5',
+        '@container flex min-h-31 items-end justify-between gap-4 overflow-clip rounded-sheet-s border-0 px-5 pt-4 @board/main:min-h-27 @board/main:px-6.5 @board/main:pt-4.5',
         '[&:nth-child(even_of_[data-card-sheet])]:flex-row-reverse',
         '[&:nth-child(even_of_[data-card-sheet])_[data-slot=card-sheet-text]]:text-end',
-        '[&:nth-child(even_of_[data-card-sheet])_[data-numeral]]:ms-0 [&:nth-child(even_of_[data-card-sheet])_[data-numeral]]:me-auto',
+        '[&:nth-child(even_of_[data-card-sheet])_[data-slot=card-sheet-figure]>span]:justify-items-start',
         className,
       )}
     >
@@ -73,7 +73,7 @@ export function CardSheet({
         // The free width, so the numeral fits what is left beside the name; it hugs the far side.
         <div
           data-slot="card-sheet-figure"
-          className="min-w-0 flex-1 [&_[data-numeral]]:ms-auto [&_[data-numeral]]:w-fit"
+          className="min-w-0 flex-1 [&_[data-numeral]]:w-fit [&>span]:grid [&>span]:justify-items-end"
         >
           {figure}
         </div>
