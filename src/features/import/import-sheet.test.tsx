@@ -421,10 +421,10 @@ describe('Smart import', () => {
       const whose = screen.getByRole('radiogroup', { name: 'Whose spending and income is this?' });
       const radios = within(whose).getAllByRole('radio', { name: 'Dana' });
       expect(radios).toHaveLength(2);
-      // The avatar is there, one per person, in each person's own colour; the name is not drawn.
+      // The avatar is there, one per person, in the house palette; the name is not drawn.
       const avatars = radios.map((radio) => radio.querySelector<HTMLElement>('[data-person]'));
       expect(avatars.map((a) => a?.dataset['person'])).toEqual(['p1', 'p2']);
-      expect(avatars[0]?.style.backgroundColor).not.toBe(avatars[1]?.style.backgroundColor);
+      expect(avatars.every((a) => a?.dataset['avatarTone'] !== undefined)).toBe(true);
       expect(radios[0]?.querySelector('.sr-only')).toHaveTextContent('Dana');
       // Choosing one chooses that person, not the other of the same name.
       await user.click(radios[1]!);

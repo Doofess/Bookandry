@@ -64,21 +64,30 @@ export type RailPlace = {
     'feed' | 'chart' | 'cards' | 'bankAccounts' | 'cash' | 'categories' | 'commitments' | 'settings';
   readonly to: string;
   readonly phone: boolean;
+  /** The rail's own word where the concept's differs from the tab's: Overview (the feed), Cash box. */
+  readonly railLabel?: 'overview' | 'cashBox';
 };
 
 /**
- * The rail's places (§4.2): the phone's tabs in their order, with Bank
- * accounts after Cards. The rail lists places only; Add is a button at its
- * top (decision 28), because a nav that mixes links and actions is harder to
- * use with a screen reader.
+ * The rail's places in the concept's order (phase 3 plan, decision 1): the
+ * feed as the overview, the money places, then the chart. The phone keeps its
+ * four tabs in NAV_ORDER (PHONE_PLACES); the rail lists places only, Add is a
+ * button at its top (decision 28).
  */
 export const RAIL_PLACES: readonly RailPlace[] = [
-  { key: 'feed', to: ROUTES.feed, phone: true },
-  { key: 'chart', to: ROUTES.chart, phone: true },
+  { key: 'feed', to: ROUTES.feed, phone: true, railLabel: 'overview' },
   { key: 'cards', to: ROUTES.cards, phone: true },
   { key: 'bankAccounts', to: LINKED_ROUTES.bankAccounts, phone: false },
-  { key: 'cash', to: ROUTES.cash, phone: true },
+  { key: 'cash', to: ROUTES.cash, phone: true, railLabel: 'cashBox' },
+  { key: 'chart', to: ROUTES.chart, phone: true },
 ];
+
+/** The phone's four tabs, in their own order (decision 27). */
+export const PHONE_PLACES: readonly RailPlace[] = NAV_ORDER.map((key) => {
+  const place = RAIL_PLACES.find((p) => p.key === key);
+  if (place === undefined) throw new Error(`no place ${key}`);
+  return place;
+});
 
 /** The set-up places, below a line: on the desktop rail only (decision 27). */
 export const RAIL_SETUP: readonly RailPlace[] = [
@@ -92,8 +101,11 @@ export const RAIL_SETUP: readonly RailPlace[] = [
  * transition's slide (§8.2). A settings page counts as Settings; a page that
  * is no place at all counts as before the first.
  */
-export function navDirection(from: string, to: string): 'forward' | 'back' {
-  const order = [...RAIL_PLACES, ...RAIL_SETUP].map((place) => place.to);
+export function navDirection(
+  from: string,
+  to: string,
+  order: readonly string[] = [...RAIL_PLACES, ...RAIL_SETUP].map((place) => place.to),
+): 'forward' | 'back' {
   const index = (path: string) =>
     order.findIndex((place) => place === path || (place !== ROUTES.feed && path.startsWith(`${place}/`)));
   return index(to) < index(from) ? 'back' : 'forward';

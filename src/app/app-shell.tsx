@@ -10,7 +10,7 @@ import { AddMenu } from '@/features/feed/add-menu';
 import { useTransactionSheet } from '@/features/transaction/use-transaction-sheet';
 
 import { useAccount } from './account';
-import { navDirection, RAIL_PLACES, RAIL_SETUP, ROUTES, type RailPlace } from './routes';
+import { navDirection, PHONE_PLACES, RAIL_PLACES, RAIL_SETUP, ROUTES, type RailPlace } from './routes';
 import { ShellEditors } from './shell-editors';
 import { Toaster } from './toaster';
 import { useDesktop, useMediaQuery } from './use-desktop';
@@ -44,16 +44,22 @@ function useRailCounts(): Partial<Record<RailPlace['key'], number>> {
   );
 }
 
+const PHONE_ORDER = PHONE_PLACES.map((p) => p.to);
+const RAIL_ORDER = [...RAIL_PLACES, ...RAIL_SETUP].map((p) => p.to);
+
 function Place({
   place,
+  label,
+  order,
   count,
   reduced,
 }: {
   readonly place: RailPlace;
+  readonly label: string;
+  readonly order: readonly string[];
   readonly count?: number;
   readonly reduced: boolean;
 }) {
-  const { t } = useTranslation();
   const { pathname } = useLocation();
   return (
     <NavLink
@@ -62,13 +68,14 @@ function Place({
       // Same-document view transitions (§8.2), skipped when motion is reduced.
       viewTransition={!reduced}
       onClick={() => {
-        document.documentElement.setAttribute('data-nav-dir', navDirection(pathname, place.to));
+        document.documentElement.setAttribute('data-nav-dir', navDirection(pathname, place.to, order));
       }}
-      className={cn(PILL, !place.phone && 'hidden lg:flex')}
+      data-slot="nav-place"
+      className={PILL}
     >
       {({ isActive }) => (
         <>
-          <span className="min-w-0 text-center lg:text-start">{t(`nav.${place.key}` as const)}</span>
+          <span className="min-w-0 text-center lg:text-start">{label}</span>
           {count === undefined ? null : (
             <span aria-hidden="true" className="hidden shrink-0 text-sm font-light lg:inline">
               {count}
@@ -142,18 +149,43 @@ function PrimaryNav() {
 
       {desktop ? <RailAdd /> : null}
 
-      {RAIL_PLACES.map((place) => (
-        <Place
-          key={place.key}
-          place={place}
-          reduced={reduced}
-          count={place.key === 'cards' || place.key === 'bankAccounts' ? counts[place.key] : undefined}
-        />
-      ))}
+      {/* The phone's four tabs, in their order. Hidden from lg, so a screen reader meets one list at a time. */}
+      <div className="contents lg:hidden">
+        {PHONE_PLACES.map((place) => (
+          <Place
+            key={place.key}
+            place={place}
+            label={t(`nav.${place.key}` as const)}
+            order={PHONE_ORDER}
+            reduced={reduced}
+          />
+        ))}
+      </div>
+      {/* The rail's places, in the concept's order. */}
+      <div className="hidden lg:contents">
+        {RAIL_PLACES.map((place) => (
+          <Place
+            key={place.key}
+            place={place}
+            label={t(`nav.${place.railLabel ?? place.key}` as const)}
+            order={RAIL_ORDER}
+            reduced={reduced}
+            count={place.key === 'cards' || place.key === 'bankAccounts' ? counts[place.key] : undefined}
+          />
+        ))}
+      </div>
       <div aria-hidden="true" className="my-3 hidden h-0.5 shrink-0 bg-border lg:block" />
-      {RAIL_SETUP.map((place) => (
-        <Place key={place.key} place={place} reduced={reduced} />
-      ))}
+      <div className="hidden lg:contents">
+        {RAIL_SETUP.map((place) => (
+          <Place
+            key={place.key}
+            place={place}
+            label={t(`nav.${place.key}` as const)}
+            order={RAIL_ORDER}
+            reduced={reduced}
+          />
+        ))}
+      </div>
 
       <div className="mt-auto hidden pt-3 lg:block">
         <UserMenu placement="rail" />

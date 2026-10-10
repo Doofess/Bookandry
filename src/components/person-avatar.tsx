@@ -5,6 +5,7 @@ import { useAccount } from '@/app/account';
 import { initialsOf, useAccountAvatar } from '@/app/account-avatar';
 import { isStored, memberAvatarKey, type StoredAvatar } from '@/app/avatar-store';
 import { db } from '@/db/db';
+import { avatarTone, type AvatarTone } from '@/domain/palette';
 
 /**
  * A person of the household, as a round picture: their account's picture
@@ -14,7 +15,13 @@ import { db } from '@/db/db';
  *
  * Decorative unless given a `label`: whatever sits next to it carries the name.
  */
-const PERSON_SIZES = { sm: 32, md: 44, lg: 72 } as const;
+const PERSON_SIZES = { sm: 32, rail: 36, md: 44, lg: 72 } as const;
+const TONE_CLASS: Record<AvatarTone, string> = {
+  ink: 'bg-box text-box-text',
+  sapphire: 'bg-primary text-primary-foreground',
+  ring: 'bg-background text-foreground shadow-[inset_0_0_0_2px_currentColor]',
+};
+
 export type PersonSize = keyof typeof PERSON_SIZES;
 
 export type PersonLike = { readonly id: string; readonly name: string; readonly color: string };
@@ -45,18 +52,21 @@ export function PersonAvatar({
   const src = person.id === me ? own.src : isStored(stored) ? urlFor(person.id, stored) : google;
   const px = PERSON_SIZES[size];
   const initials = initialsOf(person.name, undefined);
+  const tone = avatarTone(person.color);
 
   return (
     <span
       className={cn(
-        'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-white select-none',
+        'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold select-none',
+        TONE_CLASS[tone],
         className,
       )}
-      style={{ width: px, height: px, backgroundColor: person.color, fontSize: Math.round(px * 0.4) }} // money-allow: a font size in pixels
+      style={{ width: px, height: px, fontSize: Math.round(px * 0.4) }} // money-allow: a font size in pixels
       role={label === undefined ? undefined : 'img'}
       aria-label={label}
       aria-hidden={label === undefined ? true : undefined}
       data-person={person.id}
+      data-avatar-tone={tone}
     >
       {src === undefined ? (
         <span aria-hidden="true">{initials}</span>

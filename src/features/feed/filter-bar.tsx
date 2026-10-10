@@ -31,7 +31,7 @@ export function FilterBar({
 
   return (
     <div className="flex items-center gap-2">
-      <div className="relative min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1 lg:hidden">
         <Search
           className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"

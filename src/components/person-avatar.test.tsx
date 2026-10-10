@@ -40,4 +40,11 @@ describe('PersonAvatar', () => {
     expect(screen.getByRole('img', { name: 'Noa' }).querySelector('img')).toBeNull();
     expect(screen.getByRole('img', { name: 'Noa' })).toHaveTextContent('N');
   });
+
+  it('takes the house palette, never the stored colour', () => {
+    renderWithProviders(<PersonAvatar person={{ id: 'p', name: 'Noa', color: '#0f766e' }} label="Noa" />);
+    const avatar = screen.getByRole('img', { name: 'Noa' });
+    expect(avatar).toHaveAttribute('data-avatar-tone', 'sapphire');
+    expect(avatar.style.backgroundColor).toBe('');
+  });
 });

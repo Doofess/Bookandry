@@ -57,7 +57,11 @@ export function ScreenHead({
       {title === undefined ? null : (
         <div className="mt-2 flex flex-wrap items-end justify-between gap-3 lg:mt-0 lg:items-center">
           <TitlePair as="h1" size="screen" title={title} subtitle={subtitle} className="min-w-0" />
-          {actions === undefined ? null : <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+          {actions === undefined ? null : (
+            <div className="flex flex-wrap items-center gap-2 max-lg:[&_[data-variant^=pill]]:min-h-11 max-lg:[&_[data-variant^=pill]]:px-4 max-lg:[&_[data-variant^=pill]]:text-[0.9375rem]">
+              {actions}
+            </div>
+          )}
         </div>
       )}
     </header>

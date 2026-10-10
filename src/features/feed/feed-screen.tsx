@@ -7,6 +7,8 @@ import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
 import { HeroSheet, ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { pendingShares, sweepShared } from '@/app/shared-files';
+import { greetingKey, SearchPill, useGreetingName } from '@/app/top-bar';
+import { useDesktop } from '@/app/use-desktop';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
 import { changeCategory, moveOccurrence } from '@/db/occurrence-actions';
@@ -59,6 +61,8 @@ export function FeedScreen() {
   const today = useToday();
   const settings = useSettings();
   const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
+  const desktop = useDesktop();
+  const greetingName = useGreetingName();
   const sheet = useTransactionSheet();
   const account = useAccount();
   const navigate = useNavigate();
@@ -232,7 +236,38 @@ export function FeedScreen() {
       ) : null}
 
       <div ref={measureHeader} data-testid="feed-header">
-        <ScreenHead title={t('nav.feed')} />
+        <ScreenHead
+          // The phone's head is the screen's name in Karantina; the desktop's top bar greets (decision 2).
+          title={
+            desktop
+              ? t(greetingKey(new Date(systemClock.nowMs()).getHours()), { name: greetingName ?? '' })
+              : t('nav.feed')
+          }
+          subtitle={
+            desktop
+              ? formatLocalDate(today, i18n.language, { weekday: 'long', day: 'numeric', month: 'long' })
+              : undefined
+          }
+          actions={
+            desktop ? (
+              <>
+                <SearchPill
+                  value={filters.query}
+                  onChange={(query) => {
+                    set({ query });
+                  }}
+                />
+                <MonthCursor
+                  month={filters.month}
+                  today={today}
+                  onStep={stepMonth}
+                  onPick={setMonth}
+                  tone="bold"
+                />
+              </>
+            ) : undefined
+          }
+        />
         <HeroSheet>
           {/*
             At most two lines on a phone: below sm the profile pill is faces

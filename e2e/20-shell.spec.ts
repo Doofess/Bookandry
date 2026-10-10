@@ -15,8 +15,8 @@ test.beforeEach(({}, testInfo) => {
 
 const NAV = /^(Primary|ניווט ראשי)$/;
 const PLACES = {
-  en: ['Feed', 'Chart', 'Cards', 'Bank accounts', 'Cash', 'Categories', 'Commitments', 'Settings'],
-  he: ['תנועות', 'תרשים', 'כרטיסים', 'חשבונות בנק', 'מזומן', 'קטגוריות', 'התחייבויות', 'הגדרות'],
+  en: ['Overview', 'Cards', 'Bank accounts', 'Cash box', 'Chart', 'Categories', 'Commitments', 'Settings'],
+  he: ['סקירה', 'כרטיסים', 'חשבונות בנק', 'קופת מזומן', 'תרשים', 'קטגוריות', 'התחייבויות', 'הגדרות'],
 } as const;
 const TABS = { en: ['Feed', 'Chart', 'Cards', 'Cash'], he: ['תנועות', 'תרשים', 'כרטיסים', 'מזומן'] } as const;
 const ACCOUNT = /^(Account and settings|חשבון והגדרות)/;
@@ -74,7 +74,9 @@ for (const width of LAYOUT_WIDTHS) {
           expect(content).toBeGreaterThanOrEqual(width === 1920 ? 1600 : 0);
         }
 
-        const feed = nav.getByRole('link', { name: lang === 'en' ? /^Feed/ : /^תנועות/ });
+        const feed = nav.getByRole('link', {
+          name: lang === 'en' ? (width < 1024 ? /^Feed/ : /^Overview/) : width < 1024 ? /^תנועות/ : /^סקירה/,
+        });
         await expect(feed).toHaveAttribute('aria-current', 'page');
         expect(await nav.getByRole('link').locator('svg').count()).toBe(0);
       });
@@ -109,7 +111,7 @@ test.describe('@shell on a desktop', () => {
     const nav = page.getByRole('navigation', { name: NAV });
     await nav.getByRole('link', { name: /^Chart/ }).click();
     await expect(page.locator('html')).toHaveAttribute('data-nav-dir', 'forward');
-    await nav.getByRole('link', { name: /^Feed/ }).click();
+    await nav.getByRole('link', { name: /^Overview/ }).click();
     await expect(page.locator('html')).toHaveAttribute('data-nav-dir', 'back');
   });
 });
