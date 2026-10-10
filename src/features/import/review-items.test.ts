@@ -9,7 +9,17 @@ import { freshDb, type TestDb } from '@/test/db-harness';
 import type { Category, PaymentMethod, Profile } from '@/types/domain';
 import type { IsoInstant, Kind, LocalDate } from '@/types/money';
 
-import { applyBatch, buildReview, holderOfMethod, linkToCard, type ReviewItem } from './review-items';
+import {
+  applyBatch,
+  buildReview,
+  holderOfMethod,
+  included,
+  linkToCard,
+  matchesImportKind,
+  withImportKind,
+  type ImportKind,
+  type ReviewItem,
+} from './review-items';
 
 const TODAY = '2026-10-06' as LocalDate;
 const NOW = '2026-10-06T00:00:00.000Z' as IsoInstant;
@@ -290,5 +300,93 @@ describe('the review: business type and category', () => {
     ]);
     // Kept, it is an ordinary expense under Currency exchange, with its code.
     expect(filed(items[0])).toEqual(['cat.currencyExchange', '6011', 'ai']);
+  });
+
+  describe('expenses, income or both', () => {
+    const MODES: readonly ImportKind[] = ['expense', 'income', 'both'];
+    /** Which modes keep each row, by its name. */
+    const keptIn = (items: readonly ReviewItem[]) =>
+      Object.fromEntries(
+        items.map((i) => [i.found.description, MODES.filter((mode) => matchesImportKind(i, mode))]),
+      );
+
+    it('keeps expenses and refunds with Expenses, the rest of income with Income, and all of it with Both', async () => {
+      const items = await review([
+        found({ m: 'Shufersal', a: '80.00' }),
+        found({ m: 'Salary', k: 'i', a: '9000.00' }),
+        // Money back on a card: a refund, so on the expense side.
+        found({ m: 'Supermarket', a: '-50.00' }),
+        // Cash out of an ATM is still an expense: kept, flagged, unticked.
+        found({ m: 'משיכת מזומן', a: '200.00', mcc: '6011' }),
+      ]);
+      expect(items.map((i) => [i.values?.kind, i.values?.categoryId])).toEqual([
+        ['expense', 'cat.otherExpense'],
+        ['income', 'cat.otherIncome'],
+        ['income', 'cat.refund'],
+        ['expense', 'cat.currencyExchange'],
+      ]);
+      expect(keptIn(items)).toEqual({
+        Shufersal: ['expense', 'both'],
+        Salary: ['income', 'both'],
+        Supermarket: ['expense', 'both'],
+        'משיכת מזומן': ['expense', 'both'],
+      });
+      expect(items[3]?.flags).toContain('cash_withdrawal');
+    });
+
+    it('goes by the row as it is now: an income moved into Refunds joins the expenses, and one moved out leaves', async () => {
+      const [salary, refund] = await review([
+        found({ m: 'Salary', k: 'i', a: '9000.00' }),
+        found({ m: 'Supermarket', a: '-50.00' }),
+      ]);
+      if (salary?.values === undefined || refund?.values === undefined) throw new Error('no values');
+      const filedAsRefund = { ...salary, values: { ...salary.values, categoryId: 'cat.refund' } };
+      const refiled = { ...refund, values: { ...refund.values, categoryId: 'cat.otherIncome' } };
+      expect(keptIn([filedAsRefund, refiled])).toEqual({
+        Salary: ['expense', 'both'],
+        Supermarket: ['income', 'both'],
+      });
+    });
+
+    it('reads a row with nothing to save yet by the kind it was read as', async () => {
+      const [salary] = await review([found({ m: 'Salary', k: 'i', a: '9000.00' })]);
+      if (salary === undefined) throw new Error('no row');
+      expect(keptIn([{ ...salary, values: undefined }])).toEqual({ Salary: ['income', 'both'] });
+    });
+
+    it('switching: a row that leaves is unticked, one that comes in is ticked as first read, one that stays keeps its tick', async () => {
+      const read = await review([
+        found({ m: 'Shufersal', a: '80.00' }),
+        found({ m: 'Paz', a: '120.00' }),
+        found({ m: 'Salary', k: 'i', a: '9000.00' }),
+        found({ m: 'משיכת מזומן', a: '200.00', mcc: '6011' }),
+      ]);
+      const ticks = (items: readonly ReviewItem[]) => items.map((i) => i.ticked);
+      // As read, Expenses: the salary is left out, unticked.
+      const expenses = withImportKind(read, 'both', 'expense');
+      expect(ticks(expenses)).toEqual([true, true, false, false]);
+      // The person unticks Paz; to Both, Paz stays unticked and the salary comes in ticked.
+      const unticked = expenses.map((i) => (i.found.description === 'Paz' ? { ...i, ticked: false } : i));
+      expect(ticks(withImportKind(unticked, 'expense', 'both'))).toEqual([true, false, true, false]);
+      // To Income: every expense leaves, the cash withdrawal included.
+      expect(ticks(withImportKind(unticked, 'expense', 'income'))).toEqual([false, false, true, false]);
+      // Back to Expenses: what comes back is ticked as first read - the withdrawal still waits.
+      const income = withImportKind(unticked, 'expense', 'income');
+      expect(ticks(withImportKind(income, 'income', 'expense'))).toEqual([true, true, false, false]);
+      // Staying put unticks what is left out - a row ticked by hand, then hidden again.
+      const handPicked = expenses.map((i) => (i.found.description === 'Salary' ? { ...i, ticked: true } : i));
+      expect(ticks(withImportKind(handPicked, 'expense', 'expense'))).toEqual([true, true, false, false]);
+      // Nothing else about a row changes.
+      expect(withImportKind(read, 'both', 'income').map((i) => i.values)).toEqual(read.map((i) => i.values));
+    });
+
+    it('adds a left-out row only while it is on show and ticked', async () => {
+      const [salary] = await review([found({ m: 'Salary', k: 'i', a: '9000.00' })]);
+      if (salary === undefined) throw new Error('no row');
+      expect(included(salary, 'expense', false)).toBe(false);
+      expect(included(salary, 'expense', true)).toBe(true);
+      expect(included({ ...salary, ticked: false }, 'expense', true)).toBe(false);
+      expect(included(salary, 'income', false)).toBe(true);
+    });
   });
 });

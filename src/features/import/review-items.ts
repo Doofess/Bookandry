@@ -31,7 +31,49 @@ export type Aliases = {
   readonly people?: ReadonlyMap<string, string>;
 };
 
-const REFUND_CATEGORY = 'cat.refund';
+export const REFUND_CATEGORY = 'cat.refund';
+
+/** What a Smart import adds: its expenses (refunds with them), its income, or both. */
+export type ImportKind = 'expense' | 'income' | 'both';
+
+/** A new import starts on expenses; the choice is never remembered. */
+export const DEFAULT_IMPORT_KIND: ImportKind = 'expense';
+
+/**
+ * Whether a row belongs to what the person chose to import. Expenses take
+ * refunds too - money back on a purchase undoes spending; Income is the rest
+ * of income. Read off the row as it is now, edits and all; a row with nothing
+ * to save yet goes by the kind it was read as. Filtered here, after reading,
+ * never by the reader: the totals check needs every row, and a row the reader
+ * got wrong stays one tap away.
+ */
+export function matchesImportKind(item: ReviewItem, mode: ImportKind): boolean {
+  if (mode === 'both') return true;
+  // A row with no values has no category, so a refund among them reads as income. It cannot
+  // be saved until opened and finished, and the editor gives it values - and its place - then.
+  const kind = item.values?.kind ?? item.found.kind;
+  const spending = kind === 'expense' || item.values?.categoryId === REFUND_CATEGORY;
+  return mode === 'expense' ? spending : !spending;
+}
+
+/**
+ * The review, moved from one choice to another: a row that leaves is
+ * unticked; one that comes in is ticked as it was first read - unless
+ * something about it needs a look; one that stays keeps the person's tick.
+ * From a choice to itself, it unticks whatever is left out.
+ */
+export function withImportKind(items: readonly ReviewItem[], from: ImportKind, to: ImportKind): ReviewItem[] {
+  return items.map((item) => {
+    if (!matchesImportKind(item, to)) return item.ticked ? { ...item, ticked: false } : item;
+    if (matchesImportKind(item, from)) return item;
+    return { ...item, ticked: !item.flags.some((f) => BLOCKING.has(f)) };
+  });
+}
+
+/** Whether a row is to be added: ticked, and in the import - or among the left-out rows on show. */
+export function included(item: ReviewItem, mode: ImportKind, leftOutShown: boolean): boolean {
+  return item.ticked && (leftOutShown || matchesImportKind(item, mode));
+}
 
 /** Whether a set of form values would save, as the form itself judges it. */
 export function saveable(values: TxFormValues): boolean {

@@ -640,3 +640,399 @@ describe('Smart import: a note about the files', () => {
     expect(reader.calls[0]).not.toHaveProperty('note');
   });
 });
+
+describe('Smart import: expenses, income or both', () => {
+  const sheet = (onSaved: (date: LocalDate) => void = () => undefined) => (
+    <ImportSheet
+      target={{ mode: 'import' }}
+      onOpenChange={() => undefined}
+      onOpenRow={() => undefined}
+      onOpenCard={() => undefined}
+      profiles={[profile]}
+      categories={[
+        category('cat.groceries', 'expense'),
+        category('cat.salary', 'income'),
+        category('cat.refund', 'income'),
+      ]}
+      paymentMethods={[]}
+      activeProfileId="p1"
+      baseCurrency="ILS"
+      today={'2026-09-15' as LocalDate}
+      onSaved={onSaved}
+    />
+  );
+  /** A statement with a purchase, a salary and money back on a purchase. */
+  const mixed: ExtractOutcome = {
+    ok: true,
+    usage,
+    result: {
+      r: [
+        wireRow({ d: '03/09/26', a: '120.50', m: 'Shufersal' }),
+        wireRow({ d: '04/09/26', a: '9000.00', m: 'Salary', k: 'i' }),
+        wireRow({ d: '05/09/26', a: '-50.00', m: 'Refund Zara' }),
+      ],
+      t: [],
+      per: null,
+      done: true,
+    },
+  };
+  const text = '03/09/26 Shufersal 120.50\n04/09/26 Salary 9000.00\n05/09/26 Refund Zara -50.00\n';
+  const readMixed = async (user: ReturnType<typeof userEvent.setup>, choose?: string) => {
+    reader.answers = [mixed, { ok: true, usage, result: { r: [] } }];
+    if (choose !== undefined) await user.click(screen.getByRole('radio', { name: choose }));
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File([text], 'statement.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+    await screen.findByTestId('import-add');
+  };
+  const rowNames = () =>
+    screen
+      .queryAllByRole('checkbox')
+      .map((box) => box.getAttribute('aria-label'))
+      .filter((name) => name?.startsWith('Add '));
+
+  beforeAll(async () => {
+    await initTestI18n('en');
+  });
+  beforeEach(async () => {
+    writeSession(undefined);
+    reader.calls = [];
+    reader.answers = [];
+    await db.transactions.clear();
+  });
+
+  it('asks before reading, next to whose it is, and starts on Expenses', () => {
+    renderWithProviders(sheet());
+    const choice = screen.getByRole('radiogroup', { name: 'What to import' });
+    expect(
+      within(choice)
+        .getAllByRole('radio')
+        .map((r) => r.textContent),
+    ).toEqual(['Expenses', 'Income', 'Both']);
+    expect(within(choice).getByRole('radio', { name: 'Expenses' })).toHaveAttribute('aria-checked', 'true');
+    // Before the files, so it reads as a question about them.
+    const drop = screen.getByTestId('import-input');
+    expect(choice.compareDocumentPosition(drop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('on Expenses keeps the purchase and the refund, and leaves the salary out, quietly, one tap away', async () => {
+    const onSaved = vi.fn<(date: LocalDate) => void>();
+    const user = userEvent.setup();
+    renderWithProviders(sheet(onSaved));
+    await readMixed(user);
+
+    expect(screen.getByRole('button', { name: 'Ready (2)' })).toBeInTheDocument();
+    expect(rowNames()).toEqual(['Add Shufersal', 'Add Refund Zara']);
+    expect(screen.getByText('1 income item left out')).toBeInTheDocument();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 2');
+
+    // Shown, it waits unticked, and counts toward nothing until ticked.
+    const show = screen.getByRole('button', { name: 'Show' });
+    expect(show).toHaveAttribute('aria-expanded', 'false');
+    await user.click(show);
+    const salary = screen.getByRole('checkbox', { name: 'Add Salary' });
+    expect(salary).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 2');
+    // Select all is for the rows chosen, which are all ticked: a left-out one is only ticked by hand.
+    expect(screen.getByRole('button', { name: 'Select none' })).toBeInTheDocument();
+    await user.click(salary);
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 3');
+    // Hidden again, it is out again.
+    await user.click(screen.getByRole('button', { name: 'Hide' }));
+    expect(screen.queryByRole('checkbox', { name: 'Add Salary' })).toBeNull();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 2');
+
+    await user.click(screen.getByTestId('import-add'));
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    const saved = await db.transactions.toArray();
+    expect(saved.map((t) => [t.note, t.kind, t.categoryId]).sort()).toEqual([
+      ['Refund Zara', 'income', 'cat.refund'],
+      ['Shufersal', 'expense', 'cat.groceries'],
+    ]);
+  });
+
+  it('on Income adds only the income: expenses and refunds are left out', async () => {
+    const onSaved = vi.fn<(date: LocalDate) => void>();
+    const user = userEvent.setup();
+    renderWithProviders(sheet(onSaved));
+    await readMixed(user, 'Income');
+
+    expect(rowNames()).toEqual(['Add Salary']);
+    expect(screen.getByText('2 expenses left out')).toBeInTheDocument();
+    await user.click(screen.getByTestId('import-add'));
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+    });
+    expect((await db.transactions.toArray()).map((t) => [t.note, t.kind])).toEqual([['Salary', 'income']]);
+  });
+
+  it('re-filters on the review at once, without reading the files again', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await readMixed(user);
+    const calls = reader.calls.length;
+    const choice = screen.getByRole('radiogroup', { name: 'What to import' });
+
+    await user.click(within(choice).getByRole('radio', { name: 'Income' }));
+    expect(rowNames()).toEqual(['Add Salary']);
+    expect(screen.getByRole('checkbox', { name: 'Add Salary' })).toBeChecked();
+    expect(screen.getByText('2 expenses left out')).toBeInTheDocument();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 1');
+
+    await user.click(within(choice).getByRole('radio', { name: 'Both' }));
+    expect(rowNames()).toEqual(['Add Shufersal', 'Add Salary', 'Add Refund Zara']);
+    expect(screen.queryByText(/left out/)).toBeNull();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 3');
+    expect(reader.calls).toHaveLength(calls);
+  });
+
+  it('keeps a row edited into the other kind in sight, ticked, among those left out', async () => {
+    function Harness() {
+      const [row, setRow] = useState<number | undefined>(undefined);
+      return (
+        <ImportSheet
+          target={row === undefined ? { mode: 'import' } : { mode: 'import', row }}
+          onOpenChange={() => undefined}
+          onOpenRow={setRow}
+          onOpenCard={() => undefined}
+          profiles={[profile]}
+          categories={[
+            category('cat.groceries', 'expense'),
+            category('cat.salary', 'income'),
+            category('cat.refund', 'income'),
+          ]}
+          paymentMethods={[]}
+          activeProfileId="p1"
+          baseCurrency="ILS"
+          today={'2026-09-15' as LocalDate}
+          onSaved={() => undefined}
+        />
+      );
+    }
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await readMixed(user);
+
+    await user.click(screen.getByRole('button', { name: 'Edit Shufersal' }));
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+
+    expect(await screen.findByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('2 income items left out')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Add Shufersal' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Add Salary' })).not.toBeChecked();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 2');
+  });
+
+  it('answering "For" on the review leaves a hidden row unticked', async () => {
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: {
+          r: [
+            // Nothing says whose either is.
+            wireRow({ d: '07/09/26', a: '18.00', m: 'Kiosk' }),
+            wireRow({ d: '08/09/26', a: '9000.00', m: 'Salary', k: 'i' }),
+          ],
+          t: [],
+          per: null,
+          done: true,
+        },
+      },
+      { ok: true, usage, result: { r: [] } },
+    ];
+    const partner = { ...profile, id: 'p2', name: 'Yossi', sortOrder: 1 } as Profile;
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ImportSheet
+        target={{ mode: 'import' }}
+        onOpenChange={() => undefined}
+        onOpenRow={() => undefined}
+        onOpenCard={() => undefined}
+        profiles={[profile, partner]}
+        categories={[category('cat.groceries', 'expense'), category('cat.salary', 'income')]}
+        paymentMethods={[]}
+        activeProfileId="all"
+        baseCurrency="ILS"
+        today={'2026-09-15' as LocalDate}
+        onSaved={() => undefined}
+      />,
+    );
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['07/09/26 Kiosk 18.00\n08/09/26 Salary 9000.00\n'], 'card.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+    await screen.findByTestId('import-add');
+    expect(screen.getByRole('checkbox', { name: 'Add Kiosk' })).not.toBeChecked();
+
+    // "For" answers both; only the row in the import is ticked by it.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'For' }), 'Dana');
+    expect(await screen.findByRole('checkbox', { name: 'Add Kiosk' })).toBeChecked();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 1');
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    expect(screen.getByRole('checkbox', { name: 'Add Salary' })).not.toBeChecked();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 1');
+  });
+
+  it('selects all of the chosen kind and none of all, with the left-out rows on show', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await readMixed(user);
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    const box = (name: string) => screen.getByRole<HTMLInputElement>('checkbox', { name: `Add ${name}` });
+
+    await user.click(screen.getByRole('button', { name: 'Select none' }));
+    expect([box('Shufersal'), box('Refund Zara'), box('Salary')].map((b) => b.checked)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 0');
+
+    // Select all ticks the rows chosen, never one left out.
+    await user.click(screen.getByRole('button', { name: 'Select all' }));
+    expect([box('Shufersal'), box('Refund Zara'), box('Salary')].map((b) => b.checked)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 2');
+
+    // Ticked by hand, it is in; Select none takes it out with the rest.
+    await user.click(box('Salary'));
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 3');
+    await user.click(screen.getByRole('button', { name: 'Select none' }));
+    expect(box('Salary')).not.toBeChecked();
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 0');
+  });
+
+  it('counts only what is to be added when asking to discard', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await readMixed(user);
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Add Salary' }));
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 3');
+    await user.click(screen.getByRole('button', { name: 'Hide' }));
+
+    await user.keyboard('{Escape}');
+    expect(await screen.findByRole('alertdialog', { name: 'Discard 2 transactions?' })).toBeInTheDocument();
+  });
+
+  it('leaves cards found and a cash withdrawal as they were, whatever is chosen', async () => {
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: {
+          r: [
+            wireRow({ d: '04/09/26', a: '9000.00', m: 'Salary', k: 'i' }),
+            wireRow({ d: '05/09/26', a: '500.00', m: 'משיכת מזומן', mcc: '6011' }),
+          ],
+          t: [],
+          per: null,
+          done: true,
+          k: [
+            { s: 0, n: 'max executive', l4: '3200', nw: 'Mastercard', is: 'MAX', cr: '', lim: '', bd: '10' },
+          ],
+          ba: [],
+          pr: '',
+        },
+      },
+      { ok: true, usage, result: { r: [] } },
+    ];
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['04/09/26 Salary 9000.00\n05/09/26 משיכת מזומן 500.00\nmax executive 3200'], 'all.txt', {
+        type: 'text/plain',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+    await screen.findByTestId('import-add');
+
+    // The card is listed and ticked on Income as on any choice; it is not a row.
+    expect(screen.getByRole('button', { name: 'Card or account found (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^Add max executive/ })).toBeChecked();
+    // The withdrawal is an expense: left out here, and still flagged and unticked when shown.
+    expect(screen.getByText('1 expense left out')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    const flag = 'Cash withdrawal: not counted as an expense. You can record it in the Cash tab.';
+    expect(screen.getByRole('checkbox', { name: 'Add משיכת מזומן' })).not.toBeChecked();
+    expect(screen.getByText(flag)).toBeInTheDocument();
+
+    // On Expenses it comes in, still unticked, still flagged; the card stays as it was.
+    await user.click(screen.getByRole('radio', { name: 'Expenses' }));
+    expect(screen.getByRole('button', { name: 'Check this (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Add משיכת מזומן' })).not.toBeChecked();
+    expect(screen.getByText(flag)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^Add max executive/ })).toBeChecked();
+  });
+
+  it('with nothing of the chosen kind, says so and still offers what was left out', async () => {
+    reader.answers = [
+      {
+        ok: true,
+        usage,
+        result: {
+          r: [wireRow({ d: '03/09/26', a: '120.50', m: 'Shufersal' })],
+          t: [],
+          per: null,
+          done: true,
+        },
+      },
+      { ok: true, usage, result: { r: [] } },
+    ];
+    const user = userEvent.setup();
+    renderWithProviders(sheet());
+    await user.click(screen.getByRole('radio', { name: 'Income' }));
+    await user.upload(
+      screen.getByTestId('import-input'),
+      new File(['03/09/26 Shufersal 120.50\n'], 'statement.txt', { type: 'text/plain' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Read 1 file' }));
+
+    await screen.findByText('No income in these files.');
+    expect(screen.getByText('1 expense left out')).toBeInTheDocument();
+    expect(screen.getByTestId('import-add')).toBeDisabled();
+    // Nothing to select: no Select all or Select none.
+    expect(screen.queryByRole('button', { name: /^Select (all|none)$/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Add Shufersal' }));
+    expect(screen.getByTestId('import-add')).toHaveTextContent('Add 1');
+  });
+
+  it('speaks Hebrew, with its plural for two', async () => {
+    await initTestI18n('he');
+    try {
+      reader.answers = [mixed, { ok: true, usage, result: { r: [] } }];
+      const user = userEvent.setup();
+      renderWithProviders(sheet());
+      const choice = screen.getByRole('radiogroup', { name: 'מה לייבא?' });
+      expect(
+        within(choice)
+          .getAllByRole('radio')
+          .map((r) => r.textContent),
+      ).toEqual(['הוצאות', 'הכנסות', 'הכל']);
+      await user.click(within(choice).getByRole('radio', { name: 'הכנסות' }));
+      await user.upload(
+        screen.getByTestId('import-input'),
+        new File([text], 'statement.txt', { type: 'text/plain' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'קריאת קובץ אחד' }));
+      await screen.findByText('שתי הוצאות לא נכללו');
+      expect(screen.getByRole('button', { name: 'הצג' })).toBeInTheDocument();
+    } finally {
+      await initTestI18n('en');
+    }
+  });
+});

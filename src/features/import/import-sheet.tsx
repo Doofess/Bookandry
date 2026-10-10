@@ -84,10 +84,15 @@ import {
   applyBatch,
   buildReview,
   cardOf,
+  DEFAULT_IMPORT_KIND,
   holderOfMethod,
+  included,
   linkToCard,
+  matchesImportKind,
   saveable,
+  withImportKind,
   type Aliases,
+  type ImportKind,
   type ReviewItem,
 } from './review-items';
 import { runImport, type FileState } from './run-import';
@@ -146,8 +151,13 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
   drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId },
+  kind: DEFAULT_IMPORT_KIND,
+  leftOutShown: false,
   note: '',
 });
+
+/** The three choices, in the order they are offered. */
+const IMPORT_KINDS: readonly ImportKind[] = ['expense', 'income', 'both'];
 
 /**
  * "Smart import": pick files, let them be read, check what was found, add it.
@@ -240,8 +250,21 @@ export function ImportSheet(props: ImportSheetProps) {
 
   const unsaved =
     session.stage === 'review'
-      ? session.items.filter((i) => i.ticked).length + session.methods.filter((m) => m.ticked).length
+      ? session.items.filter((i) => included(i, session.kind, session.leftOutShown)).length +
+        session.methods.filter((m) => m.ticked).length
       : 0;
+  // Another choice re-filters what was read, at once: nothing is read again.
+  const chooseKind = (kind: ImportKind) => {
+    setSession((s) => ({ ...s, kind, leftOutShown: false, items: withImportKind(s.items, s.kind, kind) }));
+  };
+  const showLeftOut = (shown: boolean) => {
+    // Put away again, the left-out rows are out again: none stays ticked unseen.
+    setSession((s) => ({
+      ...s,
+      leftOutShown: shown,
+      items: shown ? s.items : withImportKind(s.items, s.kind, s.kind),
+    }));
+  };
   // Who a new card or account belongs to: the batch "For".
   const owner = session.batch.profileId || defaultProfileId;
   // One kept from an earlier reading: whoever it was read for, while they are in the household.
@@ -274,6 +297,7 @@ export function ImportSheet(props: ImportSheetProps) {
       stage: 'reading',
       files,
       states,
+      leftOutShown: false,
       items: [],
       methods: [],
       drafted: 0,
@@ -386,7 +410,8 @@ export function ImportSheet(props: ImportSheetProps) {
       setSession((s) => ({
         ...s,
         stage: 'review',
-        items,
+        // Read whole; what is not of the kind chosen is left out, unticked.
+        items: withImportKind(items, 'both', s.kind),
         methods: found.filter((m) => !needsFilling(m)),
         drafted: drafted.length,
         reconciliations: result.reconciliations,
@@ -412,7 +437,9 @@ export function ImportSheet(props: ImportSheetProps) {
         items = linkToCard(items, saved);
         methodsSaved += 1;
       }
-      const chosen = items.filter((item) => item.ticked && item.values !== undefined);
+      const chosen = items.filter(
+        (item) => included(item, session.kind, session.leftOutShown) && item.values !== undefined,
+      );
       const toSave: ImportItem[] = [];
       let noRate = 0;
       for (const item of chosen) {
@@ -562,12 +589,15 @@ export function ImportSheet(props: ImportSheetProps) {
               translate={translate}
               onDone={(values) => {
                 const index = props.target.row ?? -1;
-                setSession((s) => ({
-                  ...s,
-                  items: s.items.map((item, i) =>
+                setSession((s) => {
+                  const items = s.items.map((item, i) =>
                     i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
-                  ),
-                }));
+                  );
+                  // Changed into the other kind, the row the person just settled stays in sight.
+                  const edited = items[index];
+                  const strayed = edited !== undefined && !matchesImportKind(edited, s.kind);
+                  return { ...s, items, leftOutShown: s.leftOutShown || strayed };
+                });
                 props.onOpenRow(undefined);
               }}
               onBack={() => {
@@ -596,6 +626,8 @@ export function ImportSheet(props: ImportSheetProps) {
                   onWhose={(profileId) => {
                     setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
                   }}
+                  kind={session.kind}
+                  onKind={chooseKind}
                   onFiles={(files) => {
                     setSession((s) => ({ ...s, files }));
                   }}
@@ -620,6 +652,8 @@ export function ImportSheet(props: ImportSheetProps) {
                   methodsList={props.paymentMethods}
                   translate={translate}
                   saving={saving}
+                  onKind={chooseKind}
+                  onShowLeftOut={showLeftOut}
                   onChange={(items) => {
                     setSession((s) => ({ ...s, items }));
                   }}
@@ -630,11 +664,16 @@ export function ImportSheet(props: ImportSheetProps) {
                     props.onOpenCard(id);
                   }}
                   onBatch={(batch) => {
-                    setSession((s) => ({
-                      ...s,
-                      batch,
-                      items: applyBatch(s.items, batch, props.paymentMethods),
-                    }));
+                    setSession((s) => {
+                      const answered = applyBatch(s.items, batch, props.paymentMethods);
+                      // Answering whose a row is ticks it - never a left-out one: only the person does.
+                      const items = answered.map((item, i) =>
+                        matchesImportKind(item, s.kind)
+                          ? item
+                          : { ...item, ticked: s.items[i]?.ticked ?? false },
+                      );
+                      return { ...s, batch, items };
+                    });
                   }}
                   onOpen={(index) => {
                     props.onOpenRow(index);
@@ -648,6 +687,7 @@ export function ImportSheet(props: ImportSheetProps) {
                       items: [],
                       methods: [],
                       drafted: 0,
+                      leftOutShown: false,
                     }));
                   }}
                 />
@@ -750,6 +790,8 @@ function Picker({
   profiles,
   whose,
   onWhose,
+  kind,
+  onKind,
   onFiles,
   note,
   onNote,
@@ -762,6 +804,8 @@ function Picker({
   /** Whose spending and income the files are; '' until answered. */
   readonly whose: string;
   readonly onWhose: (profileId: string) => void;
+  readonly kind: ImportKind;
+  readonly onKind: (kind: ImportKind) => void;
   readonly onFiles: (files: File[]) => void;
   /** What the person said about the files, for the whole batch. */
   readonly note: string;
@@ -821,6 +865,7 @@ function Picker({
           <p className="text-xs text-muted-foreground">{t('whoseHint')}</p>
         </div>
       ) : null}
+      <KindChoice kind={kind} onKind={onKind} />
       <div
         className={cn(
           'flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border p-6 text-center transition-colors',
@@ -988,6 +1033,8 @@ function Review({
   methodsList,
   translate,
   saving,
+  onKind,
+  onShowLeftOut,
   onChange,
   onMethods,
   onOpenMethod,
@@ -1002,6 +1049,8 @@ function Review({
   readonly methodsList: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly saving: boolean;
+  readonly onKind: (kind: ImportKind) => void;
+  readonly onShowLeftOut: (shown: boolean) => void;
   readonly onChange: (items: ReviewItem[]) => void;
   readonly onMethods: (methods: MethodReviewItem[]) => void;
   readonly onOpenMethod: (id: string) => void;
@@ -1037,7 +1086,10 @@ function Review({
     );
   }
 
-  const indexed = items.map((item, index) => ({ item, index }));
+  const all = items.map((item, index) => ({ item, index }));
+  // Rows of the other kind are left out: listed apart, on request, and counted toward nothing.
+  const indexed = all.filter(({ item }) => matchesImportKind(item, session.kind));
+  const leftOut = all.filter(({ item }) => !matchesImportKind(item, session.kind));
   const existing = indexed.filter(({ item }) => item.flags.some((f) => EXISTING.has(f)));
   const check = indexed.filter(
     ({ item }) =>
@@ -1047,14 +1099,17 @@ function Review({
   const ready = indexed.filter(
     ({ item }) => !check.some((c) => c.item === item) && !existing.some((e) => e.item === item),
   );
-  const ticked = items.filter((i) => i.ticked).length + methods.filter((m) => m.ticked).length;
-  const selectable = items.length + methods.filter(tickable).length;
+  const methodsTicked = methods.filter((m) => m.ticked).length;
+  const ticked = items.filter((i) => included(i, session.kind, session.leftOutShown)).length + methodsTicked;
+  // Select all is for the rows chosen; a left-out row is only ever ticked by hand.
+  const tickedChosen = indexed.filter(({ item }) => item.ticked).length + methodsTicked;
+  const selectable = indexed.length + methods.filter(tickable).length;
   const setTicked = (value: boolean) => {
     onChange(
-      items.map((item) => ({
-        ...item,
-        ticked: value && item.values !== undefined && saveable(item.values),
-      })),
+      items.map((item) => {
+        if (!matchesImportKind(item, session.kind)) return value ? item : { ...item, ticked: false };
+        return { ...item, ticked: value && item.values !== undefined && saveable(item.values) };
+      }),
     );
     onMethods(methods.map((m) => ({ ...m, ticked: value && tickable(m) })));
   };
@@ -1103,6 +1158,8 @@ function Review({
           if (method !== undefined) onOpenMethod(method.id);
         }}
       />
+
+      {items.length === 0 ? null : <KindChoice kind={session.kind} onKind={onKind} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {items.length === 0 ? null : (
@@ -1172,16 +1229,33 @@ function Review({
         {...{ categories, profiles, translate, onChange, onOpen, items }}
       />
 
+      {items.length > 0 && indexed.length === 0 && session.kind !== 'both' ? (
+        <p className="text-sm">{t(`emptyKind.${session.kind}`)}</p>
+      ) : null}
+      {leftOut.length === 0 || session.kind === 'both' ? null : (
+        <LeftOut
+          kind={session.kind}
+          rows={leftOut}
+          shown={session.leftOutShown}
+          onShown={onShowLeftOut}
+          methods={methodsList}
+          {...{ categories, profiles, translate, onChange, onOpen, items }}
+        />
+      )}
+
       <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setTicked(ticked < selectable);
-          }}
-        >
-          {ticked < selectable ? t('selectAll') : t('selectNone')}
-        </Button>
+        {/* Nothing to select, and nothing ticked by hand: no button. */}
+        {selectable === 0 && ticked === 0 ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setTicked(tickedChosen < selectable);
+            }}
+          >
+            {tickedChosen < selectable ? t('selectAll') : t('selectNone')}
+          </Button>
+        )}
         <Button
           type="button"
           className="h-11 flex-1"
@@ -1240,25 +1314,122 @@ function Group({
         </button>
       </h3>
       {expanded ? (
-        <ul className="divide-y divide-border border-t border-border" data-testid="import-rows">
-          {rows.map(({ item, index }) => (
-            <ReviewRow
-              key={item.id}
-              item={item}
-              categories={categories}
-              profiles={profiles}
-              methods={methods}
-              translate={translate}
-              onTick={(ticked) => {
-                onChange(items.map((x, i) => (i === index ? { ...x, ticked } : x)));
-              }}
-              onOpen={() => {
-                onOpen(index);
-              }}
-            />
-          ))}
-        </ul>
+        <Rows
+          className="border-t border-border"
+          testId="import-rows"
+          {...{ rows, items, categories, profiles, methods, translate, onChange, onOpen }}
+        />
       ) : null}
+    </section>
+  );
+}
+
+type RowsProps = {
+  readonly rows: readonly { readonly item: ReviewItem; readonly index: number }[];
+  readonly items: readonly ReviewItem[];
+  readonly categories: readonly Category[];
+  readonly profiles: readonly Profile[];
+  readonly methods: readonly PaymentMethod[];
+  readonly translate: (category: Category) => string;
+  readonly onChange: (items: ReviewItem[]) => void;
+  readonly onOpen: (index: number) => void;
+};
+
+function Rows({
+  rows,
+  items,
+  categories,
+  profiles,
+  methods,
+  translate,
+  onChange,
+  onOpen,
+  className,
+  id,
+  testId,
+}: RowsProps & { readonly className?: string; readonly id?: string; readonly testId?: string }) {
+  return (
+    <ul id={id} className={cn('divide-y divide-border', className)} data-testid={testId}>
+      {rows.map(({ item, index }) => (
+        <ReviewRow
+          key={item.id}
+          item={item}
+          categories={categories}
+          profiles={profiles}
+          methods={methods}
+          translate={translate}
+          onTick={(ticked) => {
+            onChange(items.map((x, i) => (i === index ? { ...x, ticked } : x)));
+          }}
+          onOpen={() => {
+            onOpen(index);
+          }}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/** Expenses, income or both: asked before reading, and changeable on the review. */
+function KindChoice({
+  kind,
+  onKind,
+}: {
+  readonly kind: ImportKind;
+  readonly onKind: (kind: ImportKind) => void;
+}) {
+  const { t } = useTranslation('import');
+  const labelId = useId();
+  return (
+    <div className="space-y-1.5">
+      <p id={labelId} className="text-sm font-medium">
+        {t('kindLabel')}
+      </p>
+      <Segmented
+        value={kind}
+        onChange={onKind}
+        options={IMPORT_KINDS.map((value) => ({ value, label: t(`kindChoice.${value}`) }))}
+        labelledBy={labelId}
+      />
+    </div>
+  );
+}
+
+/**
+ * The rows of the other kind: one quiet line saying how many, and - on
+ * request - the rows themselves, unticked until the person ticks one.
+ */
+function LeftOut({
+  kind,
+  shown,
+  onShown,
+  ...rows
+}: RowsProps & {
+  readonly kind: Exclude<ImportKind, 'both'>;
+  readonly shown: boolean;
+  readonly onShown: (shown: boolean) => void;
+}) {
+  const { t } = useTranslation('import');
+  const listId = useId();
+  const other = kind === 'expense' ? 'income' : 'expense';
+  return (
+    <section className="space-y-2" data-testid="import-left-out">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+        <span>{t(`leftOut.${other}`, { count: rows.rows.length })}</span>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          aria-expanded={shown}
+          aria-controls={shown ? listId : undefined}
+          className="-mx-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-1 font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:bg-muted"
+          onClick={() => {
+            onShown(!shown);
+          }}
+        >
+          {shown ? t('leftOut.hide') : t('leftOut.show')}
+        </button>
+      </p>
+      {shown ? <Rows id={listId} className="rounded-xl border border-border" {...rows} /> : null}
     </section>
   );
 }
