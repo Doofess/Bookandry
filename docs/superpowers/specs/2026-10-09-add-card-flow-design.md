@@ -674,12 +674,24 @@ The first two exist today (`CASH_METHOD_ID`, `CHEQUE_METHOD_ID` in `src/types/do
 
 ### 10.4 Which ways to pay fit which purchase
 
-`methodFits` and `standingViaOf` in `src/domain/tx-options.ts`:
+Amendment 2026-10-10 (the user's rule, replacing the earlier text of this section): the transaction form's **Type** control (Regular transaction, Installment transaction, Credit installment, Standing order, Loan) depends on the way to pay chosen.
 
-- **Debit, prepaid and gift cards** take a one-time, monthly or yearly purchase. They don't take תשלומים, קרדיט, קרדיט פלוס, 30+, a loan or a standing order. Banks allow none of these on a debit card (research §2.2), and a prepaid card neither (§2.3).
-- So `standingViaOf` returns `undefined` for `debit_card`, where it now returns `'card'`. A standing order already on a debit card stays on its row (`keepId`).
-- **The built-ins** keep their types' rules: a transfer and a standing order are `'bank'`; Bit / PayBox is `'card'`; cash, cheque and Other carry no standing order.
+| Way to pay                                                    | What the form asks                                                                                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cash**                                                      | The amount only. A one-time payment. No Type control.                                                                                               |
+| **Cheque**                                                    | **How many cheques** and the **due date** of each (the first date, then monthly by default, each editable). No Type control, and no standing order. |
+| **Debit card** (and prepaid and gift cards, by the same rule) | The Type control with **two** choices: Regular transaction and Standing order.                                                                      |
+| **Credit card**                                               | The Type control with **all five**: Regular, Installment, Credit installment, Standing order, Loan.                                                 |
+| **Bank transfer, Bit / PayBox, Other** (built-ins)            | The amount only, one time. No Type control. (Ruling: the user named cash, cheques and cards; these follow cash because nothing else was said.)      |
+| **Standing order** (built-in)                                 | Its own recurring form, as today.                                                                                                                   |
+
+- The Type control **appears only once a card is the way to pay**; with no way chosen yet it is hidden.
+- Choosing a way to pay that doesn't offer the current Type resets the Type to Regular, and the form says so in one quiet line.
+- A saved transaction whose type no longer fits (an older instalment on a debit card) keeps it on its row and shows it as it is (`keepId`). The control only limits new choices.
+- This reverses the earlier rule that a debit card takes no standing order: `standingViaOf` returns `'card'` for `debit_card`, and `methodFits` allows Standing order for it.
+- `methodFits` and `standingViaOf` in `src/domain/tx-options.ts` carry the table. A cheque's count and due dates map to the existing cheque fields; check how a cheque is stored today before building, and keep that model.
 - **Every reader of `type`** goes through `methodTypeOf(method)`, which reads an unknown type as `'other'` (section 13.4).
+- Tests: one per row of the table (DOM), plus the reset, the hidden control, the kept old row and the cheque dates.
 
 ## 11. Balance maths per kind
 
