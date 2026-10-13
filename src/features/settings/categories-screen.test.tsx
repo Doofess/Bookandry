@@ -83,6 +83,19 @@ beforeEach(async () => {
 });
 
 describe('the categories screen', () => {
+  it('deletes an income category while the expense choice is active', async () => {
+    const income: Category = { ...coffee, id: 'c.bonus', kind: 'income', source: 'custom', name: 'Bonus' };
+    await db.categories.put(income);
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(await screen.findByRole('button', { name: /^Delete Bonus/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(async () => {
+      expect(await db.categories.get(income.id)).toBeUndefined();
+    });
+  }, 15_000);
+
   it('shows expenses and incomes as two sheets of rows, each led by its hue pill, with this month as hue bars', async () => {
     const { container } = renderScreen();
     const expenses = await waitFor(() => {

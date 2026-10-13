@@ -167,7 +167,8 @@ export function FeedScreen() {
   );
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);
-  const bills = useMonthBills(today, settings.defaultCurrency, filters.profileId);
+  const bills = useMonthBills(today, settings.defaultCurrency, filters.profileId, filters.month);
+  const currentMonth = filters.month === startOfMonth(today);
   const incoming = useIncoming(today);
   const cashData = useCashData(filters.profileId, today);
   const incomeHistory = useIncomeHistory(today);
@@ -244,7 +245,7 @@ export function FeedScreen() {
   }, [methods, incoming, cashData, filters.profileId, i18n.language, t]);
   const banks = new Set(accounts.filter((a) => a.id !== 'cash').map((a) => a.moneyKey)).size;
   const net =
-    occurrences === undefined || bills === undefined || methods === undefined
+    !currentMonth || occurrences === undefined || bills === undefined || methods === undefined
       ? undefined
       : settledThisMonth(occurrences, methods, today, bills);
   const nextIncome = useMemo(() => {
@@ -478,7 +479,8 @@ export function FeedScreen() {
                         components={{ box: <Mark /> }}
                       />
                     )}{' '}
-                    {bills === undefined ||
+                    {!currentMonth ||
+                    bills === undefined ||
                     bills.upcomingMinor === 0 ||
                     bills.lastDate === undefined ? null : (
                       <Trans

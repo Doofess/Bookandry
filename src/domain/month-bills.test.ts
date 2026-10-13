@@ -75,6 +75,18 @@ describe('monthBills', () => {
       lastDate: undefined,
     });
   });
+
+  it('uses the selected month for bills while checking charged dates against today', () => {
+    const selected = monthBills(
+      [max],
+      [spend('max', '2026-08-14', 12_300), spend('max', '2026-09-14', 45_600)],
+      TODAY,
+      d('2026-09-01'),
+    );
+    expect(selected.totalMinor).toBe(12_300);
+    expect(selected.days).toMatchObject([{ date: '2026-09-10', charged: true }]);
+    expect(selected.upcomingMinor).toBe(0);
+  });
 });
 
 describe('settledThisMonth', () => {

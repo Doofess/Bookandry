@@ -53,14 +53,16 @@ describe('the business type field, in English', () => {
 
       await user.click(field);
       const popout = await screen.findByRole('dialog', { name: 'Business type' });
-      await user.type(within(popout).getByPlaceholderText('Search by name or code'), 'restaurant');
+      await user.click(within(popout).getByPlaceholderText('Search by name or code'));
+      await user.paste('restaurant');
       await user.click(within(popout).getByRole('option', { name: /^Restaurant/ }));
       expect(screen.getByTestId('value')).toHaveTextContent('5812');
       expect(screen.getByRole('button', { name: 'Business type Restaurant' })).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Business type Restaurant' }));
       const again = await screen.findByRole('dialog', { name: 'Business type' });
-      await user.type(within(again).getByPlaceholderText('Search by name or code'), '0742');
+      await user.click(within(again).getByPlaceholderText('Search by name or code'));
+      await user.paste('0742');
       expect(within(again).getAllByRole('option')).toHaveLength(1);
       await user.click(within(again).getByRole('button', { name: 'Clear' }));
       expect(screen.getByTestId('value')).toBeEmptyDOMElement();

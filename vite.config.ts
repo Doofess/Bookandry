@@ -226,6 +226,8 @@ export default defineConfig(({ mode }) => ({
         test: {
           name: 'dom',
           environment: 'jsdom',
+          // Multi-step forms and the full business-type catalog need room under parallel coverage.
+          testTimeout: 15_000,
           include: ['src/**/*.test.tsx', 'src/app/**/*.test.ts'],
           setupFiles: ['./src/test/setup.db.ts', './src/test/setup.dom.ts'],
         },

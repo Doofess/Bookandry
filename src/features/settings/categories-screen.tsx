@@ -98,7 +98,8 @@ export function CategoriesScreen() {
   }, [occurrences, today]);
   // Somewhere to move things to. Deleting the only category of a kind would
   // leave its transactions pointing at nothing.
-  const targets = (category: Category) => shown.filter((c) => c.id !== category.id && c.isArchived === 0);
+  const targets = (category: Category) =>
+    all.filter((c) => c.kind === category.kind && c.id !== category.id && c.isArchived === 0);
 
   return (
     <section className="px-3 pb-24 lg:px-0 lg:pb-8">
@@ -123,7 +124,7 @@ export function CategoriesScreen() {
         <Label id={kindId} className="sr-only">
           {t('filter.kind')}
         </Label>
-        <div className="@wide/main:hidden">
+        <div>
           <Segmented<Kind>
             value={kind}
             labelledBy={kindId}

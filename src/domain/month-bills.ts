@@ -26,7 +26,7 @@ export type MonthBills = {
 };
 
 /**
- * The card bills charged in today's calendar month, by day (§5.1's month
+ * The card bills charged in the selected calendar month, by day (§5.1's month
  * sheet, the wallet, Cards' summary): one source, so the lede, the month
  * sheet, the wallet and Cards never disagree. A card's bill this month is the
  * one `cardBills` dates in this month (last month's purchases).
@@ -35,8 +35,9 @@ export function monthBills(
   cards: readonly PaymentMethod[],
   occurrences: readonly Occurrence[],
   today: LocalDate,
+  selectedMonth: LocalDate = today,
 ): MonthBills {
-  const month = startOfMonth(today);
+  const month = startOfMonth(selectedMonth);
   const bills: MonthBill[] = [];
   for (const card of cards) {
     if (billingDayOf(card) === undefined) continue;
