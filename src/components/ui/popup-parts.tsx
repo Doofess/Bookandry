@@ -169,8 +169,43 @@ function tabBarInset(): number {
   return atFoot ? Math.ceil(window.innerHeight - rect.top) : 0;
 }
 
+const TOAST_GAP = 8;
+
+/** The room a stack of boxes docked at the bottom takes: from its highest box to the bottom edge. */
+export function bottomInsetFrom(
+  rects: readonly { readonly top: number; readonly bottom: number }[],
+  innerHeight: number,
+): number {
+  const low = rects.filter((r) => r.top > innerHeight / 2 && r.bottom > r.top);
+  if (low.length === 0) return 0;
+  return Math.ceil(innerHeight - Math.min(...low.map((r) => r.top)) + TOAST_GAP);
+}
+
+const TOAST = '[data-sonner-toast][data-visible="true"]:not([data-removed="true"])';
+const TOASTER = '[data-sonner-toaster]';
+
 /**
- * The bar's inset as last measured, a small store every open anchored pop-out
+ * The visible toasts: above every pop-out, so a pop-out keeps clear of them as of a screen edge.
+ * Measured without the slide-in transform (a toast entering sits a toast-height low): each
+ * toast is its layout height up from the toaster's fixed bottom.
+ */
+function toastInset(): number {
+  const boxes: { top: number; bottom: number }[] = [];
+  for (const toast of document.querySelectorAll<HTMLElement>(TOAST)) {
+    const toaster = toast.closest(TOASTER);
+    if (toaster === null) continue;
+    const bottom = toaster.getBoundingClientRect().bottom;
+    boxes.push({ top: bottom - toast.offsetHeight, bottom });
+  }
+  return bottomInsetFrom(boxes, window.innerHeight);
+}
+
+const isToaster = (n: Node): boolean =>
+  n instanceof Element && (n.matches(TOASTER) || n.querySelector(TOASTER) !== null);
+
+/**
+ * The bottom edge's inset as last measured, the tab bar and any visible toast
+ * counted as edge, a small store every open anchored pop-out
  * subscribes to: measured when one opens, and again when the window or the bar
  * changes size while any is open, and then every one of them is told. Read
  * from here, never from the layout, while rendering.
@@ -180,13 +215,13 @@ const insetListeners = new Set<() => void>();
 let stopWatching: (() => void) | undefined;
 
 function remeasure(): void {
-  const next = tabBarInset();
+  const next = Math.max(tabBarInset(), toastInset());
   if (next === measuredInset) return;
   measuredInset = next;
   for (const listener of insetListeners) listener();
 }
 
-function watchTabBar(change: () => void): () => void {
+function watchBottomEdge(change: () => void): () => void {
   insetListeners.add(change);
   if (stopWatching === undefined) {
     window.addEventListener('resize', remeasure);
@@ -194,9 +229,30 @@ function watchTabBar(change: () => void): () => void {
     const observer =
       bar === null || typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(remeasure);
     if (bar !== null) observer?.observe(bar);
+    const toasts =
+      typeof MutationObserver === 'undefined'
+        ? undefined
+        : new MutationObserver((records) => {
+            const touched = records.some((r) => {
+              const el = r.target instanceof Element ? r.target : r.target.parentElement;
+              return (
+                el?.closest(TOASTER) != null ||
+                [...r.addedNodes].some(isToaster) ||
+                [...r.removedNodes].some(isToaster)
+              );
+            });
+            if (touched) remeasure();
+          });
+    toasts?.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-visible', 'data-removed', 'data-mounted'],
+    });
     stopWatching = () => {
       window.removeEventListener('resize', remeasure);
       observer?.disconnect();
+      toasts?.disconnect();
     };
   }
   remeasure();
@@ -216,7 +272,7 @@ export type CollisionPadding = { top: number; right: number; bottom: number; lef
 
 /**
  * The room an anchored pop-out keeps from the screen's edges, the tab bar
- * counted as edge. Anchored to something low on a phone, a menu would
+ * and any visible toast counted as edge. Anchored to something low on a phone, a menu would
  * otherwise open down behind the bar's labels; with the bar counted, it flips
  * above what opened it, or shifts up clear of the bar.
  *
@@ -226,7 +282,7 @@ export type CollisionPadding = { top: number; right: number; bottom: number; lef
  */
 export function useCollisionPadding(enabled: boolean): CollisionPadding {
   const inset = React.useSyncExternalStore(
-    enabled ? watchTabBar : watchNothing,
+    enabled ? watchBottomEdge : watchNothing,
     enabled ? lastInset : noInset,
     noInset,
   );

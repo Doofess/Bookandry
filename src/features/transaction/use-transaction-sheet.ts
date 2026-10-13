@@ -6,6 +6,7 @@ import { loadCatalog } from '@/data/card-catalog';
 import { resolveCard, type ResolvedCard } from '@/data/card-catalog/resolve';
 import { db } from '@/db/db';
 import { expandOccurrences } from '@/domain/occurrences';
+import { methodTypeOf } from '@/domain/tx-options';
 import { isLocalDate, maxDate, minDate } from '@/lib/dates';
 import type { CardCatalogLink, Occurrence, Override, PaymentMethod, Transaction } from '@/types/domain';
 import type { Kind, LocalDate } from '@/types/money';
@@ -315,7 +316,7 @@ export function useEditTarget(target: SheetTarget, today: LocalDate): EditTarget
 
 /** A credit card's catalog link, or undefined: only a credit card is linked. */
 function linkOf(method: PaymentMethod): CardCatalogLink | undefined {
-  return method.type === 'credit_card' ? method.card?.catalog : undefined;
+  return methodTypeOf(method) === 'credit_card' ? method.card?.catalog : undefined;
 }
 
 const linkKey = (link: CardCatalogLink) => `${link.issuer}|${link.bank}|${link.tier}|${link.club ?? ''}`;

@@ -160,8 +160,12 @@ const overrideTerm = z.union([
 const shortText = z.string().trim().min(1).max(40);
 const minorAmount = z.number().int().nonnegative().max(1e12);
 
-/** What a card company shows about a card, never what identifies it (§12). */
-export const cardSchema = z.object({
+/**
+ * What a card company shows about a card, never what identifies it (§12).
+ * Loose: a key a later release adds survives a file round trip, as it does a
+ * pull and an edit. Every key this release knows is still checked in full.
+ */
+export const cardSchema = z.looseObject({
   issuer: z.enum(['isracard', 'cal', 'max', 'amex', 'diners', 'other']).optional(),
   network: z.enum(['visa', 'mastercard', 'amex', 'diners', 'isracard']).optional(),
   kind: z.enum(['bank', 'non_bank']).optional(),
@@ -216,6 +220,18 @@ export const cardSchema = z.object({
       Object.fromEntries([...DEAL_KINDS, ...EXTRA_RATE_KINDS].map((kind) => [kind, overrideTerm.optional()])),
     )
     .optional(),
+  // Open, never an enum: a kind a later release adds reads as debit here.
+  funding: z.string().min(1).max(20).optional(),
+  issuerName: shortText.optional(),
+  loadCardId: z.string().min(1).optional(),
+  loadFeeMinor: minorAmount.optional(),
+  acceptedAt: shortText.optional(),
+  issuerBank: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .optional(),
+  productName: shortText.optional(),
+  checked: z.literal(true).optional(),
 });
 
 /** A bank account as the bank writes it; never anything that moves money (§12). */
@@ -238,17 +254,9 @@ export const accountSchema = z.object({
 const paymentMethodSchema = z.object({
   id: z.string().min(1),
   profileId: z.string().min(1),
-  type: z.enum([
-    'cash',
-    'cheque',
-    'credit_card',
-    'debit_card',
-    'bank_transfer',
-    'standing_order',
-    'digital_wallet',
-    'bank_account',
-    'other',
-  ]),
+  // Open: a type a later release writes is kept and read as "other"
+  // (methodTypeOf), so this build never drops the row on a pull or refuses a file.
+  type: z.string().min(1).max(30),
   // A LABEL only. §12 forbids storing any credential, and gate:pci enforces
   // that no field name here ever drifts toward one.
   label: z.string().trim().min(1).max(40),

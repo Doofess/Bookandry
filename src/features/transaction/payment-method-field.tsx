@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { RecurrenceMode } from '@/domain/tx-form';
-import { methodsFor, type StandingVia } from '@/domain/tx-options';
+import { methodsFor, methodTypeOf, type StandingVia } from '@/domain/tx-options';
 import { methodDisplayName } from '@/i18n/method-name';
 import type { PaymentMethod } from '@/types/domain';
 
@@ -54,7 +54,7 @@ export function PaymentMethodField({
         id: method.id,
         label: methodDisplayName(method, t),
         hint: [
-          t(PAYMENT_TYPE_KEY[method.type] as MethodTypeKey),
+          t(PAYMENT_TYPE_KEY[methodTypeOf(method)] as MethodTypeKey),
           method.card?.lastDigits === undefined ? undefined : `\u2066··${method.card.lastDigits}\u2069`,
         ]
           .filter(Boolean)

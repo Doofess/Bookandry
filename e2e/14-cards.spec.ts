@@ -196,6 +196,45 @@ for (const lang of ['en', 'he'] as const) {
   });
 }
 
+/** Archive a card, then open the next card's menu low on the screen, under the Undo toast's reach. */
+async function menuClearOfToast(
+  page: Page,
+  lang: 'en' | 'he',
+  copy: { cards: string; options: RegExp; archive: string; archived: string; edit: string },
+): Promise<void> {
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await completeFirstRun(page, lang);
+  await page.getByRole('link', { name: copy.cards }).click();
+  const first = page.getByRole('article').first();
+  const name = (await first.getByRole('heading').first().textContent()) ?? '';
+  await first.getByRole('button', { name: copy.options }).click();
+  await page.getByRole('menuitem', { name: copy.archive }).click();
+  const toast = page.locator('[data-sonner-toast]').first();
+  await expect(toast).toContainText(name);
+  await expect(toast).toContainText(copy.archived);
+
+  // The next card's menu button, placed low enough that a menu opening down would reach the toast.
+  const next = page.getByRole('article').first().getByRole('button', { name: copy.options });
+  await next.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    window.scrollBy({ top: box.bottom - (window.innerHeight - 300), behavior: 'instant' });
+  });
+  await next.click();
+  const menu = page.getByTestId('card-menu');
+  await expect(menu).toBeVisible();
+  const [m, t] = [await menu.boundingBox(), await toast.boundingBox()];
+  expect(m !== null && t !== null).toBe(true);
+  if (m === null || t === null) return;
+  const overlaps = m.x < t.x + t.width && t.x < m.x + m.width && m.y < t.y + t.height && t.y < m.y + m.height;
+  expect(overlaps).toBe(false);
+
+  // What an automated browser does: press at the item's centre, no retry.
+  const item = await page.getByRole('menuitem', { name: copy.edit }).boundingBox();
+  if (item === null) throw new Error('no edit item');
+  await page.mouse.click(item.x + item.width / 2, item.y + item.height / 2);
+  await expect(page.locator('[data-slot="editor-panel"]')).toBeVisible();
+}
+
 test.describe('@cards archive', () => {
   // eslint-disable-next-line no-empty-pattern
   test.beforeEach(({}, testInfo) => {
@@ -221,6 +260,37 @@ test.describe('@cards archive', () => {
 
     await expect(card).toBeVisible();
     await expect(page.getByRole('button', { name: /^Archived cards/ })).toHaveCount(0);
+  });
+
+  test('a card menu opened while the Undo toast shows keeps clear of it, and Edit card opens the editor', async ({
+    page,
+  }) => {
+    await menuClearOfToast(page, 'en', {
+      cards: 'Cards',
+      options: /^Options for/,
+      archive: 'Archive',
+      archived: 'archived',
+      edit: 'Edit card',
+    });
+  });
+});
+
+test.describe('@cards archive in Hebrew', () => {
+  // eslint-disable-next-line no-empty-pattern
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== 'he', 'Hebrew runs in the he project.');
+  });
+
+  test('a card menu opened while the Undo toast shows keeps clear of it, and Edit card opens the editor', async ({
+    page,
+  }) => {
+    await menuClearOfToast(page, 'he', {
+      cards: COPY.he.nav,
+      options: /^אפשרויות עבור/,
+      archive: 'העברה לארכיון',
+      archived: 'הועבר',
+      edit: 'עריכת הכרטיס',
+    });
   });
 });
 

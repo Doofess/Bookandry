@@ -37,6 +37,7 @@ import {
 import { accountDraftOf, accountFromDraft, type AccountDraft } from '@/domain/account-draft';
 import { bankByCode, bankName } from '@/domain/banks';
 import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, type CardDraft } from '@/domain/card-draft';
+import { methodTypeOf } from '@/domain/tx-options';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
@@ -207,7 +208,7 @@ export function OtherMethods() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{displayName(method)}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {t(TYPE_KEY[method.type] as MethodTypeKey)} · {ownerName(method.profileId)}
+                  {t(TYPE_KEY[methodTypeOf(method)] as MethodTypeKey)} · {ownerName(method.profileId)}
                   {archived ? ` · ${t('categories:manage.archived')}` : ''}
                 </span>
               </span>
@@ -473,9 +474,13 @@ export function MethodForm({
             profileId,
             // A card's colour is set here; any other method keeps whatever it had.
             ...(type === 'credit_card' ? { color: color === '' ? null : color } : {}),
-            creditAnnualRate,
-            card: details ?? null,
-            account: accountDetails ?? null,
+            // Only a credit card's details are edited here. Any other card keeps
+            // what it has, including keys a later version wrote: writing null
+            // would wipe a debit, prepaid or gift card's details (spec 13.8).
+            ...(type === 'credit_card' ? { creditAnnualRate, card: details ?? null } : {}),
+            ...(type === 'bank_account' ? { account: accountDetails ?? null } : {}),
+            // A credit card turned into anything else leaves its rate behind.
+            ...(existing.type === 'credit_card' && type !== 'credit_card' ? { creditAnnualRate: null } : {}),
           },
           now,
         );

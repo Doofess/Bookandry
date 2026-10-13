@@ -14,7 +14,7 @@ import { isCardFee } from '@/domain/cards';
 import { categoryHue } from '@/domain/category-hue';
 import { cardKey, methodKey, type MoneyKey } from '@/domain/money-key';
 import { recurrenceModeOf } from '@/domain/tx-edit';
-import { standingViaOf } from '@/domain/tx-options';
+import { methodTypeOf, standingViaOf } from '@/domain/tx-options';
 import { issuerLabel } from '@/features/cards/issuer-label';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
@@ -146,8 +146,9 @@ function cardOf(
   | undefined {
   if (occurrence.transaction.kind !== 'expense' || occurrence.paymentMethodId === undefined) return undefined;
   const method = methods?.get(occurrence.paymentMethodId);
-  if (method === undefined || (method.type !== 'credit_card' && method.type !== 'debit_card'))
-    return undefined;
+  if (method === undefined) return undefined;
+  const type = methodTypeOf(method);
+  if (type !== 'credit_card' && type !== 'debit_card') return undefined;
   const digits = method.card?.lastDigits;
   const key = cardKey(method);
   return digits === undefined
@@ -179,7 +180,7 @@ function destinationOf(
   const text = methodDisplayName(method, t);
   const label = t('feed.into', { name: text });
   if (method.id === CASH_METHOD_ID) return { text, label, key: 'cash' };
-  if (method.type !== 'bank_account') return undefined;
+  if (methodTypeOf(method) !== 'bank_account') return undefined;
   const bank = bankByCode(method.account?.bank ?? '');
   return { text: bank === undefined ? text : bankName(bank, language), label, key: methodKey(method) };
 }

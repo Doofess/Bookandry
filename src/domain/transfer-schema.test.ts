@@ -135,3 +135,77 @@ describe('a category’s hue', () => {
     expect(rowSchemas.categories.safeParse({ ...category, hue: '' }).success).toBe(false);
   });
 });
+
+const METHOD = {
+  id: 'pm-1',
+  profileId: '*',
+  label: 'Future card',
+  isArchived: 0,
+  createdAt: '2026-10-10T00:00:00.000Z',
+  updatedAt: '2026-10-10T00:00:00.000Z',
+} as const;
+
+describe('an open payment-method type', () => {
+  it('accepts a type a later build writes, and keeps it as written', () => {
+    const parsed = rowSchemas.paymentMethods.safeParse({ ...METHOD, type: 'prepaid_card' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.type).toBe('prepaid_card');
+  });
+
+  it('still refuses an empty or over-long type', () => {
+    expect(rowSchemas.paymentMethods.safeParse({ ...METHOD, type: '' }).success).toBe(false);
+    expect(rowSchemas.paymentMethods.safeParse({ ...METHOD, type: 'x'.repeat(31) }).success).toBe(false);
+  });
+});
+
+describe('card keys of every kind', () => {
+  it('parses and keeps funding, gift, prepaid and issuer keys', () => {
+    const card = {
+      funding: 'gift',
+      issuerName: 'BuyMe',
+      loadCardId: 'pm-credit',
+      loadFeeMinor: 350,
+      acceptedAt: '60 chains',
+      issuerBank: '11',
+      productName: 'Dream Card VIP',
+      checked: true,
+    };
+    const parsed = rowSchemas.paymentMethods.parse({ ...METHOD, type: 'debit_card', card });
+    expect(parsed.card).toEqual(card);
+  });
+
+  it('accepts a funding value this build does not know', () => {
+    const parsed = rowSchemas.paymentMethods.safeParse({
+      ...METHOD,
+      type: 'debit_card',
+      card: { funding: 'crypto' },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('refuses an issuing bank that is not a bank code', () => {
+    const parsed = rowSchemas.paymentMethods.safeParse({
+      ...METHOD,
+      type: 'credit_card',
+      card: { issuerBank: 'Leumi' },
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('card keys a later build writes', () => {
+  it('keeps a card key this build does not know, next to the ones it does', () => {
+    const card = { funding: 'gift', futureKey: 1, futureBlock: { nested: 'kept' } };
+    const parsed = rowSchemas.paymentMethods.parse({ ...METHOD, type: 'debit_card', card });
+    expect(parsed.card).toEqual(card);
+  });
+
+  it('still checks every key it knows when an unknown one rides along', () => {
+    const parsed = rowSchemas.paymentMethods.safeParse({
+      ...METHOD,
+      type: 'credit_card',
+      card: { futureKey: 1, issuerBank: 'Leumi' },
+    });
+    expect(parsed.success).toBe(false);
+  });
+});

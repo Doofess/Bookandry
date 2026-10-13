@@ -64,6 +64,16 @@ describe('a pulled card with rates a later release added', () => {
     expect((await handle.db.paymentMethods.get('pm.max'))?.card).toEqual({ ...laterCard, billingDay: 15 });
   });
 
+  it('is applied with a type and card keys a later build writes, stored exactly as received', async () => {
+    const later = {
+      ...record({ funding: 'gift', futureKey: 1 }),
+      row: { ...row({ funding: 'gift', futureKey: 1 }), type: 'prepaid_card' },
+    };
+    const report = await applyPage(handle.db, [later], 1);
+    expect(report).toEqual({ applied: 1, skipped: 0, rejected: 0 });
+    expect(await handle.db.paymentMethods.get('pm.max')).toEqual(later.row);
+  });
+
   it('is still refused when a rate this release knows does not read', async () => {
     const bad = {
       ...laterCard,

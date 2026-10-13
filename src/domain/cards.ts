@@ -26,6 +26,7 @@ import {
 import type { Currency, LocalDate, Minor } from '@/types/money';
 
 import { isInstallmentPlan } from './tx-edit';
+import { methodTypeOf } from './tx-options';
 
 type MonthlyRecurrence = Extract<Recurrence, { type: 'monthly' }>;
 
@@ -50,7 +51,7 @@ export const COMMON_BILLING_DAYS = [2, 10, 15] as const;
 
 /** A card that collects its purchases into a monthly bill, and its billing day. */
 export function billingDayOf(method: PaymentMethod | undefined): number | undefined {
-  if (method?.type !== 'credit_card') return undefined;
+  if (method === undefined || methodTypeOf(method) !== 'credit_card') return undefined;
   const day = method.card?.billingDay;
   return day !== undefined && Number.isInteger(day) && day >= 1 && day <= 31 ? day : undefined;
 }
