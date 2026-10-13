@@ -4,7 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { BINS, CONCEPT_FILE, CONCEPT_SHA256, FRAME_HEIGHT, type Theme } from './config';
+import {
+  BINS,
+  CONCEPT_EMPTY_FILE,
+  CONCEPT_EMPTY_SHA256,
+  CONCEPT_FILE,
+  CONCEPT_SHA256,
+  FRAME_HEIGHT,
+  type Theme,
+} from './config';
 import type { Origin } from './probe';
 
 const FONTSOURCE = path.resolve('node_modules', '@fontsource');
@@ -56,18 +64,30 @@ async function routeFonts(context: BrowserContext): Promise<void> {
   );
 }
 
-export function assertConcept(): void {
-  const hash = crypto.createHash('sha256').update(fs.readFileSync(CONCEPT_FILE)).digest('hex');
-  if (hash !== CONCEPT_SHA256) {
-    throw new Error(`${CONCEPT_FILE} is not the approved concept (sha256 ${hash}). Ask the user.`);
+export type ConceptSource = 'full' | 'empty';
+
+const SOURCES = {
+  full: { file: CONCEPT_FILE, sha256: CONCEPT_SHA256 },
+  empty: { file: CONCEPT_EMPTY_FILE, sha256: CONCEPT_EMPTY_SHA256 },
+} as const;
+
+export function assertConcept(which: ConceptSource = 'full'): void {
+  const { file, sha256 } = SOURCES[which];
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  if (hash !== sha256) {
+    throw new Error(`${file} is not the approved concept (sha256 ${hash}). Ask the user.`);
   }
 }
 
 export type ConceptPage = { readonly context: BrowserContext; readonly page: Page };
 
 /** 1504px wide, so the page's 1440 frames draw at scale 1 (its own fit script). */
-export async function openConcept(browser: Browser, theme: Theme): Promise<ConceptPage> {
-  assertConcept();
+export async function openConcept(
+  browser: Browser,
+  theme: Theme,
+  which: ConceptSource = 'full',
+): Promise<ConceptPage> {
+  assertConcept(which);
   const context = await browser.newContext({
     viewport: { width: 1504, height: 900 },
     colorScheme: theme,
@@ -76,7 +96,7 @@ export async function openConcept(browser: Browser, theme: Theme): Promise<Conce
   });
   await routeFonts(context);
   const page = await context.newPage();
-  await page.goto(pathToFileURL(CONCEPT_FILE).href);
+  await page.goto(pathToFileURL(SOURCES[which].file).href);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
@@ -84,11 +104,12 @@ export async function openConcept(browser: Browser, theme: Theme): Promise<Conce
   return { context, page };
 }
 
-export type ConceptFrame =
+export type ConceptFrame = (
   | { readonly kind: 'desk' }
   | { readonly kind: 'phone'; readonly index: 0 | 1 }
   | { readonly kind: 'element'; readonly selector: string }
-  | { readonly kind: 'dialog' };
+  | { readonly kind: 'dialog' }
+) & { readonly source?: 'empty' };
 
 export type FrameBox = {
   /** Coordinates are measured from here (page coordinates). */

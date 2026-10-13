@@ -111,7 +111,7 @@ export async function runScreen(browser: Browser, screen: ScreenSpec, theme: The
     report.failures.push(line);
   };
 
-  const concept = await openConcept(browser, theme);
+  const concept = await openConcept(browser, theme, screen.concept?.source ?? 'full');
   const app = await openApp(browser, screen, theme);
   try {
     const bins = toBins(await readTokens(concept.page));

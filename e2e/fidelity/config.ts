@@ -22,6 +22,20 @@ export const CONCEPT_FILE =
 /** money-sheets-bold-v2.html as the user approved it on 2026-10-09. */
 export const CONCEPT_SHA256 = 'bac24384aa015c1c2e02e82542166bece5c59aeb74ec022b7ce970c436687ac5';
 
+/** The empty-account concept, drawn from the approved one (empty accounts have no approved picture otherwise). */
+export const CONCEPT_EMPTY_FILE =
+  process.env['FIDELITY_CONCEPT_EMPTY'] ??
+  path.join(
+    os.homedir(),
+    '.bookandry-private',
+    'design-audit',
+    'concept-source',
+    'money-sheets-bold-empty.html',
+  );
+
+/** money-sheets-bold-empty.html as drawn on 2026-10-10; the user approves it before screens are built to it. */
+export const CONCEPT_EMPTY_SHA256 = '8449080c0746c5248b4aa4d41c5337eb041d364a5ca5dda0a4ba76a9fbfaeb3b';
+
 /** Set once per `playwright test` in playwright.config.ts, so every worker writes to one folder. */
 export const RUN_ID = process.env['FIDELITY_RUN'] ?? 'adhoc';
 
