@@ -965,7 +965,8 @@ describe('the business type row', () => {
   ) {
     await user.click(screen.getByRole('button', { name: `Business type ${current}` }));
     const popout = await screen.findByRole('dialog', { name: 'Business type' });
-    await user.type(within(popout).getByPlaceholderText('Search by name or code'), query);
+    await user.click(within(popout).getByPlaceholderText('Search by name or code'));
+    await user.paste(query);
     await user.click(within(popout).getByRole('option', { name }));
   }
 

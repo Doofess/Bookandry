@@ -1,17 +1,21 @@
 import { cn } from 'cn';
 import type { TFunction } from 'i18next';
-import { Banknote, CreditCard, HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
+import { HandCoins, Layers, MoreHorizontal, Percent, Repeat } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { BankMark } from '@/components/brand-mark';
-import { CategoryChip } from '@/components/category-icon';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
+import { Chip } from '@/components/ui/chip';
+import { HuePill } from '@/components/ui/hue-pill';
+import { bankByCode, bankName } from '@/domain/banks';
 import { isCardFee } from '@/domain/cards';
+import { categoryHue } from '@/domain/category-hue';
+import { cardKey, methodKey, type MoneyKey } from '@/domain/money-key';
 import { recurrenceModeOf } from '@/domain/tx-edit';
-import { standingViaOf } from '@/domain/tx-options';
+import { methodTypeOf, standingViaOf } from '@/domain/tx-options';
+import { issuerLabel } from '@/features/cards/issuer-label';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
 import { formatLocalDate, monthsBetween } from '@/lib/dates';
@@ -49,24 +53,28 @@ export function DayHeader({
   isToday,
   currency,
   className,
+  bare = false,
 }: {
   date: LocalDate;
   netMinor: number;
   isToday: boolean;
   currency: Currency;
   className?: string;
+  /** The board's short list draws the concept's heading: the day alone, no net total. */
+  bare?: boolean;
 }) {
   const { t, i18n } = useTranslation();
 
   return (
     <div
       aria-hidden="true"
+      data-slot="day-heading"
       className={cn(
-        // OPAQUE, not bg-background/95. A pinned header sits directly over a
-        // half-scrolled row, and at 95% the row's text and chips bleed through
-        // it - which reads as a rendering glitch rather than as translucency.
-        'flex items-baseline justify-between gap-2 bg-background px-1 py-2',
-        'text-sm font-medium text-muted-foreground',
+        // On the sheet's own colour (opaque, as before: a pinned heading sits over a half-scrolled row),
+        // 600 at 14px over the concept's 2px line.
+        'flex items-baseline justify-between gap-2 border-be-2 border-border px-0 pt-4 pb-1.5',
+        bare ? 'bg-transparent' : 'bg-card',
+        'text-sm font-semibold',
         className,
       )}
     >
@@ -75,7 +83,15 @@ export function DayHeader({
           ? t('feed.today')
           : formatLocalDate(date, i18n.language, { weekday: 'short', day: 'numeric', month: 'short' })}
       </span>
-      <Money minor={netMinor} currency={currency} signMode="always" announce={false} className="text-xs" />
+      {bare ? null : (
+        <Money
+          minor={netMinor}
+          currency={currency}
+          signMode="always"
+          announce={false}
+          className="text-xs font-light"
+        />
+      )}
     </div>
   );
 }
@@ -124,15 +140,25 @@ function cardOf(
   occurrence: Occurrence,
   methods: ReadonlyMap<string, PaymentMethod> | undefined,
   t: TFunction<['common', 'categories']>,
-): { readonly text: string; readonly label: string; readonly name: string } | undefined {
+  tCards: TFunction<'cards'>,
+):
+  | { readonly text: string; readonly label: string; readonly name: string; readonly key: MoneyKey }
+  | undefined {
   if (occurrence.transaction.kind !== 'expense' || occurrence.paymentMethodId === undefined) return undefined;
   const method = methods?.get(occurrence.paymentMethodId);
-  if (method === undefined || (method.type !== 'credit_card' && method.type !== 'debit_card'))
-    return undefined;
+  if (method === undefined) return undefined;
+  const type = methodTypeOf(method);
+  if (type !== 'credit_card' && type !== 'debit_card') return undefined;
   const digits = method.card?.lastDigits;
+  const key = cardKey(method);
   return digits === undefined
-    ? { text: method.label, label: t('feed.paidWith', { name: method.label }), name: method.label }
-    : { text: digits, label: t('feed.cardEnding', { digits }), name: method.label };
+    ? { text: method.label, label: t('feed.paidWith', { name: method.label }), name: method.label, key }
+    : {
+        text: `${issuerLabel(method, tCards)} ${digits}`,
+        label: t('feed.cardEnding', { digits }),
+        name: method.label,
+        key,
+      };
 }
 
 /**
@@ -146,17 +172,17 @@ function destinationOf(
   occurrence: Occurrence,
   methods: ReadonlyMap<string, PaymentMethod> | undefined,
   t: TFunction<['common', 'profiles']>,
-):
-  | { readonly kind: 'cash'; readonly text: string; readonly label: string }
-  | { readonly kind: 'bank'; readonly bank: string; readonly text: string; readonly label: string }
-  | undefined {
+  language: string,
+): { readonly text: string; readonly label: string; readonly key: MoneyKey } | undefined {
   if (occurrence.transaction.kind !== 'income' || occurrence.destinationId === undefined) return undefined;
   const method = methods?.get(occurrence.destinationId);
   if (method === undefined) return undefined;
   const text = methodDisplayName(method, t);
-  if (method.id === CASH_METHOD_ID) return { kind: 'cash', text, label: t('feed.into', { name: text }) };
-  if (method.type !== 'bank_account') return undefined;
-  return { kind: 'bank', bank: method.account?.bank ?? '', text, label: t('feed.into', { name: text }) };
+  const label = t('feed.into', { name: text });
+  if (method.id === CASH_METHOD_ID) return { text, label, key: 'cash' };
+  if (methodTypeOf(method) !== 'bank_account') return undefined;
+  const bank = bankByCode(method.account?.bank ?? '');
+  return { text: bank === undefined ? text : bankName(bank, language), label, key: methodKey(method) };
 }
 
 /**
@@ -199,6 +225,7 @@ export const TransactionRow = memo(function TransactionRow({
   const { t, i18n } = useTranslation(['common', 'categories']);
   // The method's own namespace too, for cash's name in the UI language.
   const { t: tMethod } = useTranslation(['common', 'profiles']);
+  const { t: tCards } = useTranslation('cards');
 
   const category = context.categories.get(occurrence.categoryId);
   const categoryName = category === undefined ? occurrence.categoryId : categoryDisplayName(category, t);
@@ -206,8 +233,8 @@ export const TransactionRow = memo(function TransactionRow({
   const profile = context.profiles.get(occurrence.transaction.profileId);
   const isIncome = occurrence.transaction.kind === 'income';
   const type = rowType(occurrence, t, context.methods);
-  const card = cardOf(occurrence, context.methods, t);
-  const destination = destinationOf(occurrence, context.methods, tMethod);
+  const card = cardOf(occurrence, context.methods, t, tCards);
+  const destination = destinationOf(occurrence, context.methods, tMethod, i18n.language);
   const signed = isIncome ? occurrence.money.baseAmountMinor : -occurrence.money.baseAmountMinor;
 
   // The date is part of the NAME, so the row is self-describing when the
@@ -240,8 +267,7 @@ export const TransactionRow = memo(function TransactionRow({
       aria-setsize={setSize}
       className={cn(
         // `relative`: the row's own button is stretched over all of it (see below).
-        // The chip's 44px target carries its own 4px inset, so the start padding gives it back.
-        'relative flex items-center gap-1 rounded-xl py-2.5 ps-0 pe-1 sm:gap-3 sm:ps-2 sm:pe-3',
+        'relative flex min-h-16 items-center gap-3.5 border-be-2 border-border py-2 max-sm:gap-2',
         occurrence.isSkipped && 'opacity-50',
       )}
       data-projected={occurrence.isProjected ? 'true' : undefined}
@@ -255,8 +281,8 @@ export const TransactionRow = memo(function TransactionRow({
         The raised ones are `relative z-10`, above that button.
       */}
       {onCategory === undefined || occurrence.isSkipped || isCardFee(occurrence) ? (
-        <span className="flex size-11 shrink-0 items-center justify-center" aria-hidden="true">
-          <CategoryChip icon={category?.icon ?? 'Circle'} />
+        <span className="-ms-3.75 flex size-11 shrink-0 items-center justify-center" aria-hidden="true">
+          <HuePill hue={category === undefined ? undefined : categoryHue(category)} />
         </span>
       ) : (
         <button
@@ -265,9 +291,9 @@ export const TransactionRow = memo(function TransactionRow({
           onClick={(event) => {
             onCategory(occurrence, event.currentTarget);
           }}
-          className="relative z-10 flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+          className="relative z-10 -ms-3.75 flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
         >
-          <CategoryChip icon={category?.icon ?? 'Circle'} />
+          <HuePill hue={category === undefined ? undefined : categoryHue(category)} />
         </button>
       )}
 
@@ -294,14 +320,38 @@ export const TransactionRow = memo(function TransactionRow({
       */}
       <span className="pointer-events-none flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
         <span className="min-w-0 flex-1" data-testid="row-text">
-          <span className="block truncate text-sm font-medium" aria-hidden="true">
+          <span
+            data-slot="row-title"
+            className="block truncate text-[1.0625rem] leading-[1.3] font-semibold"
+            aria-hidden="true"
+          >
             {occurrence.note ?? categoryName}
           </span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="mt-0.75 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm font-light text-muted-foreground">
             {occurrence.note === undefined ? null : (
               <span className="min-w-0 truncate" aria-hidden="true">
                 {categoryName}
               </span>
+            )}
+            {card === undefined ? null : (
+              <Chip
+                moneyKey={card.key}
+                data-testid="row-card"
+                title={card.name}
+                className="max-w-full truncate"
+              >
+                {card.text}
+              </Chip>
+            )}
+            {destination === undefined ? null : (
+              <Chip
+                moneyKey={destination.key}
+                data-testid="row-destination"
+                title={destination.text}
+                className="max-w-full truncate"
+              >
+                {destination.text}
+              </Chip>
             )}
             {type === undefined ? null : (
               <span
@@ -366,63 +416,31 @@ export const TransactionRow = memo(function TransactionRow({
         ) : null}
 
         {/*
-          The card under the amount, as a bank's app shows it - not among the
-          chips, where a plan's "payment 5 of 12" and "not counted yet" already
-          fill a phone's width.
+          Always present, never hover-revealed, and 44x44.
+          Swipe is invisible to assistive tech and hover is invisible to a
+          keyboard, so a row whose only actions live behind either has no actions
+          at all for a large share of users.
         */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="pointer-events-auto relative z-10 size-11 shrink-0 max-sm:-mx-1"
+          data-testid="row-more"
+          aria-label={t('a11y.rowActions', { name: label })}
+          onClick={(event) => onMenu?.(occurrence, event.currentTarget)}
+        >
+          <MoreHorizontal className="size-4" aria-hidden="true" />
+        </Button>
         <span className="flex shrink-0 flex-col items-end" data-testid="row-amount" aria-hidden="true">
           <Money
             minor={signed}
             currency={context.currency}
             announce={false}
-            className={cn('text-sm font-semibold', isIncome ? 'text-income' : 'text-foreground')}
+            className={cn('text-[1.0625rem] font-medium', isIncome ? 'text-income' : 'text-foreground')}
           />
-          {card === undefined ? null : (
-            <span
-              className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground max-sm:max-w-14"
-              data-testid="row-card"
-              // Cut short below sm. The row's own button lies over it, so this
-              // title no longer shows on hover; only tools that read it see it.
-              title={card.name}
-            >
-              <CreditCard className="size-3 shrink-0" aria-hidden="true" />
-              <span className="truncate tabular-nums">{card.text}</span>
-            </span>
-          )}
-          {destination === undefined ? null : (
-            <span
-              className="inline-flex max-w-24 items-center gap-1 text-[11px] text-muted-foreground max-sm:max-w-14"
-              data-testid="row-destination"
-              title={destination.text}
-            >
-              {destination.kind === 'cash' ? (
-                <Banknote className="size-3 shrink-0" aria-hidden="true" />
-              ) : (
-                <BankMark code={destination.bank} size="xs" />
-              )}
-              <span className="truncate">{destination.text}</span>
-            </span>
-          )}
         </span>
       </span>
-
-      {/*
-        Always present, never hover-revealed, and 44x44.
-        Swipe is invisible to assistive tech and hover is invisible to a
-        keyboard, so a row whose only actions live behind either has no actions
-        at all for a large share of users.
-      */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="relative z-10 size-11 shrink-0 max-sm:-mx-1"
-        data-testid="row-more"
-        aria-label={t('a11y.rowActions', { name: label })}
-        onClick={(event) => onMenu?.(occurrence, event.currentTarget)}
-      >
-        <MoreHorizontal className="size-4" aria-hidden="true" />
-      </Button>
     </div>
   );
 });

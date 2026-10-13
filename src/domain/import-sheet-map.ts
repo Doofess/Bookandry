@@ -51,8 +51,8 @@ const HEADERS: Readonly<Record<keyof Omit<ColumnMap, 'headerRow' | 'dec' | 'df'>
   cur: ['מטבע עסקה', 'מטבע מקור', 'מטבע', 'currency'],
   chg: ['סכום חיוב', 'סכום לחיוב', 'סכום החיוב', 'charged amount', 'charge amount'],
   chgCur: ['מטבע חיוב', 'מטבע החיוב', 'charge currency'],
-  chgDate: ['תאריך חיוב', 'מועד חיוב', 'charge date', 'billing date'],
-  plan: ['פירוט נוסף', 'הערות', 'סוג עסקה', 'פרטי עסקה', 'notes', 'type'],
+  chgDate: ['תאריך חיוב', 'תאריך החיוב', 'מועד חיוב', 'charge date', 'billing date'],
+  plan: ['פירוט נוסף', 'הערות', 'סוג עסקה', 'סוג העסקה', 'פרטי עסקה', 'notes', 'type'],
   card: [
     '4 ספרות אחרונות של כרטיס האשראי',
     '4 ספרות אחרונות',
@@ -102,10 +102,14 @@ function fieldOf(cell: Cell): keyof typeof HEADERS | undefined {
 export function mapByDictionary(rows: readonly (readonly Cell[])[], scan = 30): ColumnMap | undefined {
   for (let r = 0; r < Math.min(scan, rows.length); r += 1) {
     const found: Partial<Record<keyof typeof HEADERS, number>> = {};
+    const plans: number[] = [];
     (rows[r] ?? []).forEach((cell, c) => {
       const field = fieldOf(cell);
+      if (field === 'plan') plans.push(c);
       if (field !== undefined && found[field] === undefined) found[field] = c;
     });
+    // Several columns could hold the instalment text ("סוג עסקה", "הערות"): the one whose cells do.
+    if (plans.length > 1) found.plan = planColumn(rows, r, plans);
     const hasMoney = found.amt !== undefined || found.debit !== undefined || found.credit !== undefined;
     if (found.date === undefined || found.desc === undefined || !hasMoney) continue;
     return {
@@ -128,6 +132,22 @@ export function mapByDictionary(rows: readonly (readonly Cell[])[], scan = 30): 
     };
   }
   return undefined;
+}
+
+/** Of the columns that could hold "תשלום N מתוך M", the one whose cells say it most; the first on a tie. */
+function planColumn(rows: readonly (readonly Cell[])[], header: number, columns: readonly number[]): number {
+  let best = columns[0] ?? 0;
+  let most = 0;
+  for (const column of columns) {
+    const hits = rows
+      .slice(header + 1)
+      .filter((row) => planFromText(String(row[column] ?? '')) !== undefined).length;
+    if (hits > most) {
+      best = column;
+      most = hits;
+    }
+  }
+  return best;
 }
 
 /**
@@ -292,7 +312,31 @@ export function readSheet(
     const flags: Flag[] = [];
     let kind: FoundRow['kind'] = 'expense';
     let amount: number | undefined;
-    if (currency !== undefined) {
+    const chargedCurrency =
+      map.chg === null
+        ? undefined
+        : map.chgCur === null
+          ? ctx.base
+          : currencyFromText(text(row[map.chgCur]), ctx.base, ctx.known);
+    const chargedMinor =
+      map.chg === null || chargedCurrency === undefined
+        ? undefined
+        : cellMoney(row[map.chg] ?? null, chargedCurrency, map.dec);
+    const planText = map.plan === null ? undefined : planFromText(text(row[map.plan]));
+    /*
+     * Both in the base currency, the charge is what was paid: a card export's
+     * original can be before VAT, or a whole loan.
+     */
+    const byCharge =
+      planText === undefined &&
+      currency === ctx.base &&
+      chargedCurrency === ctx.base &&
+      chargedMinor !== undefined &&
+      chargedMinor !== 0;
+    if (byCharge) {
+      amount = Math.abs(chargedMinor);
+      if (chargedMinor < 0) kind = 'income';
+    } else if (currency !== undefined) {
       if (map.amt !== null) amount = cellMoney(row[map.amt] ?? null, currency, map.dec);
       if (amount === undefined || amount === 0) {
         const debit = map.debit === null ? undefined : cellMoney(row[map.debit] ?? null, currency, map.dec);
@@ -316,17 +360,6 @@ export function readSheet(
     if (date === undefined) flags.push('date_unreadable');
     if (flags.length > 0) unreadable += 1;
 
-    const chargedCurrency =
-      map.chg === null
-        ? undefined
-        : map.chgCur === null
-          ? ctx.base
-          : currencyFromText(text(row[map.chgCur]), ctx.base, ctx.known);
-    const chargedMinor =
-      map.chg === null || chargedCurrency === undefined
-        ? undefined
-        : cellMoney(row[map.chg] ?? null, chargedCurrency, map.dec);
-    const planText = map.plan === null ? undefined : planFromText(text(row[map.plan]));
     /*
      * An instalment row on a card export: the transaction amount is the whole
      * deal, the charged amount is this month's payment. The row is the

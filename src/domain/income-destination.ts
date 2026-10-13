@@ -2,7 +2,7 @@ import { addMonthsClamped, compareLocal } from '@/lib/dates';
 import { CASH_METHOD_ID, isActiveMethod, type Occurrence, type PaymentMethod } from '@/types/domain';
 import type { LocalDate } from '@/types/money';
 
-import { methodOwnedBy } from './tx-options';
+import { methodOwnedBy, methodTypeOf } from './tx-options';
 
 /**
  * Where income lands: "Goes to" on the income form, the feed row's mark, and
@@ -15,7 +15,7 @@ import { methodOwnedBy } from './tx-options';
 
 /** A bank account, or the built-in cash. */
 export function isDestinationType(method: Pick<PaymentMethod, 'id' | 'type'>): boolean {
-  return method.id === CASH_METHOD_ID || method.type === 'bank_account';
+  return method.id === CASH_METHOD_ID || methodTypeOf(method) === 'bank_account';
 }
 
 /**

@@ -33,7 +33,7 @@ const NOW = '2026-10-06T00:00:00.000Z' as IsoInstant;
 const wireCard = (over: Partial<WireCard> = {}): WireCard => ({
   s: 0,
   n: 'max executive',
-  l4: '3214',
+  l4: '5555',
   nw: 'מאסטרקארד',
   is: 'MAX',
   cr: '5.9%',
@@ -67,7 +67,7 @@ describe('reading a card', () => {
   it('reads Max’s card list: digits, network, issuer, and קרדיט as prime plus its margin', () => {
     expect(card()).toMatchObject({
       label: 'max executive',
-      lastDigits: '3214',
+      lastDigits: '5555',
       network: 'mastercard',
       issuer: 'max',
       credit: { basis: 'prime', margin: '1.15' },
@@ -113,10 +113,10 @@ describe('reading a card', () => {
 
 describe('checking cards', () => {
   it('compares two reads card by card', () => {
-    const first = [card(), card({ n: 'Dream Card VIP', l4: '0427', cr: '14.65%' })];
+    const first = [card(), card({ n: 'Dream Card VIP', l4: '0088', cr: '14.65%' })];
     const second = [
       card(),
-      card({ n: 'Dream Card VIP', l4: '0427', cr: '14.56%' }),
+      card({ n: 'Dream Card VIP', l4: '0088', cr: '14.56%' }),
       card({ n: 'X', l4: '9999' }),
     ];
     const out = combineCardReads(first, second);
@@ -126,9 +126,9 @@ describe('checking cards', () => {
   });
 
   it('finds a text card’s digits and rate in the text', () => {
-    expect(groundCards([card()], 'max executive 3214 קרדיט 5.9%')[0]?.flags).toEqual([]);
+    expect(groundCards([card()], 'max executive 5555 קרדיט 5.9%')[0]?.flags).toEqual([]);
     expect(groundCards([card()], 'max executive 3215 קרדיט 5.9%')[0]?.flags).toEqual(['not_in_source']);
-    expect(groundCards([card()], 'max executive 3214 קרדיט 6.9%')[0]?.flags).toEqual(['not_in_source']);
+    expect(groundCards([card()], 'max executive 5555 קרדיט 6.9%')[0]?.flags).toEqual(['not_in_source']);
   });
 
   it('keeps one entry per card across files, filling in what the first lacked', () => {
@@ -143,7 +143,7 @@ describe('checking cards', () => {
 });
 
 describe('the household’s cards', () => {
-  const visa = method({ id: 'visa', label: 'max executive', card: { lastDigits: '3214', billingDay: 2 } });
+  const visa = method({ id: 'visa', label: 'max executive', card: { lastDigits: '5555', billingDay: 2 } });
 
   it('matches a found card by its last digits, else by name', () => {
     expect(existingCard(card(), [visa])?.id).toBe('visa');
@@ -152,13 +152,13 @@ describe('the household’s cards', () => {
     expect(existingCard(card(), [named])?.id).toBe('named');
     expect(existingCard(card({ l4: '9999' }), [visa])).toBeUndefined();
     expect(
-      existingCard(card(), [method({ type: 'debit_card', card: { lastDigits: '3214' } })]),
+      existingCard(card(), [method({ type: 'debit_card', card: { lastDigits: '5555' } })]),
     ).toBeUndefined();
   });
 
   it('plans a new card, and an update with only what is new', () => {
     expect(planCard(card(), undefined)).toEqual({
-      card: { lastDigits: '3214', network: 'mastercard', issuer: 'max', creditPrimeMargin: '1.15' },
+      card: { lastDigits: '5555', network: 'mastercard', issuer: 'max', creditPrimeMargin: '1.15' },
       creditAnnualRate: null,
       changes: ['new'],
     });
@@ -170,7 +170,7 @@ describe('the household’s cards', () => {
     expect(fixed.creditAnnualRate).toBe('5.9');
     const same = method({
       card: {
-        lastDigits: '3214',
+        lastDigits: '5555',
         network: 'mastercard',
         issuer: 'max',
         creditPrimeMargin: '1.15',
@@ -305,7 +305,7 @@ describe('a statement of one card', () => {
       ],
       [header],
     );
-    expect(plain?.statementCard).toEqual({ label: 'max executive', lastDigits: '3214' });
+    expect(plain?.statementCard).toEqual({ label: 'max executive', lastDigits: '5555' });
     expect(ownDigits?.statementCard).toBeUndefined();
     expect(named?.statementCard).toBeUndefined();
     expect(refund?.statementCard).toBeUndefined();
@@ -318,7 +318,7 @@ describe('a statement of one card', () => {
       [row(0)],
       [
         { ...card(), file: 0 },
-        { ...card({ l4: '0427', n: 'Dream Card' }), file: 0 },
+        { ...card({ l4: '0088', n: 'Dream Card' }), file: 0 },
       ],
     );
     expect(one?.statementCard).toBeUndefined();
@@ -332,6 +332,6 @@ describe('a statement of one card', () => {
         { ...card(), id: 'again', file: 0 },
       ],
     );
-    expect(one?.statementCard?.lastDigits).toBe('3214');
+    expect(one?.statementCard?.lastDigits).toBe('5555');
   });
 });

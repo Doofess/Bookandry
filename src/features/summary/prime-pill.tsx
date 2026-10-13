@@ -14,7 +14,7 @@ import { formatLocalDate } from '@/lib/dates';
  * the strip under the cards used to say: the Bank of Israel rate it is built
  * on, and the date it is as of or the next decision that might move it.
  */
-export function PrimePill() {
+export function PrimePill({ tone = 'panel' }: { readonly tone?: 'panel' | 'paper' }) {
   const { t, i18n } = useTranslation();
   const prime = usePrime();
   const day = (date: Parameters<typeof formatLocalDate>[0]) =>
@@ -30,7 +30,12 @@ export function PrimePill() {
     <Popover>
       <PopoverTrigger
         data-testid="prime-pill"
-        className={cn(buttonVariants({ variant: 'ghost' }), panelPill)}
+        className={cn(
+          buttonVariants({ variant: 'ghost' }),
+          tone === 'panel'
+            ? panelPill
+            : 'h-9 gap-2 rounded-full border-border bg-card px-3.5 text-sm shadow-xs hover:bg-muted',
+        )}
       >
         {t('prime.pill')}
         <Percent rate={prime.primeRate} className="font-semibold tabular-nums" />

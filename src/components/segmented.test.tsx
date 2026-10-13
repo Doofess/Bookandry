@@ -225,3 +225,28 @@ describe('options with an icon', () => {
     expect(onChange).toHaveBeenLastCalledWith('none');
   });
 });
+
+describe('the pill look', () => {
+  it('draws 44px outline pills, the chosen one ink-filled, and stays a radiogroup', () => {
+    renderWithProviders(
+      <div>
+        <span id="fruit-pill">Fruit</span>
+        <Segmented<Fruit>
+          value="pear"
+          onChange={vi.fn()}
+          options={OPTIONS}
+          labelledBy="fruit-pill"
+          look="pill"
+        />
+      </div>,
+    );
+
+    expect(screen.getByRole('radiogroup', { name: 'Fruit' })).toBeInTheDocument();
+    const radios = screen.getAllByRole('radio');
+    expect(radios).toHaveLength(3);
+    for (const radio of radios) expect(radio).toHaveClass('min-h-11', 'rounded-full', 'border-2');
+    const chosen = screen.getByRole('radio', { name: 'Pear' });
+    expect(chosen).toHaveClass('bg-press', 'text-on-press', 'border-press');
+    expect(screen.getByRole('radio', { name: 'Apple' })).not.toHaveClass('bg-press');
+  });
+});

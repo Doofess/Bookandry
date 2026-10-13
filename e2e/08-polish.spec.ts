@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { ADD_EXPENSE, openAddSheet } from './support/add';
+import { ADD_EXPENSE, addTrigger, openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
 
 /**
@@ -20,6 +20,24 @@ import { completeFirstRun } from './support/seed';
 test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'en', 'Viewport is set explicitly.');
 });
+
+/**
+ * The feed's rows sit below the board's other sheets now, so the page is only as tall as the
+ * board once the list has drawn: wait for a row before scrolling or looking for a row's buttons.
+ */
+const rowsDrawn = async (page: Page): Promise<void> => {
+  // Rows draw only near the viewport, so on a phone the sheet's own height is the sign the list has been measured.
+  await expect
+    .poll(async () => (await page.locator('[data-slot="transactions-sheet"]').boundingBox())?.height ?? 0)
+    .toBeGreaterThan(400);
+};
+
+/** Bring the transactions sheet on screen, where its rows draw (the virtual list renders what is near the viewport). */
+const toRows = async (page: Page): Promise<void> => {
+  await rowsDrawn(page);
+  await page.locator('[data-slot="transactions-sheet"]').scrollIntoViewIfNeeded();
+  await expect(page.locator('[role="listitem"][data-key]').first()).toBeAttached();
+};
 
 const ROUTES = ['/', '/chart', '/cards', '/settings'] as const;
 
@@ -54,26 +72,32 @@ for (const size of WIDTHS) {
       await completeFirstRun(page, 'he');
       await page.goto('/');
       await expect(page.getByTestId('feed-header')).toBeVisible();
+      await expect(page.getByTestId('balance-amount')).not.toHaveAttribute('aria-busy', 'true');
       await page.evaluate(() => document.fonts.ready);
 
       // Nothing sideways, with the longest copy the panel carries.
       const overflow = await page.evaluate(() => document.body.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(1);
 
-      // Every pill on the panel sits inside the viewport: they wrap rather than overflow.
+      // Every pill on the hero sheet sits inside the viewport: they wrap rather than overflow.
       const outside = await page.evaluate(
         () =>
-          [...document.querySelectorAll('[data-slot="brand-panel"] button')]
+          [...document.querySelectorAll('[data-slot="balance-sheet"] button')]
             .map((el) => el.getBoundingClientRect())
             .filter((box) => box.width > 0 && (box.left < 0 || box.right > window.innerWidth + 0.5)).length,
       );
       expect(outside).toBe(0);
 
-      // 2.75rem (44px) on a phone, a step down (2.25rem, 36px) below 360px.
-      const size = await page
-        .getByTestId('balance-amount')
-        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-      expect(size).toBe(page.viewportSize()!.width < 360 ? 36 : 44);
+      // The balance is the huge numeral now (Task 7): it fits the sheet's column, never under 28px.
+      const numeral = await page.locator('[data-testid="balance-amount"] [data-numeral]').evaluate((el) => ({
+        size: parseFloat(getComputedStyle(el).fontSize),
+        right: el.getBoundingClientRect().right,
+        left: el.getBoundingClientRect().left,
+        width: window.innerWidth,
+      }));
+      expect(numeral.size).toBeGreaterThanOrEqual(28);
+      expect(numeral.left).toBeGreaterThanOrEqual(0);
+      expect(numeral.right).toBeLessThanOrEqual(numeral.width + 0.5);
     });
 
     test('keeps every tap target at 44px', async ({ page }) => {
@@ -112,7 +136,8 @@ for (const size of WIDTHS) {
         await completeFirstRun(page, lang);
 
         const pills = page.getByTestId('panel-pills').locator(':scope > *');
-        await expect(pills).toHaveCount(3);
+        // The month picker moved into the month sheet: the people and prime pills stay here.
+        await expect(pills).toHaveCount(2);
 
         const centres: number[] = [];
         for (const pill of await pills.all()) {
@@ -140,7 +165,7 @@ for (const size of WIDTHS) {
         const clashes = await page.evaluate(() => {
           const bad: string[] = [];
           const parts: [string, string][] = [
-            ['category chip', '[data-slot="category-chip"]'],
+            ['category pill', '[data-slot="hue-pill"]'],
             ['text', '[data-testid="row-text"]'],
             ['avatar', '[data-person]'],
             ['amount', '[data-testid="row-amount"]'],
@@ -191,14 +216,17 @@ test.describe('@collapse the summary header', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
   const scrollTo = async (page: Page, y: number): Promise<void> => {
+    await rowsDrawn(page);
     await page.evaluate((to) => {
       window.scrollTo(0, to);
     }, y);
-    // Two frames: the listener coalesces into requestAnimationFrame.
+    // Two frames for the listener, which coalesces into requestAnimationFrame, and two for the virtualizer's render after it (a busy machine needs both).
     await page.evaluate(
       async () =>
         new Promise((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(resolve));
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+          );
         }),
     );
   };
@@ -319,9 +347,19 @@ test.describe('@collapse the summary header', () => {
      * the reader is not.
      */
     await completeFirstRun(page, 'en');
+    await rowsDrawn(page);
+    // The board's sheet shows the newest eight; the round arrow opens the whole month, which is the list that pins.
+    await page.getByRole('button', { name: 'All transactions' }).click();
+    await page.locator('[data-slot="transactions-sheet"] [role="list"][style*="height"]').waitFor();
+    // The list is below the board's other sheets: stop with its top 300px down the screen, above the pinned slot, so its rows draw and none is pinned yet.
+    await page.evaluate(() => {
+      const list = document.querySelector('[data-slot="transactions-sheet"] [role="list"]');
+      if (list !== null) window.scrollTo(0, list.getBoundingClientRect().top + window.scrollY - 300);
+    });
+    await expect(page.locator('[data-index="0"]')).toBeAttached();
 
     const start = await page.evaluate(() => {
-      const list = document.querySelector('[role="list"]');
+      const list = document.querySelector('[data-slot="transactions-sheet"] [role="list"]');
       return list === null ? 0 : list.getBoundingClientRect().top + window.scrollY;
     });
     expect(start).toBeGreaterThan(0);
@@ -332,7 +370,7 @@ test.describe('@collapse the summary header', () => {
     // Item 0 is the pinned header and never shifts; it is the SECOND item that
     // would be dragged by a misplaced reference line.
     const offsets = await page.evaluate(() => {
-      const list = document.querySelector('[role="list"]');
+      const list = document.querySelector('[data-slot="transactions-sheet"] [role="list"]');
       const top = (index: number): number | undefined => {
         const item = document.querySelector(`[data-index="${String(index)}"]`);
         return list === null || item === null
@@ -342,7 +380,7 @@ test.describe('@collapse the summary header', () => {
       return { first: top(0), second: top(1) };
     });
     expect(offsets.first).toBe(0);
-    expect(offsets.second).toBe(36);
+    expect(offsets.second).toBe(45);
 
     const probe = async (y: number) => {
       await scrollTo(page, y);
@@ -423,10 +461,13 @@ test.describe('@collapse on the desktop rail', () => {
      * being broken rather than as a header collapsing.
      */
     await completeFirstRun(page, 'en');
+    await rowsDrawn(page);
 
-    const column = await page.locator('main section').boundingBox();
+    const column = await page.locator('main [data-slot="board"]').boundingBox();
     await page.evaluate(() => {
-      window.scrollTo(0, 600);
+      // Past the balance sheet, wherever the board puts its foot.
+      const header = document.querySelector('[data-testid="feed-header"]');
+      window.scrollTo(0, (header?.getBoundingClientRect().bottom ?? 0) + window.scrollY + 40);
     });
 
     const row = await page.getByTestId('collapsed-summary').locator('button').boundingBox();
@@ -436,6 +477,23 @@ test.describe('@collapse on the desktop rail', () => {
 
     expect(Math.abs(columnCentre - rowCentre)).toBeLessThanOrEqual(2);
   });
+
+  test('starts after the rail, so the transparent rail never sits on the night bar', async ({ page }) => {
+    await completeFirstRun(page, 'en');
+    await rowsDrawn(page);
+    await page.evaluate(() => {
+      // Past the balance sheet, wherever the board puts its foot.
+      const header = document.querySelector('[data-testid="feed-header"]');
+      window.scrollTo(0, (header?.getBoundingClientRect().bottom ?? 0) + window.scrollY + 40);
+    });
+    const bar = page.getByTestId('collapsed-summary');
+    await expect(bar).toBeVisible();
+    const box = await bar.boundingBox();
+    const rail = await page.locator('nav').first().boundingBox();
+    if (box === null || rail === null) throw new Error('nothing to measure');
+    // Logical start edge: the bar must not extend under the rail.
+    expect(box.x).toBeGreaterThanOrEqual(rail.x + rail.width - 1);
+  });
 });
 
 test.describe('@collapse the collapsed bar’s pop-out', () => {
@@ -443,8 +501,11 @@ test.describe('@collapse the collapsed bar’s pop-out', () => {
 
   test('points its arrow at the balance figure, not at the word Balance', async ({ page }) => {
     await completeFirstRun(page, 'en');
+    await rowsDrawn(page);
     await page.evaluate(() => {
-      window.scrollTo(0, 600);
+      // Past the balance sheet, wherever the board puts its foot.
+      const header = document.querySelector('[data-testid="feed-header"]');
+      window.scrollTo(0, (header?.getBoundingClientRect().bottom ?? 0) + window.scrollY + 40);
     });
     const bar = page.getByTestId('collapsed-summary');
     await expect(bar).toBeVisible();
@@ -582,6 +643,8 @@ test.describe('@popouts not counted yet', () => {
   async function nextMonthChip(page: Page) {
     await completeFirstRun(page, 'en');
     await page.getByRole('button', { name: 'Next month' }).click();
+    // The list is below the board's other sheets now: bring it on screen, where its rows draw and can be hit.
+    await toRows(page);
     const chip = page.getByRole('button', { name: 'Not counted yet. Change it' }).nth(1);
     await expect(chip).toBeVisible();
     const row = chip.locator('xpath=ancestor::*[@role="listitem"]');
@@ -673,6 +736,8 @@ test.describe('@keyboard walkthrough', () => {
      * indistinguishable from a lost cursor.
      */
     await completeFirstRun(page, 'en');
+    // Add stays disabled until the household's people have loaded; a disabled button is not a tab stop.
+    await expect(addTrigger(page)).toBeEnabled();
 
     const seen: string[] = [];
     let reachedAddPill = false;
@@ -697,7 +762,7 @@ test.describe('@keyboard walkthrough', () => {
       seen.push(focused.label);
       expect(focused.hasFocusRing, `no visible focus on "${focused.label}"`).toBe(true);
 
-      if (focused.testid === 'add-button') {
+      if (focused.testid === 'add-button' || focused.testid === 'rail-add') {
         reachedAddPill = true;
         break;
       }
@@ -719,7 +784,8 @@ test.describe('@keyboard walkthrough', () => {
     await completeFirstRun(page, 'en');
 
     // The + opens its menu with focus on the first item, "Expense".
-    const fab = page.getByTestId('add-button');
+    const fab = addTrigger(page);
+    await expect(fab).toBeEnabled();
     await fab.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
@@ -743,8 +809,9 @@ test.describe('@keyboard walkthrough', () => {
     // A dialog that opens without taking focus leaves a keyboard user tabbing
     // through the page behind it, with no way to know the sheet is there.
     await completeFirstRun(page, 'en');
+    await expect(addTrigger(page)).toBeEnabled();
 
-    await page.getByTestId('add-button').focus();
+    await addTrigger(page).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menuitem', { name: ADD_EXPENSE })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -832,9 +899,10 @@ test.describe('@motion the count-up', () => {
     // against.
     const spoken = await page.getByTestId('balance-announced').textContent();
     const digits = (spoken ?? '').replace(/[^\d]/g, '');
-    const fromAnimation = String(Math.abs(Number(settled))).padStart(3, '0');
+    // The numeral draws whole shekels in Karantina (decision 20): the exact figure, rounded, is what it lands on.
+    const wholeShekels = String(Math.round(Number(digits) / 100) * 100);
 
-    expect(digits).toContain(fromAnimation);
+    expect(settled).toBe(wholeShekels);
   });
 
   test('skips the animation entirely when reduced motion is on', async ({ browser }) => {
@@ -842,6 +910,8 @@ test.describe('@motion the count-up', () => {
     const context = await browser.newContext({ reducedMotion: 'reduce' });
     const reduced = await context.newPage();
     await completeFirstRun(reduced, 'en');
+    // Not while the balance is still loading (its numeral reads 0 until IndexedDB answers).
+    await expect(reduced.getByTestId('balance-amount')).not.toHaveAttribute('aria-busy', 'true');
 
     const first = await reduced
       .locator('[data-testid="balance-amount"] [data-value]')
@@ -910,7 +980,7 @@ test.describe('@popouts every item clears 44px on a phone', () => {
     await page.goto('/');
     await expect(page.getByTestId('feed-header')).toBeVisible();
 
-    await check(page, () => page.getByTestId('add-button').click(), 'add menu');
+    await check(page, () => addTrigger(page).click(), 'add menu');
     // The prime pop-out is a title, the rate and a date: nothing to tap.
     await check(page, () => page.getByTestId('prime-pill').click(), 'prime', 'none');
     await check(
@@ -928,6 +998,7 @@ test.describe('@popouts every item clears 44px on a phone', () => {
       () => page.getByRole('button', { name: /Show what makes up Expected/ }).click(),
       'forecast',
     );
+    await toRows(page);
     await check(
       page,
       () =>
@@ -1016,6 +1087,7 @@ test.describe('@popouts every item clears 44px on a phone', () => {
     await page.goto('/');
     // A popover, not a menu: base-ui menus are modal and lock page scroll while
     // open, so only a popover can be scrolled away from.
+    await toRows(page);
     await page
       .getByRole('button', { name: /^Category: / })
       .first()

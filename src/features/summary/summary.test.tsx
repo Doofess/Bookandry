@@ -8,7 +8,7 @@ import { initTestI18n, renderWithProviders } from '@/test/render';
 
 import { CollapsedSummaryBar } from './collapsed-bar';
 import { MonthCursor } from './month-cursor';
-import { BalanceFigure, ForecastLine } from './summary-cards';
+import { BalanceFigure, BalanceNumeral, ForecastLine } from './summary-cards';
 import type { BalanceState } from './use-balance';
 
 const TODAY = d('2026-09-15');
@@ -269,7 +269,7 @@ describe('the panel figures', () => {
     expect(screen.getByText(/Needs a rate for EUR/)).not.toHaveClass('text-destructive');
   });
 
-  it('sets the forecast in the serif at 1rem, and opens its pop-out', async () => {
+  it('sets the forecast in Plex at 1rem, and opens its pop-out', async () => {
     renderWithProviders(
       <ForecastLine
         expense={{ total: 381_652, spentSoFar: 361_700, remaining: 19_952 }}
@@ -282,7 +282,8 @@ describe('the panel figures', () => {
     );
     const button = screen.getByRole('button', { name: /Expected this month/ });
 
-    expect(button.querySelector('.font-display')).toHaveClass('text-base');
+    expect(button.querySelector('.text-base')).toHaveClass('font-medium');
+    expect(button.querySelector('.font-display')).toBeNull();
     await userEvent.setup().click(button);
     expect(await screen.findByTestId('forecast-popout')).toBeInTheDocument();
   });
@@ -303,15 +304,17 @@ describe('MonthCursor on the panel', () => {
 });
 
 describe('CollapsedSummaryBar on sapphire', () => {
-  it('is a slim deep bar with the balance in the serif, at the same height', () => {
+  it('is a slim deep bar with the balance in Plex, at the same height', () => {
     const { container } = renderWithProviders(
       <CollapsedSummaryBar state={ready(5_325_874)} currency="ILS" />,
     );
     const bar = screen.getByTestId('collapsed-summary');
 
-    expect(bar).toHaveClass('bg-brand-deep', 'text-brand-deep-foreground');
+    expect(bar).toHaveClass('bg-night', 'text-on-night', 'lg:start-64');
+    expect(bar).not.toHaveClass('lg:ps-64');
     expect(bar.style.height).toBe('calc(48px + env(safe-area-inset-top, 0px))');
-    expect(container.querySelector('[data-value]')).toHaveClass('font-display');
+    expect(container.querySelector('[data-value]')).toHaveClass('text-lg', 'font-semibold');
+    expect(container.querySelector('.font-display')).toBeNull();
   });
 
   it('opens the balance pop-out from the collapsed bar too', async () => {
@@ -325,5 +328,51 @@ describe('CollapsedSummaryBar on sapphire', () => {
     );
     await userEvent.setup().click(screen.getByRole('button'));
     expect(await screen.findByTestId('balance-popout')).toBeInTheDocument();
+  });
+});
+
+describe('BalanceNumeral', () => {
+  it('draws the balance as the huge numeral, whole shekels, and says the exact amount', () => {
+    renderWithProviders(
+      <BalanceNumeral
+        state={{
+          status: 'ready',
+          minor: 16_557_408,
+          since: d('2026-01-01'),
+          profiles: [],
+          parts: { openingMinor: 0, incomeMinor: 0, expenseMinor: 0 },
+        }}
+        currency="ILS"
+      />,
+    );
+    const numeral = document.querySelector('[data-testid="balance-amount"] [data-numeral]');
+    expect(numeral).toHaveAttribute('data-numeral-size', 'balance');
+    expect(numeral?.textContent).not.toMatch(/\.\d\d/); // never agorot in Karantina (decision 20)
+    expect(screen.getByTestId('balance-announced')).toHaveTextContent(/165,574\.08/);
+  });
+
+  it('draws a negative balance with its minus, and sizes a huge one by its real width (Review Focus 2)', () => {
+    const ready = (minor: number) =>
+      ({
+        status: 'ready',
+        minor,
+        since: d('2026-01-01'),
+        profiles: [],
+        parts: { openingMinor: 0, incomeMinor: 0, expenseMinor: 0 },
+      }) as const;
+    const { unmount } = renderWithProviders(<BalanceNumeral state={ready(-2_440_000)} currency="ILS" />);
+    expect(document.querySelector('[data-numeral]')?.textContent.startsWith('−')).toBe(true);
+    unmount();
+    renderWithProviders(<BalanceNumeral state={ready(1_234_567_800)} currency="ILS" />);
+    const units = Number(
+      document.querySelector<HTMLElement>('[data-numeral]')?.style.getPropertyValue('--numeral-units'),
+    );
+    expect(units).toBeGreaterThan(2096); // ₪12,345,678 is wider than ₪58,555, so it is drawn smaller, never cut
+  });
+
+  it("keeps the numeral's box while the balance loads, so nothing jumps", () => {
+    renderWithProviders(<BalanceNumeral state={{ status: 'loading' }} currency="ILS" />);
+    expect(document.querySelector('[data-testid="balance-amount"]')).toHaveAttribute('aria-busy', 'true');
+    expect(document.querySelector('[data-testid="balance-amount"] [data-numeral]')).not.toBeNull();
   });
 });

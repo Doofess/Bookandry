@@ -1,108 +1,195 @@
 import { cn } from 'cn';
-import { BarChart3, CreditCard, Receipt, Wallet } from 'lucide-react';
-import type { ComponentType } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 
-import { Engraving } from '@/components/engraving';
-import { Logo } from '@/components/logo';
+import { AppMark } from '@/components/app-mark';
+import { db } from '@/db/db';
+import { UserMenu } from '@/features/account/user-menu';
+import { AddMenu } from '@/features/feed/add-menu';
+import { useTransactionSheet } from '@/features/transaction/use-transaction-sheet';
 
-import { NAV_ORDER, ROUTES, type NavKey } from './routes';
+import { useAccount } from './account';
+import { navDirection, PHONE_PLACES, RAIL_PLACES, RAIL_SETUP, ROUTES, type RailPlace } from './routes';
+import { ShellEditors } from './shell-editors';
 import { Toaster } from './toaster';
+import { useDesktop, useMediaQuery } from './use-desktop';
 import { useReturnToInvite } from './use-return-to-invite';
+import { useThemeColor } from './use-theme-color';
 import { useWipeNotice } from './use-wipe-notice';
 
-const ICONS: Record<NavKey, ComponentType<{ className?: string; strokeWidth?: number }>> = {
-  feed: Receipt,
-  chart: BarChart3,
-  cards: CreditCard,
-  cash: Wallet,
-};
+/**
+ * A place as a text pill, no icon (§4.2, decision 29): 44px on the phone's
+ * tab bar, 48px in the rail. The current one is filled with ink and set in
+ * weight 600, and says "(current)" to a screen reader.
+ */
+const PILL = cn(
+  'flex min-h-11 items-center justify-center gap-2 rounded-full px-2 text-[0.84375rem]',
+  'transition-[background-color,color] duration-(--dur-press) ease-fill hover-fine:bg-accent',
+  'focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring',
+  'aria-[current=page]:bg-press aria-[current=page]:font-semibold aria-[current=page]:text-on-press',
+  'lg:min-h-12 lg:justify-between lg:px-4.5 lg:text-[1.0625rem]',
+);
+
+/** How many cards and bank accounts there are, shown beside their places in weight 300. */
+function useRailCounts(): Partial<Record<RailPlace['key'], number>> {
+  return (
+    useLiveQuery(async () => {
+      const methods = await db.paymentMethods.filter((method) => method.isArchived === 0).toArray();
+      return {
+        cards: methods.filter((method) => method.type === 'credit_card').length,
+        bankAccounts: methods.filter((method) => method.type === 'bank_account').length,
+      };
+    }, []) ?? {}
+  );
+}
+
+const PHONE_ORDER = PHONE_PLACES.map((p) => p.to);
+const RAIL_ORDER = [...RAIL_PLACES, ...RAIL_SETUP].map((p) => p.to);
+
+function Place({
+  place,
+  label,
+  order,
+  count,
+  reduced,
+}: {
+  readonly place: RailPlace;
+  readonly label: string;
+  readonly order: readonly string[];
+  readonly count?: number;
+  readonly reduced: boolean;
+}) {
+  const { pathname } = useLocation();
+  return (
+    <NavLink
+      to={place.to}
+      end={place.to === ROUTES.feed}
+      // Same-document view transitions (§8.2), skipped when motion is reduced.
+      viewTransition={!reduced}
+      onClick={() => {
+        document.documentElement.setAttribute('data-nav-dir', navDirection(pathname, place.to, order));
+      }}
+      data-slot="nav-place"
+      className={PILL}
+    >
+      {({ isActive }) => (
+        <>
+          <span className="min-w-0 text-center lg:text-start">{label}</span>
+          {count === undefined ? null : (
+            <span aria-hidden="true" className="hidden shrink-0 text-sm font-light lg:inline">
+              {count}
+            </span>
+          )}
+          {isActive ? <span className="sr-only">(current)</span> : null}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+/** Add, at the top of the rail on every desktop screen (§4.2). */
+function RailAdd() {
+  const sheet = useTransactionSheet();
+  const account = useAccount();
+  const people = useLiveQuery(() => db.profiles.count(), []);
+  return (
+    <div className="mb-5 hidden lg:block">
+      <AddMenu
+        placement="rail"
+        // A transaction belongs to a profile: with none, the form has nothing to submit.
+        disabled={(people ?? 0) === 0}
+        aiAvailable={account.status !== 'unavailable'}
+        onAdd={(kind) => {
+          sheet.openAdd(kind);
+        }}
+        onAddWithAi={() => {
+          sheet.openImport();
+        }}
+      />
+    </div>
+  );
+}
 
 /**
- * ONE nav element with responsive classes, not two copies behind `lg:hidden` /
- * `hidden lg:flex`. Two copies double the aria-current bookkeeping and the React
- * tree for no gain, and screen readers see both.
+ * ONE nav element with responsive classes, not two copies behind `lg:hidden`
+ * / `hidden lg:flex`: two copies double the aria-current bookkeeping, and
+ * screen readers see both.
  *
- * Tab labels are kept at every size: an icon-only bottom bar is a known
- * comprehension and a11y regression, and four items are not crowded, down to a 320px phone in Hebrew.
+ * Phone: four text pills across the bottom, on the paper. From lg: the rail
+ * at the inline start, 256px, with a 2px line at its inline end - the mark,
+ * Add, the places, a line, the set-up places, and the account menu at the foot.
  */
 function PrimaryNav() {
   const { t } = useTranslation();
-
+  const desktop = useDesktop();
+  const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const counts = useRailCounts();
   return (
     <nav
       aria-label={t('nav.primary')}
       // Anchored pop-outs keep clear of it on a phone (`useCollisionPadding`).
       data-slot="tab-bar"
       className={cn(
-        // Mobile: fixed bottom bar, white, respecting the home-indicator inset.
-        'fixed inset-x-0 bottom-0 isolate z-40 flex border-t bg-background/95 backdrop-blur',
-        'pb-[env(safe-area-inset-bottom,0px)]',
-        'ps-[max(0.5rem,env(safe-area-inset-left,0px))] pe-[max(0.5rem,env(safe-area-inset-right,0px))]',
-        // Desktop: the rail is the brand panel, the engraving's bands along its foot.
-        'lg:inset-y-0 lg:start-0 lg:end-auto lg:w-56 lg:flex-col lg:items-stretch lg:gap-1 lg:overflow-hidden',
-        'lg:border-t-0 lg:bg-brand-deep lg:p-3 lg:pt-6 lg:text-brand-deep-foreground lg:backdrop-blur-none',
+        'fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 gap-0.5 border-t-2 border-border bg-background',
+        'pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]',
+        'ps-[max(0.625rem,env(safe-area-inset-left,0px))] pe-[max(0.625rem,env(safe-area-inset-right,0px))]',
+        'lg:inset-y-0 lg:start-0 lg:end-auto lg:flex lg:w-64 lg:flex-col lg:gap-1 lg:overflow-y-auto lg:overscroll-contain',
+        'lg:border-e-2 lg:border-t-0 lg:bg-transparent lg:px-4.5 lg:pt-7 lg:pb-5.5',
       )}
     >
-      <Engraving
-        variant="bands"
-        className="absolute inset-0 -z-10 hidden size-full text-brand-vivid/45 lg:block rtl:-scale-x-100"
-      />
-      {/*
-        The mark goes home, which is what every user already expects of it.
-
-        It sits INSIDE the nav rail, so it is a second route to the feed
-        alongside the Feed tab - deliberate, and the reason it is not given its
-        own "(current)" treatment: the tab below already says where you are, and
-        two controls announcing the same current page is noise, not redundancy.
-      */}
-      <NavLink
+      {/* The mark goes home. A Link, not a NavLink: the Feed place already says where you are. */}
+      <Link
         to={ROUTES.feed}
-        end
-        className="mb-6 hidden items-center gap-2 rounded-lg px-3 py-2 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none lg:flex"
+        viewTransition={!reduced}
+        className="mb-5.5 hidden min-h-12 items-center rounded-full px-2.5 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring lg:flex"
       >
-        <Logo size={28} tone="inverse" decorative />
-        <span className="font-display text-lg font-bold tracking-tight">{t('app.name')}</span>
-      </NavLink>
+        <AppMark />
+      </Link>
 
-      {NAV_ORDER.map((key) => {
-        const Icon = ICONS[key];
-        return (
-          <NavLink
-            key={key}
-            to={ROUTES[key]}
-            end={key === 'feed'}
-            className={({ isActive }) =>
-              cn(
-                'flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium',
-                'rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                'lg:flex-none lg:flex-row lg:justify-start lg:gap-3 lg:rounded-full lg:px-3 lg:py-2 lg:text-sm lg:focus-visible:ring-white/60',
-                isActive
-                  ? 'text-primary lg:bg-white/15 lg:text-brand-deep-foreground'
-                  : 'text-muted-foreground hover:text-foreground lg:text-brand-deep-foreground/75 lg:hover:bg-white/10 lg:hover:text-brand-deep-foreground',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {/* Phone: the active tab's icon sits on a soft sapphire pill. */}
-                <span
-                  data-slot="tab-pill"
-                  className={cn(
-                    'flex h-8 w-14 items-center justify-center rounded-full lg:h-auto lg:w-auto',
-                    isActive ? 'bg-accent lg:bg-transparent' : null,
-                  )}
-                >
-                  <Icon className="size-5 lg:size-4" strokeWidth={1.75} />
-                </span>
-                <span>{t(`nav.${key}` as const)}</span>
-                {isActive ? <span className="sr-only">(current)</span> : null}
-              </>
-            )}
-          </NavLink>
-        );
-      })}
+      {desktop ? <RailAdd /> : null}
+
+      {/* The phone's four tabs, in their order. Hidden from lg, so a screen reader meets one list at a time. */}
+      <div className="contents lg:hidden">
+        {PHONE_PLACES.map((place) => (
+          <Place
+            key={place.key}
+            place={place}
+            label={t(`nav.${place.key}` as const)}
+            order={PHONE_ORDER}
+            reduced={reduced}
+          />
+        ))}
+      </div>
+      {/* The rail's places, in the concept's order. */}
+      <div className="hidden lg:contents">
+        {RAIL_PLACES.map((place) => (
+          <Place
+            key={place.key}
+            place={place}
+            label={t(`nav.${place.railLabel ?? place.key}` as const)}
+            order={RAIL_ORDER}
+            reduced={reduced}
+            count={place.key === 'cards' || place.key === 'bankAccounts' ? counts[place.key] : undefined}
+          />
+        ))}
+      </div>
+      <div aria-hidden="true" className="my-3 hidden h-0.5 shrink-0 bg-border lg:block" />
+      <div className="hidden lg:contents">
+        {RAIL_SETUP.map((place) => (
+          <Place
+            key={place.key}
+            place={place}
+            label={t(`nav.${place.key}` as const)}
+            order={RAIL_ORDER}
+            reduced={reduced}
+          />
+        ))}
+      </div>
+
+      <div className="mt-auto hidden pt-3 lg:block">
+        <UserMenu placement="rail" />
+      </div>
     </nav>
   );
 }
@@ -111,6 +198,7 @@ export function AppShell() {
   const { t } = useTranslation();
   useReturnToInvite();
   useWipeNotice();
+  useThemeColor();
 
   return (
     <div className="min-h-dvh">
@@ -124,17 +212,23 @@ export function AppShell() {
       <PrimaryNav />
 
       {/*
-        The rail's width is mirrored on the other side once the window is wide
-        enough to spare it, so a page is centred in the window - not in what
-        the rail leaves, which reads as pushed to one side in full screen.
+        main is a size container (§4.3): screens lay out by the room they
+        really have, with @board/main:, @wide/main: and @vast/main: variants,
+        never viewport ones. No pad on the far side: content fills main up to
+        1680px, centred, with 24px round it.
       */}
       <main
         id="main"
         tabIndex={-1}
-        className="pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:ps-56 lg:pb-0 xl:pe-56"
+        className="@container/main pb-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom,0px))] lg:ps-64 lg:pb-0"
       >
-        <Outlet />
+        <div data-slot="content-box" className="mx-auto max-w-[105rem] lg:p-6">
+          <Outlet />
+        </div>
       </main>
+
+      {/* The add and import editors for screens that host none: the rail's Add works on every screen. */}
+      <ShellEditors />
 
       {/* At shell level, so a toast raised on the feed survives navigating
           away - the undo is still valid wherever the user has gone. */}

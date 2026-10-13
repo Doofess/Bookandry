@@ -18,9 +18,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelContent,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import {
   createPaymentMethod,
@@ -31,6 +37,7 @@ import {
 import { accountDraftOf, accountFromDraft, type AccountDraft } from '@/domain/account-draft';
 import { bankByCode, bankName } from '@/domain/banks';
 import { cardDraftOf, cardFromDraft, EMPTY_CARD_DRAFT, type CardDraft } from '@/domain/card-draft';
+import { methodTypeOf } from '@/domain/tx-options';
 import { methodDisplayName } from '@/i18n/method-name';
 import { systemClock } from '@/lib/clock';
 import { newId } from '@/lib/id';
@@ -201,7 +208,7 @@ export function OtherMethods() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{displayName(method)}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {t(TYPE_KEY[method.type] as MethodTypeKey)} · {ownerName(method.profileId)}
+                  {t(TYPE_KEY[methodTypeOf(method)] as MethodTypeKey)} · {ownerName(method.profileId)}
                   {archived ? ` · ${t('categories:manage.archived')}` : ''}
                 </span>
               </span>
@@ -293,10 +300,8 @@ export function MethodEditor({
 }) {
   const { t } = useTranslation(['common', 'categories']);
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[92dvh] overflow-y-auto"
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent
         // The rates' wrapper is there as the sheet opens; a linked card's table
         // loads into it in place, so it is focused without waiting for that.
         initialFocus={
@@ -309,22 +314,22 @@ export function MethodEditor({
             : undefined
         }
       >
-        <SheetHeader>
-          <SheetTitle>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {target === 'new' ? t('categories:manage.methodNew') : t('categories:manage.methodEdit')}
-          </SheetTitle>
-        </SheetHeader>
+          </EditorPanelTitle>
+        </EditorPanelHeader>
         <MethodForm
           target={target}
           profiles={profiles}
           newType={newType}
-          className="px-4 pb-6"
+          className="px-5 pb-6 lg:px-7"
           onDone={() => {
             onOpenChange(false);
           }}
         />
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -469,9 +474,13 @@ export function MethodForm({
             profileId,
             // A card's colour is set here; any other method keeps whatever it had.
             ...(type === 'credit_card' ? { color: color === '' ? null : color } : {}),
-            creditAnnualRate,
-            card: details ?? null,
-            account: accountDetails ?? null,
+            // Only a credit card's details are edited here. Any other card keeps
+            // what it has, including keys a later version wrote: writing null
+            // would wipe a debit, prepaid or gift card's details (spec 13.8).
+            ...(type === 'credit_card' ? { creditAnnualRate, card: details ?? null } : {}),
+            ...(type === 'bank_account' ? { account: accountDetails ?? null } : {}),
+            // A credit card turned into anything else leaves its rate behind.
+            ...(existing.type === 'credit_card' && type !== 'credit_card' ? { creditAnnualRate: null } : {}),
           },
           now,
         );
@@ -490,6 +499,7 @@ export function MethodForm({
         setAttempted(true);
         if (label.trim() !== '' && !cardInvalid && !accountInvalid) void save();
       }}
+      data-slot="editor-panel-body"
       className={cn('space-y-4', className)}
     >
       <div className="space-y-1.5">
@@ -569,21 +579,20 @@ export function MethodForm({
         </div>
       )}
 
-      <div className="flex gap-2 pt-1">
+      <EditorPanelActions>
         <Button
           type="button"
-          variant="outline"
-          className="flex-1"
+          variant="pill"
           onClick={() => {
             onDone(undefined);
           }}
         >
           {t('action.cancel')}
         </Button>
-        <Button type="submit" disabled={label.trim() === ''} className="flex-1">
+        <Button type="submit" variant="pill-solid" disabled={label.trim() === ''}>
           {t('action.save')}
         </Button>
-      </div>
+      </EditorPanelActions>
     </form>
   );
 }
@@ -701,7 +710,7 @@ function Option({
       aria-checked={selected}
       onClick={onSelect}
       className={`flex min-h-11 items-center rounded-xl border px-3 text-start text-sm transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-        selected ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+        selected ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
       }`}
     >
       <span className="truncate">{label}</span>

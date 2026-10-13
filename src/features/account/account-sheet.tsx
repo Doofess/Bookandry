@@ -6,9 +6,17 @@ import { toast } from 'sonner';
 
 import { accountController, useAccount } from '@/app/account';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelBody,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { passkeysSupported, type AuthResult, type Enrollment } from '@/services/supabase/auth';
 
 import { morph } from './morph';
@@ -48,22 +56,22 @@ export function AccountSheet({
     flow === undefined ? '' : t(`account.flow.${flow.kind === 'signin' ? flow.mode : flow.kind}.body`);
 
   return (
-    <Sheet
+    <EditorPanel
       open={flow !== undefined}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{body}</SheetDescription>
-        </SheetHeader>
-        <div className="space-y-4 px-4 pb-6">
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>{title}</EditorPanelTitle>
+          <EditorPanelDescription>{body}</EditorPanelDescription>
+        </EditorPanelHeader>
+        <EditorPanelBody>
           {flow === undefined ? null : <FlowBody key={flow.kind} flow={flow} onDone={onClose} />}
-        </div>
-      </SheetContent>
-    </Sheet>
+        </EditorPanelBody>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -346,7 +354,7 @@ export function SignIn({
               {mode === 'signin' ? (
                 <button
                   type="button"
-                  className="rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="rounded-sm text-sm font-medium text-primary-ink underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                   onClick={() => {
                     switchTo('reset');
                   }}
@@ -377,16 +385,18 @@ export function SignIn({
         )}
         <ErrorLine message={error} />
         {info === undefined ? null : <InfoLine>{info}</InfoLine>}
-        <Button type="submit" className={cn('h-11 w-full', part('submit'))} disabled={busy}>
-          {/* Its own part, so the label changes while the button stays solid. */}
-          <span className={cn('w-full text-center', part('submitLabel'))}>
-            {mode === 'reset'
-              ? t('account.sendReset')
-              : mode === 'signup'
-                ? t('account.create')
-                : t('account.signIn')}
-          </span>
-        </Button>
+        <EditorPanelActions>
+          <Button type="submit" variant="pill-solid" className={part('submit')} disabled={busy}>
+            {/* Its own part, so the label changes while the button stays solid. */}
+            <span className={cn('w-full text-center', part('submitLabel'))}>
+              {mode === 'reset'
+                ? t('account.sendReset')
+                : mode === 'signup'
+                  ? t('account.create')
+                  : t('account.signIn')}
+            </span>
+          </Button>
+        </EditorPanelActions>
       </form>
 
       {mode === 'signin' && !signUp ? null : (
@@ -396,7 +406,7 @@ export function SignIn({
           )}
           <button
             type="button"
-            className="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="rounded-sm font-medium text-primary-ink underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             onClick={() => {
               switchTo(mode === 'signin' ? 'signup' : 'signin');
             }}
@@ -448,15 +458,16 @@ function Confirm({
   return (
     <div className="space-y-3">
       <ErrorLine message={error} />
-      <Button
-        type="button"
-        variant={destructive ? 'destructive' : 'default'}
-        className="w-full"
-        disabled={busy}
-        onClick={() => void run()}
-      >
-        {t(label)}
-      </Button>
+      <EditorPanelActions>
+        <Button
+          type="button"
+          variant={destructive ? 'destructive' : 'pill-solid'}
+          disabled={busy}
+          onClick={() => void run()}
+        >
+          {t(label)}
+        </Button>
+      </EditorPanelActions>
     </div>
   );
 }
@@ -513,15 +524,16 @@ function SignOut({ onDone }: { readonly onDone: () => void }) {
         </p>
       ) : null}
       <ErrorLine message={error} />
-      <Button
-        type="button"
-        className="w-full"
-        variant={unsaved > 0 ? 'destructive' : 'default'}
-        disabled={busy}
-        onClick={() => void confirm()}
-      >
-        {unsaved > 0 ? t('account.signOutAnyway') : t('account.signOut')}
-      </Button>
+      <EditorPanelActions>
+        <Button
+          type="button"
+          variant={unsaved > 0 ? 'destructive' : 'pill-solid'}
+          disabled={busy}
+          onClick={() => void confirm()}
+        >
+          {unsaved > 0 ? t('account.signOutAnyway') : t('account.signOut')}
+        </Button>
+      </EditorPanelActions>
     </div>
   );
 }
@@ -587,9 +599,11 @@ function DeleteAccount({ onDone }: { readonly onDone: () => void }) {
         }}
       />
       <ErrorLine message={error} />
-      <Button type="submit" variant="destructive" className="w-full" disabled={busy || !ready}>
-        {t('account.deleteConfirm')}
-      </Button>
+      <EditorPanelActions>
+        <Button type="submit" variant="destructive" disabled={busy || !ready}>
+          {t('account.deleteConfirm')}
+        </Button>
+      </EditorPanelActions>
     </form>
   );
 }
@@ -635,9 +649,11 @@ function NewPassword({ onDone }: { readonly onDone: () => void }) {
         }}
       />
       <ErrorLine message={error} />
-      <Button type="submit" className="w-full" disabled={busy || password.length < MIN_PASSWORD}>
-        {t('account.savePassword')}
-      </Button>
+      <EditorPanelActions>
+        <Button type="submit" variant="pill-solid" disabled={busy || password.length < MIN_PASSWORD}>
+          {t('account.savePassword')}
+        </Button>
+      </EditorPanelActions>
     </form>
   );
 }

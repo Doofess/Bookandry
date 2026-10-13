@@ -119,3 +119,44 @@ describe('the account menu', () => {
     expect(items).not.toContain('Sign out');
   });
 });
+
+describe('the account menu in the rail', () => {
+  it("shows the household at the rail's foot: up to two faces and their names", async () => {
+    await db.profiles.bulkPut([
+      { id: 'p1', name: 'Dana', color: '#16794a', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'p2', name: 'Yossi', color: '#0f766e', createdAt: '2026-01-02T00:00:00.000Z' },
+    ] as never);
+    vi.spyOn(controller, 'getView').mockReturnValue(signedIn);
+    renderWithProviders(
+      <SettingsProvider value={{ ...DEFAULT_SETTINGS, updatedAt: INSTANT }}>
+        <UserMenu placement="rail" />
+      </SettingsProvider>,
+    );
+    expect(await screen.findByText('Dana and Yossi')).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-avatar-tone]')).toHaveLength(2);
+    await db.profiles.clear();
+  });
+
+  it('shows who is signed in when there is no household yet, with the menu’s name kept for screen readers', async () => {
+    vi.spyOn(controller, 'getView').mockReturnValue(signedIn);
+    renderWithProviders(
+      <SettingsProvider value={{ ...DEFAULT_SETTINGS, updatedAt: INSTANT }}>
+        <UserMenu placement="rail" />
+      </SettingsProvider>,
+    );
+    const trigger = await screen.findByRole('button', { name: /Account and settings/ });
+    expect(trigger).toHaveTextContent('Dana Levi');
+    expect(trigger).toHaveClass('w-full', 'min-h-14');
+  });
+
+  it('opens upward from the rail’s foot', async () => {
+    vi.spyOn(controller, 'getView').mockReturnValue(signedIn);
+    renderWithProviders(
+      <SettingsProvider value={{ ...DEFAULT_SETTINGS, updatedAt: INSTANT }}>
+        <UserMenu placement="rail" />
+      </SettingsProvider>,
+    );
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Account and settings/ }));
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+  });
+});

@@ -24,7 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { PopOut, PopOutBody, PopOutContent, PopOutPreview, PopOutSteps } from '@/components/ui/pop-out';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/db/db';
 import {
@@ -80,13 +80,21 @@ import {
 } from './found-methods';
 import { MethodPanel, MethodsGroup, UnfinishedGroup } from './found-methods-list';
 import { readSession, startSession, usableVia, writeSession, type ImportSession } from './import-session';
+import { importStep, type ImportStage } from './import-stage';
+import { FooterPortal, ImportPreview } from './import-steps';
 import {
   applyBatch,
   buildReview,
+  cardOf,
+  DEFAULT_IMPORT_KIND,
   holderOfMethod,
+  included,
   linkToCard,
+  matchesImportKind,
   saveable,
+  withImportKind,
   type Aliases,
+  type ImportKind,
   type ReviewItem,
 } from './review-items';
 import { runImport, type FileState } from './run-import';
@@ -127,6 +135,8 @@ const ACCEPT = [
 const EXISTING: ReadonlySet<Flag> = new Set<Flag>([
   'already_added',
   'already_plan',
+  'plan_in_import',
+  'loan_disbursement',
   'card_fee_counted',
   'in_another_file',
 ]);
@@ -143,8 +153,13 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
   drafted: 0,
   reconciliations: [],
   batch: { methodId: '', profileId },
+  kind: DEFAULT_IMPORT_KIND,
+  leftOutShown: false,
   note: '',
 });
+
+/** The three choices, in the order they are offered. */
+const IMPORT_KINDS: readonly ImportKind[] = ['expense', 'income', 'both'];
 
 /**
  * "Smart import": pick files, let them be read, check what was found, add it.
@@ -163,7 +178,6 @@ const EMPTY_SESSION = (profileId: string): ImportSession => ({
  */
 export function ImportSheet(props: ImportSheetProps) {
   const { t, i18n } = useTranslation(['import', 'common', 'categories', 'profiles']);
-  const titleId = useId();
   const prime = usePrime();
   const account = useAccount();
   const me = account.status === 'signed_in' ? account.user.id : undefined;
@@ -189,6 +203,7 @@ export function ImportSheet(props: ImportSheetProps) {
   );
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [footerEl, setFooterEl] = useState<HTMLElement | null>(null);
   const abort = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -237,8 +252,21 @@ export function ImportSheet(props: ImportSheetProps) {
 
   const unsaved =
     session.stage === 'review'
-      ? session.items.filter((i) => i.ticked).length + session.methods.filter((m) => m.ticked).length
+      ? session.items.filter((i) => included(i, session.kind, session.leftOutShown)).length +
+        session.methods.filter((m) => m.ticked).length
       : 0;
+  // Another choice re-filters what was read, at once: nothing is read again.
+  const chooseKind = (kind: ImportKind) => {
+    setSession((s) => ({ ...s, kind, leftOutShown: false, items: withImportKind(s.items, s.kind, kind) }));
+  };
+  const showLeftOut = (shown: boolean) => {
+    // Put away again, the left-out rows are out again: none stays ticked unseen.
+    setSession((s) => ({
+      ...s,
+      leftOutShown: shown,
+      items: shown ? s.items : withImportKind(s.items, s.kind, s.kind),
+    }));
+  };
   // Who a new card or account belongs to: the batch "For".
   const owner = session.batch.profileId || defaultProfileId;
   // One kept from an earlier reading: whoever it was read for, while they are in the household.
@@ -271,6 +299,7 @@ export function ImportSheet(props: ImportSheetProps) {
       stage: 'reading',
       files,
       states,
+      leftOutShown: false,
       items: [],
       methods: [],
       drafted: 0,
@@ -383,7 +412,8 @@ export function ImportSheet(props: ImportSheetProps) {
       setSession((s) => ({
         ...s,
         stage: 'review',
-        items,
+        // Read whole; what is not of the kind chosen is left out, unticked.
+        items: withImportKind(items, 'both', s.kind),
         methods: found.filter((m) => !needsFilling(m)),
         drafted: drafted.length,
         reconciliations: result.reconciliations,
@@ -409,7 +439,9 @@ export function ImportSheet(props: ImportSheetProps) {
         items = linkToCard(items, saved);
         methodsSaved += 1;
       }
-      const chosen = items.filter((item) => item.ticked && item.values !== undefined);
+      const chosen = items.filter(
+        (item) => included(item, session.kind, session.leftOutShown) && item.values !== undefined,
+      );
       const toSave: ImportItem[] = [];
       let noRate = 0;
       for (const item of chosen) {
@@ -493,165 +525,216 @@ export function ImportSheet(props: ImportSheetProps) {
     props.target.card === undefined ? undefined : unfinished.find((u) => u.entry.key === props.target.card);
   const filling = draft?.item ?? session.methods.find((m) => m.id === props.target.card);
 
+  const stage: ImportStage =
+    filling !== undefined ? 'methods' : session.stage === 'pick' ? 'picker' : session.stage;
+  const step = importStep(stage);
+  const previewed = filling ?? session.methods[0];
+  // A stage with a form of its own (a row, a card) keeps that form's buttons; the others act from the footer.
+  const footer =
+    filling !== undefined || editing !== undefined ? undefined : session.stage === 'pick' ? (
+      <Button
+        type="button"
+        variant="pill-solid"
+        disabled={session.files.length === 0}
+        onClick={() => void read(session.files)}
+      >
+        {session.files.length === 0
+          ? t('import:readNone')
+          : t('import:read', { count: session.files.length })}
+      </Button>
+    ) : session.stage === 'reading' ? (
+      <Button
+        type="button"
+        variant="pill"
+        onClick={() => {
+          abort.current?.abort();
+        }}
+      >
+        {t('import:stop')}
+      </Button>
+    ) : null;
+
   return (
-    <Sheet
+    <PopOut
       open
       onOpenChange={(open) => {
         if (!open) requestClose();
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>
-            {filling !== undefined
+      <PopOutContent>
+        <PopOutSteps
+          title={t('import:steps.title')}
+          steps={[t('import:steps.choose'), t('import:steps.review'), t('import:steps.cards')]}
+          current={step}
+          // Going back is only ever to the list of what was found; the choosing step would discard it.
+          reached={Math.min(step, 1)}
+          onStep={(index) => {
+            if (index === 1) props.onOpenCard(undefined);
+          }}
+        />
+        <PopOutBody
+          heading="question"
+          footerRef={setFooterEl}
+          footer={footer}
+          title={
+            filling !== undefined
               ? t('import:fillTitle', { name: foundName(filling, i18n.language) })
               : editing === undefined
                 ? t('import:title')
-                : t('import:editTitle')}
-          </SheetTitle>
-          {editing === undefined && filling === undefined ? (
-            <SheetDescription>{t('import:body')}</SheetDescription>
-          ) : null}
-        </SheetHeader>
-
-        <div className="px-4 pb-4">
-          {filling !== undefined && props.target.card !== undefined ? (
-            <MethodPanel
-              key={filling.id}
-              item={filling}
-              methods={props.paymentMethods}
-              profiles={props.profiles}
-              owner={draft === undefined ? owner : ownerOf(draft.entry)}
-              onDone={(saved) => {
-                const open = props.target.card;
-                if (saved === undefined || open === undefined) {
-                  props.onOpenCard(undefined);
-                  return;
-                }
-                setSession((s) => ({
-                  ...s,
-                  methods: s.methods.map((m): MethodReviewItem =>
-                    m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
-                  ),
-                  items: linkToCard(s.items, saved),
-                }));
-                toast(t('import:methodSaved', { name: saved.label }));
-                if (draft === undefined) {
-                  props.onOpenCard(undefined);
-                  return;
-                }
-                // Finished: no longer kept. On to the next one still to finish, if any.
-                void dropUnfinished(db, draft.entry.key);
-                props.onOpenCard(
-                  nextUnfinished(
-                    unfinished.map((u) => u.entry.key),
-                    draft.entry.key,
-                  ),
-                );
-              }}
-            />
-          ) : editing !== undefined && props.target.row !== undefined ? (
-            <RowEditor
-              item={editing}
-              profiles={props.profiles}
-              categories={props.categories}
-              methods={props.paymentMethods}
-              translate={translate}
-              onDone={(values) => {
-                const index = props.target.row ?? -1;
-                setSession((s) => ({
-                  ...s,
-                  items: s.items.map((item, i) =>
-                    i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
-                  ),
-                }));
-                props.onOpenRow(undefined);
-              }}
-              onBack={() => {
-                props.onOpenRow(undefined);
-              }}
-            />
-          ) : (
-            <div className="space-y-4">
-              {session.stage === 'reading' ? null : (
-                <UnfinishedGroup
-                  entries={unfinished}
-                  methods={props.paymentMethods}
-                  onOpen={(key) => {
-                    props.onOpenCard(key);
-                  }}
-                  onDelete={deleteUnfinished}
-                />
-              )}
-              {session.stage === 'pick' ? (
-                <Picker
-                  files={session.files}
-                  shared={session.sharedId !== undefined}
-                  sharedGone={sharedGone}
-                  profiles={props.profiles}
-                  whose={session.batch.profileId}
-                  onWhose={(profileId) => {
-                    setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
-                  }}
-                  onFiles={(files) => {
-                    setSession((s) => ({ ...s, files }));
-                  }}
-                  note={session.note}
-                  onNote={(note) => {
-                    setSession((s) => ({ ...s, note }));
-                  }}
-                  onRead={() => void read(session.files)}
-                />
-              ) : session.stage === 'reading' ? (
-                <Reading
-                  states={session.states}
-                  onStop={() => {
-                    abort.current?.abort();
-                  }}
-                />
-              ) : (
-                <Review
-                  session={session}
-                  profiles={props.profiles}
-                  categories={props.categories}
-                  methodsList={props.paymentMethods}
-                  translate={translate}
-                  saving={saving}
-                  onChange={(items) => {
-                    setSession((s) => ({ ...s, items }));
-                  }}
-                  onMethods={(methods) => {
-                    setSession((s) => ({ ...s, methods }));
-                  }}
-                  onOpenMethod={(id) => {
-                    props.onOpenCard(id);
-                  }}
-                  onBatch={(batch) => {
-                    setSession((s) => ({
-                      ...s,
-                      batch,
-                      items: applyBatch(s.items, batch, props.paymentMethods),
-                    }));
-                  }}
-                  onOpen={(index) => {
-                    props.onOpenRow(index);
-                  }}
-                  onSave={() => void save()}
-                  onAgain={() => {
-                    setSession((s) => ({
-                      ...s,
-                      stage: 'pick',
-                      files: [],
-                      items: [],
-                      methods: [],
-                      drafted: 0,
-                    }));
-                  }}
-                />
-              )}
-            </div>
-          )}
-        </div>
+                : t('import:editTitle')
+          }
+          subtitle={editing === undefined && filling === undefined ? t('import:body') : undefined}
+        >
+          <div className="pb-4">
+            {filling !== undefined && props.target.card !== undefined ? (
+              <MethodPanel
+                key={filling.id}
+                item={filling}
+                methods={props.paymentMethods}
+                profiles={props.profiles}
+                owner={draft === undefined ? owner : ownerOf(draft.entry)}
+                onDone={(saved) => {
+                  const open = props.target.card;
+                  if (saved === undefined || open === undefined) {
+                    props.onOpenCard(undefined);
+                    return;
+                  }
+                  setSession((s) => ({
+                    ...s,
+                    methods: s.methods.map((m): MethodReviewItem =>
+                      m.id === open ? { ...m, savedId: saved.id, ticked: false } : m,
+                    ),
+                    items: linkToCard(s.items, saved),
+                  }));
+                  toast(t('import:methodSaved', { name: saved.label }));
+                  if (draft === undefined) {
+                    props.onOpenCard(undefined);
+                    return;
+                  }
+                  // Finished: no longer kept. On to the next one still to finish, if any.
+                  void dropUnfinished(db, draft.entry.key);
+                  props.onOpenCard(
+                    nextUnfinished(
+                      unfinished.map((u) => u.entry.key),
+                      draft.entry.key,
+                    ),
+                  );
+                }}
+              />
+            ) : editing !== undefined && props.target.row !== undefined ? (
+              <RowEditor
+                item={editing}
+                profiles={props.profiles}
+                categories={props.categories}
+                methods={props.paymentMethods}
+                translate={translate}
+                onDone={(values) => {
+                  const index = props.target.row ?? -1;
+                  setSession((s) => {
+                    const items = s.items.map((item, i) =>
+                      i === index ? { ...item, values, flags: [], ticked: true, confirmed: true } : item,
+                    );
+                    // Changed into the other kind, the row the person just settled stays in sight.
+                    const edited = items[index];
+                    const strayed = edited !== undefined && !matchesImportKind(edited, s.kind);
+                    return { ...s, items, leftOutShown: s.leftOutShown || strayed };
+                  });
+                  props.onOpenRow(undefined);
+                }}
+                onBack={() => {
+                  props.onOpenRow(undefined);
+                }}
+              />
+            ) : (
+              <div className="space-y-4">
+                {session.stage === 'reading' ? null : (
+                  <UnfinishedGroup
+                    entries={unfinished}
+                    methods={props.paymentMethods}
+                    onOpen={(key) => {
+                      props.onOpenCard(key);
+                    }}
+                    onDelete={deleteUnfinished}
+                  />
+                )}
+                {session.stage === 'pick' ? (
+                  <Picker
+                    files={session.files}
+                    shared={session.sharedId !== undefined}
+                    sharedGone={sharedGone}
+                    profiles={props.profiles}
+                    whose={session.batch.profileId}
+                    onWhose={(profileId) => {
+                      setSession((s) => ({ ...s, batch: { ...s.batch, profileId } }));
+                    }}
+                    kind={session.kind}
+                    onKind={chooseKind}
+                    onFiles={(files) => {
+                      setSession((s) => ({ ...s, files }));
+                    }}
+                    note={session.note}
+                    onNote={(note) => {
+                      setSession((s) => ({ ...s, note }));
+                    }}
+                  />
+                ) : session.stage === 'reading' ? (
+                  <Reading states={session.states} />
+                ) : (
+                  <Review
+                    session={session}
+                    profiles={props.profiles}
+                    categories={props.categories}
+                    methodsList={props.paymentMethods}
+                    translate={translate}
+                    saving={saving}
+                    footerEl={footerEl}
+                    onKind={chooseKind}
+                    onShowLeftOut={showLeftOut}
+                    onChange={(items) => {
+                      setSession((s) => ({ ...s, items }));
+                    }}
+                    onMethods={(methods) => {
+                      setSession((s) => ({ ...s, methods }));
+                    }}
+                    onOpenMethod={(id) => {
+                      props.onOpenCard(id);
+                    }}
+                    onBatch={(batch) => {
+                      setSession((s) => {
+                        const answered = applyBatch(s.items, batch, props.paymentMethods);
+                        // Answering whose a row is ticks it - never a left-out one: only the person does.
+                        const items = answered.map((item, i) =>
+                          matchesImportKind(item, s.kind)
+                            ? item
+                            : { ...item, ticked: s.items[i]?.ticked ?? false },
+                        );
+                        return { ...s, batch, items };
+                      });
+                    }}
+                    onOpen={(index) => {
+                      props.onOpenRow(index);
+                    }}
+                    onSave={() => void save()}
+                    onAgain={() => {
+                      setSession((s) => ({
+                        ...s,
+                        stage: 'pick',
+                        files: [],
+                        items: [],
+                        methods: [],
+                        drafted: 0,
+                        leftOutShown: false,
+                      }));
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </PopOutBody>
+        <PopOutPreview title={t('import:preview.title')} subtitle={t('import:preview.subtitle')}>
+          <ImportPreview found={previewed} language={i18n.language} />
+        </PopOutPreview>
 
         <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
           <AlertDialogContent>
@@ -673,8 +756,8 @@ export function ImportSheet(props: ImportSheetProps) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SheetContent>
-    </Sheet>
+      </PopOutContent>
+    </PopOut>
   );
 }
 
@@ -725,7 +808,13 @@ async function flagAgainstHousehold(
     row.methodAlias === null
       ? undefined
       : methods.find((m) => m.id === aliases.methods.get(row.methodAlias ?? ''));
-  return flagCardFees(flagExisting(rows, [...occurrences, ...fees]), method, cards);
+  // What each row was paid with, as the review will take it: its card's digits, else the method it names.
+  const paidWith = (row: FoundRow) => cardOf(row, methods) ?? method(row);
+  return flagCardFees(
+    flagExisting(rows, [...occurrences, ...fees], { methods, methodOf: paidWith }),
+    method,
+    cards,
+  );
 }
 
 /** Who a found card or account goes to: whoever its file was read as being of, else `fallback`. */
@@ -741,10 +830,11 @@ function Picker({
   profiles,
   whose,
   onWhose,
+  kind,
+  onKind,
   onFiles,
   note,
   onNote,
-  onRead,
 }: {
   readonly files: readonly File[];
   readonly shared: boolean;
@@ -753,11 +843,12 @@ function Picker({
   /** Whose spending and income the files are; '' until answered. */
   readonly whose: string;
   readonly onWhose: (profileId: string) => void;
+  readonly kind: ImportKind;
+  readonly onKind: (kind: ImportKind) => void;
   readonly onFiles: (files: File[]) => void;
   /** What the person said about the files, for the whole batch. */
   readonly note: string;
   readonly onNote: (note: string) => void;
-  readonly onRead: () => void;
 }) {
   const { t } = useTranslation('import');
   const whoseId = useId();
@@ -812,10 +903,11 @@ function Picker({
           <p className="text-xs text-muted-foreground">{t('whoseHint')}</p>
         </div>
       ) : null}
+      <KindChoice kind={kind} onKind={onKind} />
       <div
         className={cn(
           'flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border p-6 text-center transition-colors',
-          dragging && 'border-primary bg-primary/5',
+          dragging && 'border-primary-ink bg-primary/5',
         )}
         onDragOver={(event) => {
           event.preventDefault();
@@ -915,16 +1007,11 @@ function Picker({
           </a>
         </span>
       </p>
-
-      <Button type="button" className="h-11 w-full" disabled={files.length === 0} onClick={onRead}>
-        {files.length === 0 ? t('readNone') : t('read', { count: files.length })}
-      </Button>
     </div>
   );
 }
 
-function Reading({ states, onStop }: { readonly states: readonly FileState[]; readonly onStop: () => void }) {
-  const { t } = useTranslation('import');
+function Reading({ states }: { readonly states: readonly FileState[] }) {
   return (
     <div className="space-y-4">
       <ul className="divide-y divide-border rounded-xl border border-border text-sm" aria-live="polite">
@@ -937,9 +1024,6 @@ function Reading({ states, onStop }: { readonly states: readonly FileState[]; re
           </li>
         ))}
       </ul>
-      <Button type="button" variant="outline" className="w-full" onClick={onStop}>
-        {t('stop')}
-      </Button>
     </div>
   );
 }
@@ -979,6 +1063,9 @@ function Review({
   methodsList,
   translate,
   saving,
+  footerEl,
+  onKind,
+  onShowLeftOut,
   onChange,
   onMethods,
   onOpenMethod,
@@ -993,6 +1080,9 @@ function Review({
   readonly methodsList: readonly PaymentMethod[];
   readonly translate: (category: Category) => string;
   readonly saving: boolean;
+  readonly footerEl: HTMLElement | null;
+  readonly onKind: (kind: ImportKind) => void;
+  readonly onShowLeftOut: (shown: boolean) => void;
   readonly onChange: (items: ReviewItem[]) => void;
   readonly onMethods: (methods: MethodReviewItem[]) => void;
   readonly onOpenMethod: (id: string) => void;
@@ -1011,24 +1101,31 @@ function Review({
   // Everything found waits above, to be finished: only another file to offer here.
   if (items.length === 0 && methods.length === 0 && session.drafted > 0) {
     return (
-      <Button type="button" variant="outline" className="w-full" onClick={onAgain}>
-        {t('chooseOther')}
-      </Button>
+      <FooterPortal target={footerEl}>
+        <Button type="button" variant="pill" onClick={onAgain}>
+          {t('chooseOther')}
+        </Button>
+      </FooterPortal>
     );
   }
   if (items.length === 0 && methods.length === 0) {
     return (
       <div className="space-y-4">
-        {failures.length === 0 ? null : <Reading states={session.states} onStop={() => undefined} />}
+        {failures.length === 0 ? null : <Reading states={session.states} />}
         <p className="text-sm">{t('nothing')}</p>
-        <Button type="button" variant="outline" className="w-full" onClick={onAgain}>
-          {t('chooseOther')}
-        </Button>
+        <FooterPortal target={footerEl}>
+          <Button type="button" variant="pill" onClick={onAgain}>
+            {t('chooseOther')}
+          </Button>
+        </FooterPortal>
       </div>
     );
   }
 
-  const indexed = items.map((item, index) => ({ item, index }));
+  const all = items.map((item, index) => ({ item, index }));
+  // Rows of the other kind are left out: listed apart, on request, and counted toward nothing.
+  const indexed = all.filter(({ item }) => matchesImportKind(item, session.kind));
+  const leftOut = all.filter(({ item }) => !matchesImportKind(item, session.kind));
   const existing = indexed.filter(({ item }) => item.flags.some((f) => EXISTING.has(f)));
   const check = indexed.filter(
     ({ item }) =>
@@ -1038,14 +1135,17 @@ function Review({
   const ready = indexed.filter(
     ({ item }) => !check.some((c) => c.item === item) && !existing.some((e) => e.item === item),
   );
-  const ticked = items.filter((i) => i.ticked).length + methods.filter((m) => m.ticked).length;
-  const selectable = items.length + methods.filter(tickable).length;
+  const methodsTicked = methods.filter((m) => m.ticked).length;
+  const ticked = items.filter((i) => included(i, session.kind, session.leftOutShown)).length + methodsTicked;
+  // Select all is for the rows chosen; a left-out row is only ever ticked by hand.
+  const tickedChosen = indexed.filter(({ item }) => item.ticked).length + methodsTicked;
+  const selectable = indexed.length + methods.filter(tickable).length;
   const setTicked = (value: boolean) => {
     onChange(
-      items.map((item) => ({
-        ...item,
-        ticked: value && item.values !== undefined && saveable(item.values),
-      })),
+      items.map((item) => {
+        if (!matchesImportKind(item, session.kind)) return value ? item : { ...item, ticked: false };
+        return { ...item, ticked: value && item.values !== undefined && saveable(item.values) };
+      }),
     );
     onMethods(methods.map((m) => ({ ...m, ticked: value && tickable(m) })));
   };
@@ -1094,6 +1194,8 @@ function Review({
           if (method !== undefined) onOpenMethod(method.id);
         }}
       />
+
+      {items.length === 0 ? null : <KindChoice kind={session.kind} onKind={onKind} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {items.length === 0 ? null : (
@@ -1163,26 +1265,43 @@ function Review({
         {...{ categories, profiles, translate, onChange, onOpen, items }}
       />
 
-      <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border bg-background px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
+      {items.length > 0 && indexed.length === 0 && session.kind !== 'both' ? (
+        <p className="text-sm">{t(`emptyKind.${session.kind}`)}</p>
+      ) : null}
+      {leftOut.length === 0 || session.kind === 'both' ? null : (
+        <LeftOut
+          kind={session.kind}
+          rows={leftOut}
+          shown={session.leftOutShown}
+          onShown={onShowLeftOut}
+          methods={methodsList}
+          {...{ categories, profiles, translate, onChange, onOpen, items }}
+        />
+      )}
+
+      <FooterPortal target={footerEl}>
+        {/* Nothing to select, and nothing ticked by hand: no button. */}
+        {selectable === 0 && ticked === 0 ? null : (
+          <Button
+            type="button"
+            variant="pill"
+            onClick={() => {
+              setTicked(tickedChosen < selectable);
+            }}
+          >
+            {tickedChosen < selectable ? t('selectAll') : t('selectNone')}
+          </Button>
+        )}
         <Button
           type="button"
-          variant="outline"
-          onClick={() => {
-            setTicked(ticked < selectable);
-          }}
-        >
-          {ticked < selectable ? t('selectAll') : t('selectNone')}
-        </Button>
-        <Button
-          type="button"
-          className="h-11 flex-1"
+          variant="pill-solid"
           disabled={ticked === 0 || saving}
           onClick={onSave}
           data-testid="import-add"
         >
           {t('add', { count: ticked })}
         </Button>
-      </div>
+      </FooterPortal>
     </div>
   );
 }
@@ -1231,25 +1350,122 @@ function Group({
         </button>
       </h3>
       {expanded ? (
-        <ul className="divide-y divide-border border-t border-border" data-testid="import-rows">
-          {rows.map(({ item, index }) => (
-            <ReviewRow
-              key={item.id}
-              item={item}
-              categories={categories}
-              profiles={profiles}
-              methods={methods}
-              translate={translate}
-              onTick={(ticked) => {
-                onChange(items.map((x, i) => (i === index ? { ...x, ticked } : x)));
-              }}
-              onOpen={() => {
-                onOpen(index);
-              }}
-            />
-          ))}
-        </ul>
+        <Rows
+          className="border-t border-border"
+          testId="import-rows"
+          {...{ rows, items, categories, profiles, methods, translate, onChange, onOpen }}
+        />
       ) : null}
+    </section>
+  );
+}
+
+type RowsProps = {
+  readonly rows: readonly { readonly item: ReviewItem; readonly index: number }[];
+  readonly items: readonly ReviewItem[];
+  readonly categories: readonly Category[];
+  readonly profiles: readonly Profile[];
+  readonly methods: readonly PaymentMethod[];
+  readonly translate: (category: Category) => string;
+  readonly onChange: (items: ReviewItem[]) => void;
+  readonly onOpen: (index: number) => void;
+};
+
+function Rows({
+  rows,
+  items,
+  categories,
+  profiles,
+  methods,
+  translate,
+  onChange,
+  onOpen,
+  className,
+  id,
+  testId,
+}: RowsProps & { readonly className?: string; readonly id?: string; readonly testId?: string }) {
+  return (
+    <ul id={id} className={cn('divide-y divide-border', className)} data-testid={testId}>
+      {rows.map(({ item, index }) => (
+        <ReviewRow
+          key={item.id}
+          item={item}
+          categories={categories}
+          profiles={profiles}
+          methods={methods}
+          translate={translate}
+          onTick={(ticked) => {
+            onChange(items.map((x, i) => (i === index ? { ...x, ticked } : x)));
+          }}
+          onOpen={() => {
+            onOpen(index);
+          }}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/** Expenses, income or both: asked before reading, and changeable on the review. */
+function KindChoice({
+  kind,
+  onKind,
+}: {
+  readonly kind: ImportKind;
+  readonly onKind: (kind: ImportKind) => void;
+}) {
+  const { t } = useTranslation('import');
+  const labelId = useId();
+  return (
+    <div className="space-y-1.5">
+      <p id={labelId} className="text-sm font-medium">
+        {t('kindLabel')}
+      </p>
+      <Segmented
+        value={kind}
+        onChange={onKind}
+        options={IMPORT_KINDS.map((value) => ({ value, label: t(`kindChoice.${value}`) }))}
+        labelledBy={labelId}
+      />
+    </div>
+  );
+}
+
+/**
+ * The rows of the other kind: one quiet line saying how many, and - on
+ * request - the rows themselves, unticked until the person ticks one.
+ */
+function LeftOut({
+  kind,
+  shown,
+  onShown,
+  ...rows
+}: RowsProps & {
+  readonly kind: Exclude<ImportKind, 'both'>;
+  readonly shown: boolean;
+  readonly onShown: (shown: boolean) => void;
+}) {
+  const { t } = useTranslation('import');
+  const listId = useId();
+  const other = kind === 'expense' ? 'income' : 'expense';
+  return (
+    <section className="space-y-2" data-testid="import-left-out">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+        <span>{t(`leftOut.${other}`, { count: rows.rows.length })}</span>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          aria-expanded={shown}
+          aria-controls={shown ? listId : undefined}
+          className="-mx-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-1 font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:bg-muted"
+          onClick={() => {
+            onShown(!shown);
+          }}
+        >
+          {shown ? t('leftOut.hide') : t('leftOut.show')}
+        </button>
+      </p>
+      {shown ? <Rows id={listId} className="rounded-xl border border-border" {...rows} /> : null}
     </section>
   );
 }
@@ -1287,7 +1503,7 @@ function ReviewRow({
       <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
         <input
           type="checkbox"
-          className="size-4 accent-primary"
+          className="size-4 accent-primary-ink"
           checked={item.ticked}
           disabled={values === undefined || !saveable(values)}
           onChange={(event) => {

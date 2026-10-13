@@ -1,13 +1,20 @@
 import { withoutTracking, type BookandryDB } from '@/db/db';
 import { buildSeedPaymentMethods } from '@/db/seed';
+import { readOrCreateDeviceId } from '@/db/sync/device';
 import { accountSchema, cardSchema } from '@/domain/transfer-schema';
 import { normalizeName } from '@/domain/validation';
 import { normalizeAnnualRate } from '@/lib/money';
+import { revFromIso } from '@/lib/rev';
 import {
+  BUILTIN_METHODS_SINCE,
   isActiveMethod,
   isBuiltinPaymentMethod,
+  OTHER_METHOD_ID,
   redirectId,
   SHARED_OWNER,
+  STANDING_ORDER_METHOD_ID,
+  TRANSFER_METHOD_ID,
+  WALLET_METHOD_ID,
   type BankAccountDetails,
   type CardDetails,
   type PaymentMethod,
@@ -286,19 +293,77 @@ export async function deletePaymentMethod(
   });
 }
 
+/** The newer built-ins: synced rows, unlike cash and cheques (spec 10.2). */
+const SYNCED_BUILTINS: ReadonlySet<string> = new Set([
+  TRANSFER_METHOD_ID,
+  STANDING_ORDER_METHOD_ID,
+  WALLET_METHOD_ID,
+  OTHER_METHOD_ID,
+]);
+
 /**
- * The built-in methods, on an install made before one of them existed.
+ * The newer built-ins this device holds but has never sent, queued for upload
+ * dated the one fixed instant (spec 10.2).
+ *
+ * A fresh install and an erased one seed all six untracked, so without this
+ * no device on this build would ever send them, and a device on an older
+ * build would clear a transaction that names one. A pristine row is identical
+ * on every device, and any real edit has a later rev, so sending it never
+ * undoes anything. Cash and cheques are never sent.
+ *
+ * Runs inside the caller's untracked transaction, which must hold
+ * `paymentMethods`, `syncState` and `outbox`.
+ */
+export async function queueBuiltinUploads(db: BookandryDB, deviceId: string): Promise<void> {
+  for (const id of SYNCED_BUILTINS) {
+    if ((await db.paymentMethods.get(id)) === undefined) continue;
+    if ((await db.syncState.get(['paymentMethods', id])) !== undefined) continue;
+    await db.syncState.put({
+      tbl: 'paymentMethods',
+      id,
+      rev: revFromIso(BUILTIN_METHODS_SINCE, deviceId),
+      deleted: 0,
+    });
+    await db.outbox.put({ tbl: 'paymentMethods', id });
+  }
+}
+
+/**
+ * The built-ins, on any install that lacks one.
  *
  * A new database gets them from `populate` (db.ts); this adds any that an
- * older one lacks - Cheque, for installs from before it. Untracked, like the
- * seed: every install writes the identical row, and as an edit it would
- * overwrite an archive made on another device. A built-in cannot be deleted,
- * so a missing one was never there.
+ * older one lacks. Cash and cheques are added untracked, as they always were:
+ * every install writes the identical row. The newer four, added here or
+ * already here, are uploaded if this device has never sent them (see
+ * `queueBuiltinUploads`). One that an older build deleted is added back as an
+ * ordinary edit, so it returns everywhere.
+ *
+ * Every read and write is inside a transaction, so two tabs booting this build
+ * at once serialise here and the second finds the rows the first added.
  */
 export async function ensureBuiltinPaymentMethods(db: BookandryDB, now: IsoInstant): Promise<void> {
-  await withoutTracking(db, [db.paymentMethods], async () => {
-    for (const method of buildSeedPaymentMethods(now)) {
-      if ((await db.paymentMethods.get(method.id)) === undefined) await db.paymentMethods.add(method);
+  const seeds = buildSeedPaymentMethods(now);
+  const deletedElsewhere = await withoutTracking(
+    db,
+    [db.paymentMethods, db.syncState, db.outbox, db.meta],
+    async () => {
+      const deleted: PaymentMethod[] = [];
+      for (const method of seeds) {
+        if ((await db.paymentMethods.get(method.id)) !== undefined) continue;
+        const state = await db.syncState.get(['paymentMethods', method.id]);
+        if (SYNCED_BUILTINS.has(method.id) && state?.deleted === 1) deleted.push(method);
+        else await db.paymentMethods.add(method);
+      }
+      await queueBuiltinUploads(db, await readOrCreateDeviceId(db.meta));
+      return deleted;
+    },
+  );
+  if (deletedElsewhere.length === 0) return;
+  // Tracked: the middleware gives each a rev newer than the deletion.
+  await db.transaction('rw', [db.paymentMethods, db.syncState, db.outbox], async () => {
+    for (const method of deletedElsewhere) {
+      if ((await db.paymentMethods.get(method.id)) !== undefined) continue;
+      await db.paymentMethods.put({ ...method, updatedAt: now });
     }
   });
 }

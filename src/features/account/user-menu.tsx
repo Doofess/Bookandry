@@ -1,5 +1,7 @@
+import { cn } from 'cn';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Languages, LogOut, SunMoon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -7,6 +9,8 @@ import { useAccount } from '@/app/account';
 import { useAccountAvatar } from '@/app/account-avatar';
 import { useSettings } from '@/app/app-context';
 import { chooseLanguage, chooseTheme } from '@/app/preferences';
+import { useDesktop } from '@/app/use-desktop';
+import { PersonAvatar } from '@/components/person-avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,11 +24,49 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { db } from '@/db/db';
 import { useSettingsSections, type SettingsSection } from '@/features/settings/sections';
 import type { Language, Theme } from '@/i18n/boot';
 
 import { AccountAvatar } from './account-avatar';
 import { AccountSheet, type Flow } from './account-sheet';
+
+/** The household at the rail's foot: up to two faces and their names (null when nobody is added yet). */
+function Household({ fallback }: { readonly fallback: ReactNode }) {
+  const { t } = useTranslation();
+  const people = useLiveQuery(
+    async () =>
+      (await db.profiles.toArray()).sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      ),
+    [],
+  );
+  if (people === undefined) return <span className="sr-only">{t('menu.label')}</span>;
+  if (people.length === 0) return fallback;
+  const [first, second] = people;
+  const names =
+    people.length === 1
+      ? first?.name
+      : people.length === 2
+        ? t('rail.pair', { first: first?.name, second: second?.name })
+        : t('rail.many', { first: first?.name, count: people.length - 1 });
+  return (
+    <>
+      <span className="flex shrink-0">
+        {people.slice(0, 2).map((person, i) => (
+          <PersonAvatar
+            key={person.id}
+            person={person}
+            size="rail"
+            className={cn('ring-2 ring-background', i > 0 && '-ms-2.5')}
+          />
+        ))}
+      </span>
+      <span className="sr-only">{t('menu.label')}</span>
+      <span className="min-w-0 truncate">{names}</span>
+    </>
+  );
+}
 
 /**
  * The account menu: the person's picture at the top end of every screen,
@@ -35,15 +77,19 @@ import { AccountSheet, type Flow } from './account-sheet';
  * signing out, last. In a build without accounts it is the same menu less
  * the account.
  */
-export function UserMenu() {
+export function UserMenu({ placement = 'head' }: { readonly placement?: 'head' | 'rail' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const view = useAccount();
   const settings = useSettings();
   const { name, email } = useAccountAvatar();
+  const shown = name ?? email;
   const sections = useSettingsSections();
   const [flow, setFlow] = useState<Flow | undefined>(undefined);
   const signedIn = view.status === 'signed_in';
+  // Both menus are mounted from lg (the screen's head and the rail's foot): only one asks for the new password.
+  const desktop = useDesktop();
+  const asksForNewPassword = placement === 'rail' ? desktop : !desktop;
 
   const item = (section: SettingsSection) => {
     const Icon = section.icon;
@@ -65,14 +111,40 @@ export function UserMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label={t('menu.label')}
-          // On the deep panel: a 44px target around the 34px picture, and a
-          // light ring so the picture's edge shows on the sapphire.
-          className="-me-1.5 flex size-11 items-center justify-center rounded-full focus-visible:ring-3 focus-visible:ring-white/60 focus-visible:outline-none"
+          // The head's is a picture, so it is named; the rail's shows the name, so its visible text is in its name.
+          {...(placement === 'head' ? { 'aria-label': t('menu.label') } : {})}
+          className={
+            placement === 'rail'
+              ? 'flex min-h-14 w-full items-center gap-3 rounded-full px-3 text-start text-[0.9375rem] font-light focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring hover-fine:bg-accent'
+              : '-me-1.5 flex size-11 items-center justify-center rounded-full focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring'
+          }
         >
-          <AccountAvatar size={34} className="ring-2 ring-white/35" />
+          {placement === 'rail' ? (
+            <Household
+              fallback={
+                <>
+                  <AccountAvatar size={36} className="shrink-0 ring-2 ring-border" />
+                  {shown === undefined ? (
+                    <span>{t('menu.label')}</span>
+                  ) : (
+                    <>
+                      <span className="sr-only">{t('menu.label')}</span>
+                      <span className="min-w-0 truncate">{shown}</span>
+                    </>
+                  )}
+                </>
+              }
+            />
+          ) : (
+            <AccountAvatar size={34} className="shrink-0 ring-2 ring-border" />
+          )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={8} className="w-72 p-1.5">
+        <DropdownMenuContent
+          side={placement === 'rail' ? 'top' : 'bottom'}
+          align={placement === 'rail' ? 'start' : 'end'}
+          sideOffset={8}
+          className="w-72 p-1.5"
+        >
           {signedIn ? (
             <>
               {/* Who is signed in: read, not chosen, so not an item. */}
@@ -158,7 +230,11 @@ export function UserMenu() {
       {/* Here, mounted on every screen: back from a password-reset email, the
           new password is asked for wherever the link landed. */}
       <AccountSheet
-        flow={signedIn && view.passwordRecovery && flow === undefined ? { kind: 'newPassword' } : flow}
+        flow={
+          asksForNewPassword && signedIn && view.passwordRecovery && flow === undefined
+            ? { kind: 'newPassword' }
+            : flow
+        }
         onClose={() => {
           setFlow(undefined);
         }}

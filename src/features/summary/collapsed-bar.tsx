@@ -12,13 +12,14 @@ import type { BalanceState } from './use-balance';
 import { COLLAPSED_HEIGHT } from './use-collapsing-header';
 
 const ROW = cn(
-  'mx-auto flex h-full w-full max-w-2xl items-center justify-between gap-3 text-start',
-  'ps-[max(1rem,env(safe-area-inset-left,0px))] pe-[max(1rem,env(safe-area-inset-right,0px))]',
+  'mx-auto flex h-full w-full max-w-[105rem] items-center justify-between gap-3 text-start',
+  // The content box's own padding: 12px on a phone, 24px from the rail up.
+  'ps-[max(0.75rem,env(safe-area-inset-left,0px))] pe-[max(0.75rem,env(safe-area-inset-right,0px))] lg:ps-6 lg:pe-6',
   'focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none disabled:cursor-default',
 );
 
 /**
- * The summary, collapsed to one line: a slim sapphire bar, the balance in the serif.
+ * The summary, collapsed to one line: a slim sapphire bar, the balance in Plex.
  *
  * What survives and what does not is the whole design decision. BALANCE stays,
  * at a size still worth reading - it is the number people open the app for, and
@@ -63,11 +64,7 @@ export function CollapsedSummaryBar({
         {state.status === 'ready' ? (
           // Not animated here: a count-up that replays every time the header
           // collapses is motion with nothing to say.
-          <Money
-            minor={state.minor}
-            currency={currency}
-            className="truncate font-display text-lg font-bold"
-          />
+          <Money minor={state.minor} currency={currency} className="truncate text-lg font-semibold" />
         ) : state.status === 'blocked' ? (
           <span className="truncate text-sm text-brand-deep-foreground">
             {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
@@ -113,12 +110,14 @@ export function CollapsedSummaryBar({
       data-testid="collapsed-summary"
       style={{ height: `calc(${String(COLLAPSED_HEIGHT)}px + env(safe-area-inset-top, 0px))` }}
       className={cn(
-        'fixed inset-x-0 top-0 z-30 bg-brand-deep text-brand-deep-foreground shadow-md',
+        'fixed inset-x-0 top-0 z-30 bg-night text-on-night shadow-md',
         'pt-[env(safe-area-inset-top,0px)]',
         // The figure it stands in for lives inside `main`, which clears the
-        // desktop nav rail. Without this the collapsed balance jumps ~112px to
+        // 256px desktop rail. The bar starts after the rail (not under it, which put
+        // night behind the transparent rail), so the balance keeps its place and
+        // the mark and Add stay on the paper. Without this it jumps ~128px to
         // the inline-start of the column it replaced.
-        'lg:ps-56 xl:pe-56',
+        'lg:start-64',
       )}
     >
       {opens ? (

@@ -285,11 +285,11 @@ describe('TransactionRow', () => {
         <TransactionRow occurrence={income} context={context()} position={2} setSize={2} />
       </>,
     );
-    const chips = container.querySelectorAll('[data-slot="category-chip"]');
+    const pills = container.querySelectorAll('[data-slot="hue-pill"]');
 
-    expect(chips).toHaveLength(2);
-    for (const chip of chips) expect(chip).toHaveClass('bg-accent', 'text-accent-foreground');
-    expect(container.querySelectorAll('.bg-muted.text-muted-foreground.size-9')).toHaveLength(0);
+    expect(pills).toHaveLength(2);
+    for (const pill of pills) expect(pill).toHaveAttribute('data-hue', 'green');
+    expect(container.querySelector('[data-slot="category-chip"]')).toBeNull();
   });
 
   it('falls back to the category id when the category is gone', () => {
@@ -438,7 +438,7 @@ describe('TransactionRow', () => {
     );
     const row = screen.getByRole('listitem');
     const main = screen.getByRole('button', { name: /^Sep 10, 2026, Groceries$/ });
-    const inert = row.querySelector('[data-slot="category-chip"]')?.parentElement;
+    const inert = row.querySelector('[data-slot="hue-pill"]')?.parentElement;
 
     expect(row).toHaveClass('relative');
     expect(main).toHaveClass('absolute', 'inset-0');
@@ -460,11 +460,59 @@ describe('DayHeader', () => {
     expect(screen.getByText('Today')).toBeInTheDocument();
   });
 
+  it('heads a day with a 2px line in 600, on the sheet, never a muted band', () => {
+    render(<DayHeader date={d('2026-09-15')} netMinor={-4500} isToday currency="USD" />);
+    const heading = document.querySelector('[data-slot="day-heading"]');
+    expect(heading?.className).toMatch(/border-be-2/);
+    expect(heading?.className).toMatch(/font-semibold/);
+    expect(heading?.className).not.toMatch(/bg-background|bg-muted/);
+  });
+
   it('signs the day total explicitly', () => {
     const { container } = render(
       <DayHeader date={d('2026-09-10')} netMinor={5000} isToday={false} currency="USD" />,
     );
     expect(container.querySelector('[data-value="5000"]')?.textContent).toContain('+');
+  });
+});
+
+describe("the concept's rows", () => {
+  const at = '2026-01-01T00:00:00.000Z' as PaymentMethod['createdAt'];
+  const isracard: PaymentMethod = {
+    id: 'isra',
+    profileId: 'p1',
+    type: 'credit_card',
+    label: 'Isracard Platinum',
+    card: { issuer: 'isracard', lastDigits: '4821' },
+    isArchived: 0,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const row = () =>
+    render(
+      <TransactionRow
+        occurrence={occurrence({ paymentMethodId: 'isra' })}
+        context={context({ methods: new Map([['isra', isracard]]) })}
+        position={1}
+        setSize={1}
+        onCategory={() => undefined}
+      />,
+    );
+
+  it("leads with the category's hue pill, inside the category button", () => {
+    row();
+    const button = screen.getByRole('button', { name: /^Category:/ });
+    expect(button.querySelector('[data-slot="hue-pill"]')).toHaveAttribute('data-hue', 'green');
+    expect(document.querySelector('[data-slot="category-chip"]')).toBeNull();
+  });
+
+  it('writes the merchant in 600 at 17px and the card as its company-colour chip with its last four', () => {
+    row();
+    expect(document.querySelector('[data-slot="row-title"]')?.className).toMatch(/text-\[1\.0625rem\]/);
+    const chip = screen.getByTestId('row-card');
+    expect(chip).toHaveAttribute('data-slot', 'chip');
+    expect(chip).toHaveAttribute('data-money', 'issuer-isracard');
+    expect(chip.textContent).toBe('Isracard 4821');
   });
 });
 
@@ -475,7 +523,7 @@ describe('the card an expense was paid with', () => {
     profileId: 'p1',
     type: 'credit_card',
     label: 'Max Gold',
-    card: { lastDigits: '3214' },
+    card: { lastDigits: '5555' },
     isArchived: 0,
     createdAt: at,
     updatedAt: at,
@@ -493,11 +541,11 @@ describe('the card an expense was paid with', () => {
 
   it('shows a card icon and its last four digits, and says so', () => {
     paidWith(card());
-    expect(screen.getByTestId('row-card').textContent).toBe('3214');
+    expect(screen.getByTestId('row-card').textContent).toBe('Max Gold 5555');
     // Cut short below sm: the full name is a hover away.
     expect(screen.getByTestId('row-card')).toHaveAttribute('title', 'Max Gold');
     expect(
-      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 3214$/ }),
+      screen.getByRole('button', { name: /^Sep 10, 2026, Groceries, Card ending 5555$/ }),
     ).toBeInTheDocument();
   });
 
@@ -550,19 +598,19 @@ describe('where income went', () => {
       />,
     );
 
-  it('shows the bank’s mark and the account, and says so', () => {
+  it('shows the bank as its colour chip, and says the account in the row’s name', () => {
     show(income('leumi'));
     const chip = screen.getByTestId('row-destination');
-    expect(chip).toHaveTextContent('Leumi current');
-    expect(chip.querySelector('img[data-brand="bank-10"]')).not.toBeNull();
+    expect(chip).toHaveTextContent('Bank Leumi');
+    expect(chip).toHaveAttribute('data-money', 'bank-10');
     expect(screen.getByRole('button', { name: /^Sep 10, 2026.*, Into Leumi current$/ })).toBeInTheDocument();
   });
 
-  it('shows the cash icon for cash', () => {
+  it('shows the cash chip for cash', () => {
     show(income(CASH_METHOD_ID));
     const chip = screen.getByTestId('row-destination');
     expect(chip).toHaveTextContent('Cash');
-    expect(chip.querySelector('svg')).not.toBeNull();
+    expect(chip).toHaveAttribute('data-money', 'cash');
     expect(screen.getByRole('button', { name: /^Sep 10, 2026.*, Into Cash$/ })).toBeInTheDocument();
   });
 
@@ -584,7 +632,7 @@ describe('where income went', () => {
         setSize={1}
       />,
     );
-    expect(screen.getByTestId('row-destination')).toHaveTextContent('Leumi current');
+    expect(screen.getByTestId('row-destination')).toHaveTextContent('Bank Leumi');
   });
 
   it('says so in Hebrew', async () => {

@@ -13,7 +13,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  EditorPanel,
+  EditorPanelBody,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { moveBusinessType, movePastExpenses, pastExpensesFor, returnBusinessType } from '@/db/business-types';
 import { db } from '@/db/db';
 import { mccName } from '@/domain/mcc';
@@ -93,20 +100,20 @@ export function BusinessTypesSheet({
   };
 
   return (
-    <Sheet
+    <EditorPanel
       open={category !== undefined}
       onOpenChange={(open) => {
         if (!open) setExpanded(false);
         onOpenChange(open);
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{t('categories:businessTypes.title', { name })}</SheetTitle>
-          <SheetDescription>{t('categories:businessTypes.body')}</SheetDescription>
-        </SheetHeader>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>{t('categories:businessTypes.title', { name })}</EditorPanelTitle>
+          <EditorPanelDescription>{t('categories:businessTypes.body')}</EditorPanelDescription>
+        </EditorPanelHeader>
 
-        <div className="space-y-4 px-4 pb-6">
+        <EditorPanelBody>
           {category?.isArchived === 1 ? (
             <p className="rounded-lg bg-muted px-3 py-2 text-sm">{t('categories:businessTypes.archived')}</p>
           ) : null}
@@ -166,13 +173,13 @@ export function BusinessTypesSheet({
               void add(code);
             }}
             trigger={
-              <Button type="button" variant="outline" className="h-11 w-full">
+              <Button type="button" variant="pill">
                 <Plus className="size-4" aria-hidden="true" />
                 {t('categories:businessTypes.add')}
               </Button>
             }
           />
-        </div>
+        </EditorPanelBody>
 
         <AlertDialog
           open={asking !== undefined}
@@ -200,7 +207,7 @@ export function BusinessTypesSheet({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }

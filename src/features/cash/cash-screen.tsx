@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead } from '@/app/screen-head';
 import { Money } from '@/components/money';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetHead } from '@/components/ui/sheet-surface';
 import { db } from '@/db/db';
 import type { UndoableAction } from '@/db/occurrence-actions';
 import { addCashMove, deleteCashMove, InvalidCashMoveError } from '@/db/repos/cash-moves';
@@ -27,7 +28,8 @@ import type { Currency, IsoInstant, LocalDate, Minor } from '@/types/money';
 
 import { CashActivityList } from './activity-list';
 import { CashAddMenu } from './cash-add-menu';
-import { CashFigure } from './cash-figure';
+import { CashPerson } from './cash-person';
+import { CashSheet } from './cash-sheet';
 import { CountSheet } from './count-sheet';
 import { CashMoveSheet, type MoveTarget } from './move-sheet';
 import { CashSetupCard, type SetupProblem } from './setup-card';
@@ -43,6 +45,7 @@ const NO_MOVES: ReadonlyMap<string, LocalDate> = new Map();
  */
 export function CashScreen() {
   const { t } = useTranslation();
+  const { t: tCategories } = useTranslation('categories');
   const today = useToday();
   const settings = useSettings();
   const whose = settings.activeProfileId;
@@ -63,6 +66,9 @@ export function CashScreen() {
   const me = account.status === 'signed_in' ? account.user.id : undefined;
   const [moveTarget, setMoveTarget] = useState<MoveTarget | undefined>(undefined);
   const [counting, setCounting] = useState(false);
+  /** Whose sheet's button opened the panel; the panel starts on them rather than on the person in view. */
+  const [personFor, setPersonFor] = useState<string | undefined>(undefined);
+  const [params, setParams] = useSearchParams();
 
   // Whose cash a sheet starts on: the person in view, else this account's own, else the first who set up.
   const figures = (data?.summary.people ?? []).flatMap((p) => {
@@ -76,9 +82,37 @@ export function CashScreen() {
     : me !== undefined && ids.includes(me)
       ? me
       : (ids[0] ?? '');
+  const panelPerson = personFor ?? defaultPerson;
+  const openCount = (profileId?: string): void => {
+    setPersonFor(profileId);
+    setCounting(true);
+  };
+  const openMove = (kind: 'withdraw' | 'deposit', profileId?: string): void => {
+    setPersonFor(profileId);
+    setMoveTarget({ mode: 'add', kind });
+  };
   const done = (message: string, undoable: UndoableAction): void => {
     offerUndo(message, undoable, t);
   };
+
+  // The feed's wallet links here with ?do=count|withdraw|deposit: open that panel once (state adjusted
+  // while rendering, as the parameter arrives), then drop the parameter from the address.
+  const wanted = params.get('do');
+  const loaded = data !== undefined;
+  const [seenDo, setSeenDo] = useState<string | null>(null);
+  if (wanted !== seenDo && (wanted === null || loaded)) {
+    setSeenDo(wanted);
+    if (figures.length > 0) {
+      if (wanted === 'count') openCount();
+      else if (wanted === 'withdraw' || wanted === 'deposit') openMove(wanted);
+    }
+  }
+  useEffect(() => {
+    if (wanted === null || !loaded) return;
+    const next = new URLSearchParams(params);
+    next.delete('do');
+    setParams(next, { replace: true });
+  }, [wanted, loaded, params, setParams]);
 
   const start = async (profileId: string, amountMinor: Minor): Promise<SetupProblem | undefined> => {
     try {
@@ -110,15 +144,15 @@ export function CashScreen() {
   };
 
   return (
-    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
+    <section className="px-3 pb-24 lg:px-0 lg:pb-8">
       <CashAddMenu
         disabled={profiles.length === 0}
         canMove={figures.length > 0}
         onMove={(kind) => {
-          setMoveTarget({ mode: 'add', kind });
+          openMove(kind);
         }}
         onCount={() => {
-          setCounting(true);
+          openCount();
         }}
         onCashExpense={() => {
           sheet.openAdd('expense', { cash: true });
@@ -127,68 +161,131 @@ export function CashScreen() {
           sheet.openAdd('income', { cash: true });
         }}
       />
-      <ScreenPanel>
-        <ScreenTitle>{t('cash.title')}</ScreenTitle>
-        {lookups === undefined ? null : (
-          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="cash-pills">
-            <ProfileSwitcher
-              profiles={profiles}
-              active={whose}
-              onSelect={(profileId) => {
-                void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
-              }}
-              tone="panel"
-            />
-          </div>
-        )}
-        {setUp ? (
-          <div className="mt-5">
-            <CashFigure summary={data.summary} currency={currency} profiles={byId} />
-          </div>
-        ) : null}
-      </ScreenPanel>
-
-      <PanelSheet className="space-y-5 px-4 pt-6">
+      <ScreenHead
+        title={t('cash.title')}
+        actions={
+          lookups === undefined ? undefined : (
+            <div className="flex flex-wrap items-center gap-2" data-testid="cash-pills">
+              <ProfileSwitcher
+                profiles={profiles}
+                active={whose}
+                onSelect={(profileId) => {
+                  void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+                }}
+                tone="panel"
+              />
+            </div>
+          )
+        }
+      />
+      <div className="mbs-sheet grid grid-cols-1 gap-sheet @board/main:grid-cols-12 @board/main:items-start">
         {(data?.twoStarts ?? []).map((found) => {
           const owner = byId.get(found.profileId);
           return owner === undefined ? null : (
-            <TwoStartsNotice
-              key={found.profileId}
-              name={owner.name}
-              found={found}
-              currency={currency}
-              onKeepFirst={() => keepFirst(found)}
-            />
+            <div key={found.profileId} className="@board/main:col-span-12">
+              <TwoStartsNotice
+                name={owner.name}
+                found={found}
+                currency={currency}
+                onKeepFirst={() => keepFirst(found)}
+              />
+            </div>
           );
         })}
         {pending.map((person) => (
-          <CashSetupCard
-            key={person.id}
-            person={person}
-            named={everyone}
-            currency={currency}
-            onSave={(amountMinor) => start(person.id, amountMinor)}
-          />
+          <div key={person.id} className="@board/main:col-span-12">
+            <CashSetupCard
+              person={person}
+              named={everyone}
+              currency={currency}
+              onSave={(amountMinor) => start(person.id, amountMinor)}
+            />
+          </div>
         ))}
         {setUp && lookups !== undefined ? (
           <>
-            <ExpectedLine expected={data.summary.expected} currency={currency} />
-            <CashActivityList
-              activity={data.activity}
-              lookups={lookups}
-              showPerson={everyone && profiles.length > 1}
-              currency={currency}
-              today={today}
-              onOpenOccurrence={(occurrence) => {
-                sheet.openEdit(occurrence);
-              }}
-              onOpenMove={(move) => {
-                setMoveTarget({ mode: 'edit', move });
-              }}
-            />
+            <div data-testid="cash-amount" className="@board/main:col-span-12">
+              <div data-testid="cash-counted">
+                <CashSheet
+                  summary={data.summary}
+                  currency={currency}
+                  actions={
+                    <>
+                      <Button
+                        variant="pill"
+                        onClick={() => {
+                          openCount();
+                        }}
+                      >
+                        {t('board.count')}
+                      </Button>
+                      <Button
+                        variant="pill"
+                        onClick={() => {
+                          openMove('withdraw');
+                        }}
+                      >
+                        {t('board.withdraw')}
+                      </Button>
+                    </>
+                  }
+                />
+              </div>
+              {data.summary.onHandMinor < 0 ? (
+                // The pot is a number on yellow; the words say what the minus means.
+                <p className="px-2 pt-3 text-sm font-medium">{t('cash.negative')}</p>
+              ) : null}
+            </div>
+            <div className="contents" data-testid="cash-people">
+              {data.summary.people.map((cash) => {
+                const person = byId.get(cash.profileId);
+                return person === undefined ? null : (
+                  <div
+                    key={cash.profileId}
+                    className="@board/main:col-span-6 @wide/main:col-span-4 @vast/main:col-span-3"
+                  >
+                    <CashPerson
+                      person={person}
+                      cash={cash}
+                      currency={currency}
+                      onCount={() => {
+                        openCount(cash.profileId);
+                      }}
+                      onWithdraw={() => {
+                        openMove('withdraw', cash.profileId);
+                      }}
+                      onDeposit={() => {
+                        openMove('deposit', cash.profileId);
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="@board/main:col-span-12 @wide/main:col-span-8">
+              <CashActivityList
+                activity={data.activity}
+                lookups={lookups}
+                showPerson={everyone && profiles.length > 1}
+                currency={currency}
+                today={today}
+                onOpenOccurrence={(occurrence) => {
+                  sheet.openEdit(occurrence);
+                }}
+                onOpenMove={(move) => {
+                  setMoveTarget({ mode: 'edit', move });
+                }}
+              />
+            </div>
+            <div className="@board/main:col-span-12 @wide/main:col-span-4">
+              <Sheet kind="paper" data-slot="cash-month" className="grid content-start gap-3">
+                <SheetHead title={tCategories('screen.thisMonth')} />
+                <ExpectedLine expected={data.summary.expected} currency={currency} />
+              </Sheet>
+            </div>
           </>
         ) : null}
-      </PanelSheet>
+      </div>
 
       {lookups === undefined ? null : (
         <TransactionSheet
@@ -210,12 +307,15 @@ export function CashScreen() {
         <CashMoveSheet
           target={moveTarget}
           onOpenChange={(open) => {
-            if (!open) setMoveTarget(undefined);
+            if (!open) {
+              setMoveTarget(undefined);
+              setPersonFor(undefined);
+            }
           }}
           people={figures.map((p) => p.profile)}
           since={since}
           firstMoves={data?.firstMoves ?? NO_MOVES}
-          defaultProfileId={defaultPerson}
+          defaultProfileId={panelPerson}
           methods={[...lookups.paymentMethods.values()]}
           currency={currency}
           today={today}
@@ -228,9 +328,12 @@ export function CashScreen() {
       )}
       <CountSheet
         open={counting}
-        onOpenChange={setCounting}
+        onOpenChange={(open) => {
+          setCounting(open);
+          if (!open) setPersonFor(undefined);
+        }}
         people={figures}
-        defaultProfileId={defaultPerson}
+        defaultProfileId={panelPerson}
         currency={currency}
         today={today}
         onDone={(message, undoable) => {
@@ -286,7 +389,7 @@ function TwoStartsNotice({
   ];
 
   return (
-    <div className="space-y-3 rounded-2xl border border-border bg-muted/50 p-4" data-testid="cash-two-starts">
+    <Sheet kind="paper" className="space-y-3" data-testid="cash-two-starts">
       <p className="text-sm">{t('cash.manyStarts', { name })}</p>
       <ul className="space-y-1 text-sm">
         {starts.map(([m, stays]) => (
@@ -315,7 +418,7 @@ function TwoStartsNotice({
       >
         {t('cash.keepFirst')}
       </Button>
-    </div>
+    </Sheet>
   );
 }
 

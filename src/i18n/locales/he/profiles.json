@@ -14,6 +14,9 @@
     "stone": "אבן",
     "slate": "צפחה"
   },
+  "builtin": {
+    "wallet": "ביט / פייבוקס"
+  },
   "method": {
     "cash": "מזומן",
     "cheque": "צ'ק",

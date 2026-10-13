@@ -6,8 +6,16 @@ import { AmountInput } from '@/components/amount-input';
 import { Money } from '@/components/money';
 import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelClose,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import type { UndoableAction } from '@/db/occurrence-actions';
 import { InvalidCashMoveError, recordCount, type CountOutcome } from '@/db/repos/cash-moves';
@@ -45,15 +53,15 @@ export function CountSheet({
   const { t } = useTranslation();
   const titleId = useId();
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>{t('cash.menu.count')}</SheetTitle>
-          <SheetDescription>{t('cash.countBody')}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent aria-labelledby={titleId}>
+        <EditorPanelHeader>
+          <EditorPanelTitle id={titleId}>{t('cash.menu.count')}</EditorPanelTitle>
+          <EditorPanelDescription>{t('cash.countBody')}</EditorPanelDescription>
+        </EditorPanelHeader>
         {open ? <CountForm {...props} /> : null}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -75,7 +83,8 @@ function CountForm({ people, defaultProfileId, currency, today, onDone }: CountP
 
   return (
     <form
-      className="space-y-4 px-4 pb-6"
+      data-slot="editor-panel-body"
+      className="space-y-4 px-5 pb-6 lg:px-7"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
@@ -153,9 +162,14 @@ function CountForm({ people, defaultProfileId, currency, today, onDone }: CountP
         )}
       </p>
 
-      <Button type="submit" className="h-11 w-full" disabled={counted === undefined || busy}>
-        {t('action.save')}
-      </Button>
+      <EditorPanelActions>
+        <EditorPanelClose render={<Button type="button" variant="pill" />}>
+          {t('action.cancel')}
+        </EditorPanelClose>
+        <Button type="submit" variant="pill-solid" disabled={counted === undefined || busy}>
+          {t('action.save')}
+        </Button>
+      </EditorPanelActions>
     </form>
   );
 }

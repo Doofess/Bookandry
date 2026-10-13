@@ -22,9 +22,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelBody,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/db/db';
@@ -255,12 +263,12 @@ export function TransactionSheet({
   const open = target.mode === 'add' || target.mode === 'edit';
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>{isAdd ? t('tx.addTitle') : t('tx.editTitle')}</SheetTitle>
-          <SheetDescription>{isAdd ? t('tx.addBody') : t('tx.editBody')}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent aria-labelledby={titleId}>
+        <EditorPanelHeader>
+          <EditorPanelTitle id={titleId}>{isAdd ? t('tx.addTitle') : t('tx.editTitle')}</EditorPanelTitle>
+          <EditorPanelDescription>{isAdd ? t('tx.addBody') : t('tx.editBody')}</EditorPanelDescription>
+        </EditorPanelHeader>
 
         {/*
          * Keyed, so every opening starts from the right values.
@@ -307,19 +315,19 @@ export function TransactionSheet({
             }}
           />
         ) : null}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
 /** The form's place while the row it opens on loads. */
 function FormSkeleton() {
   return (
-    <div className="space-y-3 px-4 pb-6" aria-busy="true">
+    <EditorPanelBody className="space-y-3" aria-busy="true">
       {[0, 1, 2, 3].map((i) => (
         <Skeleton key={i} className="h-11 w-full rounded-lg" />
       ))}
-    </div>
+    </EditorPanelBody>
   );
 }
 
@@ -359,14 +367,16 @@ function EditBody({
      * whatever they had half-typed here written into it.
      */
     return (
-      <div className="px-4 pb-6">
+      <EditorPanelBody>
         <p role="alert" className="text-sm text-muted-foreground">
           {t('tx.gone')}
         </p>
-        <Button type="button" variant="outline" onClick={onCancel} className="mt-4 w-full">
-          {t('action.close')}
-        </Button>
-      </div>
+        <EditorPanelActions>
+          <Button type="button" variant="pill" onClick={onCancel}>
+            {t('action.close')}
+          </Button>
+        </EditorPanelActions>
+      </EditorPanelBody>
     );
   }
 
@@ -975,7 +985,8 @@ function TransactionForm({
           beforeSubmit();
           void submit(event);
         }}
-        className="space-y-4 px-4 pb-6"
+        data-slot="editor-panel-body"
+        className="space-y-4 px-5 pb-6 lg:px-7"
         noValidate
       >
         {isSeries ? (
@@ -989,6 +1000,7 @@ function TransactionForm({
             name="kind"
             render={({ field }) => (
               <Segmented<Kind>
+                look="pill"
                 value={field.value}
                 labelledBy={kindId}
                 onChange={changeKind}
@@ -1005,6 +1017,7 @@ function TransactionForm({
         <div className="space-y-1.5">
           <Label htmlFor={noteId}>{t('tx.name')}</Label>
           <Input
+            className="min-h-12 rounded-tile border-2 border-input"
             id={noteId}
             placeholder={t('tx.namePlaceholder')}
             autoComplete="off"
@@ -1037,6 +1050,7 @@ function TransactionForm({
                     // rewritten to "45.00" under the cursor.
                     field.onChange(minor === undefined ? '' : toDecimalString(minor, values.currency));
                   }}
+                  inputClassName="min-h-12 rounded-tile border-2 border-input"
                   aria-invalid={errors.amount !== undefined}
                   aria-describedby={`${amountId}-error`}
                 />
@@ -1132,6 +1146,7 @@ function TransactionForm({
           <div className="space-y-1.5">
             <Label id={viaId}>{t('tx.standingVia')}</Label>
             <Segmented<StandingVia>
+              look="pill"
               value={via}
               labelledBy={viaId}
               onChange={(next) => {
@@ -1218,6 +1233,7 @@ function TransactionForm({
               name="profileId"
               render={({ field }) => (
                 <Segmented
+                  look="pill"
                   value={field.value}
                   labelledBy={profileLabelId}
                   onChange={(next) => {
@@ -1417,45 +1433,45 @@ function TransactionForm({
           </AlertDialogContent>
         </AlertDialog>
 
-        <div className="flex gap-2 pt-1">
-          <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+        <EditorPanelActions>
+          <Button type="button" variant="pill" onClick={onCancel}>
             {t('action.cancel')}
           </Button>
           <Button
             type="submit"
+            variant="pill-solid"
             disabled={form.formState.isSubmitting || rateBlocked || needRate}
-            className="flex-1"
           >
             {form.formState.isSubmitting ? t('tx.saving') : t('action.save')}
           </Button>
-        </div>
+        </EditorPanelActions>
       </form>
       {/* The chosen card, opened over the form to give a deal's rate; the purchase waits underneath.
           Outside the <form>: React carries a portal's events up its own tree, so the
           card's own save would otherwise submit the purchase too. */}
-      <Sheet
+      <EditorPanel
         open={cardOpen !== undefined}
         onOpenChange={(next) => {
           if (!next) setCardOpen(undefined);
         }}
       >
-        <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{t('categories:manage.methodEdit')}</SheetTitle>
-          </SheetHeader>
+        <EditorPanelContent>
+          <EditorPanelHeader>
+            <EditorPanelTitle>{t('categories:manage.methodEdit')}</EditorPanelTitle>
+          </EditorPanelHeader>
           {cardOpen === undefined ? null : (
             <MethodForm
               target={cardOpen}
               profiles={profiles}
-              className="px-4 pb-6"
+              className="px-5 pb-6 lg:px-7"
               onDone={(saved) => {
                 setCardOpen(undefined);
                 if (saved !== undefined) cardSaved(saved);
               }}
             />
           )}
-        </SheetContent>
-      </Sheet>
+        </EditorPanelContent>
+      </EditorPanel>
     </>
   );
 }

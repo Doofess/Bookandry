@@ -202,8 +202,9 @@ test.describe('@scale a dense month', () => {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
 
     const started = Date.now();
-    await page.goto(`/?m=${today.month}-01`);
+    await page.goto(`/?m=${today.month}-01&list=1`);
     await expect(page.locator('[role="listitem"]').first()).toBeVisible({ timeout: 60_000 });
+    // The board's sheet shows the newest eight rows; ?list=1 is the whole month, the list this measures.
     const firstPaint = Date.now() - started;
 
     /*
@@ -219,7 +220,9 @@ test.describe('@scale a dense month', () => {
 
     // The list is nonetheless SIZED for all of them, which is what makes the
     // scrollbar honest and the position meaningful.
-    const totalHeight = await page.locator('[role="list"]').evaluate((el) => el.clientHeight);
+    const totalHeight = await page
+      .locator('[data-slot="transactions-sheet"] [role="list"]')
+      .evaluate((el) => el.clientHeight);
     expect(totalHeight).toBeGreaterThan(ROWS * 20);
 
     /*

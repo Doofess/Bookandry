@@ -19,7 +19,7 @@ import { COLLAPSED_HEIGHT } from '../summary/use-collapsing-header';
  * Every row in this feed is the same height by design - the note truncates
  * rather than wrapping - so dynamic measurement was re-measuring 28 elements
  * through a ResizeObserver to rediscover numbers that never change. Measured
- * live: rows are 64px and headers 36px, exactly these constants.
+ * live: rows are 71px and headers 45px, exactly these constants.
  *
  * Making them authoritative removes the observer, removes the re-measure churn
  * that dominated a scroll profile, and makes `getTotalSize()` exact from the
@@ -29,8 +29,8 @@ import { COLLAPSED_HEIGHT } from '../summary/use-collapsing-header';
  * the two cannot drift: if content ever outgrows the box it is clipped, which
  * is visible, rather than silently shifting every row below it.
  */
-const DAY_HEADER_HEIGHT = 36;
-const ROW_HEIGHT = 64;
+const DAY_HEADER_HEIGHT = 45;
+const ROW_HEIGHT = 71; // the concept's row (67px with its line) and the 4px it leaves between rows
 const HORIZON_HEIGHT = 44;
 
 function heightOf(row: FeedRow | undefined): number {
@@ -147,7 +147,7 @@ export function VirtualFeed({
   });
 
   if (!fontsReady) {
-    // Every row would re-measure on the Inter/Heebo swap otherwise, which
+    // Every row would re-measure on the Plex swap otherwise, which
     // reflows the entire list one frame after it first paints.
     return (
       <div className="space-y-2 py-2" aria-busy="true">
@@ -279,8 +279,8 @@ function renderRow(row: FeedRow, options: RenderOptions) {
 /**
  * Gate the first render on the webfonts.
  *
- * Inter and Heebo swap in after first paint, and every row changes height when
- * they do. Without this the virtualizer measures the fallback font, paints, then
+ * Plex swaps in after first paint, and every row changes height when it
+ * does. Without this the virtualizer measures the fallback font, paints, then
  * re-measures the entire list one frame later - visible as a jump, and on a long
  * list as a jump that moves the row under the user's finger.
  */

@@ -79,8 +79,8 @@ describe('the totals', () => {
   it('reports income, expense and net in minor units', () => {
     render(data);
 
-    expect(valueUnder('Income')).toBe('900000');
-    expect(valueUnder('Expense')).toBe('204500');
+    expect(valueUnder('In')).toBe('900000');
+    expect(valueUnder('Out')).toBe('204500');
     expect(valueUnder('Net')).toBe('695500');
   });
 
@@ -89,16 +89,62 @@ describe('the totals', () => {
     // expensive bug this screen can have: both numbers look right.
     render(data);
 
-    expect(valueUnder('Income')).toBe(String(data.summary.incomeMinor));
-    expect(valueUnder('Expense')).toBe(String(data.summary.expenseMinor));
+    expect(valueUnder('In')).toBe(String(data.summary.incomeMinor));
+    expect(valueUnder('Out')).toBe(String(data.summary.expenseMinor));
   });
 
-  it('names the biggest category, not the commonest', () => {
+  it('puts the biggest category first, not the commonest', () => {
     // One rent payment beats nine grocery runs. Counting rows instead of money
     // would answer a question nobody asked.
+    const { container } = render(data);
+
+    const names = [...container.querySelectorAll('[data-slot="hue-bars"] li')].map((li) => li.textContent);
+    expect(names[0]).toMatch(/^Rent/);
+    expect(names[1]).toMatch(/^Groceries/);
+  });
+});
+
+describe('the sheet', () => {
+  const data = build([
+    occ('2026-02-01', 'income', 900000),
+    occ('2026-02-10', 'expense', 100000, 'cat.rent'),
+    occ('2026-03-04', 'expense', 4500, 'cat.groceries'),
+    occ('2026-03-10', 'expense', 200000, 'cat.rent'),
+  ]);
+
+  it('is a paper sheet with exactly three marks: in, out and net', () => {
+    const { container } = render(data);
+
+    const root = container.querySelector('[data-slot="chart-stats"]');
+    expect(root).toHaveAttribute('data-sheet', 'paper');
+    expect(root?.querySelectorAll('[data-slot="mark"]')).toHaveLength(3);
+  });
+
+  it('draws the five largest categories as hue bars, nothing more', () => {
+    const many = build(
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id, i) =>
+        occ('2026-03-04', 'expense', 1000 * (i + 1), `cat.${id}`),
+      ),
+    );
+    const { container } = render(many);
+
+    expect(container.querySelectorAll('[data-slot="hue-bars"] i[data-hue]')).toHaveLength(5);
+  });
+
+  it('shows the largest and the average month with their names', () => {
     render(data);
 
-    expect(screen.getByText('Rent')).toBeInTheDocument();
+    const largest = screen.getByText('Largest month').parentElement;
+    expect(largest).toHaveTextContent('March 2026');
+    expect(largest?.querySelector('[data-value]')).toHaveAttribute('data-value', '204500');
+    const average = screen.getByText('Average month').parentElement;
+    expect(average?.querySelector('[data-value]')).toHaveAttribute('data-value', '152250');
+  });
+
+  it('has no bordered card boxes inside it', () => {
+    const { container } = render(data);
+
+    expect(container.querySelector('.rounded-xl.border')).toBeNull();
   });
 });
 

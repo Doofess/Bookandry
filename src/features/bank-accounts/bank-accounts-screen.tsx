@@ -6,20 +6,20 @@ import { Link } from 'react-router-dom';
 
 import { useBaseCurrency, useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { BankMark } from '@/components/brand-mark';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead } from '@/app/screen-head';
 import { Money } from '@/components/money';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
-import { brandColor } from '@/data/brands';
+import { Mark } from '@/components/ui/mark';
+import { Sheet } from '@/components/ui/sheet-surface';
+import { TitlePair } from '@/components/ui/title-pair';
 import { db } from '@/db/db';
 import { writeSettings } from '@/db/repos/settings';
 import { bankByCode, bankName } from '@/domain/banks';
 import { CARD_CURRENCY, cardBills } from '@/domain/cards';
 import { monthParam, PARAM } from '@/domain/feed-filters';
+import { methodKey } from '@/domain/money-key';
 import { methodOwnedBy } from '@/domain/tx-options';
-import { cardColorValue } from '@/features/cards/card-colors';
 import { MethodEditor } from '@/features/cards/method-editor';
 import { UnfinishedNotice } from '@/features/cards/unfinished-notice';
 import { useBranch } from '@/features/cards/use-branch';
@@ -39,6 +39,9 @@ import type { LocalDate } from '@/types/money';
 
 import { useIncoming } from './use-incoming';
 
+/** A row on a bank's sheet: a 2px line in the sheet's own tint above it. */
+const LINE = 'border-t-2 border-current/25';
+
 /**
  * The household's bank accounts: which bank and branch, whose, how far below
  * zero each may go, and the card bills each one pays.
@@ -46,6 +49,9 @@ import { useIncoming } from './use-incoming';
  * Its own page, reached from the account menu with the other things the
  * household is set up with - not a tab: an account is set up once and looked
  * at now and then, while the cards' bills are looked at every week.
+ *
+ * Each account is a sheet in its bank's colour (§5.4): the colour is the
+ * bank, so there is no logo, and the money coming in sits in the box.
  */
 export function BankAccountsScreen() {
   const { t } = useTranslation('cards');
@@ -61,71 +67,71 @@ export function BankAccountsScreen() {
   );
 
   return (
-    <section className="mx-auto max-w-4xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('accounts.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-5 px-4 pt-6">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <p className="text-sm text-muted-foreground">{t('accounts.body')}</p>
-          <Button
-            type="button"
-            onClick={() => {
-              setEditing('new');
-            }}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-            {t('accounts.add')}
-          </Button>
-        </header>
-
+    <section className="px-3 pb-24 lg:px-0 lg:pb-8">
+      <ScreenHead
+        title={t('accounts.title')}
+        subtitle={t('accounts.body')}
+        actions={
+          <>
+            {data === undefined ? null : (
+              <ProfileSwitcher
+                profiles={[...data.profiles.values()]}
+                active={whose}
+                onSelect={(profileId) => {
+                  void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
+                }}
+              />
+            )}
+            <Button
+              type="button"
+              variant="pill-solid"
+              onClick={() => {
+                setEditing('new');
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              {t('accounts.add')}
+            </Button>
+          </>
+        }
+      />
+      <div className="mbs-sheet grid gap-sheet">
         <UnfinishedNotice kind="account" />
 
-        {data === undefined ? null : (
-          <ProfileSwitcher
-            profiles={[...data.profiles.values()]}
-            active={whose}
-            onSelect={(profileId) => {
-              void writeSettings(db, { activeProfileId: profileId }, systemClock.nowIso());
-            }}
-          />
-        )}
-
         {data === undefined ? null : accounts.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-            <Landmark className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
-            <p className="mt-3 text-sm text-muted-foreground">{t('accounts.empty')}</p>
-          </div>
+          <Sheet kind="paper" className="grid justify-items-center gap-3 text-center">
+            <Landmark className="size-8" aria-hidden="true" />
+            <p className="font-light">{t('accounts.empty')}</p>
+          </Sheet>
         ) : (
-          <ul className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-sheet @board/main:grid-cols-2 @wide/main:grid-cols-3 @vast/main:grid-cols-4">
             {accounts.map((account) => (
-              <li key={account.id}>
-                <AccountPanel
-                  account={account}
-                  // An archived card still owed on is still debited from the account.
-                  cards={[...data.cards, ...data.owing].filter((card) => card.card?.accountId === account.id)}
-                  occurrences={data.occurrences}
-                  profiles={data.profiles}
-                  incoming={incoming?.next.get(account.id)}
-                  categories={incoming?.categories}
-                  onEdit={() => {
-                    setEditing(account);
-                  }}
-                />
-              </li>
+              <AccountPanel
+                key={account.id}
+                account={account}
+                // An archived card still owed on is still debited from the account.
+                cards={[...data.cards, ...data.owing].filter((card) => card.card?.accountId === account.id)}
+                occurrences={data.occurrences}
+                profiles={data.profiles}
+                incoming={incoming?.next.get(account.id)}
+                categories={incoming?.categories}
+                onEdit={() => {
+                  setEditing(account);
+                }}
+              />
             ))}
-          </ul>
+          </div>
         )}
+      </div>
 
-        <MethodEditor
-          target={editing}
-          profiles={data === undefined ? [] : [...data.profiles.values()]}
-          onOpenChange={(open) => {
-            if (!open) setEditing(undefined);
-          }}
-          newType="bank_account"
-        />
-      </PanelSheet>
+      <MethodEditor
+        target={editing}
+        profiles={data === undefined ? [] : [...data.profiles.values()]}
+        onOpenChange={(open) => {
+          if (!open) setEditing(undefined);
+        }}
+        newType="bank_account"
+      />
     </section>
   );
 }
@@ -133,14 +139,6 @@ export function BankAccountsScreen() {
 /** "12-689-123456", the way a cheque and a bank statement print it. */
 function printedAccount(bank: string, branch: string | undefined, number: string | undefined): string {
   return [bank.padStart(2, '0'), branch, number].filter((part) => part !== undefined).join('-');
-}
-
-/**
- * The colour an account is marked with: the one the person gave it, else its
- * bank's own. Undefined leaves it the app's own accent.
- */
-function accountAccent(account: PaymentMethod): string | undefined {
-  return cardColorValue(account.color) ?? brandColor(`bank-${account.account?.bank ?? ''}`);
 }
 
 function AccountPanel({
@@ -171,69 +169,47 @@ function AccountPanel({
     .map((id) => profiles.get(id))
     .filter((profile) => profile !== undefined);
   const titleId = `account-${account.id}`;
-  const accent = accountAccent(account);
 
   return (
-    <article
+    <Sheet
+      as="article"
+      kind="money"
+      moneyKey={methodKey(account)}
+      data-slot="bank-account-sheet"
       aria-labelledby={titleId}
-      className="relative space-y-3 overflow-hidden rounded-2xl border border-border p-4 ps-5"
+      className="grid min-w-0 content-start gap-3"
     >
-      {/*
-        The bank's colour as an edge, the way its own cards and statements carry
-        it. Only an edge: the text stays on the app's surface, so its contrast is
-        never left to a brand's colour. In dark mode a faint outline keeps the
-        near-black brands (One Zero, the FIBI group) from vanishing into the surface.
-      */}
-      <span
-        aria-hidden="true"
-        data-slot="account-accent"
-        className={cn(
-          'absolute inset-y-0 start-0 w-1.5 dark:ring-1 dark:ring-white/15 dark:ring-inset',
-          accent === undefined && 'bg-primary',
-        )}
-        style={accent === undefined ? undefined : { backgroundColor: accent }}
-      />
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <BankMark code={details?.bank ?? ''} className="mt-0.5" />
-          <div className="min-w-0">
-            <h2 id={titleId} className="truncate font-semibold">
-              {account.label}
-            </h2>
-            {bank === undefined ? null : (
-              <p className="truncate text-sm text-muted-foreground">
-                {bankName(bank, i18n.language)}
-                {bank.ar === undefined ? null : (
-                  <>
-                    {' · '}
-                    <span lang="ar" dir="rtl">
-                      {bank.ar}
-                    </span>
-                  </>
-                )}
-              </p>
+      <div className="min-w-0">
+        <TitlePair as="h2" size="sheet" title={account.label} id={titleId} className="truncate" />
+        {bank === undefined ? null : (
+          <p className="truncate font-light">
+            {bankName(bank, i18n.language)}
+            {bank.ar === undefined ? null : (
+              <>
+                {' · '}
+                <span lang="ar" dir="rtl">
+                  {bank.ar}
+                </span>
+              </>
             )}
-          </div>
-        </div>
+          </p>
+        )}
         {details === undefined ? null : (
-          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-            {t(`accounts.holding.${details.holding}`)}
-          </span>
+          <>
+            <p dir="ltr" className="text-start font-mono font-light tabular-nums">
+              {printedAccount(details.bank, details.branch, details.number)}
+            </p>
+            {details.branch === undefined ? null : <BranchName bank={details.bank} branch={details.branch} />}
+          </>
         )}
       </div>
 
-      {details === undefined ? null : (
-        <div className="space-y-0.5">
-          <p dir="ltr" className="text-start font-mono text-lg tabular-nums">
-            {printedAccount(details.bank, details.branch, details.number)}
-          </p>
-          {details.branch === undefined ? null : <BranchName bank={details.bank} branch={details.branch} />}
-        </div>
-      )}
-
-      <dl className="grid gap-3 sm:grid-cols-2">
+      <dl className="grid gap-3">
         <div>
-          <dt className="text-xs text-muted-foreground">{t('accounts.holders')}</dt>
+          <dt className="text-xs font-light">
+            {t('accounts.holders')}
+            {details === undefined ? '' : ` · ${t(`accounts.holding.${details.holding}`)}`}
+          </dt>
           <dd className="mt-1 flex flex-wrap items-center gap-2 text-sm">
             {holders.map((profile) => (
               <span key={profile.id} className="inline-flex items-center gap-1.5">
@@ -245,8 +221,8 @@ function AccountPanel({
           </dd>
         </div>
         {details?.overdraftLimitMinor === undefined ? null : (
-          <div>
-            <dt className="text-xs text-muted-foreground">{t('accounts.overdraft')}</dt>
+          <div className={cn(LINE, 'pt-2')}>
+            <dt className="text-xs font-light">{t('accounts.overdraft')}</dt>
             <dd className="mt-1 font-semibold">
               <Money minor={details.overdraftLimitMinor} currency={CARD_CURRENCY} />
             </dd>
@@ -256,8 +232,8 @@ function AccountPanel({
 
       {cards.length === 0 ? null : (
         <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">{t('accounts.cardsFrom')}</p>
-          <ul className="divide-y divide-border rounded-xl border border-border">
+          <p className="text-xs font-light">{t('accounts.cardsFrom')}</p>
+          <ul>
             {cards.map((card) => (
               <CardCharge key={card.id} card={card} occurrences={occurrences} today={today} />
             ))}
@@ -269,11 +245,13 @@ function AccountPanel({
         <IncomingLine accountId={account.id} incoming={incoming} categories={categories} />
       )}
 
-      <Button type="button" variant="outline" size="sm" onClick={onEdit}>
-        <Pencil className="size-4" aria-hidden="true" />
-        {t('accounts.edit.open')}
-      </Button>
-    </article>
+      <div>
+        <Button type="button" variant="pill" onClick={onEdit}>
+          <Pencil className="size-4" aria-hidden="true" />
+          {t('accounts.edit.open')}
+        </Button>
+      </div>
+    </Sheet>
   );
 }
 
@@ -283,16 +261,16 @@ function BranchName({ bank, branch }: { readonly bank: string; readonly branch: 
   const today = useToday();
   const state = useBranch(bank, branch, i18n.language, today);
   const label = t('accounts.branch', { branch });
-  if (state.status !== 'found') return <p className="text-sm text-muted-foreground">{label}</p>;
+  if (state.status !== 'found') return <p className="font-light">{label}</p>;
   const found = state.branch;
   const date = (value: LocalDate) => formatLocalDate(value, i18n.language, { dateStyle: 'medium' });
   return (
     <>
-      <p className="text-sm text-muted-foreground">
+      <p className="font-light">
         {label} · {found.name}, {found.city}
       </p>
       {found.closed === undefined ? null : (
-        <p className="text-xs text-amber-800 dark:text-amber-300">
+        <p className="text-xs font-semibold">
           {found.mergedInto === undefined
             ? t('accounts.branchClosed', { date: date(found.closed) })
             : t('accounts.branchMerged', { date: date(found.closed), into: found.mergedInto.branch })}
@@ -317,22 +295,22 @@ function CardCharge({
     .filter((bill) => compareLocal(bill.chargeDate, today) >= 0)
     .at(-1);
   return (
-    <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+    <li className={cn(LINE, 'flex items-center justify-between gap-3 py-2 text-sm')}>
       <span className="flex min-w-0 items-center gap-2">
         <span className="truncate">{card.label}</span>
         {/* Why a closed card is here: it is still being paid off from the account. */}
         {card.isArchived === 1 ? (
-          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          <span className="shrink-0 rounded-full border-2 border-current px-2 text-xs font-light">
             {t('accounts.archivedCard')}
           </span>
         ) : null}
       </span>
       {next === undefined ? (
-        <span className="text-muted-foreground">{t('accounts.noCharge')}</span>
+        <span className="font-light">{t('accounts.noCharge')}</span>
       ) : (
         <span className="flex shrink-0 items-baseline gap-1.5">
-          <Money minor={next.totalMinor} currency={CARD_CURRENCY} className="font-medium" />
-          <span className="text-xs text-muted-foreground">
+          <Money minor={next.totalMinor} currency={CARD_CURRENCY} className="font-semibold" />
+          <span className="text-xs font-light">
             {t('accounts.chargeOn', {
               date: formatLocalDate(next.chargeDate, i18n.language, { day: 'numeric', month: 'short' }),
             })}
@@ -344,8 +322,8 @@ function CardCharge({
 }
 
 /**
- * The next income into the account: "Salary · 10 Nov · 12,400 ₪", linking to
- * the feed of that account's income in that month.
+ * The next income into the account: "Salary · 10 Nov", its figure in the
+ * box, linking to the feed of that account's income in that month.
  */
 function IncomingLine({
   accountId,
@@ -368,18 +346,16 @@ function IncomingLine({
   });
 
   return (
-    <div className="space-y-1.5">
-      <p className="text-xs text-muted-foreground">{t('accounts.incoming')}</p>
+    <div className={cn(LINE, 'space-y-1.5 pt-2')}>
+      <p className="text-xs font-light">{t('accounts.incoming')}</p>
       <Link
         to={`${ROUTES.feed}?${params.toString()}`}
-        className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-sm transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="flex min-h-11 items-center justify-between gap-3 rounded-tile text-sm focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring"
       >
         <span className="min-w-0 truncate">{[name, date].filter((part) => part !== '').join(' · ')}</span>
-        <Money
-          minor={incoming.money.baseAmountMinor}
-          currency={baseCurrency}
-          className="shrink-0 font-medium text-income"
-        />
+        <Mark className="shrink-0">
+          <Money minor={incoming.money.baseAmountMinor} currency={baseCurrency} />
+        </Mark>
       </Link>
     </div>
   );

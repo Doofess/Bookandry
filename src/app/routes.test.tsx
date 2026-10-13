@@ -3,7 +3,16 @@ import { createMemoryRouter, RouterProvider, type RouteObject } from 'react-rout
 import { describe, expect, it } from 'vitest';
 
 import { appRoutes } from './app-routes';
-import { LINKED_ROUTES, NAV_ORDER, ROUTES, SETTINGS_ROUTES } from './routes';
+import {
+  LINKED_ROUTES,
+  NAV_ORDER,
+  navDirection,
+  PHONE_PLACES,
+  RAIL_PLACES,
+  RAIL_SETUP,
+  ROUTES,
+  SETTINGS_ROUTES,
+} from './routes';
 
 /*
  * Account linking is a settings page, not a tab: four tabs, and every old
@@ -54,6 +63,34 @@ describe('account linking', () => {
   );
 
   it('is mounted at its own address', () => {
-    expect(routeFor(SETTINGS_ROUTES.linking).element).toBeDefined();
+    const settings = routeFor(ROUTES.settings);
+    const linking = settings.children?.find((r) => r.path === 'linking');
+    expect(linking?.element).toBeDefined();
+  });
+});
+
+describe('the rail (§4.2)', () => {
+  it("lists the rail's places in the concept's order, and keeps the phone's four tabs as they are", () => {
+    expect(RAIL_PLACES.map((place) => place.key)).toEqual(['feed', 'cards', 'bankAccounts', 'cash', 'chart']);
+    expect(PHONE_PLACES.map((place) => place.key)).toEqual(NAV_ORDER);
+    expect(RAIL_PLACES.find((p) => p.key === 'feed')?.railLabel).toBe('overview');
+    expect(RAIL_PLACES.find((p) => p.key === 'cash')?.railLabel).toBe('cashBox');
+    expect(RAIL_SETUP.map((place) => place.key)).toEqual(['commitments', 'settings']);
+  });
+
+  it('tells forward from back by rail order, a settings page by its section', () => {
+    expect(navDirection('/', '/chart')).toBe('forward');
+    expect(navDirection('/chart', '/cards')).toBe('back');
+    expect(navDirection('/cards', '/cash')).toBe('forward');
+    expect(
+      navDirection(
+        '/chart',
+        '/cards',
+        PHONE_PLACES.map((p) => p.to),
+      ),
+    ).toBe('forward');
+    expect(navDirection('/settings/account', '/categories')).toBe('back');
+    // From a page that is not a place (an invitation link), every place is ahead.
+    expect(navDirection('/link', '/chart')).toBe('forward');
   });
 });

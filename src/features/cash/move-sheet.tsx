@@ -6,9 +6,16 @@ import { toast } from 'sonner';
 import { AmountInput } from '@/components/amount-input';
 import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import type { UndoableAction } from '@/db/occurrence-actions';
 import {
@@ -90,12 +97,12 @@ export function CashMoveSheet({
         : t('cash.sheet.withdrawBody');
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto" aria-labelledby={titleId}>
-        <SheetHeader>
-          <SheetTitle id={titleId}>{title}</SheetTitle>
-          <SheetDescription>{body}</SheetDescription>
-        </SheetHeader>
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent aria-labelledby={titleId}>
+        <EditorPanelHeader>
+          <EditorPanelTitle id={titleId}>{title}</EditorPanelTitle>
+          <EditorPanelDescription>{body}</EditorPanelDescription>
+        </EditorPanelHeader>
         {target === undefined ? null : (
           <MoveForm
             key={target.mode === 'edit' ? target.move.id : `new-${target.kind}`}
@@ -104,8 +111,8 @@ export function CashMoveSheet({
             {...props}
           />
         )}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -213,7 +220,8 @@ function MoveForm({
 
   return (
     <form
-      className="space-y-4 px-4 pb-6"
+      data-slot="editor-panel-body"
+      className="space-y-4 px-5 pb-6 lg:px-7"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
@@ -314,15 +322,14 @@ function MoveForm({
         <FieldProblem id={noteErrorId} text={problems.note} />
       </div>
 
-      <div className="flex gap-2">
-        <Button type="submit" className="h-11 flex-1" disabled={!valid || busy}>
+      <EditorPanelActions>
+        <Button type="submit" variant="pill-solid" disabled={!valid || busy}>
           {t('action.save')}
         </Button>
         {editing === undefined ? null : (
           <Button
             type="button"
-            variant="outline"
-            className="h-11"
+            variant="pill"
             disabled={busy}
             onClick={() => {
               void run(() => deleteCashMove(db, editing.id, systemClock.nowIso()), t('tx.toastDeleted'));
@@ -332,7 +339,7 @@ function MoveForm({
             {t('action.delete')}
           </Button>
         )}
-      </div>
+      </EditorPanelActions>
     </form>
   );
 }

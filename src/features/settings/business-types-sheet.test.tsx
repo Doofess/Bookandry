@@ -206,7 +206,10 @@ describe('business types per category', () => {
     ).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('radio', { name: 'Income' }));
-    expect(screen.queryByRole('button', { name: /^Business types:/ })).toBeNull();
+    // Both sheets are in the page now (one is hidden by width): the income sheet has none.
+    const income = document.querySelector<HTMLElement>('[data-slot="categories-income"]');
+    expect(income).not.toBeNull();
+    expect(within(income!).queryByRole('button', { name: /^Business types:/ })).toBeNull();
   }, 15_000);
 });
 

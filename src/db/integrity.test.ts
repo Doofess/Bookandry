@@ -4,11 +4,18 @@ import { personCash } from '@/domain/cash';
 import { PROFILE_PALETTE } from '@/domain/palette';
 import { MONEY, d } from '@/domain/test-factories';
 import { freshDb, type TestDb } from '@/test/db-harness';
-import { redirectId, type CashMove, type Profile, type Transaction } from '@/types/domain';
+import {
+  redirectId,
+  TRANSFER_METHOD_ID,
+  type CashMove,
+  type Profile,
+  type Transaction,
+} from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
 import { checkIntegrity, repairIntegrity } from './integrity';
 import { materialize } from './materialize';
+import { ensureBuiltinPaymentMethods } from './repos/payment-methods';
 import { ensureSettings } from './repos/settings';
 import { buildSeedCategories, buildSeedPaymentMethods } from './seed';
 
@@ -171,6 +178,20 @@ describe('repairIntegrity', () => {
     await handle.db.transactions.put(tx({ id: 't1', paymentMethodId: 'pm.nope' }));
     await repairIntegrity(handle.db, NOW);
     expect((await handle.db.transactions.get('t1'))?.paymentMethodId).toBeUndefined();
+  });
+
+  it('never clears a newer built-in on a database that started with cash and cheques only', async () => {
+    // As an older install: the two first built-ins, then the boot step adds the rest.
+    await handle.db.paymentMethods.clear();
+    await handle.db.paymentMethods.bulkPut(
+      buildSeedPaymentMethods(NOW).filter((m) => m.id === 'pm.cash' || m.id === 'pm.cheque'),
+    );
+    await ensureBuiltinPaymentMethods(handle.db, NOW);
+    await handle.db.transactions.put(tx({ id: 't1', paymentMethodId: TRANSFER_METHOD_ID }));
+
+    expect((await checkIntegrity(handle.db)).map((i) => i.kind)).not.toContain('missing_payment_method');
+    await repairIntegrity(handle.db, NOW);
+    expect((await handle.db.transactions.get('t1'))?.paymentMethodId).toBe(TRANSFER_METHOD_ID);
   });
 
   it('recomputes drifted denormalised fields', async () => {

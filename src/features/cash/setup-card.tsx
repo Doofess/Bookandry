@@ -5,6 +5,7 @@ import { AmountInput } from '@/components/amount-input';
 import { PersonAvatar } from '@/components/person-avatar';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Sheet } from '@/components/ui/sheet-surface';
 import type { Profile } from '@/types/domain';
 import type { Currency, Minor } from '@/types/money';
 
@@ -42,11 +43,7 @@ export function CashSetupCard({
   const errorId = useId();
 
   return (
-    <section
-      aria-labelledby={titleId}
-      className="space-y-3 rounded-2xl border border-border p-4"
-      data-testid="cash-setup"
-    >
+    <Sheet kind="paper" aria-labelledby={titleId} className="space-y-3" data-testid="cash-setup">
       {named ? (
         <p className="flex items-center gap-2 text-sm font-medium">
           <PersonAvatar person={person} size="sm" />
@@ -106,6 +103,6 @@ export function CashSetupCard({
           </p>
         )}
       </form>
-    </section>
+    </Sheet>
   );
 }

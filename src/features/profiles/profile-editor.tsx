@@ -7,9 +7,16 @@ import { CurrencySelect } from '@/components/currency-select';
 import { PersonAvatar } from '@/components/person-avatar';
 import { ColorPicker } from '@/components/pickers';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelContent,
+  EditorPanelDescription,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { nextFreeColor, PROFILE_PALETTE } from '@/domain/palette';
 import { graphemeLength, NAME_MAX_LENGTH } from '@/domain/validation';
 import { startOfMonth } from '@/lib/dates';
@@ -95,14 +102,14 @@ export function ProfileEditor({
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <EditorPanel open={open} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {profile === undefined ? t('profiles:screen.newTitle') : t('profiles:screen.editTitle')}
-          </SheetTitle>
-          <SheetDescription>{t('profiles:screen.openingBalanceHelp')}</SheetDescription>
-        </SheetHeader>
+          </EditorPanelTitle>
+          <EditorPanelDescription>{t('profiles:screen.openingBalanceHelp')}</EditorPanelDescription>
+        </EditorPanelHeader>
 
         {/* Keyed, so opening a different profile does not inherit the last
             one's half-edited draft. */}
@@ -122,8 +129,8 @@ export function ProfileEditor({
             saving={saving}
           />
         ) : null}
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -169,7 +176,8 @@ function EditorForm({
         event.preventDefault();
         if (canSave) onSave({ ...values, name: trimmed });
       }}
-      className="space-y-5 px-4 pb-6"
+      data-slot="editor-panel-body"
+      className="space-y-5 px-5 pb-6 lg:px-7"
     >
       <div className="flex items-center gap-3">
         <PersonAvatar person={{ id: personId, name: values.name, color: values.color }} size="lg" />
@@ -236,14 +244,14 @@ function EditorForm({
         </p>
       )}
 
-      <div className="flex gap-2 pt-1">
-        <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+      <EditorPanelActions>
+        <Button type="button" variant="pill" onClick={onCancel}>
           {t('action.cancel')}
         </Button>
-        <Button type="submit" disabled={!canSave} className="flex-1">
+        <Button type="submit" variant="pill-solid" disabled={!canSave}>
           {t('action.save')}
         </Button>
-      </div>
+      </EditorPanelActions>
     </form>
   );
 }

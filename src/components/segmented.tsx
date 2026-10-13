@@ -43,6 +43,7 @@ export function Segmented<T extends string>({
   labelledBy,
   className,
   size = 'default',
+  look = 'band',
 }: {
   readonly value: T;
   readonly onChange: (value: T) => void;
@@ -51,6 +52,8 @@ export function Segmented<T extends string>({
   readonly labelledBy: string;
   readonly className?: string;
   readonly size?: 'default' | 'sm';
+  /** 'band' is the muted strip; 'pill' is the concept's 44px outline pills, the chosen one ink-filled. */
+  readonly look?: 'band' | 'pill';
 }) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -99,7 +102,10 @@ export function Segmented<T extends string>({
       ref={listRef}
       role="radiogroup"
       aria-labelledby={labelledBy}
-      className={cn('flex flex-wrap gap-1 rounded-xl bg-muted p-1', className)}
+      className={cn(
+        look === 'pill' ? 'flex flex-wrap gap-1.5' : 'flex flex-wrap gap-1 rounded-xl bg-muted p-1',
+        className,
+      )}
     >
       {options.map((option, index) => {
         const selected = option.value === value;
@@ -120,13 +126,20 @@ export function Segmented<T extends string>({
               onKeyDown(event, index);
             }}
             className={cn(
-              'flex-1 rounded-lg px-3 text-center transition',
-              // 44px is the WCAG 2.2 target-size floor.
-              size === 'sm' ? 'min-h-9 py-1.5 text-xs' : 'min-h-11 py-2 text-sm',
+              // min-w-fit: the reset's min-width: 0 would let an option shrink under
+              // its own words; with it the row wraps instead.
+              'min-w-fit flex-1 px-3 text-center transition',
+              look === 'pill' ? 'rounded-full border-2' : 'rounded-lg',
+              // 44px is the WCAG 2.2 target-size floor (a pill is always 44).
+              look !== 'pill' && size === 'sm' ? 'min-h-9 py-1.5 text-xs' : 'min-h-11 py-2 text-sm',
               'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-none',
-              selected
-                ? 'bg-background font-medium text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
+              look === 'pill'
+                ? selected
+                  ? 'border-press bg-press font-medium text-on-press'
+                  : 'border-current bg-transparent text-foreground active:border-press active:bg-press active:text-on-press hover-fine:border-press'
+                : selected
+                  ? 'bg-background font-medium text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
               // A logo's tile is white, as the selected option's surface is: an
               // inset edge says which one is chosen when the fill cannot.
               option.icon === undefined
@@ -136,7 +149,7 @@ export function Segmented<T extends string>({
                     // Marks along a row line up at the top when one label wraps
                     // to two lines; a mark standing alone sits in the middle.
                     option.labelHidden === true ? 'justify-center' : 'justify-start',
-                    selected && 'inset-ring-2 inset-ring-primary',
+                    selected && 'inset-ring-2 inset-ring-primary-ink',
                   ),
             )}
           >

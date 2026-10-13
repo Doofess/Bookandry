@@ -1,13 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Archive, ArchiveRestore, Pencil, Plus, Store, Trash2 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ScreenPanel, ScreenTitle } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { useSettings, useToday } from '@/app/app-context';
+import { ScreenHead } from '@/app/screen-head';
 import { CategoryChip, CategoryIcon } from '@/components/category-icon';
 import { ICON_NAMES } from '@/components/category-icons';
+import { Money } from '@/components/money';
 import { Segmented } from '@/components/segmented';
 import {
   AlertDialog,
@@ -20,18 +21,32 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  EditorPanel,
+  EditorPanelActions,
+  EditorPanelContent,
+  EditorPanelHeader,
+  EditorPanelTitle,
+} from '@/components/ui/editor-panel';
+import { HuePill } from '@/components/ui/hue-pill';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetHead } from '@/components/ui/sheet-surface';
 import { db } from '@/db/db';
 import { createCategory, deleteCategory, renameCategory, setCategoryArchived } from '@/db/repos/categories';
+import { totalsByCategory } from '@/domain/calculators';
+import { categoryHue, leastUsedHue, type HueToken } from '@/domain/category-hue';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { systemClock } from '@/lib/clock';
+import { compareLocal } from '@/lib/dates';
 import { newId } from '@/lib/id';
-import type { Category } from '@/types/domain';
-import type { Kind } from '@/types/money';
+import { sharesBp } from '@/lib/money';
+import { ALL_PROFILES, type Category } from '@/types/domain';
+import type { Currency, Kind, Minor } from '@/types/money';
 
 import { BusinessTypesSheet } from './business-types-sheet';
+import { HuePicker } from './hue-picker';
+import { monthWindow, useCandidates, useOccurrences } from '../feed/use-feed-data';
 
 /**
  * The category manager.
@@ -67,70 +82,115 @@ export function CategoriesScreen() {
 
   const all = data?.categories ?? [];
   const shown = all.filter((c) => c.kind === kind);
+  const today = useToday();
+  const { defaultCurrency } = useSettings();
+  const window = useMemo(() => monthWindow(today), [today]);
+  const candidates = useCandidates(ALL_PROFILES, window);
+  const occurrences = useOccurrences(candidates, window, today);
+  /** This month so far, per kind: what each category spent or took in. */
+  const totals = useMemo(() => {
+    const settled = (occurrences ?? []).filter(
+      (o) => !o.isProjected && !o.isSkipped && compareLocal(o.date, today) <= 0,
+    );
+    const byKind = (k: Kind): ReadonlyMap<string, Minor> =>
+      new Map(totalsByCategory(settled, k).map((row) => [row.categoryId, row.totalMinor]));
+    return { expense: byKind('expense'), income: byKind('income') };
+  }, [occurrences, today]);
   // Somewhere to move things to. Deleting the only category of a kind would
   // leave its transactions pointing at nothing.
-  const targets = (category: Category) => shown.filter((c) => c.id !== category.id && c.isArchived === 0);
+  const targets = (category: Category) =>
+    all.filter((c) => c.kind === category.kind && c.id !== category.id && c.isArchived === 0);
 
   return (
-    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel>
-        <ScreenTitle>{t('categories:manage.title')}</ScreenTitle>
-      </ScreenPanel>
-      <PanelSheet className="space-y-4 px-4 pt-6">
+    <section className="px-3 pb-24 lg:px-0 lg:pb-8">
+      <ScreenHead
+        title={t('categories:manage.title')}
+        actions={
+          <Button
+            type="button"
+            variant="pill-solid"
+            onClick={() => {
+              setEditing('new');
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            {kind === 'expense' ? t('categories:manage.addExpense') : t('categories:manage.addIncome')}
+          </Button>
+        }
+      />
+      <div className="grid gap-sheet px-1 lg:px-0">
         <p className="text-sm text-muted-foreground">{t('categories:manage.body')}</p>
 
         <Label id={kindId} className="sr-only">
           {t('filter.kind')}
         </Label>
-        <Segmented<Kind>
-          value={kind}
-          labelledBy={kindId}
-          onChange={setKind}
-          options={[
-            { value: 'expense', label: t('filter.kindExpense') },
-            { value: 'income', label: t('filter.kindIncome') },
-          ]}
-        />
+        <div>
+          <Segmented<Kind>
+            value={kind}
+            labelledBy={kindId}
+            onChange={setKind}
+            options={[
+              { value: 'expense', label: t('filter.kindExpense') },
+              { value: 'income', label: t('filter.kindIncome') },
+            ]}
+          />
+        </div>
 
-        {shown.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {kind === 'expense' ? t('categories:manage.emptyExpense') : t('categories:manage.emptyIncome')}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {shown.map((category) => (
-              <CategoryRow
-                key={category.id}
-                category={category}
-                onEdit={() => {
-                  setEditing(category);
-                }}
-                onDelete={() => {
-                  setDeleting(category);
-                }}
-                onBusinessTypes={() => {
-                  setTypesOf(category.id);
-                }}
-              />
-            ))}
-          </ul>
-        )}
-
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={() => {
-            setEditing('new');
-          }}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          {kind === 'expense' ? t('categories:manage.addExpense') : t('categories:manage.addIncome')}
-        </Button>
+        <div className="grid gap-sheet @wide/main:grid-cols-2 @wide/main:items-start">
+          {(['expense', 'income'] as const).map((k) => {
+            const rows = all.filter((c) => c.kind === k);
+            const shares = sharesBp(rows.map((r) => totals[k].get(r.id) ?? 0));
+            const largestBp = Math.max(1, ...shares);
+            return (
+              <Sheet
+                key={k}
+                kind="paper"
+                data-slot={`categories-${k}`}
+                className={k === kind ? 'min-w-0' : 'hidden min-w-0 @wide/main:block'}
+              >
+                <SheetHead
+                  className="mt-1.5"
+                  title={t(`categories:screen.${k}`)}
+                  subtitle={t('categories:screen.thisMonth')}
+                />
+                {rows.length === 0 ? (
+                  <p className="mt-3.5 font-light">
+                    {k === 'expense'
+                      ? t('categories:manage.emptyExpense')
+                      : t('categories:manage.emptyIncome')}
+                  </p>
+                ) : (
+                  <ul className="mt-3.5 grid">
+                    {rows.map((category, index) => (
+                      <CategoryRow
+                        key={category.id}
+                        category={category}
+                        total={totals[k].get(category.id) ?? 0}
+                        bp={shares[index] ?? 0}
+                        bpMax={largestBp}
+                        currency={defaultCurrency}
+                        onEdit={() => {
+                          setEditing(category);
+                        }}
+                        onDelete={() => {
+                          setDeleting(category);
+                        }}
+                        onBusinessTypes={() => {
+                          setTypesOf(category.id);
+                        }}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </Sheet>
+            );
+          })}
+        </div>
 
         <CategoryEditor
           target={editing}
           kind={kind}
+          siblings={shown}
           onOpenChange={(open) => {
             if (!open) setEditing(undefined);
           }}
@@ -152,18 +212,28 @@ export function CategoriesScreen() {
             if (!open) setTypesOf(undefined);
           }}
         />
-      </PanelSheet>
+      </div>
     </section>
   );
 }
 
 function CategoryRow({
   category,
+  total,
+  bp,
+  bpMax,
+  currency,
   onEdit,
   onDelete,
   onBusinessTypes,
 }: {
   readonly category: Category;
+  /** This month's total, in the base currency. */
+  readonly total: Minor;
+  /** Its bar against the largest in the sheet, in basis points. */
+  readonly bp: number;
+  readonly bpMax: number;
+  readonly currency: Currency;
   readonly onEdit: () => void;
   readonly onDelete: () => void;
   readonly onBusinessTypes: () => void;
@@ -178,78 +248,100 @@ function CategoryRow({
   };
 
   return (
-    <li className={`flex items-center gap-3 p-3 ${isArchived ? 'opacity-60' : ''}`}>
+    <li
+      data-slot="category-row"
+      className={`grid min-h-16 grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,40%)_auto] items-center gap-3 border-be-2 border-border py-2 last:border-be-0 ${isArchived ? 'opacity-60' : ''}`}
+    >
+      <HuePill hue={categoryHue(category)} />
       <CategoryChip icon={category.icon} />
 
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{name}</span>
-        <span className="block text-xs text-muted-foreground">
+      <span className="min-w-0">
+        <span className="block truncate text-[1.0625rem] font-semibold">{name}</span>
+        <span className="block text-sm font-light">
           {isBuiltin ? t('categories:manage.builtIn') : null}
           {isBuiltin && isArchived ? ' · ' : null}
           {isArchived ? t('categories:manage.archived') : null}
         </span>
       </span>
 
-      {/* Every expense category, built-in or the person's own, has business types (spec point 12). */}
-      {category.kind === 'expense' ? (
+      {/* This month's total as a hue bar against the sheet's largest; a category with nothing draws none. */}
+      <span data-slot="hue-bars" className="flex min-w-0 flex-col items-end gap-1">
+        {total <= 0 ? null : (
+          <>
+            <span aria-hidden="true" className="block h-7.5 w-full">
+              <i
+                data-hue={categoryHue(category)}
+                className="block h-full w-[calc(var(--bp)/var(--bp-max)*100%)] min-w-7.5 rounded-full bg-hue"
+                style={{ '--bp': String(bp), '--bp-max': String(bpMax) } as CSSProperties}
+              />
+            </span>
+            <Money minor={total} currency={currency} className="text-sm font-medium" />
+          </>
+        )}
+      </span>
+
+      <span className="flex items-center">
+        {/* Every expense category, built-in or the person's own, has business types (spec point 12). */}
+        {category.kind === 'expense' ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-11"
+            aria-label={`${t('categories:businessTypes.open')}: ${name}`}
+            onClick={onBusinessTypes}
+          >
+            <Store className="size-4" aria-hidden="true" />
+          </Button>
+        ) : null}
+
         <Button
           type="button"
           variant="ghost"
           size="icon"
           className="size-11"
-          aria-label={`${t('categories:businessTypes.open')}: ${name}`}
-          onClick={onBusinessTypes}
+          aria-label={`${isArchived ? t('categories:manage.unarchive') : t('categories:manage.archive')}: ${name}`}
+          onClick={toggleArchive}
         >
-          <Store className="size-4" aria-hidden="true" />
+          {isArchived ? (
+            <ArchiveRestore className="size-4" aria-hidden="true" />
+          ) : (
+            <Archive className="size-4" aria-hidden="true" />
+          )}
         </Button>
-      ) : null}
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="size-11"
-        aria-label={`${isArchived ? t('categories:manage.unarchive') : t('categories:manage.archive')}: ${name}`}
-        onClick={toggleArchive}
-      >
-        {isArchived ? (
-          <ArchiveRestore className="size-4" aria-hidden="true" />
-        ) : (
-          <Archive className="size-4" aria-hidden="true" />
-        )}
-      </Button>
-
-      {/*
+        {/*
         Rename and delete are absent for a built-in, not disabled.
         A built-in stores an i18n key rather than a name, so renaming would
         strand the key and deleting would strand the deterministic id every
         other install shares. A greyed-out button invites the question; an
         absent one plus the sentence at the top answers it.
       */}
-      {isBuiltin ? null : (
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-11"
-            aria-label={`${t('categories:manage.editTitle')}: ${name}`}
-            onClick={onEdit}
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-11 text-destructive"
-            aria-label={t('categories:manage.deleteTitle', { name })}
-            onClick={onDelete}
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-          </Button>
-        </>
-      )}
+        {isBuiltin ? null : (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-11"
+              aria-label={`${t('categories:manage.editTitle')}: ${name}`}
+              onClick={onEdit}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-11 text-destructive"
+              aria-label={t('categories:manage.deleteTitle', { name })}
+              onClick={onDelete}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </Button>
+          </>
+        )}
+      </span>
     </li>
   );
 }
@@ -257,10 +349,13 @@ function CategoryRow({
 function CategoryEditor({
   target,
   kind,
+  siblings,
   onOpenChange,
 }: {
   readonly target: Category | 'new' | undefined;
   readonly kind: Kind;
+  /** The categories of this kind, for choosing a new one's hue. */
+  readonly siblings: readonly Category[];
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation(['common', 'categories']);
@@ -269,6 +364,7 @@ function CategoryEditor({
 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>('Circle');
+  const [hue, setHue] = useState<HueToken | undefined>(undefined);
   const [seeded, setSeeded] = useState<string | undefined>(undefined);
 
   const nameId = useId();
@@ -287,13 +383,16 @@ function CategoryEditor({
     setSeeded(identity);
     setName(existing === undefined || existing.source === 'builtin' ? '' : existing.name);
     setIcon(existing?.icon ?? 'Circle');
+    setHue(existing === undefined ? leastUsedHue(siblings) : categoryHue(existing));
   }
 
   const save = async (): Promise<void> => {
     const now = systemClock.nowIso();
     try {
-      if (isNew) await createCategory(db, newId(), { name, kind, icon }, now);
-      else if (existing !== undefined) await renameCategory(db, existing.id, name, now);
+      if (isNew)
+        await createCategory(db, newId(), { name, kind, icon, ...(hue === undefined ? {} : { hue }) }, now);
+      else if (existing !== undefined)
+        await renameCategory(db, existing.id, name, now, hue === undefined ? {} : { hue });
       onOpenChange(false);
     } catch {
       toast.error(t('tx.toastFailed'));
@@ -301,13 +400,13 @@ function CategoryEditor({
   };
 
   return (
-    <Sheet open={target !== undefined} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <EditorPanel open={target !== undefined} onOpenChange={onOpenChange}>
+      <EditorPanelContent>
+        <EditorPanelHeader>
+          <EditorPanelTitle>
             {isNew ? t('categories:manage.newTitle') : t('categories:manage.editTitle')}
-          </SheetTitle>
-        </SheetHeader>
+          </EditorPanelTitle>
+        </EditorPanelHeader>
 
         <form
           noValidate
@@ -315,7 +414,8 @@ function CategoryEditor({
             event.preventDefault();
             if (name.trim() !== '') void save();
           }}
-          className="space-y-4 px-4 pb-6"
+          data-slot="editor-panel-body"
+          className="space-y-4 px-5 pb-6 lg:px-7"
         >
           <div className="space-y-1.5">
             <Label htmlFor={nameId}>{t('categories:manage.nameLabel')}</Label>
@@ -347,7 +447,7 @@ function CategoryEditor({
                       setIcon(option);
                     }}
                     className={`flex size-11 items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                      option === icon ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                      option === icon ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                     }`}
                   >
                     <CategoryIcon name={option} className="size-4" />
@@ -357,24 +457,25 @@ function CategoryEditor({
             </div>
           ) : null}
 
-          <div className="flex gap-2 pt-1">
+          <HuePicker legend={t('categories:hue.label')} value={hue} onChange={setHue} />
+
+          <EditorPanelActions>
             <Button
               type="button"
-              variant="outline"
-              className="flex-1"
+              variant="pill"
               onClick={() => {
                 onOpenChange(false);
               }}
             >
               {t('action.cancel')}
             </Button>
-            <Button type="submit" disabled={name.trim() === ''} className="flex-1">
+            <Button type="submit" variant="pill-solid" disabled={name.trim() === ''}>
               {t('action.save')}
             </Button>
-          </div>
+          </EditorPanelActions>
         </form>
-      </SheetContent>
-    </Sheet>
+      </EditorPanelContent>
+    </EditorPanel>
   );
 }
 
@@ -452,7 +553,7 @@ function DeleteCategoryDialog({
                     setReassignTo(option.id);
                   }}
                   className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-start transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                    option.id === target ? 'border-primary bg-accent' : 'border-border hover:bg-muted'
+                    option.id === target ? 'border-primary-ink bg-accent' : 'border-border hover:bg-muted'
                   }`}
                 >
                   <CategoryIcon name={option.icon} className="size-4 shrink-0" />

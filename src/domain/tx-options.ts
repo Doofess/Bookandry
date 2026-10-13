@@ -1,4 +1,10 @@
-import { isActiveMethod, SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
+import {
+  isActiveMethod,
+  SHARED_OWNER,
+  type Category,
+  type PaymentMethod,
+  type PaymentMethodType,
+} from '@/types/domain';
 import type { Kind } from '@/types/money';
 
 import type { RecurrenceMode } from './tx-form';
@@ -27,6 +33,25 @@ export function categoriesFor(categories: readonly Category[], kind: Kind, keepI
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+/** Every way to pay this build knows, in the order the type pickers list them. */
+export const PAYMENT_METHOD_TYPES: readonly PaymentMethodType[] = [
+  'cash',
+  'cheque',
+  'credit_card',
+  'debit_card',
+  'bank_transfer',
+  'standing_order',
+  'digital_wallet',
+  'bank_account',
+  'other',
+];
+const KNOWN_TYPES: ReadonlySet<string> = new Set(PAYMENT_METHOD_TYPES);
+
+/** The type every reader uses: one a later build added reads as "other". */
+export function methodTypeOf(method: Pick<PaymentMethod, 'type'>): PaymentMethodType {
+  return KNOWN_TYPES.has(method.type) ? method.type : 'other';
+}
+
 /**
  * Whether a kind of transaction can be paid this way.
  *
@@ -39,13 +64,13 @@ export function categoriesFor(categories: readonly Category[], kind: Kind, keepI
  */
 export function methodFits(method: Pick<PaymentMethod, 'type'>, mode: RecurrenceMode): boolean {
   // A card's own credit deals: קרדיט, קרדיט פלוס and 30+.
-  if (mode === 'credit' || mode === 'long_credit' || mode === 'deferred')
-    return method.type === 'credit_card';
+  const type = methodTypeOf(method);
+  if (mode === 'credit' || mode === 'long_credit' || mode === 'deferred') return type === 'credit_card';
   // A standing order is charged to a card or taken from an account - never cash.
   if (mode === 'standing_order') return standingViaOf(method) !== undefined;
-  if (method.type === 'cheque') return mode === 'one_time' || mode === 'installments' || mode === 'loan';
+  if (type === 'cheque') return mode === 'one_time' || mode === 'installments' || mode === 'loan';
   // A bank account pays at once, by order or by debit - not in a card's תשלומים.
-  if (method.type === 'bank_account') return mode !== 'installments';
+  if (type === 'bank_account') return mode !== 'installments';
   return true;
 }
 
@@ -60,7 +85,7 @@ export type StandingVia = 'card' | 'bank';
 
 /** Which kind of standing order a method makes; undefined for one that cannot carry one. */
 export function standingViaOf(method: Pick<PaymentMethod, 'type'>): StandingVia | undefined {
-  switch (method.type) {
+  switch (methodTypeOf(method)) {
     case 'credit_card':
     case 'debit_card':
     case 'digital_wallet':

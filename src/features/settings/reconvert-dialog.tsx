@@ -6,8 +6,8 @@ import { toast } from 'sonner';
 import { CurrencySelect } from '@/components/currency-select';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { PopOut, PopOutBody, PopOutContent } from '@/components/ui/pop-out';
 import { Progress } from '@/components/ui/progress';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { db } from '@/db/db';
 import { quoteRate } from '@/db/rates-gateway';
 import { reconvertDefaultCurrency, type ReconvertProgress } from '@/db/reconvert';
@@ -143,8 +143,42 @@ export function ReconvertDialog({
     }
   };
 
+  const footer =
+    phase.step === 'done' ? (
+      <Button
+        type="button"
+        variant="pill-solid"
+        onClick={() => {
+          onOpenChange(false);
+        }}
+      >
+        {t('action.close')}
+      </Button>
+    ) : phase.step === 'failed' ? (
+      <Button
+        type="button"
+        variant="pill-solid"
+        onClick={() => {
+          setPhase({ step: 'idle' });
+        }}
+      >
+        {t('action.retry')}
+      </Button>
+    ) : running ? undefined : (
+      <Button
+        type="button"
+        variant="destructive"
+        // Forced, not suggested. The most destructive operation in the
+        // app does not start until a backup exists.
+        disabled={isSame || !backedUp}
+        onClick={() => void run()}
+      >
+        {t('reconvert.start')}
+      </Button>
+    );
+
   return (
-    <Sheet
+    <PopOut
       open={open}
       onOpenChange={(next) => {
         // Never dismissible mid-flight: the write is atomic, but a user who
@@ -159,111 +193,81 @@ export function ReconvertDialog({
         onOpenChange(next);
       }}
     >
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{t('reconvert.title', { currency: target })}</SheetTitle>
-          <SheetDescription>{t('reconvert.body')}</SheetDescription>
-        </SheetHeader>
-
-        <div className="space-y-4 px-4 pb-6">
-          {phase.step === 'done' ? (
-            <>
-              <p className="text-sm">{t('reconvert.done', { currency: phase.currency })}</p>
-              <Button
-                type="button"
-                className="w-full"
-                onClick={() => {
-                  onOpenChange(false);
-                }}
-              >
-                {t('action.close')}
-              </Button>
-            </>
-          ) : phase.step === 'failed' ? (
-            <>
-              <p role="alert" className="text-sm text-destructive">
-                {phase.message}
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  setPhase({ step: 'idle' });
-                }}
-              >
-                {t('action.retry')}
-              </Button>
-            </>
-          ) : running ? (
-            <div className="space-y-2">
-              <p className="text-sm">
-                {phase.step === 'applying'
-                  ? t('reconvert.applying')
-                  : t('reconvert.fetching', {
-                      done: phase.progress.fetched,
-                      total: phase.progress.total,
-                    })}
-              </p>
-              <Progress
-                value={
-                  phase.step === 'applying' || phase.progress.total === 0
-                    ? 100
-                    : percent(phase.progress.fetched, phase.progress.total)
-                }
-              />
-            </div>
-          ) : (
-            <>
-              {fixedTarget === undefined ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor={pickerId} id={`${pickerId}-label`}>
-                    {t('reconvert.pick')}
-                  </Label>
-                  <CurrencySelect
-                    id={pickerId}
-                    value={target}
-                    onChange={setTarget}
-                    aria-labelledby={`${pickerId}-label`}
-                  />
-                  {isSame ? <p className="text-xs text-muted-foreground">{t('reconvert.same')}</p> : null}
-                </div>
-              ) : null}
-
-              <p className="text-xs text-muted-foreground">{t('reconvert.manualKept')}</p>
-
-              <div className="space-y-1.5 rounded-xl border border-border bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground">{t('reconvert.backupWhy')}</p>
-                <Button
-                  type="button"
-                  variant={backedUp ? 'outline' : 'default'}
-                  className="w-full"
-                  onClick={() => void backup()}
-                >
-                  <Download className="size-4" aria-hidden="true" />
-                  {t('settings.export')}
-                </Button>
-                {backedUp ? (
-                  <p className="text-xs text-muted-foreground">{t('reconvert.backupDone')}</p>
-                ) : null}
+      <PopOutContent size="compact">
+        <PopOutBody
+          title={t('reconvert.title', { currency: target })}
+          subtitle={t('reconvert.body')}
+          footer={footer}
+        >
+          <div className="space-y-4">
+            {phase.step === 'done' ? (
+              <>
+                <p className="text-sm">{t('reconvert.done', { currency: phase.currency })}</p>
+              </>
+            ) : phase.step === 'failed' ? (
+              <>
+                <p role="alert" className="text-sm text-destructive">
+                  {phase.message}
+                </p>
+              </>
+            ) : running ? (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  {phase.step === 'applying'
+                    ? t('reconvert.applying')
+                    : t('reconvert.fetching', {
+                        done: phase.progress.fetched,
+                        total: phase.progress.total,
+                      })}
+                </p>
+                <Progress
+                  value={
+                    phase.step === 'applying' || phase.progress.total === 0
+                      ? 100
+                      : percent(phase.progress.fetched, phase.progress.total)
+                  }
+                />
               </div>
+            ) : (
+              <>
+                {fixedTarget === undefined ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor={pickerId} id={`${pickerId}-label`}>
+                      {t('reconvert.pick')}
+                    </Label>
+                    <CurrencySelect
+                      id={pickerId}
+                      value={target}
+                      onChange={setTarget}
+                      aria-labelledby={`${pickerId}-label`}
+                    />
+                    {isSame ? <p className="text-xs text-muted-foreground">{t('reconvert.same')}</p> : null}
+                  </div>
+                ) : null}
 
-              <Button
-                type="button"
-                variant="destructive"
-                className="w-full"
-                // Forced, not suggested. The most destructive operation in the
-                // app does not start until a backup exists.
-                disabled={isSame || !backedUp}
-                onClick={() => void run()}
-              >
-                {t('reconvert.start')}
-              </Button>
-            </>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
+                <p className="text-xs text-muted-foreground">{t('reconvert.manualKept')}</p>
+
+                <div className="space-y-1.5 rounded-xl border border-border bg-muted/40 p-3">
+                  <p className="text-xs text-muted-foreground">{t('reconvert.backupWhy')}</p>
+                  <Button
+                    type="button"
+                    variant={backedUp ? 'outline' : 'default'}
+                    className="w-full"
+                    onClick={() => void backup()}
+                  >
+                    <Download className="size-4" aria-hidden="true" />
+                    {t('settings.export')}
+                  </Button>
+                  {backedUp ? (
+                    <p className="text-xs text-muted-foreground">{t('reconvert.backupDone')}</p>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
+        </PopOutBody>
+      </PopOutContent>
+    </PopOut>
   );
 }
 

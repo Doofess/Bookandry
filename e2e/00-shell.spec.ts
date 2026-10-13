@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { openAddSheet } from './support/add';
+import { addTrigger, openAddSheet } from './support/add';
 import { bootAs, completeFirstRun } from './support/seed';
 
 /**
@@ -114,11 +114,13 @@ test.describe('@smoke0 app shell', () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test('has four tabs: account linking is a page in Settings, not a tab', async ({ page }) => {
+  test('has four tabs on a phone and seven places on the desktop rail; account linking is neither', async ({
+    page,
+  }) => {
     const nav = page.getByRole('navigation', { name: /primary|ניווט/i });
     // The rail's mark is a link home too, shown only on a wide screen.
-    const tabs = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
-    await expect(tabs).toHaveCount(4);
+    const places = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
+    await expect(places).toHaveCount((page.viewportSize()?.width ?? 0) >= 1024 ? 7 : 4);
     await expect(nav.getByRole('link', { name: /household|account linking|משק|קישור/i })).toHaveCount(0);
   });
 
@@ -130,7 +132,7 @@ test.describe('@smoke0 app shell', () => {
        * way an old link opens Settings, never a page that is not there.
        */
       await page.goto(old);
-      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page).toHaveURL(/\/settings(\/preferences)?$/);
       await expect(page.getByRole('heading', { level: 1, name: /settings|הגדרות/i })).toBeVisible();
     });
   }
@@ -218,7 +220,7 @@ test.describe('@rtl boot', () => {
     expect(errors).toEqual([]);
   });
 
-  test('renders Hebrew glyphs in Heebo, not a fallback', async ({ page }) => {
+  test('renders Hebrew glyphs and digits in Plex, not a fallback', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('gb.boot', JSON.stringify({ lang: 'he', theme: 'light' }));
     });
@@ -226,8 +228,8 @@ test.describe('@rtl boot', () => {
     // document.fonts.ready resolves before a lazily-triggered subset arrives, so
     // load the exact faces for the exact text first.
     await page.evaluate(async () => {
-      await document.fonts.load('400 96px "Heebo Variable"', 'שלוםעולם');
-      await document.fonts.load('400 96px "Inter Variable"', '0123456789');
+      await document.fonts.load('400 96px "IBM Plex Sans Hebrew"', 'שלוםעולם');
+      await document.fonts.load('400 96px "IBM Plex Sans Hebrew"', '0123456789');
       await document.fonts.ready;
     });
 
@@ -252,22 +254,22 @@ test.describe('@rtl boot', () => {
       const stack = getComputedStyle(document.body).fontFamily;
       return {
         viaStack: measure(stack, 'שלוםעולם'),
-        viaHeebo: measure('"Heebo Variable", monospace', 'שלוםעולם'),
+        viaPlex: measure('"IBM Plex Sans Hebrew", monospace', 'שלוםעולם'),
         viaFallback: measure('monospace', 'שלוםעולם'),
         // Width of 1111 must equal 8888 or the amount columns will not align.
         tabular1: measure(stack, '1111', true),
         tabular8: measure(stack, '8888', true),
-        // The stack's digits MUST come from Inter: Heebo ships no tabular figures,
-        // so if the order ever flips, every amount column silently misaligns in Hebrew.
+        // The stack's digits MUST come from Plex, whose digits are fixed-width:
+        // if the order ever flips, every amount column silently misaligns in Hebrew.
         digitsViaStack: measure(stack, '0123456789'),
-        digitsViaInter: measure('"Inter Variable", monospace', '0123456789'),
+        digitsViaPlex: measure('"IBM Plex Sans Hebrew", monospace', '0123456789'),
       };
     });
 
-    expect(Math.abs(result.viaStack - result.viaHeebo)).toBeLessThan(1);
+    expect(Math.abs(result.viaStack - result.viaPlex)).toBeLessThan(1);
     expect(Math.abs(result.viaStack - result.viaFallback)).toBeGreaterThan(1);
     expect(result.tabular1).toBeCloseTo(result.tabular8, 1);
-    expect(Math.abs(result.digitsViaStack - result.digitsViaInter)).toBeLessThan(1);
+    expect(Math.abs(result.digitsViaStack - result.digitsViaPlex)).toBeLessThan(1);
   });
 });
 
@@ -340,7 +342,7 @@ test.describe('@fab the Add pill', () => {
   });
 
   test('renders as a labelled pill, at least 44px high', async ({ page }) => {
-    const pill = page.getByTestId('add-button');
+    const pill = addTrigger(page);
     await expect(pill).toBeVisible();
     await expect(pill).toHaveText(/Add|הוספה/);
 
@@ -350,25 +352,19 @@ test.describe('@fab the Add pill', () => {
     expect(box!.width).toBeGreaterThan(box!.height); // a pill, not a disc
   });
 
-  test('is centred on mobile, inline-end from lg, and mirrors only where it can', async ({ page }) => {
+  test('is centred above the tab bar on a phone, and at the top of the rail from lg', async ({ page }) => {
     /*
-     * The Add pill has TWO positions by design (§5.1, §8.2): bottom-centre above the
-     * tab bar on mobile, bottom-inline-end from `lg` where there is no tab bar.
-     *
-     * Asserting "inline-end, and mirrors" at every width was simply wrong, and
-     * it failed on the mobile project for the right reason - a centred element
-     * has nothing to mirror. Both halves are worth pinning: the centred case
-     * depends on `start-0 end-0 mx-auto`, which has already regressed once to
-     * `inset-inline-0` - a class that emits no CSS at all and left the button
-     * at its static position, looking deliberate enough to pass a screenshot
-     * review.
+     * Two places by design (§4.2): bottom-centre above the tab bar on a phone,
+     * the top of the rail from lg - at the inline start, so on the right in
+     * Hebrew. The centred case depends on `start-0 end-0 mx-auto`, which has
+     * regressed once to a class that emits no CSS at all.
      */
     const viewport = page.viewportSize()!;
     const centre = viewport.width / 2;
     const isDesktop = viewport.width >= 1024;
 
-    const ltr = (await page.getByTestId('add-button').boundingBox())!;
-    if (isDesktop) expect(ltr.x).toBeGreaterThan(centre);
+    const ltr = (await addTrigger(page).boundingBox())!;
+    if (isDesktop) expect(ltr.x + ltr.width).toBeLessThanOrEqual(256);
     else expect(ltr.x + ltr.width / 2).toBeCloseTo(centre, 0);
 
     await page.addInitScript(() => {
@@ -376,8 +372,8 @@ test.describe('@fab the Add pill', () => {
     });
     await page.reload();
 
-    const rtl = (await page.getByTestId('add-button').boundingBox())!;
-    if (isDesktop) expect(rtl.x).toBeLessThan(centre);
+    const rtl = (await addTrigger(page).boundingBox())!;
+    if (isDesktop) expect(rtl.x).toBeGreaterThanOrEqual(viewport.width - 256);
     else expect(rtl.x + rtl.width / 2).toBeCloseTo(centre, 0);
   });
 
@@ -399,7 +395,7 @@ test.describe('@fab the Add pill', () => {
   }) => {
     // This build has no account server, so the AI cannot be reached: the item
     // is there, disabled, with the reason in words rather than only greyed out.
-    await page.getByTestId('add-button').click();
+    await addTrigger(page).click();
     const menu = page.getByRole('menu');
     await expect(menu.getByRole('menuitem')).toHaveCount(3);
     const ai = menu.getByRole('menuitem', { name: /Smart import|ייבוא חכם/ });
@@ -422,7 +418,7 @@ test.describe('@nav the app mark', () => {
     await completeFirstRun(page, 'en');
 
     await page.goto('/settings');
-    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).toHaveURL(/\/settings(\/preferences)?$/);
 
     await page.getByRole('link', { name: 'Bookandry' }).click();
     await expect(page).toHaveURL(/\/$/);
@@ -445,16 +441,23 @@ test.describe('@nav the account menu', () => {
     const rtl = testInfo.project.name === 'he';
     await completeFirstRun(page, rtl ? 'he' : 'en');
 
-    const trigger = page.getByRole('button', { name: rtl ? 'חשבון והגדרות' : 'Account and settings' });
+    // From lg the account sits at the foot of the rail, at the inline START (§4.2);
+    // below it, the screen head's own menu in main sits at the top END.
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+    const name = rtl ? 'חשבון והגדרות' : 'Account and settings';
+    const trigger = desktop
+      ? page.getByRole('navigation').getByRole('button', { name })
+      : page.getByRole('main').getByRole('button', { name });
     await expect(trigger).toBeVisible();
     const box = await trigger.boundingBox();
     const width = page.viewportSize()?.width ?? 0;
-    if (rtl) expect(box?.x ?? width).toBeLessThan(width / 2);
-    else expect(box?.x ?? 0).toBeGreaterThan(width / 2);
+    const atRight = desktop ? rtl : !rtl;
+    if (atRight) expect(box?.x ?? 0).toBeGreaterThan(width / 2);
+    else expect(box?.x ?? width).toBeLessThan(width / 2);
 
     await trigger.click();
     await page.getByRole('menuitem', { name: rtl ? 'העדפות' : 'Preferences' }).click();
     await expect(page).toHaveURL(/\/settings\/preferences$/);
-    await expect(page.getByRole('heading', { level: 1, name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
   });
 });

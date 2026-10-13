@@ -103,16 +103,18 @@ describe('an account’s bank', () => {
     await db.paymentMethods.filter((m) => m.id === 'other' || m.id === 'mine').delete();
   });
 
-  it('shows its bank’s logo, in the bank’s own colour', async () => {
+  it('is a sheet in its bank’s colour, with no logo and no accent edge', async () => {
     render();
 
     const panel = await account();
-    expect(panel.querySelector('img[data-brand="bank-10"]')).not.toBeNull();
-    // Leumi's blue, as an edge: the text stays on the app's own surface.
-    expect(panel.querySelector('[data-slot="account-accent"]')).toHaveStyle({ backgroundColor: '#0066FF' });
+    expect(panel).toHaveAttribute('data-slot', 'bank-account-sheet');
+    expect(panel).toHaveAttribute('data-sheet', 'money');
+    expect(panel).toHaveAttribute('data-money', 'bank-10');
+    expect(panel.querySelector('img')).toBeNull();
+    expect(panel.querySelector('[data-slot="account-accent"]')).toBeNull();
   });
 
-  it('shows a bank with no logo by a neutral mark, on the app’s own accent', async () => {
+  it('keeps a bank with no colour of its own on the neutral sheet', async () => {
     await createPaymentMethod(
       db,
       'other',
@@ -127,11 +129,8 @@ describe('an account’s bank', () => {
     render();
 
     const panel = await screen.findByRole('article', { name: 'Jerusalem savings' });
+    expect(panel).toHaveAttribute('data-money', 'neutral');
     expect(panel.querySelector('img')).toBeNull();
-    expect(panel.querySelector('[data-slot="neutral-mark"] svg')).not.toBeNull();
-    const accent = panel.querySelector('[data-slot="account-accent"]');
-    expect(accent).toHaveClass('bg-primary');
-    expect(accent).not.toHaveAttribute('style');
   });
 
   it('takes the colour the person gave it over the bank’s', async () => {
@@ -150,8 +149,17 @@ describe('an account’s bank', () => {
     render();
 
     const panel = await screen.findByRole('article', { name: 'My red one' });
-    expect(panel.querySelector('img[data-brand="bank-10"]')).not.toBeNull();
-    expect(panel.querySelector('[data-slot="account-accent"]')).toHaveStyle({ backgroundColor: '#b8323f' });
+    expect(panel).toHaveAttribute('data-money', 'card-red');
+  });
+
+  it('has Edit as a pill button', async () => {
+    render();
+
+    const panel = await account();
+    expect(within(panel).getByRole('button', { name: 'Edit account' })).toHaveAttribute(
+      'data-variant',
+      'pill',
+    );
   });
 });
 
@@ -251,7 +259,7 @@ describe('an account’s incoming money', () => {
 
     const panel = await account();
     const link = await within(panel).findByRole('link', { name: /^Salary · Oct 10/ });
-    expect(link.querySelector('[data-value="1240000"]')).not.toBeNull();
+    expect(link.querySelector('[data-slot="mark"] [data-value="1240000"]')).not.toBeNull();
     const href = new URL(link.getAttribute('href') ?? '', 'http://x');
     expect(href.pathname).toBe('/');
     expect(href.searchParams.get('pm')).toBe('leumi');

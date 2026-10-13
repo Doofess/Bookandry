@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { PROFILE_PALETTE } from '@/domain/palette';
 import { freshDb, type TestDb } from '@/test/db-harness';
+import { BUILTIN_METHOD_IDS } from '@/types/domain';
+import type { IsoInstant } from '@/types/money';
 
-import { BUILTIN_EXPENSE, BUILTIN_INCOME, FALLBACK_CATEGORY } from './seed';
+import { BUILTIN_EXPENSE, BUILTIN_INCOME, buildSeedPaymentMethods, FALLBACK_CATEGORY } from './seed';
+
+const SEED_NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
 let handle: TestDb;
 beforeEach(() => {
@@ -20,9 +24,11 @@ describe('populate', () => {
     expect(categories.every((c) => c.source === 'builtin')).toBe(true);
   });
 
-  it('seeds shared cash and cheques, so the first transaction is savable', async () => {
+  it('seeds the six shared built-in ways to pay, so the first transaction is savable', async () => {
     const methods = await handle.db.paymentMethods.toArray();
-    expect(methods.map((m) => m.id)).toEqual(['pm.cash', 'pm.cheque']);
+    // The table hands rows back in id order; the seed itself is in "Paid with" order.
+    expect(methods.map((m) => m.id).sort()).toEqual([...BUILTIN_METHOD_IDS].sort());
+    expect(buildSeedPaymentMethods(SEED_NOW).map((m) => m.id)).toEqual([...BUILTIN_METHOD_IDS]);
     expect(methods.every((m) => m.profileId === '*')).toBe(true);
   });
 

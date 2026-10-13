@@ -15,6 +15,12 @@
   "readNone": "Read",
   "whose": "Whose spending and income is this?",
   "whoseHint": "Where a file shows whose it is, that's filled in for you. The rest is added for whoever you pick here.",
+  "kindLabel": "What to import",
+  "kindChoice": {
+    "expense": "Expenses",
+    "income": "Income",
+    "both": "Both"
+  },
   "noteLabel": "Anything we should know about these files?",
   "notePlaceholder": "e.g. These are all my Max card transactions for September",
   "noteHint": "Optional. It helps the reader; what the files show always comes first.",
@@ -38,7 +44,8 @@
     "pdf_pages": "More than 100 pages. Split it first.",
     "unreadable": "This file couldn't be opened.",
     "word97": "Word 97 files can't be read. Save it as .docx.",
-    "unsupported": "This kind of file can't be read."
+    "unsupported": "This kind of file can't be read.",
+    "totals_only": "This file has only monthly totals, not transactions: reading it would count each month twice. Add the monthly files instead."
   },
   "error": {
     "offline": "You're offline. Your files are still here.",
@@ -57,6 +64,18 @@
   "retry": "Try again",
   "nothing": "We didn't find any transactions, cards or bank accounts in these files.",
   "chooseOther": "Choose other files",
+  "emptyKind": {
+    "expense": "No expenses in these files.",
+    "income": "No income in these files."
+  },
+  "leftOut": {
+    "expense_one": "1 expense left out",
+    "expense_other": "{{count}} expenses left out",
+    "income_one": "1 income item left out",
+    "income_other": "{{count}} income items left out",
+    "show": "Show",
+    "hide": "Hide"
+  },
   "addManually": "Add manually",
   "groups": {
     "check_one": "Check this (1)",
@@ -90,7 +109,11 @@
     "twice_in_document": "Appears twice in this document.",
     "in_another_file": "Also in another file.",
     "already_added": "Looks already added.",
+    "similar_other_card": "The same amount is already on another card a day or two away. Check it isn't this purchase.",
     "already_plan": "This plan is already added.",
+    "plan_in_import": "Another payment of a plan this import adds once.",
+    "plan_adjustment": "A correction to a plan's payments: added as it is, not as a plan.",
+    "loan_disbursement": "The loan paid out to you: not income. The loan is added from its payments.",
     "card_fee_counted": "Already counted as the card fee.",
     "total_estimated": "Plan total worked out from the payment.",
     "total_mismatch": "Check it: the statement's total doesn't match.",
@@ -161,5 +184,16 @@
     "waiting_one": "1 card or account is still to finish. It's waiting in Smart import.",
     "waiting_other": "{{count}} cards and accounts are still to finish. They're waiting in Smart import."
   },
-  "whoseChoose": "Choose…"
+  "whoseChoose": "Choose…",
+  "steps": {
+    "title": "Smart import",
+    "choose": "Choose the files",
+    "review": "Review",
+    "cards": "Finish the cards"
+  },
+  "preview": {
+    "title": "The card found",
+    "subtitle": "As it will look",
+    "empty": "A card found in the files shows here."
+  }
 }

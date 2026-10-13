@@ -7,8 +7,7 @@ import { toast } from 'sonner';
 import { accountController, useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES, SETTINGS_ROUTES } from '@/app/routes';
-import { ScreenPanel } from '@/app/screen-panel';
-import { PanelSheet } from '@/components/brand-panel';
+import { ScreenHead, ScreenSheet } from '@/app/screen-head';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ReconvertDialog } from '@/features/settings/reconvert-dialog';
 import type { InvitePreview } from '@/services/supabase/household';
@@ -146,7 +145,7 @@ export function LinkScreen() {
         <ul className="space-y-2 text-sm text-muted-foreground">
           {[t('link.pointSee'), t('link.pointEdit'), t('link.pointUnlink')].map((point) => (
             <li key={point} className="flex gap-2">
-              <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+              <Check className="mt-0.5 size-4 shrink-0 text-primary-ink" aria-hidden="true" />
               <span>{point}</span>
             </li>
           ))}
@@ -164,6 +163,7 @@ export function LinkScreen() {
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
+            variant="pill-solid"
             disabled={busy || preview.linkedElsewhere}
             onClick={() => {
               accept(preview);
@@ -173,7 +173,7 @@ export function LinkScreen() {
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="pill"
             disabled={busy}
             onClick={() => {
               void accountController()
@@ -202,8 +202,8 @@ export function LinkScreen() {
 
   return (
     <div className="mx-auto max-w-lg pb-24 lg:px-4 lg:pb-8">
-      <ScreenPanel />
-      <PanelSheet>
+      <ScreenHead />
+      <ScreenSheet>
         <section className="space-y-4 px-4 pt-8 pb-10">
           <span className="inline-flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
             <Link2 className="size-6" aria-hidden="true" />
@@ -211,7 +211,7 @@ export function LinkScreen() {
           <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
           {body}
           {done ? (
-            <Button type="button" variant="outline" onClick={leave}>
+            <Button type="button" variant="pill" onClick={leave}>
               {t('link.home')}
             </Button>
           ) : null}
@@ -229,7 +229,7 @@ export function LinkScreen() {
             />
           ) : null}
         </section>
-      </PanelSheet>
+      </ScreenSheet>
     </div>
   );
 }

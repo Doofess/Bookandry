@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { SHARED_OWNER, type Category, type PaymentMethod } from '@/types/domain';
 import type { IsoInstant } from '@/types/money';
 
-import { categoriesFor, methodFits, methodOwnedBy, methodsFor, standingViaOf } from './tx-options';
+import {
+  categoriesFor,
+  methodFits,
+  methodOwnedBy,
+  methodsFor,
+  methodTypeOf,
+  standingViaOf,
+} from './tx-options';
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
@@ -184,5 +191,20 @@ describe('bank accounts', () => {
     expect(methodsFor([joint], 'p3')).toEqual([]);
     expect(methodOwnedBy(method({ id: 'cash', profileId: SHARED_OWNER }), 'p3')).toBe(true);
     expect(methodOwnedBy(method({ id: 'theirs', profileId: 'p2' }), 'p3')).toBe(false);
+  });
+});
+
+describe('methodTypeOf', () => {
+  it('reads a known type as itself', () => {
+    expect(methodTypeOf({ type: 'debit_card' })).toBe('debit_card');
+  });
+  it('reads a type from a later build as other', () => {
+    expect(methodTypeOf({ type: 'prepaid_card' as never })).toBe('other');
+  });
+  it('makes an unknown type fit a one-time purchase and nothing a card company runs', () => {
+    const future = { type: 'prepaid_card' as never };
+    expect(methodFits(future, 'one_time')).toBe(true);
+    expect(methodFits(future, 'credit')).toBe(false);
+    expect(standingViaOf(future)).toBeUndefined();
   });
 });

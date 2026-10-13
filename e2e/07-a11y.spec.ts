@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { openAddSheet } from './support/add';
 import { completeFirstRun, type SeedLanguage } from './support/seed';
 
 /**
@@ -44,6 +45,9 @@ const BLOCKING: readonly Combo[] = [
   { route: '/cards', name: 'cards', lang: 'en', theme: 'light' },
   { route: '/cash', name: 'cash', lang: 'he', theme: 'dark' },
   { route: '/cash', name: 'cash', lang: 'en', theme: 'light' },
+  { route: '/bank-accounts', name: 'bank-accounts', lang: 'he', theme: 'light' },
+  { route: '/categories', name: 'categories', lang: 'en', theme: 'dark' },
+  { route: '/commitments', name: 'commitments', lang: 'he', theme: 'dark' },
 ];
 
 const REPORTING: readonly Combo[] = [
@@ -105,6 +109,34 @@ for (const combo of REPORTING) {
   });
 }
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`@a11y BLOCKING the add-transaction panel, open, ${theme}`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: theme });
+    await completeFirstRun(page, 'en', { theme });
+    await page.goto('/');
+    await openAddSheet(page);
+    await expect(page.locator('[data-slot="editor-panel"]')).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    const results = await new AxeBuilder({ page })
+      .withTags(TAGS)
+      .include('[data-slot="editor-panel"]')
+      .analyze();
+    expect(results.violations, summarise(results)).toEqual([]);
+  });
+
+  test(`@a11y BLOCKING the Smart import pop-out, open, ${theme}`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: theme });
+    await completeFirstRun(page, 'he', { theme });
+    await page.goto('/?import=1');
+    await expect(page.locator('[data-slot="popout"]')).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    const results = await new AxeBuilder({ page }).withTags(TAGS).include('[data-slot="popout"]').analyze();
+    expect(results.violations, summarise(results)).toEqual([]);
+  });
+}
+
 test('@a11y BLOCKING the feed pop-outs, open', async ({ page }) => {
   await completeFirstRun(page, 'he', { theme: 'dark' });
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -138,11 +170,14 @@ test('@a11y BLOCKING the feed pop-outs, open', async ({ page }) => {
         .getByRole('button', { name: /^הצגת הפירוט של/ })
         .nth(1)
         .click(),
-    () =>
-      page
+    async () => {
+      // The list sits below the board's other sheets: bring it on screen, where its rows draw.
+      await page.locator('[data-slot="transactions-sheet"]').scrollIntoViewIfNeeded();
+      await page
         .getByRole('button', { name: /^פעולות עבור/ })
         .first()
-        .click(),
+        .click();
+    },
     () =>
       page
         .getByRole('button', { name: /^קטגוריה: / })

@@ -96,5 +96,9 @@ export async function completeFirstRun(
   // The seeded rows are what every caller is actually waiting for: the shell
   // appears as soon as the transaction commits, and the first live query lands
   // a frame or two later.
-  if (demo) await expect(page.locator('[data-value]').first()).toBeAttached();
+  // The balance's numeral keeps its box (aria-busy, reading 0) while it loads: wait for the real figure.
+  if (demo) {
+    await expect(page.locator('[data-value]').first()).toBeAttached();
+    await expect(page.getByTestId('balance-amount')).not.toHaveAttribute('aria-busy', 'true');
+  }
 }

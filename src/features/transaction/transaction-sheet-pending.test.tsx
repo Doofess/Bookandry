@@ -105,7 +105,8 @@ describe('a purchase on a linked card whose catalog entry is still loading', () 
       />,
     );
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText('Amount'), '3000');
+    await user.click(screen.getByLabelText('Amount'));
+    await user.paste('3000');
     await user.click(screen.getByRole('combobox', { name: /Paid with/ }));
     await user.click(await screen.findByRole('option', { name: /Max/ }));
     await user.click(await screen.findByRole('radio', { name: 'Credit installment' }));
@@ -114,7 +115,8 @@ describe('a purchase on a linked card whose catalog entry is still loading', () 
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 
     // Typed by hand, the rate is the person's own, and the save goes ahead.
-    await user.type(screen.getByLabelText('Annual interest'), '15.5');
+    await user.click(screen.getByLabelText('Annual interest'));
+    await user.paste('15.5');
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
     gate.release();
   });

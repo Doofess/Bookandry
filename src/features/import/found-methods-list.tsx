@@ -64,7 +64,7 @@ export function MethodsGroup({
   );
 }
 
-/** "··3214", kept left to right in a Hebrew line. */
+/** "··5555", kept left to right in a Hebrew line. */
 const tail = (digits: string) => `⁦··${digits}⁩`;
 
 function MethodRow({
@@ -88,7 +88,7 @@ function MethodRow({
       <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center ps-1">
         <input
           type="checkbox"
-          className="size-4 accent-primary"
+          className="size-4 accent-primary-ink"
           checked={item.ticked}
           disabled={!tickable(item)}
           onChange={(event) => {

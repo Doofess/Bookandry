@@ -39,13 +39,49 @@ export function MonthCursor({
   onStep: (delta: number) => void;
   /** Jump to a month; without it the label stays plain text. */
   onPick?: (month: LocalDate) => void;
-  tone?: 'plain' | 'panel';
+  tone?: 'plain' | 'panel' | 'bold';
 }) {
   const { t, i18n } = useTranslation();
   const label = formatLocalDate(month, i18n.language, { month: 'long', year: 'numeric' });
   const atHorizon = isAtHorizon(month, today);
   const onPanel = tone === 'panel';
   const arrow = onPanel ? panelIconButton : undefined;
+
+  if (tone === 'bold') {
+    return (
+      <div data-slot="month-picker" className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="round"
+          aria-label={t('topbar.prevMonth')}
+          onClick={() => {
+            onStep(-1);
+          }}
+        >
+          <ChevronLeft className="cn-rtl-flip rtl:rotate-180" aria-hidden="true" />
+        </Button>
+        <h2 className="min-w-30 text-center text-base font-semibold whitespace-nowrap" aria-live="polite">
+          {onPick === undefined ? (
+            <span>{label}</span>
+          ) : (
+            <MonthPicker month={month} today={today} label={label} onPick={onPick} onPanel={false} />
+          )}
+        </h2>
+        <Button
+          type="button"
+          variant="round"
+          aria-label={t('topbar.nextMonth')}
+          disabled={atHorizon}
+          title={atHorizon ? t('month.horizon') : undefined}
+          onClick={() => {
+            onStep(1);
+          }}
+        >
+          <ChevronRight className="cn-rtl-flip rtl:rotate-180" aria-hidden="true" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -209,7 +245,7 @@ function MonthPicker({
                     : cn(
                         'hover:bg-accent',
                         cell.state === 'forecast' ? 'text-muted-foreground' : 'text-foreground',
-                        cell.isThisMonth ? 'ring-1 ring-primary' : null,
+                        cell.isThisMonth ? 'ring-1 ring-primary-ink' : null,
                       ),
                 )}
               >
@@ -222,7 +258,7 @@ function MonthPicker({
         <Button
           type="button"
           variant="ghost"
-          className="min-h-11 w-full text-primary sm:min-h-9"
+          className="min-h-11 w-full text-primary-ink sm:min-h-9"
           disabled={month === thisMonth}
           onClick={() => {
             pick(thisMonth);

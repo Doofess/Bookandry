@@ -140,6 +140,8 @@ const IDENTICAL_BY_DESIGN = new Set([
   'common:tx.rateSentence',
   // A provider's name, shown so the user can tell which source a rate came from.
   'common:tx.sourceErapi',
+  // A month's name alone: the interpolation is all there is to translate.
+  'common:board.monthTitlePast',
 ]);
 
 describe('nothing was left untranslated', () => {
@@ -284,10 +286,15 @@ describe('account linking, by name', () => {
   const HOUSEHOLD = /household|משק/i;
 
   /**
-   * The one place "household" stays: the front door's line about the app,
-   * where it means a family's books, not the linked accounts.
+   * Where "household" stays: the front door's line about the app, where it
+   * means a family's books, not the linked accounts; and the balance sheet's
+   * title, which is the approved Bold sheets concept's own wording.
    */
-  const KEPT = new Set(['en common:account.welcome.headline']);
+  const KEPT = new Set([
+    'en common:account.welcome.headline',
+    'en common:board.balanceTitle',
+    'he common:board.balanceTitle',
+  ]);
 
   it.each(LOCALES)('%s says it nowhere', (lng) => {
     const found = NAMESPACES.flatMap((ns) =>
