@@ -379,13 +379,14 @@ test.describe('@cards the monthly fee', () => {
     await closeDetails(page);
 
     // And in the feed, as a line on the card at the month's end.
-    await page.getByRole('link', { name: 'תנועות' }).click();
+    await page.getByRole('link', { name: 'סקירה' }).click();
     const fee = page.getByRole('listitem').filter({ hasText: 'דמי כרטיס' });
     await expect(fee).toContainText('14.90');
 
-    // Its category icon is not a button (a fee is changed where the card is),
+    // Its category pill is not a button (a fee is changed where the card is),
     // but a tap on it still opens what the row opens: the Cards screen.
-    const icon = await fee.locator('[data-slot="category-chip"]').boundingBox();
+    await fee.scrollIntoViewIfNeeded();
+    const icon = await fee.locator('[data-slot="hue-pill"]').boundingBox();
     expect(icon).not.toBeNull();
     if (icon === null) return;
     await page.mouse.click(icon.x + icon.width / 2, icon.y + icon.height / 2);
