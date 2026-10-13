@@ -206,8 +206,9 @@ async function menuClearOfToast(
   await completeFirstRun(page, lang);
   await page.getByRole('link', { name: copy.cards }).click();
   const first = page.getByRole('article').first();
-  const name = (await first.getByRole('heading').first().textContent()) ?? '';
-  await first.getByRole('button', { name: copy.options }).click();
+  const options = first.getByRole('button', { name: copy.options });
+  const name = ((await options.getAttribute('aria-label')) ?? '').replace(copy.options, '').trim();
+  await options.click();
   await page.getByRole('menuitem', { name: copy.archive }).click();
   const toast = page.locator('[data-sonner-toast]').first();
   await expect(toast).toContainText(name);
