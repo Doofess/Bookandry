@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { openAddSheet } from './support/add';
 import { completeFirstRun } from './support/seed';
@@ -17,11 +17,34 @@ test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'Covered at desktop and in Hebrew.');
 });
 
+/** A card's sheet: it carries its company's name, and the card's own label in the names of its buttons. */
+const sheetOf = (page: Page, label: string) =>
+  page.getByRole('article').filter({ has: page.getByRole('button', { name: label }) });
+
+/** The card's details: beside the sheets from the wide layout, in a panel below it. */
+const detailsOf = (page: Page) =>
+  page.locator('[data-slot="card-details"]:visible, [data-slot="editor-panel"]:visible');
+
+/** Choose a card from its sheet and wait for its face. */
+async function openCard(page: Page, sheet: Locator): Promise<Locator> {
+  await sheet.locator('[data-slot="card-open"]').click();
+  const details = detailsOf(page);
+  await details.getByTestId('card-face').waitFor();
+  return details;
+}
+
+/** Put the details away when they are a panel over the page (beside the sheets they are not). */
+async function closeDetails(page: Page): Promise<void> {
+  if ((await page.getByRole('dialog').count()) === 0) return;
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
 const COPY = {
   en: {
     nav: 'Cards',
-    title: 'Credit cards',
-    add: 'Add a card',
+    title: 'Cards',
+    add: '+ Card',
     label: 'Label',
     lastDigits: 'Last 4 digits',
     gold: 'Gold',
@@ -47,8 +70,8 @@ const COPY = {
   },
   he: {
     nav: 'כרטיסים',
-    title: 'כרטיסי אשראי',
-    add: 'הוספת כרטיס',
+    title: 'כרטיסים',
+    add: '+ כרטיס',
     label: 'תווית',
     lastDigits: '4 ספרות אחרונות',
     gold: 'זהב',
@@ -87,15 +110,25 @@ for (const lang of ['en', 'he'] as const) {
       for (const issuer of copy.demoCards) {
         await expect(page.getByRole('article').filter({ hasText: issuer }).first()).toBeVisible();
       }
-      // The network's mark on the card, named for a screen reader.
-      for (const network of copy.networks) {
-        await expect(page.getByRole('img', { name: network, exact: true })).toBeVisible();
-      }
-      // A limit, as a meter.
-      await expect(page.getByRole('meter', { name: copy.limit }).first()).toBeVisible();
-      // What the household's cards still have to charge, and each card's own.
+      // What the household's cards still have to charge.
       await expect(page.getByRole('heading', { level: 2, name: copy.household })).toBeVisible();
-      await expect(page.getByTestId('card-commitments').first()).toContainText(copy.commitments);
+      // A card's details, from its sheet: the network's mark (named for a screen reader), a limit
+      // as a meter, and what that card still has to charge.
+      const sheets = page.locator('[data-card-sheet]');
+      const networks = new Set<string>();
+      let meters = 0;
+      for (let i = 0; i < (await sheets.count()); i++) {
+        const details = await openCard(page, sheets.nth(i));
+        for (const network of copy.networks) {
+          if ((await details.getByRole('img', { name: network, exact: true }).count()) > 0)
+            networks.add(network);
+        }
+        meters += await details.getByRole('meter', { name: copy.limit }).count();
+        await expect(details.getByTestId('card-commitments')).toContainText(copy.commitments);
+        await closeDetails(page);
+      }
+      expect([...networks].sort()).toEqual([...copy.networks].sort());
+      expect(meters).toBeGreaterThan(0);
     });
 
     test('charges a card purchase on the billing day, not the day it was made', async ({ page }) => {
@@ -114,11 +147,13 @@ for (const lang of ['en', 'he'] as const) {
       await page.getByLabel(copy.limit, { exact: true }).fill('15,000');
       await page.getByRole('button', { name: copy.save, exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      const tile = page.getByRole('article').filter({ hasText: 'Visa' });
-      await expect(tile).toContainText(copy.billed);
+      const tile = sheetOf(page, 'Visa');
       // Its last four digits, where a card prints them.
       await expect(tile).toContainText('5555');
-      await expect(tile.getByTestId('card-face')).toHaveAttribute('data-color', 'gold');
+      const face = (await openCard(page, tile)).getByTestId('card-face');
+      await expect(face).toContainText(copy.billed);
+      await expect(face).toHaveAttribute('data-color', 'gold');
+      await closeDetails(page);
 
       // The balance before.
       await page.goto('/');
@@ -151,11 +186,12 @@ for (const lang of ['en', 'he'] as const) {
 
       // And it is on the card's coming bill.
       await page.getByRole('link', { name: copy.nav }).click();
-      await expect(tile).toContainText(copy.nextBill);
-      await expect(tile).toContainText(copy.charge);
-      // A commitment until it is charged: on the card, and in the household's total.
-      await expect(tile.getByTestId('card-commitments')).toContainText(copy.charge);
+      // A commitment until it is charged: in the household's total, and on the card.
       await expect(page.getByTestId('household-commitments')).toContainText(copy.charge);
+      const details = await openCard(page, tile);
+      await expect(details).toContainText(copy.nextBill);
+      await expect(details).toContainText(copy.charge);
+      await expect(details.getByTestId('card-commitments')).toContainText(copy.charge);
     });
   });
 }
@@ -169,7 +205,7 @@ test.describe('@cards archive', () => {
   test('archives a card from its menu, keeps it under Archived cards, and restores it', async ({ page }) => {
     await completeFirstRun(page, 'en');
     await page.getByRole('link', { name: 'Cards' }).click();
-    const card = page.getByRole('article').filter({ hasText: 'Yossi card' });
+    const card = sheetOf(page, 'Yossi card');
     await expect(card).toBeVisible();
 
     await card.getByRole('button', { name: 'Options for Yossi card' }).click();
@@ -210,7 +246,7 @@ test.describe('@cards the brands’ logos', () => {
   }) => {
     await completeFirstRun(page, 'en', { demo: false });
     await page.getByRole('link', { name: 'Cards' }).click();
-    await page.getByRole('button', { name: 'Add a card' }).click();
+    await page.getByRole('button', { name: '+ Card' }).click();
     const dialog = page.getByRole('dialog');
     const banks = dialog.getByRole('radiogroup', { name: 'Bank', exact: true });
     await expect(banks.getByRole('radio', { name: 'Bank Leumi' })).toBeVisible();
@@ -257,7 +293,7 @@ test.describe('@cards the monthly fee', () => {
   test('charges the fee on the card each month, and says how close the discount is', async ({ page }) => {
     await completeFirstRun(page, 'he', { demo: false });
     await page.getByRole('link', { name: 'כרטיסים' }).click();
-    await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
+    await page.getByRole('button', { name: '+ כרטיס' }).click();
     await page.getByLabel('תווית', { exact: true }).fill('Visa');
     await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
     await page.getByLabel('דמי כרטיס, לחודש', { exact: true }).fill('14.90');
@@ -265,10 +301,11 @@ test.describe('@cards the monthly fee', () => {
     await page.getByRole('button', { name: 'שמירה', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    const status = page.getByTestId('fee-status');
+    const status = (await openCard(page, sheetOf(page, 'Visa'))).getByTestId('fee-status');
     await expect(status).toContainText('14.90');
     await expect(status).toContainText('3,000.00');
     await expect(page.getByRole('meter', { name: 'ההוצאה לקראת ההנחה בדמי הכרטיס' })).toBeVisible();
+    await closeDetails(page);
 
     // And in the feed, as a line on the card at the month's end.
     await page.getByRole('link', { name: 'תנועות' }).click();
@@ -296,7 +333,7 @@ test.describe('@cards what a card is committed to', () => {
   }) => {
     await completeFirstRun(page, 'he', { demo: false });
     await page.getByRole('link', { name: 'כרטיסים' }).click();
-    await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
+    await page.getByRole('button', { name: '+ כרטיס' }).click();
     await page.getByLabel('תווית', { exact: true }).fill('Visa');
     await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
     await page
@@ -320,7 +357,7 @@ test.describe('@cards what a card is committed to', () => {
     await expect(sheet).toHaveCount(0);
 
     await page.getByRole('link', { name: 'כרטיסים' }).click();
-    const box = page.getByTestId('card-commitments');
+    const box = (await openCard(page, sheetOf(page, 'Visa'))).getByTestId('card-commitments');
     await expect(box).toContainText('סך הכל התחייבויות בכרטיס');
     await expect(box).toContainText('1,242.36');
     await expect(box).toContainText('מתוכם ריבית');
@@ -373,7 +410,7 @@ test.describe('@cards bank accounts', () => {
 
     // A new card is offered the account it is paid from.
     await page.getByRole('link', { name: 'כרטיסים' }).click();
-    await page.getByRole('button', { name: 'הוספת כרטיס' }).click();
+    await page.getByRole('button', { name: '+ כרטיס' }).click();
     await page.getByLabel('תווית', { exact: true }).fill('Visa');
     await page.getByRole('radio', { name: 'ב־10 לחודש', exact: true }).click();
     await page
@@ -427,8 +464,11 @@ test.describe('@forced-colours the Cards screen', () => {
     await page.goto('/cards');
 
     // Windows High Contrast replaces backgrounds: the transparent 2px border is what it paints instead.
-    const faces = page.getByTestId('card-face');
-    await expect(faces.first()).toBeVisible();
+    // Sheets first, then the face on a card's details.
+    const sheets = page.locator('[data-card-sheet]');
+    await expect(sheets.first()).toBeVisible();
+    await openCard(page, sheets.first());
+    const faces = page.locator('[data-card-sheet], [data-testid="card-face"]');
     for (const face of await faces.all()) {
       const edge = await face.evaluate((el) => {
         const style = getComputedStyle(el);
@@ -438,6 +478,7 @@ test.describe('@forced-colours the Cards screen', () => {
     }
 
     // The swatches keep their colour: here the colour is what is being chosen.
+    await closeDetails(page);
     await page.getByRole('button', { name: COPY.en.add }).click();
     const swatch = page.getByTitle(COPY.en.gold, { exact: true }).locator('[data-money]');
     expect(await swatch.evaluate((el) => getComputedStyle(el).forcedColorAdjust)).toBe('none');
