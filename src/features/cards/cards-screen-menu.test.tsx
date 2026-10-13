@@ -45,6 +45,11 @@ const render = () =>
   );
 
 const options = () => screen.findByRole('button', { name: 'Options for Max Gold' });
+// The card's details open from its sheet (?card=), in a panel below the wide layout (jsdom has none).
+const openDetails = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole('button', { name: 'Details of Max Gold' }));
+  return within(await screen.findByRole('dialog'));
+};
 
 beforeAll(async () => {
   await initTestI18n('en');
@@ -76,7 +81,8 @@ describe('a card on the Cards screen', () => {
     expect(screen.getAllByRole('button', { name: 'Options for Max Gold' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Edit card' })).not.toBeInTheDocument();
 
-    const face = screen.getByTestId('card-face').querySelector('button[aria-hidden="true"]');
+    const panel = await openDetails(user);
+    const face = panel.getByTestId('card-face').querySelector('button[aria-hidden="true"]');
     expect(face).toHaveAttribute('tabindex', '-1');
     if (!(face instanceof HTMLElement)) throw new Error('no face button');
     await user.click(face);
@@ -85,7 +91,7 @@ describe('a card on the Cards screen', () => {
     // Escape: back to the card's ⋯, not the face's hidden button.
     await user.keyboard('{Escape}');
     await expect.poll(() => screen.queryByRole('menu')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Options for Max Gold' })).toHaveFocus();
+    expect(panel.getByRole('button', { name: 'Options for Max Gold' })).toHaveFocus();
   });
 
   it('opens the editor from Edit card', async () => {
@@ -182,7 +188,7 @@ describe('a card on the Cards screen', () => {
     render();
     await user.click(await options());
     await user.click(await screen.findByRole('menuitem', { name: 'Archive' }));
-    await expect.poll(() => screen.queryByTestId('card-face')).toBeNull();
+    await expect.poll(() => screen.queryByRole('article')).toBeNull();
 
     // Quiet: folded, with the count.
     const disclosure = await screen.findByRole('button', { name: 'Archived cards (1)' });
@@ -198,12 +204,23 @@ describe('a card on the Cards screen', () => {
 
     await expect.poll(async () => (await db.paymentMethods.get('card-1'))?.isArchived).toBe(0);
     expect((await db.paymentMethods.get('card-1'))?.archivedAt).toBeUndefined();
-    expect(await screen.findByTestId('card-face')).toBeInTheDocument();
+    expect(await screen.findByRole('article', { name: 'Max' })).toBeInTheDocument();
     await expect.poll(() => screen.queryByRole('button', { name: /^Archived cards/ })).toBeNull();
     expect(toasts.toast).toHaveBeenLastCalledWith('Max Gold restored', expect.anything());
     // Not dropped on the page: on the restored card's ⋯.
     await expect.poll(() => document.activeElement?.getAttribute('aria-label')).toBe('Options for Max Gold');
-    expect(document.activeElement?.closest('[data-testid="card-face"]')).not.toBeNull();
+    expect(document.activeElement?.closest('[data-card-sheet]')).not.toBeNull();
+  });
+});
+
+describe('a card sheet on the Cards screen', () => {
+  it('draws a sheet per card and opens its details by ?card=, from the sheet', async () => {
+    const user = userEvent.setup();
+    render();
+    expect(await screen.findAllByRole('article')).toHaveLength(1);
+    const panel = await openDetails(user);
+    expect(panel.getByTestId('card-face')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 });
 
@@ -213,7 +230,7 @@ describe('an archived card in the household commitments', () => {
     render();
     await user.click(await options());
     await user.click(await screen.findByRole('menuitem', { name: 'Archive' }));
-    await expect.poll(() => screen.queryByTestId('card-face')).toBeNull();
+    await expect.poll(() => screen.queryByRole('article')).toBeNull();
   };
 
   it('still counts while payments are left to run off it', async () => {
@@ -253,7 +270,8 @@ describe('a card’s face', () => {
   const face = async () => {
     render();
     await options();
-    return screen.getByTestId('card-face');
+    const panel = await openDetails(userEvent.setup());
+    return panel.getByTestId('card-face');
   };
 
   it('is a money sheet in its company’s colour when it was given none', async () => {

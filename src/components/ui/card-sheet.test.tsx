@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
@@ -58,5 +59,25 @@ describe('CardSheet (§7.1)', () => {
     const figure = container.querySelector('[data-slot="card-sheet-figure"]');
     expect(figure?.className).toMatch(/flex-1/);
     expect(container.firstElementChild?.className).toMatch(/@board\/main:min-h-27/);
+  });
+});
+
+describe('CardSheet that opens', () => {
+  it('opens its card from anywhere on it, keeps its menu reachable, and shows when it is the one chosen', async () => {
+    const onOpen = vi.fn();
+    renderWithProviders(
+      <CardSheet
+        moneyKey="issuer-max"
+        name="Max"
+        onOpen={onOpen}
+        openLabel="Details of Max"
+        selected
+        menu={<button type="button">Options</button>}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Details of Max' }));
+    expect(onOpen).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Details of Max' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'Options' })).toBeInTheDocument();
   });
 });

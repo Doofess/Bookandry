@@ -25,7 +25,7 @@ test('links a Max card through Mizrahi, shows its real rates, and prices a Credi
 
   // A card, linked: bank, then card company, then its type.
   await page.getByRole('link', { name: 'Cards' }).click();
-  await page.getByRole('button', { name: 'Add a card' }).click();
+  await page.getByRole('button', { name: '+ Card' }).click();
   await page.getByLabel('Label', { exact: true }).fill('Max Mizrahi');
   const chooser = page.getByRole('group', { name: 'Who issues this card' });
   await chooser.getByRole('radio', { name: 'Mizrahi-Tefahot', exact: true }).click();
@@ -46,7 +46,9 @@ test('links a Max card through Mizrahi, shows its real rates, and prices a Credi
 
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('article').filter({ hasText: 'Max Mizrahi' })).toBeVisible();
+  await expect(
+    page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Max Mizrahi' }) }),
+  ).toBeVisible();
 
   // A purchase on it: the card's own deal, with its reset at payment 19.
   await page.goto('/');
