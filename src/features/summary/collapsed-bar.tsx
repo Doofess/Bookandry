@@ -12,8 +12,9 @@ import type { BalanceState } from './use-balance';
 import { COLLAPSED_HEIGHT } from './use-collapsing-header';
 
 const ROW = cn(
-  'mx-auto flex h-full w-full max-w-2xl items-center justify-between gap-3 text-start',
-  'ps-[max(1rem,env(safe-area-inset-left,0px))] pe-[max(1rem,env(safe-area-inset-right,0px))]',
+  'mx-auto flex h-full w-full max-w-[105rem] items-center justify-between gap-3 text-start',
+  // The content box's own padding: 12px on a phone, 24px from the rail up.
+  'ps-[max(0.75rem,env(safe-area-inset-left,0px))] pe-[max(0.75rem,env(safe-area-inset-right,0px))] lg:ps-6 lg:pe-6',
   'focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none disabled:cursor-default',
 );
 

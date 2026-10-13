@@ -32,12 +32,12 @@ describe('CardSheet (§7.1)', () => {
     expect(screen.getByRole('article').textContent).not.toContain('5555');
   });
 
-  it('swaps sides from sheet to sheet, and is 124px tall on a phone, 108px from lg', () => {
+  it('swaps sides from sheet to sheet, and is 124px tall on a phone, 108px in a wide board main', () => {
     renderWithProviders(<CardSheet moneyKey="neutral" name="A" />);
     expect(screen.getByRole('article')).toHaveClass(
       '[&:nth-child(even_of_[data-card-sheet])]:flex-row-reverse',
       'min-h-31',
-      'lg:min-h-27',
+      '@board/main:min-h-27',
       'rounded-sheet-s',
     );
   });
@@ -48,5 +48,15 @@ describe('CardSheet (§7.1)', () => {
       <CardSheet moneyKey="issuer-max" name="Max" figure={<span data-numeral="">2,040</span>} />,
     );
     expect(container.querySelector('[data-card-sheet] [data-numeral]')).not.toBeNull();
+  });
+
+  it('gives its figure the free width, at the far side, and takes a heading level', () => {
+    const { container } = renderWithProviders(
+      <CardSheet moneyKey="issuer-max" name="Max" as="h2" figure={<span>fig</span>} />,
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Max' })).toBeInTheDocument();
+    const figure = container.querySelector('[data-slot="card-sheet-figure"]');
+    expect(figure?.className).toMatch(/flex-1/);
+    expect(container.firstElementChild?.className).toMatch(/@board\/main:min-h-27/);
   });
 });

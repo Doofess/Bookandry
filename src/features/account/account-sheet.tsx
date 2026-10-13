@@ -8,6 +8,8 @@ import { accountController, useAccount } from '@/app/account';
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
+  EditorPanelBody,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -65,9 +67,9 @@ export function AccountSheet({
           <EditorPanelTitle>{title}</EditorPanelTitle>
           <EditorPanelDescription>{body}</EditorPanelDescription>
         </EditorPanelHeader>
-        <div className="space-y-4 px-4 pb-6">
+        <EditorPanelBody>
           {flow === undefined ? null : <FlowBody key={flow.kind} flow={flow} onDone={onClose} />}
-        </div>
+        </EditorPanelBody>
       </EditorPanelContent>
     </EditorPanel>
   );
@@ -383,16 +385,18 @@ export function SignIn({
         )}
         <ErrorLine message={error} />
         {info === undefined ? null : <InfoLine>{info}</InfoLine>}
-        <Button type="submit" className={cn('h-11 w-full', part('submit'))} disabled={busy}>
-          {/* Its own part, so the label changes while the button stays solid. */}
-          <span className={cn('w-full text-center', part('submitLabel'))}>
-            {mode === 'reset'
-              ? t('account.sendReset')
-              : mode === 'signup'
-                ? t('account.create')
-                : t('account.signIn')}
-          </span>
-        </Button>
+        <EditorPanelActions>
+          <Button type="submit" variant="pill-solid" className={part('submit')} disabled={busy}>
+            {/* Its own part, so the label changes while the button stays solid. */}
+            <span className={cn('w-full text-center', part('submitLabel'))}>
+              {mode === 'reset'
+                ? t('account.sendReset')
+                : mode === 'signup'
+                  ? t('account.create')
+                  : t('account.signIn')}
+            </span>
+          </Button>
+        </EditorPanelActions>
       </form>
 
       {mode === 'signin' && !signUp ? null : (
@@ -454,15 +458,16 @@ function Confirm({
   return (
     <div className="space-y-3">
       <ErrorLine message={error} />
-      <Button
-        type="button"
-        variant={destructive ? 'destructive' : 'default'}
-        className="w-full"
-        disabled={busy}
-        onClick={() => void run()}
-      >
-        {t(label)}
-      </Button>
+      <EditorPanelActions>
+        <Button
+          type="button"
+          variant={destructive ? 'destructive' : 'pill-solid'}
+          disabled={busy}
+          onClick={() => void run()}
+        >
+          {t(label)}
+        </Button>
+      </EditorPanelActions>
     </div>
   );
 }
@@ -519,15 +524,16 @@ function SignOut({ onDone }: { readonly onDone: () => void }) {
         </p>
       ) : null}
       <ErrorLine message={error} />
-      <Button
-        type="button"
-        className="w-full"
-        variant={unsaved > 0 ? 'destructive' : 'default'}
-        disabled={busy}
-        onClick={() => void confirm()}
-      >
-        {unsaved > 0 ? t('account.signOutAnyway') : t('account.signOut')}
-      </Button>
+      <EditorPanelActions>
+        <Button
+          type="button"
+          variant={unsaved > 0 ? 'destructive' : 'pill-solid'}
+          disabled={busy}
+          onClick={() => void confirm()}
+        >
+          {unsaved > 0 ? t('account.signOutAnyway') : t('account.signOut')}
+        </Button>
+      </EditorPanelActions>
     </div>
   );
 }
@@ -593,9 +599,11 @@ function DeleteAccount({ onDone }: { readonly onDone: () => void }) {
         }}
       />
       <ErrorLine message={error} />
-      <Button type="submit" variant="destructive" className="w-full" disabled={busy || !ready}>
-        {t('account.deleteConfirm')}
-      </Button>
+      <EditorPanelActions>
+        <Button type="submit" variant="destructive" disabled={busy || !ready}>
+          {t('account.deleteConfirm')}
+        </Button>
+      </EditorPanelActions>
     </form>
   );
 }
@@ -641,9 +649,11 @@ function NewPassword({ onDone }: { readonly onDone: () => void }) {
         }}
       />
       <ErrorLine message={error} />
-      <Button type="submit" className="w-full" disabled={busy || password.length < MIN_PASSWORD}>
-        {t('account.savePassword')}
-      </Button>
+      <EditorPanelActions>
+        <Button type="submit" variant="pill-solid" disabled={busy || password.length < MIN_PASSWORD}>
+          {t('account.savePassword')}
+        </Button>
+      </EditorPanelActions>
     </form>
   );
 }

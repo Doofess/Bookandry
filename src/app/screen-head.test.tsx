@@ -66,4 +66,13 @@ describe('ScreenHead (§7.7)', () => {
     expect(screen.getByText('body')).toHaveClass('rounded-sheet', 'bg-card', 'mbs-sheet');
     expect(screen.getByText('body')).not.toHaveAttribute('data-sheet');
   });
+
+  it('sets a pill given as the action 44px on a phone (§9.6)', () => {
+    const { container } = render(
+      <ScreenHead title="Cards" actions={<Button variant="pill-solid">New</Button>} />,
+    );
+    const wrapper = screen.getByRole('button', { name: 'New' }).parentElement;
+    expect(wrapper?.className).toContain('max-lg:[&_[data-variant^=pill]]:min-h-11');
+    expect(container).toBeTruthy();
+  });
 });

@@ -12,7 +12,9 @@
     "cash": "מזומן",
     "bankAccounts": "חשבונות בנק",
     "categories": "קטגוריות",
-    "commitments": "התחייבויות"
+    "commitments": "התחייבויות",
+    "overview": "סקירה",
+    "cashBox": "קופת מזומן"
   },
   "popout": {
     "stepOf": "שלב {{current}} מתוך {{total}}",
@@ -232,7 +234,16 @@
     "monthTotal": "סך הכול ב{{month}}",
     "rows_one": "תנועה אחת",
     "rows_two": "שתי תנועות",
-    "rows_other": "{{count}} תנועות"
+    "rows_other": "{{count}} תנועות",
+    "stats": {
+      "title": "החודשים במספרים",
+      "in": "נכנס",
+      "out": "יצא",
+      "net": "נטו",
+      "largest": "החודש הגדול",
+      "average": "חודש ממוצע",
+      "top": "הקטגוריות הגדולות"
+    }
   },
   "feed": {
     "today": "היום",
@@ -489,7 +500,9 @@
     "remaining_one": "נותר תשלום אחד",
     "remaining_two": "נותרו שני תשלומים",
     "remaining_other": "נותרו {{count}} תשלומים",
-    "yearlyNote": "שנתי, מוצג לחודש"
+    "yearlyNote": "שנתי, מוצג לחודש",
+    "byKind": "לפי סוג",
+    "nextCharges": "החיובים הבאים"
   },
   "settings": {
     "title": "הגדרות",
@@ -836,5 +849,58 @@
     "loading": "פותחים את הבקשה…",
     "notice": "כל הנתונים נמחקו לבקשת {{name}}",
     "noticeAnon": "כל הנתונים נמחקו"
+  },
+  "topbar": {
+    "morning": "בוקר טוב, {{name}}",
+    "afternoon": "צהריים טובים, {{name}}",
+    "evening": "ערב טוב, {{name}}",
+    "search": "חיפוש תנועות",
+    "prevMonth": "החודש הקודם",
+    "nextMonth": "החודש הבא"
+  },
+  "rail": {
+    "pair": "{{first}} ו{{second}}",
+    "many": "{{first}} ועוד {{count}}"
+  },
+  "board": {
+    "balanceTitle": "כל הכסף של משק הבית",
+    "balanceSub_one": "היום, בבנק אחד ובארנק",
+    "balanceSub_two": "היום, בשני בנקים ובארנק",
+    "balanceSub_other": "היום, ב־{{count}} בנקים ובארנק",
+    "ledeUp": "מתחילת החודש נוספו <box>{{amount}}</box>.",
+    "ledeDown": "מתחילת החודש ירדו <box>{{amount}}</box>.",
+    "ledeCards": "הכרטיסים יורידו עוד <box>{{amount}}</box> עד {{date}}.",
+    "accountNext": "נכנס ב־{{date}}",
+    "accountMask": "חשבון {{mask}}",
+    "cashName": "מזומן",
+    "cashLabel": "בארנק, נספר ב־{{date}}",
+    "monthTitle": "{{month}} עד היום",
+    "monthTitlePast": "{{month}}",
+    "monthDay": "יום {{day}} מתוך {{days}}",
+    "in": "נכנס",
+    "out": "יצא",
+    "track": "יצא {{percent}} ממה שנכנס",
+    "note": "יצא <box>{{percent}}</box> ממה שנכנס.",
+    "noteNext": "הבא בתור: {{name}}, ב־{{date}}.",
+    "charges": "חיובי הכרטיסים לפי יום",
+    "charged": "חויב",
+    "left": "נשאר החודש",
+    "categoriesTitle": "{{month}} לפי קטגוריה",
+    "categoriesSub_one": "{{amount}} בקטגוריה אחת",
+    "categoriesSub_two": "{{amount}} בשתי קטגוריות",
+    "categoriesSub_other": "{{amount}} ב־{{count}} קטגוריות",
+    "categoriesEmpty": "עוד לא יצא כסף החודש.",
+    "transactionsTitle": "תנועות אחרונות",
+    "transactionsSub_one": "אחת החודש",
+    "transactionsSub_two": "שתיים החודש",
+    "transactionsSub_other": "{{count}} החודש",
+    "allTransactions": "כל התנועות",
+    "backToBoard": "חזרה לסקירה",
+    "walletSub": "{{amount}} יורדים מהבנק החודש",
+    "walletEmpty": "עוד אין כרטיסים.",
+    "addCard": "+ כרטיס",
+    "count": "ספירה",
+    "withdraw": "משיכה",
+    "deposit": "הפקדה"
   }
 }

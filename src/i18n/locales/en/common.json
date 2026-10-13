@@ -12,7 +12,9 @@
     "cash": "Cash",
     "bankAccounts": "Bank accounts",
     "categories": "Categories",
-    "commitments": "Commitments"
+    "commitments": "Commitments",
+    "overview": "Overview",
+    "cashBox": "Cash box"
   },
   "popout": {
     "stepOf": "Step {{current}} of {{total}}",
@@ -231,7 +233,16 @@
     "statTopNone": "Nothing yet",
     "monthTotal": "{{month}} total",
     "rows_one": "{{count}} transaction",
-    "rows_other": "{{count}} transactions"
+    "rows_other": "{{count}} transactions",
+    "stats": {
+      "title": "The months in numbers",
+      "in": "In",
+      "out": "Out",
+      "net": "Net",
+      "largest": "Largest month",
+      "average": "Average month",
+      "top": "Largest categories"
+    }
   },
   "feed": {
     "today": "Today",
@@ -481,7 +492,9 @@
     "endsOn": "Ends {{date}}",
     "remaining_one": "One payment left",
     "remaining_other": "{{count}} payments left",
-    "yearlyNote": "Yearly, shown per month"
+    "yearlyNote": "Yearly, shown per month",
+    "byKind": "By kind",
+    "nextCharges": "Next charges"
   },
   "settings": {
     "title": "Settings",
@@ -824,5 +837,55 @@
     "loading": "Opening the request…",
     "notice": "All data was deleted at {{name}}'s request",
     "noticeAnon": "All data was deleted"
+  },
+  "topbar": {
+    "morning": "Good morning, {{name}}",
+    "afternoon": "Good afternoon, {{name}}",
+    "evening": "Good evening, {{name}}",
+    "search": "Search transactions",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month"
+  },
+  "rail": {
+    "pair": "{{first}} and {{second}}",
+    "many": "{{first}} and {{count}} more"
+  },
+  "board": {
+    "balanceTitle": "All the household's money",
+    "balanceSub_one": "Today, in one bank and the wallet",
+    "balanceSub_other": "Today, in {{count}} banks and the wallet",
+    "ledeUp": "Since the start of the month <box>{{amount}}</box> came in, net.",
+    "ledeDown": "Since the start of the month <box>{{amount}}</box> went out, net.",
+    "ledeCards": "The cards take another <box>{{amount}}</box> by {{date}}.",
+    "accountNext": "Next in {{date}}",
+    "accountMask": "Account {{mask}}",
+    "cashName": "Cash",
+    "cashLabel": "In the wallet, counted {{date}}",
+    "monthTitle": "{{month}} so far",
+    "monthTitlePast": "{{month}}",
+    "monthDay": "Day {{day}} of {{days}}",
+    "in": "In",
+    "out": "Out",
+    "track": "{{percent}} of what came in went out",
+    "note": "<box>{{percent}}</box> of what came in has gone out.",
+    "noteNext": "Next in: {{name}}, {{date}}.",
+    "charges": "Card charges by day",
+    "charged": "charged",
+    "left": "Left this month",
+    "categoriesTitle": "{{month}} by category",
+    "categoriesSub_one": "{{amount}} in one category",
+    "categoriesSub_other": "{{amount}} in {{count}} categories",
+    "categoriesEmpty": "Nothing spent this month yet.",
+    "transactionsTitle": "Recent transactions",
+    "transactionsSub_one": "One this month",
+    "transactionsSub_other": "{{count}} this month",
+    "allTransactions": "All transactions",
+    "backToBoard": "Back to the overview",
+    "walletSub": "{{amount}} leaves the bank this month",
+    "walletEmpty": "No cards yet.",
+    "addCard": "+ Card",
+    "count": "Count",
+    "withdraw": "Withdraw",
+    "deposit": "Deposit"
   }
 }

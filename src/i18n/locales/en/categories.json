@@ -95,5 +95,28 @@
     "movePastNo": "Not now",
     "movedPast_one": "Moved 1 expense",
     "movedPast_other": "Moved {{count}} expenses"
+  },
+  "hue": {
+    "label": "Colour",
+    "tone2": "{{name}}, deeper",
+    "names": {
+      "indigo": "Indigo",
+      "green": "Green",
+      "vermilion": "Vermilion",
+      "amber": "Amber",
+      "orange": "Orange",
+      "cyan": "Cyan",
+      "violet": "Violet",
+      "rose": "Rose",
+      "magenta": "Magenta",
+      "teal": "Teal",
+      "blue": "Blue",
+      "lime": "Lime"
+    }
+  },
+  "screen": {
+    "thisMonth": "This month",
+    "expense": "Expenses",
+    "income": "Income"
   }
 }

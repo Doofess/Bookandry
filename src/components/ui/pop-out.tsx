@@ -167,6 +167,7 @@ function PopOutBody({
   step,
   heading = 'dialog',
   footer,
+  footerRef,
   children,
 }: {
   readonly title: string;
@@ -175,6 +176,8 @@ function PopOutBody({
   /** 'dialog': this title names the pop-out. A flow with PopOutSteps passes 'question'. */
   readonly heading?: 'dialog' | 'question';
   readonly footer?: React.ReactNode;
+  /** The footer element, for a stage whose actions are drawn deeper in the tree and portalled into it. */
+  readonly footerRef?: React.Ref<HTMLElement>;
   readonly children: React.ReactNode;
 }) {
   const question = <TitlePair as="h2" size="question" title={title} subtitle={subtitle} />;
@@ -194,8 +197,9 @@ function PopOutBody({
       </div>
       {footer === undefined ? null : (
         <footer
+          ref={footerRef}
           data-slot="popout-actions"
-          className="flex flex-wrap justify-end gap-2.5 border-t-2 border-border px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] *:min-w-37.5 sm:px-8"
+          className="flex flex-wrap justify-end gap-2.5 border-t-2 border-border px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] sm:px-8 [&>*]:min-h-13 [&>*]:min-w-37.5"
         >
           {footer}
         </footer>

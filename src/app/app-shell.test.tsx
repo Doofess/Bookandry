@@ -37,28 +37,29 @@ describe('AppShell (§4)', () => {
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     // Where anchored pop-outs find the phone's tab bar, to keep clear of it.
     expect(nav).toHaveAttribute('data-slot', 'tab-bar');
-    expect(places(nav).map(label)).toEqual([
-      'Feed',
-      'Chart',
+    const shown = places(nav);
+    shown.forEach((link) => {
+      expect(link).toHaveAttribute('data-slot', 'nav-place');
+    });
+    const phone = shown.filter((link) => link.closest('[class~="lg:hidden"]') !== null);
+    const rail = shown.filter((link) => link.closest('[class~="lg:hidden"]') === null);
+    expect(phone.map(label)).toEqual(['Feed', 'Chart', 'Cards', 'Cash']);
+    expect(rail.map(label)).toEqual([
+      'Overview',
       'Cards',
       'Bank accounts',
-      'Cash',
-      'Categories',
+      'Cash box',
+      'Chart',
       'Commitments',
       'Settings',
     ]);
-    expect(
-      places(nav)
-        .filter((link) => !link.classList.contains('hidden'))
-        .map(label),
-    ).toEqual(['Feed', 'Chart', 'Cards', 'Cash']);
   });
 
   it('draws text pills with no icons, the current one filled with ink', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav.querySelectorAll('a svg')).toHaveLength(0);
-    const feed = screen.getByRole('link', { name: /^Feed/ });
+    const feed = screen.getAllByRole('link', { name: /^Feed/ })[0]!;
     expect(feed).toHaveAttribute('aria-current', 'page');
     expect(feed).toHaveClass(
       'aria-[current=page]:bg-press',
@@ -114,9 +115,9 @@ describe('AppShell (§4)', () => {
   it('marks which way a move goes, for the route transition', async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(screen.getByRole('link', { name: /^Chart/ }));
+    await user.click(screen.getAllByRole('link', { name: /^Chart/ })[0]!);
     expect(document.documentElement).toHaveAttribute('data-nav-dir', 'forward');
-    await user.click(screen.getByRole('link', { name: /^Feed/ }));
+    await user.click(screen.getAllByRole('link', { name: /^Feed/ })[0]!);
     expect(document.documentElement).toHaveAttribute('data-nav-dir', 'back');
   });
 

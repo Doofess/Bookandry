@@ -1,28 +1,49 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useAccount } from '@/app/account';
 import { useSettings, useToday } from '@/app/app-context';
 import { ROUTES } from '@/app/routes';
-import { HeroSheet, ScreenHead, ScreenSheet } from '@/app/screen-head';
+import { ScreenHead } from '@/app/screen-head';
 import { pendingShares, sweepShared } from '@/app/shared-files';
+import { greetingKey, SearchPill, useGreetingName } from '@/app/top-bar';
+import { useDesktop } from '@/app/use-desktop';
+import { Mark } from '@/components/ui/mark';
 import { db } from '@/db/db';
 import { forgetImportReads } from '@/db/import-cache';
 import { changeCategory, moveOccurrence } from '@/db/occurrence-actions';
+import { bankByCode, bankName } from '@/domain/banks';
 import { expectedMonthlyExpense, groupMonthlyExpenses } from '@/domain/calculators';
 import { isCardFee } from '@/domain/cards';
 import { emptyReason } from '@/domain/feed';
 import { hasActiveFilters } from '@/domain/feed-filters';
 import { mccName } from '@/domain/mcc';
+import { methodKey } from '@/domain/money-key';
+import { settledThisMonth } from '@/domain/month-bills';
+import { methodOwnedBy } from '@/domain/tx-options';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { methodDisplayName } from '@/i18n/method-name';
+import { figureParts } from '@/i18n/money-format';
 import { systemClock } from '@/lib/clock';
-import { formatLocalDate, startOfMonth } from '@/lib/dates';
+import { compareLocal, formatLocalDate, startOfMonth } from '@/lib/dates';
 import { newId } from '@/lib/id';
-import { ALL_PROFILES } from '@/types/domain';
+import { wholeMinor } from '@/lib/money';
+import { ALL_PROFILES, type Occurrence } from '@/types/domain';
 
 import { AddMenu } from './add-menu';
+import { useIncoming } from '../bank-accounts/use-incoming';
+import { useMonthBills } from '../cards/use-month-bills';
+import { useCashData } from '../cash/use-cash-data';
+import { AccountSheets, type AccountItem } from './board/account-sheets';
+import { BalanceSheet } from './board/balance-sheet';
+import { CategoriesSheet } from './board/categories-sheet';
+import { FeedBoard } from './board/feed-board';
+import { listMode } from './board/list-mode';
+import { MonthSheet } from './board/month-sheet';
+import { RecentRows } from './board/recent-rows';
+import { TransactionsSheet } from './board/transactions-sheet';
+import { WalletColumn } from './board/wallet-column';
 import { CategoryPopout, type CategoryTarget } from './category-popout';
 import { EmptyState } from './empty-state';
 import type { RowContext } from './feed-rows';
@@ -39,7 +60,7 @@ import { BalanceBreakdownSheet, ExpenseBreakdownSheet } from '../summary/breakdo
 import { CollapsedSummaryBar } from '../summary/collapsed-bar';
 import { MonthCursor } from '../summary/month-cursor';
 import { PrimePill } from '../summary/prime-pill';
-import { BalanceFigure, ForecastLine } from '../summary/summary-cards';
+import { BalanceNumeral, ForecastLine } from '../summary/summary-cards';
 import { useBalance } from '../summary/use-balance';
 import { useBreakdowns } from '../summary/use-breakdowns';
 import { COLLAPSED_HEIGHT, useCollapsingHeader } from '../summary/use-collapsing-header';
@@ -58,7 +79,10 @@ export function FeedScreen() {
   const { t, i18n } = useTranslation(['common', 'categories', 'profiles']);
   const today = useToday();
   const settings = useSettings();
-  const { filters, stepMonth, setMonth, set, setProfile, clear } = useFeedFilters();
+  const { filters, stepMonth, setMonth, set, setProfile, clear, listAsked, openList, closeList } =
+    useFeedFilters();
+  const desktop = useDesktop();
+  const greetingName = useGreetingName();
   const sheet = useTransactionSheet();
   const account = useAccount();
   const navigate = useNavigate();
@@ -81,6 +105,9 @@ export function FeedScreen() {
   /** The purchase being split into payments, kept once its menu has closed. */
   const [splitting, setSplitting] = useState<SplitOffer | undefined>(undefined);
   const { collapsed: headerCollapsed, measure: measureHeader } = useCollapsingHeader();
+
+  /** The board shows the newest rows; the round arrow on the sheet opens the whole month (list mode). */
+  const showList = listMode({ filtered: hasActiveFilters(filters), asked: listAsked });
 
   const window = useMemo(() => monthWindow(filters.month), [filters.month]);
 
@@ -140,6 +167,9 @@ export function FeedScreen() {
   );
 
   const balance = useBalance(filters.profileId, today, settings.defaultCurrency);
+  const bills = useMonthBills(today, settings.defaultCurrency, filters.profileId);
+  const incoming = useIncoming(today);
+  const cashData = useCashData(filters.profileId, today);
   const incomeHistory = useIncomeHistory(today);
 
   // The summary cards use the UNFILTERED window: "expected this month" must not
@@ -174,15 +204,153 @@ export function FeedScreen() {
     [lookups, settings.defaultCurrency, today, filters.profileId],
   );
 
+  const methods = lookups?.paymentMethods;
+  const accounts = useMemo<AccountItem[]>(() => {
+    if (methods === undefined) return [];
+    const items = [...methods.values()]
+      .filter((m) => m.type === 'bank_account' && m.isArchived === 0)
+      .filter((m) => filters.profileId === ALL_PROFILES || methodOwnedBy(m, filters.profileId))
+      .map((m) => {
+        const bank = bankByCode(m.account?.bank ?? '');
+        const next = incoming?.next.get(m.id);
+        return {
+          id: m.id,
+          moneyKey: methodKey(m),
+          name: bank === undefined ? m.label : bankName(bank, i18n.language),
+          label:
+            next === undefined
+              ? m.label
+              : `${m.label} · ${t('board.accountNext', { date: formatLocalDate(next.date, i18n.language, { day: 'numeric', month: 'short' }) })}`,
+          figure: next?.money.baseAmountMinor,
+        };
+      })
+      .sort((a, b) => (b.figure ?? -1) - (a.figure ?? -1));
+    const cash = cashData?.summary;
+    if (cash !== undefined && cash.people.length > 0) {
+      items.push({
+        id: 'cash',
+        moneyKey: 'cash',
+        name: t('board.cashName'),
+        label: t('board.cashLabel', {
+          date:
+            cash.countedOn === undefined
+              ? ''
+              : formatLocalDate(cash.countedOn, i18n.language, { day: 'numeric', month: 'short' }),
+        }),
+        figure: cash.onHandMinor,
+      });
+    }
+    return items;
+  }, [methods, incoming, cashData, filters.profileId, i18n.language, t]);
+  const banks = new Set(accounts.filter((a) => a.id !== 'cash').map((a) => a.moneyKey)).size;
+  const net =
+    occurrences === undefined || bills === undefined || methods === undefined
+      ? undefined
+      : settledThisMonth(occurrences, methods, today, bills);
+  const nextIncome = useMemo(() => {
+    const soonest = [...(incoming?.next.values() ?? [])].sort((a, b) => compareLocal(a.date, b.date))[0];
+    if (soonest === undefined) return undefined;
+    const category = incoming?.categories.get(soonest.categoryId);
+    // Its own words first (a salary's note), then its category's name; never an id.
+    const name =
+      soonest.transaction.note ?? (category === undefined ? t('board.in') : categoryDisplayName(category, t));
+    return { name, date: soonest.date };
+  }, [incoming, t]);
+
+  /** A figure in a sentence, as the concept writes it: whole shekels, the symbol first. */
+  const wholeText = (minor: number) => {
+    const parts = figureParts(wholeMinor(minor, settings.defaultCurrency), settings.defaultCurrency, {
+      locale: i18n.language,
+      whole: true,
+    });
+    return `${parts.sign}${parts.symbol}${parts.digits}`;
+  };
+
   const hasAnyTransactions = (candidates?.transactions.length ?? 0) > 0 || windowCount > 0;
   const reason = isLoading ? undefined : emptyReason(windowCount, rows.length, hasAnyTransactions);
+
+  const openRow = (occurrence: Occurrence) => {
+    // A card's fee is worked out from the card, not a row anyone saved:
+    // it is changed where the card is, so it opens the Cards screen.
+    if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+    else sheet.openEdit(occurrence);
+  };
+  const openRowMenu = (occurrence: Occurrence, anchor: HTMLElement) => {
+    if (isCardFee(occurrence)) void navigate(ROUTES.cards);
+    else setMenuFor({ occurrence, anchor });
+  };
+  const openRowCategory = (occurrence: Occurrence, anchor: HTMLElement) => {
+    setCategoryFor({ occurrence, anchor });
+  };
+  const openRowProjected = (occurrence: Occurrence, anchor: HTMLElement) => {
+    setProjectedFor({ occurrence, anchor });
+  };
+
+  /*
+   * The transactions sheet: on the board the newest rows with a round arrow to
+   * the whole month; in list mode the whole virtualised month with the filters
+   * (and, on a phone, the month picker) and a round arrow back.
+   */
+  const transactionsSheet = (
+    <TransactionsSheet
+      count={windowCount}
+      onAll={showList ? undefined : openList}
+      onBack={showList ? closeList : undefined}
+      filterBar={
+        showList ? (
+          <div className="grid gap-2">
+            {desktop ? null : (
+              <MonthCursor
+                month={filters.month}
+                today={today}
+                onStep={stepMonth}
+                onPick={setMonth}
+                tone="bold"
+              />
+            )}
+            <FilterBar filters={filters} onChange={set} onClear={clear} />
+          </div>
+        ) : null
+      }
+      list={
+        reason !== undefined ? (
+          <EmptyState
+            reason={reason}
+            month={filters.month}
+            onClearFilters={hasActiveFilters(filters) ? clear : undefined}
+          />
+        ) : context === undefined ? null : showList ? (
+          <VirtualFeed
+            rows={rows}
+            context={context}
+            // The row body opens the editor; its always-present ⋯ opens the
+            // row menu, anchored to that button.
+            onOpen={openRow}
+            onMenu={openRowMenu}
+            onCategory={openRowCategory}
+            onProjected={openRowProjected}
+          />
+        ) : (
+          <RecentRows
+            rows={rows}
+            context={context}
+            total={windowCount}
+            onOpen={openRow}
+            onMenu={openRowMenu}
+            onCategory={openRowCategory}
+            onProjected={openRowProjected}
+          />
+        )
+      }
+    />
+  );
 
   return (
     // The Add pill floats above the tab bar, so the list needs clearance for BOTH or
     // the last row of every month sits under a button. The shell already pads
     // for the tab bar; this is the Add pill's share.
     <section
-      className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8"
+      className="px-3 pb-24 lg:px-0 lg:pb-8"
       /*
        * The day headers pin against this. A fixed bar cannot set it for them.
        *
@@ -231,44 +399,140 @@ export function FeedScreen() {
         />
       ) : null}
 
-      <div ref={measureHeader} data-testid="feed-header">
-        <ScreenHead title={t('nav.feed')} />
-        <HeroSheet>
-          {/*
-            At most two lines on a phone: below sm the profile pill is faces
-            only and prime drops its icon. 375: month + profile, then prime.
-            320: month, then profile + prime. One row from sm up.
-          */}
-          <div className="flex flex-wrap items-center gap-2" data-testid="panel-pills">
-            <MonthCursor
+      {/* In list mode the balance is not on the page: the bar takes over once the head has scrolled away. */}
+      <div ref={showList ? measureHeader : undefined}>
+        <ScreenHead
+          className="lg:mb-sheet"
+          // The phone's head is the screen's name in Karantina; the desktop's top bar greets (decision 2).
+          title={
+            desktop
+              ? t(greetingKey(new Date(systemClock.nowMs()).getHours()), { name: greetingName ?? '' })
+              : t('nav.feed')
+          }
+          subtitle={
+            desktop
+              ? formatLocalDate(today, i18n.language, { weekday: 'long', day: 'numeric', month: 'long' })
+              : undefined
+          }
+          actions={
+            desktop ? (
+              <>
+                <SearchPill
+                  value={filters.query}
+                  onChange={(query) => {
+                    set({ query });
+                  }}
+                />
+                {lookups === undefined ? null : (
+                  <ProfileSwitcher
+                    profiles={lookups.profiles}
+                    active={filters.profileId}
+                    onSelect={setProfile}
+                  />
+                )}
+                <PrimePill tone="paper" />
+                <MonthCursor
+                  month={filters.month}
+                  today={today}
+                  onStep={stepMonth}
+                  onPick={setMonth}
+                  tone="bold"
+                />
+              </>
+            ) : undefined
+          }
+        />
+      </div>
+      {showList ? (
+        transactionsSheet
+      ) : (
+        <FeedBoard
+          balance={
+            <div ref={measureHeader} data-testid="feed-header">
+              <BalanceSheet
+                title={t('board.balanceTitle')}
+                subtitle={t('board.balanceSub', { count: banks })}
+                actions={
+                  desktop ? undefined : (
+                    <div className="flex flex-wrap items-center gap-2" data-testid="panel-pills">
+                      {lookups === undefined ? null : (
+                        <ProfileSwitcher
+                          profiles={lookups.profiles}
+                          active={filters.profileId}
+                          onSelect={setProfile}
+                          tone="panel"
+                        />
+                      )}
+                      <PrimePill />
+                    </div>
+                  )
+                }
+                lede={
+                  <>
+                    {net === undefined ? null : (
+                      <Trans
+                        i18nKey={net >= 0 ? 'board.ledeUp' : 'board.ledeDown'}
+                        values={{
+                          amount: wholeText(Math.abs(net)),
+                        }}
+                        components={{ box: <Mark /> }}
+                      />
+                    )}{' '}
+                    {bills === undefined ||
+                    bills.upcomingMinor === 0 ||
+                    bills.lastDate === undefined ? null : (
+                      <Trans
+                        i18nKey="board.ledeCards"
+                        values={{
+                          amount: wholeText(bills.upcomingMinor),
+                          date: formatLocalDate(bills.lastDate, i18n.language, {
+                            day: 'numeric',
+                            month: 'short',
+                          }),
+                        }}
+                        components={{ box: <Mark /> }}
+                      />
+                    )}
+                  </>
+                }
+                figure={
+                  <BalanceNumeral
+                    state={balance}
+                    currency={settings.defaultCurrency}
+                    breakdown={breakdowns.balance}
+                    onFullBreakdown={() => {
+                      setBreakdown('balance');
+                    }}
+                  />
+                }
+                accounts={<AccountSheets items={accounts} currency={settings.defaultCurrency} />}
+              />
+            </div>
+          }
+          month={
+            <MonthSheet
               month={filters.month}
               today={today}
-              onStep={stepMonth}
-              onPick={setMonth}
-              tone="panel"
-            />
-            {lookups === undefined ? null : (
-              <ProfileSwitcher
-                profiles={lookups.profiles}
-                active={filters.profileId}
-                onSelect={setProfile}
-                tone="panel"
-              />
-            )}
-            <PrimePill />
-          </div>
-          <div className="mt-5">
-            <BalanceFigure
-              state={balance}
+              occurrences={occurrences}
+              bills={bills}
               currency={settings.defaultCurrency}
-              breakdown={breakdowns.balance}
-              onFullBreakdown={() => {
-                setBreakdown('balance');
-              }}
+              nextIncome={nextIncome}
+              monthPicker={
+                desktop ? null : (
+                  <MonthCursor
+                    month={filters.month}
+                    today={today}
+                    onStep={stepMonth}
+                    onPick={setMonth}
+                    tone="bold"
+                  />
+                )
+              }
             />
-          </div>
-          <div className="mt-2">
+          }
+          monthNote={
             <ForecastLine
+              tone="paper"
               expense={expense}
               currency={settings.defaultCurrency}
               month={filters.month}
@@ -278,47 +542,35 @@ export function FeedScreen() {
                 setBreakdown('expense');
               }}
             />
-          </div>
-        </HeroSheet>
-      </div>
-
-      <ScreenSheet className="px-4 pt-4">
-        <FilterBar filters={filters} onChange={set} onClear={clear} />
-
-        <div className="mt-3">
-          {reason !== undefined ? (
-            <EmptyState
-              reason={reason}
+          }
+          categories={
+            <CategoriesSheet
               month={filters.month}
-              onClearFilters={hasActiveFilters(filters) ? clear : undefined}
+              today={today}
+              occurrences={occurrences}
+              categories={lookups?.categories}
+              currency={settings.defaultCurrency}
+              limit={desktop ? 10 : 7}
             />
-          ) : context === undefined ? null : (
-            <VirtualFeed
-              rows={rows}
-              context={context}
-              // The row body opens the editor; its always-present ⋯ opens the
-              // row menu, anchored to that button.
-              // A card's fee is worked out from the card, not a row anyone saved:
-              // it is changed where the card is, so it opens the Cards screen.
-              onOpen={(occurrence) => {
-                if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-                else sheet.openEdit(occurrence);
-              }}
-              onMenu={(occurrence, anchor) => {
-                if (isCardFee(occurrence)) void navigate(ROUTES.cards);
-                else setMenuFor({ occurrence, anchor });
-              }}
-              onCategory={(occurrence, anchor) => {
-                setCategoryFor({ occurrence, anchor });
-              }}
-              onProjected={(occurrence, anchor) => {
-                setProjectedFor({ occurrence, anchor });
-              }}
+          }
+          transactions={transactionsSheet}
+          wallet={
+            <WalletColumn
+              cards={[...(methods?.values() ?? [])].filter(
+                (m) =>
+                  m.type === 'credit_card' &&
+                  m.isArchived === 0 &&
+                  (filters.profileId === ALL_PROFILES || methodOwnedBy(m, filters.profileId)),
+              )}
+              bills={bills}
+              profiles={new Map((lookups?.profiles ?? []).map((p) => [p.id, p]))}
+              cash={cashData?.summary}
+              currency={settings.defaultCurrency}
+              today={today}
             />
-          )}
-        </div>
-      </ScreenSheet>
-
+          }
+        />
+      )}
       {lookups === undefined ? null : (
         <TransactionSheet
           target={sheet.target}

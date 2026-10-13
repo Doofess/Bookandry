@@ -5,8 +5,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { initTestI18n, renderWithProviders } from '@/test/render';
 
+import { Button } from './button';
 import {
   EditorPanel,
+  EditorPanelActions,
+  EditorPanelBody,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -162,5 +165,31 @@ describe('EditorPanel (§6.1)', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Edit card' })).toHaveFocus();
     });
+  });
+  it('lines the header and the body up on one padding, with room under the title', () => {
+    renderWithProviders(
+      <EditorPanel open>
+        <EditorPanelContent aria-label="Edit">
+          <EditorPanelHeader>
+            <EditorPanelTitle>Edit</EditorPanelTitle>
+          </EditorPanelHeader>
+          <EditorPanelBody>
+            <input aria-label="Name" />
+            <EditorPanelActions>
+              <Button variant="pill">Cancel</Button>
+              <Button variant="pill-solid">Save</Button>
+            </EditorPanelActions>
+          </EditorPanelBody>
+        </EditorPanelContent>
+      </EditorPanel>,
+    );
+    const header = document.querySelector('[data-slot="editor-panel-header"]');
+    const body = document.querySelector('[data-slot="editor-panel-body"]');
+    expect(header?.className).toMatch(/\bpx-5\b.*\blg:px-7\b/);
+    expect(body?.className).toMatch(/\bpx-5\b.*\blg:px-7\b/);
+    expect(header?.className).toMatch(/\bpb-4\b/);
+    expect(
+      screen.getByRole('button', { name: 'Save' }).closest('[data-slot="editor-actions"]'),
+    ).not.toBeNull();
   });
 });

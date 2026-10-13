@@ -448,11 +448,6 @@
 
 /* Forced colours replace backgrounds, so sheets and hue marks would vanish:
    a transparent border is what Windows High Contrast paints as their edge. */
-[data-sheet],
-[data-hue] {
-  border: 2px solid transparent;
-}
-
 [data-sheet='paper'] {
   --fill: var(--paper-sheet);
   --on-fill: var(--ink);
@@ -878,6 +873,9 @@
   --radius-mark: var(--r-mark);
   --radius-pill: var(--r-pill);
   --spacing-sheet: var(--gap-sheet);
+  --spacing-sheet-x: var(--pad-sheet-inline);
+  --spacing-sheet-y: var(--pad-sheet-block);
+  --text-lede: var(--lede-size);
 
   --font-sans: var(--font-stack-sans);
 
@@ -971,6 +969,12 @@
 }
 
 @layer base {
+  /* Forced colours replace backgrounds: a transparent border is the edge they paint. In the base layer, so a border utility still wins (CAN WAIT 4). */
+  [data-sheet],
+  [data-hue] {
+    border: 2px solid transparent;
+  }
+
   /* good-css's reset, adopted one rule at a time (§10). With min-width: 0 a
      sized icon, avatar or logo in a flex row can shrink to make room for the
      text beside it: it needs `shrink-0`. e2e/16-widths.spec.ts fails on any
@@ -1194,6 +1198,12 @@
   --numeral-bleed: 0.06;
   --numeral-cap: 0.61;
 
+  /* Phase 3 (the concept's sheets): padding 20/22 on a phone, 34/38 at 1440. */
+  --pad-sheet-block: clamp(1.25rem, 0.925rem + 1.3333vw, 2.125rem);
+  --pad-sheet-inline: clamp(1.375rem, 1.0036rem + 1.5238vw, 2.375rem);
+  /* A hero sheet's lede: 14.5px on a phone, 20px at 1440. */
+  --lede-size: clamp(0.90625rem, 0.7786rem + 0.5238vw, 1.25rem);
+
   /* §9.1: the grain's strength is the veil of the surface's own colour over it. */
   --grain-veil: 92.5%;
   --grain-blend: multiply;
@@ -1244,6 +1254,11 @@ body {
 
 [data-sheet] {
   --surface: var(--fill);
+}
+
+/* The concept's paper sheet is flat in light: the grain stays on the page under it. */
+:root:not(.dark) [data-sheet='paper'] {
+  --grain-veil: 100%;
 }
 
 @media (forced-colors: active) {
@@ -1320,7 +1335,13 @@ body {
 --------------------------------------------------------------------------- */
 [data-numeral] {
   --b: var(--numeral-bleed);
-  font-size: max(1.75rem, min(var(--numeral-max, 7.375rem), calc(100cqi / (var(--glyphs, 6) * 0.34))));
+  /* Fits its own column (Numeral is a size container) from Karantina's real
+     advance widths, summed by Numeral into --numeral-units (units per 1000 em).
+     Never over its cap, never under 28px. */
+  font-size: max(
+    1.75rem,
+    min(var(--numeral-max, 7.375rem), calc(100cqi / (var(--numeral-units, 2100) * 0.001)))
+  );
   line-height: 0.74;
   letter-spacing: -0.005em;
   margin-block-end: calc(var(--b) * var(--numeral-cap) * -1em - 0.02em);

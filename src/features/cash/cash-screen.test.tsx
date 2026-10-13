@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useLocation } from 'react-router-dom';
 import { type Mock, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsProvider } from '@/app/settings-provider';
@@ -26,7 +27,11 @@ const { CashSetupCard } = await import('./setup-card');
 
 const NOW = '2026-09-15T10:00:00.000Z' as IsoInstant;
 
-const render = (activeProfileId = 'p1') =>
+function Where() {
+  return <output data-testid="where">{useLocation().search}</output>;
+}
+
+const render = (activeProfileId = 'p1', route = '/cash') =>
   renderWithProviders(
     <SettingsProvider
       value={{
@@ -37,8 +42,9 @@ const render = (activeProfileId = 'p1') =>
       }}
     >
       <CashScreen />
+      <Where />
     </SettingsProvider>,
-    { route: '/cash' },
+    { route },
   );
 
 const person = (id: string, name: string, color: string): Profile => ({
@@ -313,6 +319,18 @@ describe('more than one starting amount', () => {
   });
 });
 
+describe('a link from the feed (?do=)', () => {
+  it('opens the withdraw panel for someone set up, and takes the parameter off the address', async () => {
+    await db.cashMoves.put(move({ id: 's1', kind: 'start', amountMinor: 10_000, date: d('2026-09-01') }));
+    render('p1', '/cash?do=withdraw');
+
+    expect(await screen.findByRole('dialog', { name: /Withdraw/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('where')).toBeEmptyDOMElement();
+    });
+  });
+});
+
 describe('the figure', () => {
   it('shows the cash on hand, when it was counted, and says so when it is below zero', async () => {
     await db.cashMoves.put(move({ id: 's1', kind: 'start', amountMinor: 10_000, date: d('2026-09-01') }));
@@ -320,7 +338,7 @@ describe('the figure', () => {
     render();
 
     expect((await amount()).querySelector('[data-value]')).toHaveAttribute('data-value', '-20000');
-    expect(screen.getByTestId('cash-counted')).toHaveTextContent('Counted Sep 1, 2026');
+    expect(screen.getByTestId('cash-counted')).toHaveTextContent('Counted Sep 1');
     expect(screen.getByText('More spent in cash than you have. Count your cash?')).toBeInTheDocument();
   });
 

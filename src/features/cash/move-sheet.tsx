@@ -8,6 +8,7 @@ import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -219,7 +220,8 @@ function MoveForm({
 
   return (
     <form
-      className="space-y-4 px-4 pb-6"
+      data-slot="editor-panel-body"
+      className="space-y-4 px-5 pb-6 lg:px-7"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
@@ -320,15 +322,14 @@ function MoveForm({
         <FieldProblem id={noteErrorId} text={problems.note} />
       </div>
 
-      <div className="flex gap-2">
-        <Button type="submit" className="h-11 flex-1" disabled={!valid || busy}>
+      <EditorPanelActions>
+        <Button type="submit" variant="pill-solid" disabled={!valid || busy}>
           {t('action.save')}
         </Button>
         {editing === undefined ? null : (
           <Button
             type="button"
-            variant="outline"
-            className="h-11"
+            variant="pill"
             disabled={busy}
             onClick={() => {
               void run(() => deleteCashMove(db, editing.id, systemClock.nowIso()), t('tx.toastDeleted'));
@@ -338,7 +339,7 @@ function MoveForm({
             {t('action.delete')}
           </Button>
         )}
-      </div>
+      </EditorPanelActions>
     </form>
   );
 }

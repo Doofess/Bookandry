@@ -1,7 +1,9 @@
+import { cn } from 'cn';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { useCountUp } from '@/components/count-up';
 import { Money } from '@/components/money';
+import { Numeral } from '@/components/ui/numeral';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { BalanceBreakdown, ForecastBreakdown } from '@/domain/breakdown';
 import type { MonthlyExpenseResult } from '@/domain/calculators';
@@ -120,6 +122,73 @@ export function BalanceFigure({
   );
 }
 
+/**
+ * The balance as the huge numeral (§5.1, §9.4): whole shekels in Karantina,
+ * running off the balance sheet's foot; the exact amount, agorot and all, in
+ * the numeral's spoken twin and in the one live region. Sized for the settled
+ * figure while it counts up, so it never jitters. Its breakdown opens from it.
+ */
+export function BalanceNumeral({
+  state,
+  currency,
+  breakdown,
+  onFullBreakdown,
+}: {
+  readonly state: BalanceState;
+  readonly currency: Currency;
+  readonly breakdown?: BalanceBreakdown;
+  readonly onFullBreakdown?: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const target = state.status === 'ready' ? state.minor : 0;
+  const animated = useCountUp(target);
+  const title = t('summary.balance');
+
+  if (state.status === 'loading') {
+    // The numeral's own box, invisible: the sheet keeps its height while IndexedDB answers.
+    return (
+      <span data-testid="balance-amount" aria-busy="true" className="invisible block">
+        <Numeral minor={0} currency={currency} size="balance" rounded />
+      </span>
+    );
+  }
+  if (state.status === 'blocked') {
+    return (
+      <p className="text-lede font-light">
+        {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
+      </p>
+    );
+  }
+
+  const settled = formatMoney(state.minor, currency, { locale: i18n.language });
+  const figure = (
+    <span data-testid="balance-amount" className="block">
+      <Numeral minor={animated} fit={state.minor} currency={currency} size="balance" rounded />
+    </span>
+  );
+  return (
+    <>
+      {breakdown === undefined || onFullBreakdown === undefined ? (
+        figure
+      ) : (
+        <BalancePopover
+          breakdown={breakdown}
+          since={state.since}
+          currency={currency}
+          onFullBreakdown={onFullBreakdown}
+          triggerClassName="block w-full rounded-[0.5rem] text-start focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-current"
+          triggerLabel={t('summary.breakdownOf', { title })}
+        >
+          {figure}
+        </BalancePopover>
+      )}
+      <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="balance-announced">
+        {title}: {settled.aria}
+      </p>
+    </>
+  );
+}
+
 export function ForecastLine({
   expense,
   currency,
@@ -127,6 +196,7 @@ export function ForecastLine({
   today,
   breakdown,
   onFullBreakdown,
+  tone = 'panel',
 }: {
   readonly expense: MonthlyExpenseResult | undefined;
   readonly currency: Currency;
@@ -134,10 +204,14 @@ export function ForecastLine({
   readonly today: LocalDate;
   readonly breakdown?: ForecastBreakdown;
   readonly onFullBreakdown?: () => void;
+  /** "panel" on the sapphire; "paper" on the page, under the month sheet. */
+  readonly tone?: 'panel' | 'paper';
 }) {
   const { t } = useTranslation();
+  const paper = tone === 'paper';
 
-  if (expense === undefined) return <Skeleton className="h-5 w-56 bg-white/15" />;
+  if (expense === undefined)
+    return <Skeleton className={cn('h-5 w-56', paper ? 'bg-muted' : 'bg-white/15')} />;
 
   // A month already over has nothing "still due"; saying so would be wrong, and
   // saying nothing is right. The label changes too: "Spent" reads as history.
@@ -150,7 +224,12 @@ export function ForecastLine({
         {title} <Money minor={expense.total} currency={currency} className="font-semibold" />
       </span>
       {isPast ? null : (
-        <span className="mt-0.5 block text-xs text-brand-deep-foreground/80">
+        <span
+          className={cn(
+            'mt-0.5 block text-xs',
+            paper ? 'text-muted-foreground' : 'text-brand-deep-foreground/80',
+          )}
+        >
           {/*
           ONE key, not three fragments joined in JSX.
           "X spent so far / Y still due" is a sentence, and Hebrew reverses
@@ -178,13 +257,17 @@ export function ForecastLine({
       month={month}
       currency={currency}
       onFullBreakdown={onFullBreakdown}
-      triggerClassName={PANEL_FIGURE}
+      triggerClassName={paper ? PAPER_FIGURE : PANEL_FIGURE}
       triggerLabel={t('summary.breakdownOf', { title })}
     >
       {line}
     </ForecastPopover>
   );
 }
+
+/** The same figure on the page: the ink, not the panel's white. */
+const PAPER_FIGURE =
+  '-mx-2 block min-h-11 rounded-xl px-2 py-1 text-start transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 
 /** The classes of a figure on the panel that opens what it is made of. */
 const PANEL_FIGURE =

@@ -23,6 +23,7 @@
     "test:watch": "cross-env TZ=Etc/UTC vitest",
     "test:cov": "cross-env TZ=Etc/UTC vitest run --coverage",
     "test:e2e": "playwright test",
+    "fidelity": "playwright test --project=fidelity --workers=1",
     "gate:rtl": "node scripts/gate-rtl.mjs",
     "gate:money": "node scripts/gate-money.mjs",
     "gate:pci": "node scripts/gate-pci.mjs",

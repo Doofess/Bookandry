@@ -7,6 +7,7 @@ import {
   LINKED_ROUTES,
   NAV_ORDER,
   navDirection,
+  PHONE_PLACES,
   RAIL_PLACES,
   RAIL_SETUP,
   ROUTES,
@@ -62,24 +63,32 @@ describe('account linking', () => {
   );
 
   it('is mounted at its own address', () => {
-    expect(routeFor(SETTINGS_ROUTES.linking).element).toBeDefined();
+    const settings = routeFor(ROUTES.settings);
+    const linking = settings.children?.find((r) => r.path === 'linking');
+    expect(linking?.element).toBeDefined();
   });
 });
 
 describe('the rail (§4.2)', () => {
-  it('lists the places in the phone’s order with Bank accounts after Cards, then the set-up places', () => {
-    expect(RAIL_PLACES.map((place) => place.key)).toEqual(['feed', 'chart', 'cards', 'bankAccounts', 'cash']);
-    expect(RAIL_SETUP.map((place) => place.key)).toEqual(['categories', 'commitments', 'settings']);
-  });
-
-  it('keeps the phone’s four tabs exactly (decision 27)', () => {
-    expect(RAIL_PLACES.filter((place) => place.phone).map((place) => place.key)).toEqual(NAV_ORDER);
-    expect(RAIL_SETUP.some((place) => place.phone)).toBe(false);
+  it("lists the rail's places in the concept's order, and keeps the phone's four tabs as they are", () => {
+    expect(RAIL_PLACES.map((place) => place.key)).toEqual(['feed', 'cards', 'bankAccounts', 'cash', 'chart']);
+    expect(PHONE_PLACES.map((place) => place.key)).toEqual(NAV_ORDER);
+    expect(RAIL_PLACES.find((p) => p.key === 'feed')?.railLabel).toBe('overview');
+    expect(RAIL_PLACES.find((p) => p.key === 'cash')?.railLabel).toBe('cashBox');
+    expect(RAIL_SETUP.map((place) => place.key)).toEqual(['commitments', 'settings']);
   });
 
   it('tells forward from back by rail order, a settings page by its section', () => {
     expect(navDirection('/', '/chart')).toBe('forward');
-    expect(navDirection('/cash', '/cards')).toBe('back');
+    expect(navDirection('/chart', '/cards')).toBe('back');
+    expect(navDirection('/cards', '/cash')).toBe('forward');
+    expect(
+      navDirection(
+        '/chart',
+        '/cards',
+        PHONE_PLACES.map((p) => p.to),
+      ),
+    ).toBe('forward');
     expect(navDirection('/settings/account', '/categories')).toBe('back');
     // From a page that is not a place (an invitation link), every place is ahead.
     expect(navDirection('/link', '/chart')).toBe('forward');

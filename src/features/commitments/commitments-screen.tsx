@@ -1,13 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useBaseCurrency, useToday } from '@/app/app-context';
-import { ScreenHead, ScreenSheet } from '@/app/screen-head';
-import { CategoryChip } from '@/components/category-icon';
+import { ScreenHead } from '@/app/screen-head';
 import { Money } from '@/components/money';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { HuePill } from '@/components/ui/hue-pill';
+import { Mark } from '@/components/ui/mark';
+import { Sheet, SheetHead } from '@/components/ui/sheet-surface';
 import { db } from '@/db/db';
+import { categoryHue } from '@/domain/category-hue';
 import { listCommitments, type Commitment } from '@/domain/commitments';
 import { categoryDisplayName } from '@/i18n/category-name';
 import { formatLocalDate } from '@/lib/dates';
@@ -55,67 +58,112 @@ export function CommitmentsScreen() {
     };
   }, [today]);
 
+  const categoryName = (category: Category | undefined, id: string) =>
+    category === undefined ? id : categoryDisplayName(category, t);
+
+  const nextCharges =
+    data === undefined
+      ? []
+      : data.commitments
+          .filter((c): c is Commitment & { next: NonNullable<Commitment['next']> } => c.next !== undefined)
+          .sort((a, b) => (a.next.date < b.next.date ? -1 : a.next.date > b.next.date ? 1 : 0))
+          .slice(0, 5);
+
   return (
-    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenHead title={t('commitments.title')} />
-      <ScreenSheet className="space-y-4 px-4 pt-6">
-        <p className="text-sm text-muted-foreground">{t('commitments.body')}</p>
+    <section className="px-3 pb-24 lg:px-0 lg:pb-8">
+      <ScreenHead title={t('commitments.title')} subtitle={t('commitments.body')} />
 
-        {data === undefined ? null : data.commitments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('commitments.empty')}</p>
-        ) : (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>{t('commitments.monthlyOut')}</CardDescription>
-                  <CardTitle className="text-2xl">
-                    <Money minor={data.monthlyExpenseMinor} currency={baseCurrency} announce={false} />
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>{t('commitments.monthlyIn')}</CardDescription>
-                  <CardTitle className="text-2xl">
-                    <Money minor={data.monthlyIncomeMinor} currency={baseCurrency} announce={false} />
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-            </div>
+      {data === undefined ? null : data.commitments.length === 0 ? (
+        <Sheet kind="paper" data-slot="commitments-list" className="grid gap-1">
+          <p className="font-light">{t('commitments.empty')}</p>
+        </Sheet>
+      ) : (
+        <div className="grid gap-sheet @board/main:grid-cols-12">
+          <Sheet kind="paper" data-slot="commitments-list" className="min-w-0 @board/main:col-span-8">
+            <ul className="grid @vast/main:grid-cols-2 @vast/main:gap-x-8">
+              {data.commitments.map((commitment) => (
+                <CommitmentRow
+                  key={commitment.transaction.id}
+                  commitment={commitment}
+                  category={data.categories.get(commitment.transaction.categoryId)}
+                  baseCurrency={baseCurrency}
+                  locale={i18n.language}
+                  onOpen={() => {
+                    /*
+                     * Straight into the edit sheet for the NEXT occurrence,
+                     * which is the one anybody wants to change. The feed owns
+                     * that sheet, so the link carries its parameters rather
+                     * than this screen growing a second copy of it.
+                     */
+                    const next = commitment.next;
+                    if (next === undefined) return;
+                    void navigate(
+                      `/?m=${next.date.slice(0, 7)}&edit=${commitment.transaction.id}&at=${next.originalDate}`,
+                    );
+                  }}
+                />
+              ))}
+            </ul>
+          </Sheet>
 
-            <Card>
-              <CardContent className="p-0">
-                <ul className="divide-y divide-border">
-                  {data.commitments.map((commitment) => (
-                    <CommitmentRow
-                      key={commitment.transaction.id}
-                      commitment={commitment}
-                      category={data.categories.get(commitment.transaction.categoryId)}
-                      baseCurrency={baseCurrency}
-                      locale={i18n.language}
-                      onOpen={() => {
-                        /*
-                         * Straight into the edit sheet for the NEXT occurrence,
-                         * which is the one anybody wants to change. The feed owns
-                         * that sheet, so the link carries its parameters rather
-                         * than this screen growing a second copy of it.
-                         */
-                        const next = commitment.next;
-                        if (next === undefined) return;
-                        void navigate(
-                          `/?m=${next.date.slice(0, 7)}&edit=${commitment.transaction.id}&at=${next.originalDate}`,
-                        );
-                      }}
-                    />
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </ScreenSheet>
+          <Sheet
+            kind="paper"
+            data-slot="commitments-totals"
+            className="grid min-w-0 content-start gap-4 @board/main:col-span-4"
+          >
+            <SheetHead title={t('commitments.byKind')} />
+            <dl className="grid">
+              <TotalRow label={t('commitments.monthlyOut')}>
+                <Mark>
+                  <Money minor={data.monthlyExpenseMinor} currency={baseCurrency} announce={false} />
+                </Mark>
+              </TotalRow>
+              <TotalRow label={t('commitments.monthlyIn')}>
+                <Mark>
+                  <Money minor={data.monthlyIncomeMinor} currency={baseCurrency} announce={false} />
+                </Mark>
+              </TotalRow>
+            </dl>
+
+            <h3 className="font-semibold">{t('commitments.nextCharges')}</h3>
+            <ul data-slot="next-charges" className="grid">
+              {nextCharges.map((c) => (
+                <li
+                  key={c.transaction.id}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-b-2 border-border py-3 first:pt-0 last:border-b-0"
+                >
+                  <span className="min-w-0 truncate font-semibold">
+                    {c.transaction.note ??
+                      categoryName(data.categories.get(c.transaction.categoryId), c.transaction.categoryId)}
+                  </span>
+                  <Money
+                    minor={
+                      c.transaction.kind === 'income' ? c.monthlyEquivalentMinor : -c.monthlyEquivalentMinor
+                    }
+                    currency={baseCurrency}
+                    announce={false}
+                    className={`font-medium ${c.transaction.kind === 'income' ? 'text-income' : ''}`}
+                  />
+                  <span className="font-light">
+                    {formatLocalDate(c.next.date, i18n.language, { day: 'numeric', month: 'short' })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Sheet>
+        </div>
+      )}
     </section>
+  );
+}
+
+/** One row on a 2px line: the label and its figure at the inline end. */
+function TotalRow({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-b-2 border-border py-3 first:pt-0 last:border-b-0">
+      <dt className="font-semibold">{label}</dt>
+      <dd className="text-lg">{children}</dd>
+    </div>
   );
 }
 
@@ -141,18 +189,18 @@ function CommitmentRow({
   const isIncome = transaction.kind === 'income';
 
   return (
-    <li>
+    <li className="border-b-2 border-border last:border-b-0">
       <button
         type="button"
         onClick={onOpen}
         disabled={next === undefined}
-        className="flex w-full items-center gap-3 p-3 text-start transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+        className="flex min-h-14 w-full items-center gap-3 py-3 text-start focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring active:opacity-80 disabled:opacity-60"
       >
-        <CategoryChip icon={category?.icon ?? 'Circle'} />
+        <HuePill hue={category === undefined ? undefined : categoryHue(category)} />
 
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{name}</span>
-          <span className="block text-xs text-muted-foreground">
+          <span className="block truncate text-[1.0625rem] leading-[1.3] font-semibold">{name}</span>
+          <span className="mt-0.75 block text-sm font-light text-muted-foreground">
             {next === undefined
               ? t('commitments.nextNone')
               : t('commitments.nextOn', {
@@ -170,13 +218,15 @@ function CommitmentRow({
             minor={isIncome ? monthlyEquivalentMinor : -monthlyEquivalentMinor}
             currency={baseCurrency}
             announce={false}
-            className={`block text-sm font-semibold ${isIncome ? 'text-income' : ''}`}
+            className={`block text-[1.0625rem] font-medium ${isIncome ? 'text-income' : ''}`}
           />
           {/* Said out loud for a yearly bill: a 500/month row that is really a
               6,000 annual premium is otherwise a figure nobody can reconcile
               against their bank. */}
           {isYearly ? (
-            <span className="block text-[11px] text-muted-foreground">{t('commitments.yearlyNote')}</span>
+            <span className="block text-xs font-light text-muted-foreground">
+              {t('commitments.yearlyNote')}
+            </span>
           ) : null}
         </span>
       </button>

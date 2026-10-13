@@ -39,6 +39,7 @@ import {
   toMinor,
   prorateMinor,
   sharesBp,
+  ratioPercent,
   wholeMinor,
 } from './money';
 
@@ -1023,5 +1024,17 @@ describe('wholeMinor (§9.4: big numerals are whole)', () => {
 
   it('leaves a currency with no minor unit alone', () => {
     expect(wholeMinor(1234, 'JPY')).toBe(1234);
+  });
+});
+
+describe('ratioPercent', () => {
+  it('is the whole percent of the part, rounded half away from zero', () => {
+    expect(ratioPercent(1_436_200, 2_390_000)).toBe(60); // 60.09…
+    expect(ratioPercent(1, 8)).toBe(13); // 12.5
+    expect(ratioPercent(-1, 8)).toBe(-13);
+    expect(ratioPercent(3, 3)).toBe(100);
+  });
+  it('is 0 of nothing, rather than dividing by zero', () => {
+    expect(ratioPercent(500, 0)).toBe(0);
   });
 });

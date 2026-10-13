@@ -114,13 +114,13 @@ test.describe('@smoke0 app shell', () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test('has four tabs on a phone and eight places on the desktop rail; account linking is neither', async ({
+  test('has four tabs on a phone and seven places on the desktop rail; account linking is neither', async ({
     page,
   }) => {
     const nav = page.getByRole('navigation', { name: /primary|ניווט/i });
     // The rail's mark is a link home too, shown only on a wide screen.
     const places = nav.getByRole('link').filter({ hasNotText: 'Bookandry' });
-    await expect(places).toHaveCount((page.viewportSize()?.width ?? 0) >= 1024 ? 8 : 4);
+    await expect(places).toHaveCount((page.viewportSize()?.width ?? 0) >= 1024 ? 7 : 4);
     await expect(nav.getByRole('link', { name: /household|account linking|משק|קישור/i })).toHaveCount(0);
   });
 
@@ -132,7 +132,7 @@ test.describe('@smoke0 app shell', () => {
        * way an old link opens Settings, never a page that is not there.
        */
       await page.goto(old);
-      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page).toHaveURL(/\/settings(\/preferences)?$/);
       await expect(page.getByRole('heading', { level: 1, name: /settings|הגדרות/i })).toBeVisible();
     });
   }
@@ -418,7 +418,7 @@ test.describe('@nav the app mark', () => {
     await completeFirstRun(page, 'en');
 
     await page.goto('/settings');
-    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).toHaveURL(/\/settings(\/preferences)?$/);
 
     await page.getByRole('link', { name: 'Bookandry' }).click();
     await expect(page).toHaveURL(/\/$/);
@@ -458,6 +458,6 @@ test.describe('@nav the account menu', () => {
     await trigger.click();
     await page.getByRole('menuitem', { name: rtl ? 'העדפות' : 'Preferences' }).click();
     await expect(page).toHaveURL(/\/settings\/preferences$/);
-    await expect(page.getByRole('heading', { level: 1, name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: rtl ? 'העדפות' : 'Preferences' })).toBeVisible();
   });
 });

@@ -8,6 +8,8 @@ import { Segmented } from '@/components/segmented';
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
+  EditorPanelClose,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -81,7 +83,8 @@ function CountForm({ people, defaultProfileId, currency, today, onDone }: CountP
 
   return (
     <form
-      className="space-y-4 px-4 pb-6"
+      data-slot="editor-panel-body"
+      className="space-y-4 px-5 pb-6 lg:px-7"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
@@ -159,9 +162,14 @@ function CountForm({ people, defaultProfileId, currency, today, onDone }: CountP
         )}
       </p>
 
-      <Button type="submit" className="h-11 w-full" disabled={counted === undefined || busy}>
-        {t('action.save')}
-      </Button>
+      <EditorPanelActions>
+        <EditorPanelClose render={<Button type="button" variant="pill" />}>
+          {t('action.cancel')}
+        </EditorPanelClose>
+        <Button type="submit" variant="pill-solid" disabled={counted === undefined || busy}>
+          {t('action.save')}
+        </Button>
+      </EditorPanelActions>
     </form>
   );
 }

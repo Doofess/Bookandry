@@ -163,6 +163,7 @@ export function LinkScreen() {
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
+            variant="pill-solid"
             disabled={busy || preview.linkedElsewhere}
             onClick={() => {
               accept(preview);
@@ -172,7 +173,7 @@ export function LinkScreen() {
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="pill"
             disabled={busy}
             onClick={() => {
               void accountController()
@@ -210,7 +211,7 @@ export function LinkScreen() {
           <h1 className="text-2xl font-semibold tracking-tight">{t('link.title')}</h1>
           {body}
           {done ? (
-            <Button type="button" variant="outline" onClick={leave}>
+            <Button type="button" variant="pill" onClick={leave}>
               {t('link.home')}
             </Button>
           ) : null}

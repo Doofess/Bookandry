@@ -97,8 +97,8 @@ describe('numerals that run off a sheet (§9.4)', () => {
   });
 
   it('never sets a numeral under 28px', () => {
-    expect(FLAT).toContain(
-      'font-size: max(1.75rem, min(var(--numeral-max, 7.375rem), calc(100cqi / (var(--glyphs, 6) * 0.34))));',
+    expect(FLAT.replace(/\( /g, '(').replace(/ \)/g, ')')).toContain(
+      'font-size: max(1.75rem, min(var(--numeral-max, 7.375rem), calc(100cqi / (var(--numeral-units, 2100) * 0.001))));',
     );
   });
 });
@@ -138,5 +138,18 @@ describe('the grain (§9.1)', () => {
     expect(png.readUInt32BE(16)).toBe(180);
     expect(png.readUInt32BE(20)).toBe(180);
     expect(png[25]).toBe(0); // colour type 0: greyscale
+  });
+});
+
+describe('phase 3 sheet tokens', () => {
+  it('pads a sheet 20/22 on a phone and 34/38 at 1440, fluidly', () => {
+    expect(ROOT.get('--pad-sheet-inline')).toBe('clamp(1.375rem, 1.0036rem + 1.5238vw, 2.375rem)');
+    expect(ROOT.get('--pad-sheet-block')).toBe('clamp(1.25rem, 0.925rem + 1.3333vw, 2.125rem)');
+    expect(ROOT.get('--lede-size')).toBe('clamp(0.90625rem, 0.7786rem + 0.5238vw, 1.25rem)');
+  });
+  it('keeps the forced-colours edge in the base layer, so a utility can still set a border', () => {
+    expect(CSS).toMatch(
+      /@layer base \{[^}]*?\[data-sheet\],\s*\[data-hue\]\s*\{\s*border:\s*2px solid transparent;/s,
+    );
   });
 });

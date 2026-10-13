@@ -50,19 +50,19 @@ export function SplitPurchaseSheet({
     // A one-pane pop-out over the panel (§6.3): a short form, capped at 36rem.
     <PopOut open={offer !== undefined} onOpenChange={onOpenChange}>
       <PopOutContent size="compact">
-        <PopOutBody title={t('split.title')}>
-          {offer === undefined ? null : (
-            <SplitForm
-              key={offer.occurrence.key}
-              offer={offer}
-              today={today}
-              onDone={onDone}
-              onCancel={() => {
-                onOpenChange(false);
-              }}
-            />
-          )}
-        </PopOutBody>
+        {offer === undefined ? (
+          <PopOutBody title={t('split.title')}>{null}</PopOutBody>
+        ) : (
+          <SplitForm
+            key={offer.occurrence.key}
+            offer={offer}
+            today={today}
+            onDone={onDone}
+            onCancel={() => {
+              onOpenChange(false);
+            }}
+          />
+        )}
       </PopOutContent>
     </PopOut>
   );
@@ -149,61 +149,65 @@ function SplitForm({
     }
   };
 
+  const footer = (
+    <>
+      <Button type="button" variant="pill" onClick={onCancel}>
+        {t('action.cancel')}
+      </Button>
+      <Button
+        type="button"
+        variant="pill-solid"
+        disabled={saving || schedule === undefined}
+        onClick={() => void save()}
+      >
+        {t('split.save')}
+      </Button>
+    </>
+  );
+
   return (
-    <div className="space-y-4 px-4 pb-4">
-      <p className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="min-w-0 truncate">{occurrence.note ?? dealName}</span>
-        <Money minor={money.amountMinor} currency={money.currency} className="shrink-0 font-medium" />
-      </p>
+    <PopOutBody title={t('split.title')} footer={footer}>
+      <div className="space-y-4">
+        <p className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 truncate">{occurrence.note ?? dealName}</span>
+          <Money minor={money.amountMinor} currency={money.currency} className="shrink-0 font-medium" />
+        </p>
 
-      <div className="space-y-1.5">
-        <Label htmlFor={countId}>{t('tx.installmentCount')}</Label>
-        <Input
-          id={countId}
-          type="text"
-          inputMode="numeric"
-          value={count}
-          onChange={(event) => {
-            setCount(event.target.value.replace(/\D/g, '').slice(0, 2));
-          }}
-          aria-invalid={!validCount}
-          className="h-11 w-24"
+        <div className="space-y-1.5">
+          <Label htmlFor={countId}>{t('tx.installmentCount')}</Label>
+          <Input
+            id={countId}
+            type="text"
+            inputMode="numeric"
+            value={count}
+            onChange={(event) => {
+              setCount(event.target.value.replace(/\D/g, '').slice(0, 2));
+            }}
+            aria-invalid={!validCount}
+            className="h-11 w-24"
+          />
+        </div>
+
+        <AnnualRateField
+          value={rate}
+          onChange={setRate}
+          hint={rate === '' ? t('deal.needRate', { deal: dealName }) : t('tx.annualRateHint')}
+          error={undefined}
         />
+
+        <DealNotes dealName={dealName} warnings={warnings} needRate={false} onOpenCard={onCancel} />
+
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <CalendarClock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            {t('tx.cardCharged', {
+              date: formatLocalDate(timing.firstCharge, i18n.language, { dateStyle: 'medium' }),
+            })}
+          </span>
+        </p>
+
+        {schedule === undefined ? null : <ScheduleLines schedule={schedule} currency={money.currency} />}
       </div>
-
-      <AnnualRateField
-        value={rate}
-        onChange={setRate}
-        hint={rate === '' ? t('deal.needRate', { deal: dealName }) : t('tx.annualRateHint')}
-        error={undefined}
-      />
-
-      <DealNotes dealName={dealName} warnings={warnings} needRate={false} onOpenCard={onCancel} />
-
-      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-        <CalendarClock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-        <span>
-          {t('tx.cardCharged', {
-            date: formatLocalDate(timing.firstCharge, i18n.language, { dateStyle: 'medium' }),
-          })}
-        </span>
-      </p>
-
-      {schedule === undefined ? null : <ScheduleLines schedule={schedule} currency={money.currency} />}
-
-      <div data-slot="popout-actions" className="flex justify-end gap-2 pt-1">
-        <Button type="button" variant="outline" onClick={onCancel} className="min-h-11 flex-1">
-          {t('action.cancel')}
-        </Button>
-        <Button
-          type="button"
-          disabled={saving || schedule === undefined}
-          onClick={() => void save()}
-          className="min-h-11 flex-1"
-        >
-          {t('split.save')}
-        </Button>
-      </div>
-    </div>
+    </PopOutBody>
   );
 }

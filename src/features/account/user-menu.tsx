@@ -1,5 +1,7 @@
+import { cn } from 'cn';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Languages, LogOut, SunMoon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -8,6 +10,7 @@ import { useAccountAvatar } from '@/app/account-avatar';
 import { useSettings } from '@/app/app-context';
 import { chooseLanguage, chooseTheme } from '@/app/preferences';
 import { useDesktop } from '@/app/use-desktop';
+import { PersonAvatar } from '@/components/person-avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,11 +24,49 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { db } from '@/db/db';
 import { useSettingsSections, type SettingsSection } from '@/features/settings/sections';
 import type { Language, Theme } from '@/i18n/boot';
 
 import { AccountAvatar } from './account-avatar';
 import { AccountSheet, type Flow } from './account-sheet';
+
+/** The household at the rail's foot: up to two faces and their names (null when nobody is added yet). */
+function Household({ fallback }: { readonly fallback: ReactNode }) {
+  const { t } = useTranslation();
+  const people = useLiveQuery(
+    async () =>
+      (await db.profiles.toArray()).sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      ),
+    [],
+  );
+  if (people === undefined) return <span className="sr-only">{t('menu.label')}</span>;
+  if (people.length === 0) return fallback;
+  const [first, second] = people;
+  const names =
+    people.length === 1
+      ? first?.name
+      : people.length === 2
+        ? t('rail.pair', { first: first?.name, second: second?.name })
+        : t('rail.many', { first: first?.name, count: people.length - 1 });
+  return (
+    <>
+      <span className="flex shrink-0">
+        {people.slice(0, 2).map((person, i) => (
+          <PersonAvatar
+            key={person.id}
+            person={person}
+            size="rail"
+            className={cn('ring-2 ring-background', i > 0 && '-ms-2.5')}
+          />
+        ))}
+      </span>
+      <span className="sr-only">{t('menu.label')}</span>
+      <span className="min-w-0 truncate">{names}</span>
+    </>
+  );
+}
 
 /**
  * The account menu: the person's picture at the top end of every screen,
@@ -78,17 +119,25 @@ export function UserMenu({ placement = 'head' }: { readonly placement?: 'head' |
               : '-me-1.5 flex size-11 items-center justify-center rounded-full focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ring'
           }
         >
-          <AccountAvatar size={placement === 'rail' ? 36 : 34} className="shrink-0 ring-2 ring-border" />
           {placement === 'rail' ? (
-            shown === undefined ? (
-              <span>{t('menu.label')}</span>
-            ) : (
-              <>
-                <span className="sr-only">{t('menu.label')}</span>
-                <span className="min-w-0 truncate">{shown}</span>
-              </>
-            )
-          ) : null}
+            <Household
+              fallback={
+                <>
+                  <AccountAvatar size={36} className="shrink-0 ring-2 ring-border" />
+                  {shown === undefined ? (
+                    <span>{t('menu.label')}</span>
+                  ) : (
+                    <>
+                      <span className="sr-only">{t('menu.label')}</span>
+                      <span className="min-w-0 truncate">{shown}</span>
+                    </>
+                  )}
+                </>
+              }
+            />
+          ) : (
+            <AccountAvatar size={34} className="shrink-0 ring-2 ring-border" />
+          )}
         </DropdownMenuTrigger>
         <DropdownMenuContent
           side={placement === 'rail' ? 'top' : 'bottom'}

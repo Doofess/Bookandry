@@ -1,10 +1,12 @@
+import { cn } from 'cn';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSettings, useToday } from '@/app/app-context';
-import { ScreenHead, ScreenSheet } from '@/app/screen-head';
+import { ScreenHead } from '@/app/screen-head';
 import { Segmented } from '@/components/segmented';
 import { Label } from '@/components/ui/label';
+import { Sheet } from '@/components/ui/sheet-surface';
 import { CHART_RANGES, type ChartRange } from '@/domain/chart-data';
 
 import { ChartStats } from './chart-stats';
@@ -47,55 +49,73 @@ export function ChartScreen() {
   const lookups = useFeedLookups();
   const state = useChartData(filters.profileId, range, filters.month, today, settings.defaultCurrency);
 
+  const plotHeight = 'h-[300px]';
+
   return (
-    <section className="mx-auto max-w-2xl pb-24 lg:px-4 lg:pb-8">
-      <ScreenHead title={t('chart.title')} />
-      <ScreenSheet className="px-4 pt-6">
-        <MonthCursor month={filters.month} today={today} onStep={stepMonth} onPick={setMonth} />
-
-        {lookups === undefined ? null : (
-          <ProfileSwitcher
-            profiles={lookups.profiles}
-            active={filters.profileId}
-            onSelect={setProfile}
-            className="mt-3"
-          />
-        )}
-
-        <div className="mt-3 space-y-1.5">
-          <Label id={rangeId}>{t('chart.range')}</Label>
-          <Segmented<ChartRange>
-            value={range}
-            onChange={setRange}
-            size="sm"
-            labelledBy={rangeId}
-            options={CHART_RANGES.map((value) => ({ value, label: t(RANGE_LABEL[value]) }))}
-          />
-        </div>
-
-        {state.status === 'blocked' ? (
-          <p className="mt-6 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-            {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
-          </p>
-        ) : state.status === 'loading' || lookups === undefined ? (
-          <div className="mt-4 h-[300px] animate-pulse rounded-xl bg-muted" />
-        ) : state.data.rows.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border px-4 py-10 text-center">
-            <p className="text-sm font-medium">{t('chart.empty')}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{t('chart.emptyHint')}</p>
-          </div>
-        ) : (
+    <section className="px-3 pb-24 lg:px-0 lg:pb-8">
+      <ScreenHead
+        title={t('chart.title')}
+        actions={
           <>
-            <div className="mt-4 rounded-xl border border-border bg-card py-3">
-              <SpendChart
-                data={state.data}
-                from={state.window.from}
-                to={state.window.to}
-                today={today}
-                currency={settings.defaultCurrency}
-                categories={lookups.categories}
+            <MonthCursor
+              month={filters.month}
+              today={today}
+              onStep={stepMonth}
+              onPick={setMonth}
+              tone="bold"
+            />
+            {lookups === undefined ? null : (
+              <ProfileSwitcher profiles={lookups.profiles} active={filters.profileId} onSelect={setProfile} />
+            )}
+            <div className="flex items-center gap-2">
+              <Label id={rangeId} className="sr-only">
+                {t('chart.range')}
+              </Label>
+              <Segmented<ChartRange>
+                value={range}
+                onChange={setRange}
+                size="sm"
+                labelledBy={rangeId}
+                options={CHART_RANGES.map((value) => ({ value, label: t(RANGE_LABEL[value]) }))}
               />
             </div>
+          </>
+        }
+      />
+
+      {state.status === 'blocked' ? (
+        <Sheet kind="paper">
+          <p className="font-light">
+            {t('summary.balanceBlocked', { currencies: state.currencies.join(', ') })}
+          </p>
+        </Sheet>
+      ) : state.status === 'loading' || lookups === undefined ? (
+        <Sheet
+          kind="paper"
+          data-slot="chart-sheet"
+          aria-busy="true"
+          className={cn('animate-pulse', plotHeight)}
+        />
+      ) : state.data.rows.length === 0 ? (
+        <Sheet kind="paper" data-slot="chart-sheet" className="grid gap-1">
+          <p className="font-semibold">{t('chart.empty')}</p>
+          <p className="font-light">{t('chart.emptyHint')}</p>
+        </Sheet>
+      ) : (
+        <div className="grid gap-sheet @board/main:grid-cols-12">
+          <Sheet
+            kind="paper"
+            data-slot="chart-sheet"
+            className="min-w-0 @board/main:col-span-12 @wide/main:col-span-8 @vast/main:col-span-9"
+          >
+            <SpendChart
+              data={state.data}
+              from={state.window.from}
+              to={state.window.to}
+              today={today}
+              currency={settings.defaultCurrency}
+              categories={lookups.categories}
+            />
 
             {/*
             The legend is PROSE and lives outside the plot island, so it reads
@@ -103,7 +123,7 @@ export function ChartScreen() {
             right. Recharts' own <Legend> would have been rendered inside the
             island and come out mirrored.
           */}
-            <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
               <li className="flex items-center gap-1.5">
                 <span className="inline-block size-2.5 rounded-full bg-chart-income" aria-hidden="true" />
                 {t('chart.income')}
@@ -118,26 +138,28 @@ export function ChartScreen() {
               </li>
             </ul>
 
-            <p className="mt-2 text-xs text-muted-foreground">{t('chart.legend')}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t('chart.lineNote')}</p>
+            <p className="mt-2 text-xs font-light">{t('chart.legend')}</p>
+            <p className="mt-1 text-xs font-light">{t('chart.lineNote')}</p>
             {state.data.aggregated ? (
-              <p className="mt-1 text-xs text-muted-foreground">{t('chart.aggregatedNote')}</p>
+              <p className="mt-1 text-xs font-light">{t('chart.aggregatedNote')}</p>
             ) : null}
-
-            <ChartStats
-              data={state.data}
-              currency={settings.defaultCurrency}
-              categories={lookups.categories}
-            />
 
             <ChartTable
               data={state.data}
               currency={settings.defaultCurrency}
               categories={lookups.categories}
             />
-          </>
-        )}
-      </ScreenSheet>
+          </Sheet>
+
+          <div className="min-w-0 @board/main:col-span-12 @wide/main:col-span-4 @vast/main:col-span-3">
+            <ChartStats
+              data={state.data}
+              currency={settings.defaultCurrency}
+              categories={lookups.categories}
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

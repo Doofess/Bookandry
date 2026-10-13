@@ -9,6 +9,7 @@ import { ColorPicker } from '@/components/pickers';
 import { Button } from '@/components/ui/button';
 import {
   EditorPanel,
+  EditorPanelActions,
   EditorPanelContent,
   EditorPanelDescription,
   EditorPanelHeader,
@@ -175,7 +176,8 @@ function EditorForm({
         event.preventDefault();
         if (canSave) onSave({ ...values, name: trimmed });
       }}
-      className="space-y-5 px-4 pb-6"
+      data-slot="editor-panel-body"
+      className="space-y-5 px-5 pb-6 lg:px-7"
     >
       <div className="flex items-center gap-3">
         <PersonAvatar person={{ id: personId, name: values.name, color: values.color }} size="lg" />
@@ -242,14 +244,14 @@ function EditorForm({
         </p>
       )}
 
-      <div data-slot="editor-actions" className="flex gap-2 pt-1">
-        <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+      <EditorPanelActions>
+        <Button type="button" variant="pill" onClick={onCancel}>
           {t('action.cancel')}
         </Button>
-        <Button type="submit" disabled={!canSave} className="flex-1">
+        <Button type="submit" variant="pill-solid" disabled={!canSave}>
           {t('action.save')}
         </Button>
-      </div>
+      </EditorPanelActions>
     </form>
   );
 }

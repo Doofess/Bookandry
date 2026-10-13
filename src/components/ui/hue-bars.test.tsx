@@ -31,6 +31,19 @@ describe('largestWithOther (§1.4)', () => {
 });
 
 describe('HueBars (§7.4)', () => {
+  it('shows whole shekels without agorot with `whole`, and keeps the exact amount for a screen reader', () => {
+    const { container } = render(<HueBars items={[item('rent', 1_234_567)]} currency="ILS" whole />);
+    const amount = container.querySelector('li > span[data-value]');
+    expect(amount).toHaveAttribute('data-value', '1234567');
+    expect(amount?.querySelector('[aria-hidden]')).toHaveTextContent('₪12,346');
+    expect(amount?.querySelector('.sr-only')).toHaveTextContent('12,345.67');
+  });
+
+  it('keeps agorot by default (the chart)', () => {
+    render(<HueBars items={[item('rent', 1_234_567)]} currency="ILS" />);
+    expect(screen.getByText(/12,345.67/, { selector: '[aria-hidden]' })).toBeInTheDocument();
+  });
+
   it('lists every category by name and amount, then "Other"', () => {
     render(<HueBars items={TWELVE} currency="ILS" />);
     const rows = screen.getAllByRole('listitem');
@@ -57,5 +70,49 @@ describe('MoneyStrip (§7.4)', () => {
     // The largest 7, then "Other": 8 segments, 2px apart.
     expect(strip?.children).toHaveLength(8);
     expect(strip).toHaveClass('gap-0.5');
+  });
+});
+
+describe('HueBars against the largest', () => {
+  it('draws each bar against the largest, as the concept does', () => {
+    const { container } = render(
+      <HueBars
+        currency="ILS"
+        items={[
+          { id: 'rent', name: 'Rent', minor: 560_000, hue: 'indigo' },
+          { id: 'food', name: 'Groceries', minor: 284_000, hue: 'green' },
+        ]}
+      />,
+    );
+    const bars = [...container.querySelectorAll<HTMLElement>('i[data-hue]')];
+    expect(bars[0]?.style.getPropertyValue('--bp')).toBe(bars[0]?.style.getPropertyValue('--bp-max'));
+    expect(bars[0]?.className).toMatch(/var\(--bp\)\/var\(--bp-max\)/);
+  });
+
+  it('draws no bar for a category with nothing in it', () => {
+    const { container } = render(
+      <HueBars
+        currency="ILS"
+        items={[
+          { id: 'a', name: 'A', minor: 0, hue: 'teal' },
+          { id: 'b', name: 'B', minor: 5, hue: 'lime' },
+        ]}
+      />,
+    );
+    expect(container.querySelectorAll('i[data-hue]')).toHaveLength(1);
+  });
+
+  it('stays a list in Safari, and keeps a long name whole', () => {
+    render(
+      <HueBars
+        currency="ILS"
+        items={[{ id: 'a', name: 'חשבונות בית ועוד דברים ארוכים', minor: 5, hue: 'cyan' }]}
+      />,
+    );
+    expect(screen.getByRole('list')).toBeInTheDocument();
+    expect(screen.getByText('חשבונות בית ועוד דברים ארוכים')).toHaveAttribute(
+      'title',
+      'חשבונות בית ועוד דברים ארוכים',
+    );
   });
 });

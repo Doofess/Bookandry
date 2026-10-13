@@ -38,3 +38,23 @@ export function nextFreeColor(taken: readonly string[]): string | undefined {
   const used = new Set(taken);
   return PROFILE_PALETTE.find((c) => !used.has(c.hex))?.hex;
 }
+
+export type AvatarTone = 'ink' | 'sapphire' | 'ring';
+const TONES: readonly AvatarTone[] = ['ink', 'sapphire', 'ring'];
+
+/**
+ * How a person is drawn (phase 3 plan, decision 7): the house palette, as the
+ * concept draws its avatars - the first person on the ink box, the second on
+ * sapphire, the third as an ink ring on paper, repeating. Read from the stored
+ * colour's place in the palette, which follows the order people were added;
+ * the stored colour itself is no longer painted and is never changed.
+ */
+export function avatarTone(color: string): AvatarTone {
+  const index = PROFILE_PALETTE.findIndex((c) => c.hex.toLowerCase() === color.toLowerCase());
+  let at = index;
+  if (at < 0) {
+    at = 7;
+    for (let i = 0; i < color.length; i++) at = (at * 31 + color.charCodeAt(i)) % 9973;
+  }
+  return TONES[at % TONES.length] ?? 'ink';
+}

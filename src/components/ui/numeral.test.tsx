@@ -53,11 +53,11 @@ describe('Numeral (§7.5, §9.4)', () => {
     expect(screen.getByText(/14,362\.50/)).toHaveClass('sr-only');
   });
 
-  it('fits by its glyph count, under its size’s cap', () => {
+  it('fits by its real width, under its size’s cap', () => {
     const { container } = render(<Numeral minor={-1_436_200} currency="ILS" size="card" />);
     const el = numeral(container);
-    // '−' + '14,362' at full size, '₪' at half: 1 + 6 + 1.
-    expect(el.style.getPropertyValue('--glyphs')).toBe('8');
+    // '−' 280 + '₪' at half (326) + 40 + '14,362' (1732).
+    expect(el.style.getPropertyValue('--numeral-units')).toBe('2378');
     expect(el.style.getPropertyValue('--numeral-max')).toBe(NUMERAL_MAX.card);
     expect(el).toHaveAttribute('dir', 'ltr');
   });
@@ -73,4 +73,30 @@ describe('Numeral (§7.5, §9.4)', () => {
     expect(clampAt(NUMERAL_MAX[size], 390)).toBeCloseTo(phone, 0);
     expect(clampAt(NUMERAL_MAX[size], 1440)).toBeCloseTo(desktop, 0);
   });
+});
+
+it('carries its real width and its size, and is its own container', () => {
+  const { container } = render(<Numeral minor={5_855_500} currency="ILS" size="balance" rounded />);
+  const el = container.querySelector<HTMLElement>('[data-numeral]');
+  expect(el?.style.getPropertyValue('--numeral-units')).toBe('2096');
+  expect(el).toHaveAttribute('data-numeral-size', 'balance');
+  expect(container.firstElementChild?.className).toMatch(/@container/);
+});
+
+it('is not a container when it is a small figure that never bleeds, so an auto-sized cell can hold it', () => {
+  const { container } = render(<Numeral minor={1_375_000} currency="ILS" size="account" rounded />);
+  expect(container.firstElementChild?.className).not.toMatch(/@container/);
+  expect(container.querySelector('[data-numeral]')).toHaveAttribute('data-numeral-size', 'account');
+});
+
+it('may break only after the currency sign', () => {
+  const { container } = render(<Numeral minor={5_855_500} currency="ILS" size="balance" rounded />);
+  expect(container.querySelector('[data-numeral] wbr')).not.toBeNull();
+});
+
+it('is sized for the figure it settles on while it counts up', () => {
+  const { container } = render(<Numeral minor={100} currency="ILS" size="balance" fit={5_855_500} />);
+  expect(
+    container.querySelector<HTMLElement>('[data-numeral]')?.style.getPropertyValue('--numeral-units'),
+  ).toBe('2096');
 });
