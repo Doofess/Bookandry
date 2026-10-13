@@ -35,7 +35,7 @@ export async function listCategories(db: BookandryDB, query: CategoryQuery = {})
 export async function createCategory(
   db: BookandryDB,
   id: string,
-  draft: { name: string; kind: Kind; icon: string },
+  draft: { name: string; kind: Kind; icon: string; hue?: string },
   now: IsoInstant,
 ): Promise<Category> {
   const name = normalizeName(draft.name);
@@ -49,7 +49,7 @@ export async function createCategory(
       kind: draft.kind,
       icon: draft.icon,
       // The hue least used among its kind, so a new category stands apart.
-      hue: leastUsedHue(siblings),
+      hue: draft.hue ?? leastUsedHue(siblings),
       sortOrder,
       isArchived: 0,
       source: 'custom',
@@ -67,6 +67,8 @@ export async function renameCategory(
   id: string,
   rawName: string,
   now: IsoInstant,
+  /** The icon and the hue chosen in the editor, saved with the name. */
+  extra: { readonly icon?: string; readonly hue?: string } = {},
 ): Promise<Category> {
   const name = normalizeName(rawName);
 
@@ -75,7 +77,13 @@ export async function renameCategory(
     if (!current) throw new Error(`No such category: ${id}`);
     if (current.source === 'builtin') throw new BuiltinCategoryError(id, 'rename');
 
-    const next: Category = { ...current, name, updatedAt: now };
+    const next: Category = {
+      ...current,
+      name,
+      ...(extra.icon === undefined ? {} : { icon: extra.icon }),
+      ...(extra.hue === undefined ? {} : { hue: extra.hue }),
+      updatedAt: now,
+    };
     await db.categories.put(next);
     return next;
   });
